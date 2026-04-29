@@ -551,6 +551,7 @@ export class ArenaScene extends Phaser.Scene {
     this.startCombatButton.setFillStyle(0x7f8c8d, 0.5);
 
     this.gamePhase = { stage: 'combat' };
+    this.placeEnemyDiceForTurn();
 
     this.invisiRollForEnemies();
 
@@ -720,7 +721,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyGridContainer.each((child: Phaser.GameObjects.GameObject) => {
       if (child instanceof Phaser.GameObjects.Rectangle && child.getData('isDie')) childrenToRemove.push(child);
       if (child instanceof Phaser.GameObjects.Text && child.name === 'die-info') childrenToRemove.push(child);
-      if (child instanceof Phaser.GameObjects.Graphics && child.name === 'hp-bar') childrenToRemove.push(child);
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar')) childrenToRemove.push(child);
     });
     childrenToRemove.forEach((child) => child.destroy());
 
@@ -747,6 +748,9 @@ export class ArenaScene extends Phaser.Scene {
         this.enemyGridContainer.add(label);
 
         this.renderHealthBar(this.enemyGridContainer, x, y + 16, die.currentHealth, die.maxHealth);
+        const ammo = Math.max(0, die.attacksRemaining);
+        const maxAmmo = Math.max(1, this.getPipCount(die.typeId));
+        this.renderAmmoBar(this.enemyGridContainer, x + 24, y + 16, ammo, maxAmmo);
       }
     });
     this.renderDiceStatusPanel(this.enemyStatusPanel, enemyDice, 'OPPONENT');
@@ -777,6 +781,9 @@ export class ArenaScene extends Phaser.Scene {
         childrenToRemove.push(child);
       }
       if (child instanceof Phaser.GameObjects.Text && child.name !== '') {
+        childrenToRemove.push(child);
+      }
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar')) {
         childrenToRemove.push(child);
       }
     });
@@ -824,6 +831,7 @@ export class ArenaScene extends Phaser.Scene {
       fontSize: '11px',
       color: definition.accent
     }).setOrigin(0.5);
+    label.setName('die-info');
     container.add(label);
 
     const pips = isPlayer
@@ -834,6 +842,7 @@ export class ArenaScene extends Phaser.Scene {
       fontSize: '12px',
       color: PALETTE.accent
     }).setOrigin(0.5);
+    pipLabel.setName('die-info');
     container.add(pipLabel);
 
     const hpText = `${die.currentHealth}/${die.maxHealth}`;
@@ -970,6 +979,7 @@ export class ArenaScene extends Phaser.Scene {
   private renderAmmoBar(container: Phaser.GameObjects.Container, x: number, y: number, ammo: number, maxAmmo: number) {
     const ratio = Phaser.Math.Clamp(maxAmmo > 0 ? ammo / maxAmmo : 0, 0, 1);
     const g = this.add.graphics();
+    g.name = 'ammo-bar';
     g.name = 'hp-bar';
     g.fillStyle(0x1f2f3d, 0.95);
     g.fillRoundedRect(x - 14, y - 3, 28, 6, 2);
@@ -978,6 +988,23 @@ export class ArenaScene extends Phaser.Scene {
     container.add(g);
   }
 
+  private placeEnemyDiceForTurn() {
+    const enemyHandDice = getAvailableHandDice(this.gameState, 'enemy');
+    const usedCells = new Set<string>();
+    enemyHandDice.forEach((die) => {
+      let row = 0;
+      let col = 0;
+      let key = '';
+      let attempts = 0;
+      do {
+        row = Math.floor(Math.random() * 2);
+        col = Math.floor(Math.random() * GRID_SIZE);
+        key = `${row},${col}`;
+        attempts++;
+      } while (usedCells.has(key) && attempts < 50);
+      usedCells.add(key);
+      this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
+    });
   private toggleExitPrompt() {
     if (this.exitPromptOpen) {
       this.closeExitPrompt();
