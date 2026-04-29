@@ -47,7 +47,7 @@ export function getLayout(scene: Phaser.Scene) {
 export function drawPanel(scene: Phaser.Scene, title: string, subtitle: string) {
   const { content } = getLayout(scene);
 
-  scene.add.rectangle(content.centerX, content.centerY, content.width, content.height, 0x08131d, 0.86)
+  scene.add.rectangle(content.centerX, content.centerY, content.width, content.height, 0x102434, 0.9)
     .setStrokeStyle(2, 0x335770);
 
   scene.add.rectangle(content.centerX, content.y + 42, content.width - 24, 62, 0x102535, 0.94)

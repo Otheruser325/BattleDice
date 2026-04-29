@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { getDiceDefinitions } from '../data/dice';
 import {
   createMatchBattleState,
+  getAvailableHandDice,
   placeDieOnBoard,
   getBoardDice,
   getLivingDiceCount,
@@ -27,8 +28,7 @@ interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | 'victory' | 'defeat';
 }
 
-const PLAYER_HAND_DICE: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Lightning', 'Wind'];
-const DICE_PLACED_REQUIRED = 5;
+const DEFAULT_PLAYER_LOADOUT: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Lightning', 'Wind'];
 
 const GRID_SIZE = 5;
 const TILE_SIZE = 64;
@@ -44,11 +44,16 @@ export class ArenaScene extends Phaser.Scene {
 
   private uiContainer!: Phaser.GameObjects.Container;
   private gameContainer!: Phaser.GameObjects.Container;
+  private backButton!: Phaser.GameObjects.Text;
+  private exitPromptOpen = false;
+  private exitPromptElements: Phaser.GameObjects.GameObject[] = [];
   private turnText!: Phaser.GameObjects.Text;
   private playerGridContainer!: Phaser.GameObjects.Container;
   private enemyGridContainer!: Phaser.GameObjects.Container;
   private enemyFogOverlay!: Phaser.GameObjects.Rectangle;
   private enemyFogText!: Phaser.GameObjects.Text;
+  private playerStatusPanel!: Phaser.GameObjects.Container;
+  private enemyStatusPanel!: Phaser.GameObjects.Container;
   private combatLog!: Phaser.GameObjects.Text;
   private startCombatButton!: Phaser.GameObjects.Rectangle;
   private handContainer!: Phaser.GameObjects.Container;
@@ -58,7 +63,9 @@ export class ArenaScene extends Phaser.Scene {
   private dicePips: Map<string, number> = new Map();
   private enemyDicePips: Map<string, number> = new Map();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
+  private rollAllButtonLabel!: Phaser.GameObjects.Text;
   private diceRolled = false;
+  private currentHandOrder: DiceTypeId[] = [];
 
   constructor() {
     super(ArenaScene.KEY);
@@ -144,16 +151,40 @@ export class ArenaScene extends Phaser.Scene {
 
   private startGame() {
     this.gamePhase = { stage: 'placement' };
-    this.uiContainer.destroy();
-
-    this.createGameUI();
-    this.initializeBattle();
+    const loading = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x050d14, 0.95).setDepth(500);
+    const loadingLabel = this.add.text(this.scale.width / 2, this.scale.height / 2, 'BATTLE DICE\nCaching arena...', { fontFamily: 'Orbitron', fontSize: '24px', color: PALETTE.text, align: 'center' }).setOrigin(0.5).setDepth(501);
+    this.tweens.add({
+      targets: this.uiContainer,
+      alpha: 0,
+      y: -40,
+      duration: 320,
+      ease: 'Cubic.easeIn',
+      onComplete: () => {
+        this.scene.sleep('MenuScene');
+        this.uiContainer.destroy();
+        this.createGameUI();
+        this.initializeBattle();
+        this.time.delayedCall(550, () => {
+          loading.destroy();
+          loadingLabel.destroy();
+        });
+      }
+    });
   }
 
   private createGameUI() {
     const { width, height } = this.scale;
 
     this.gameContainer = this.add.container(0, 0);
+    this.backButton = this.add.text(24, 20, '← BACK / QUIT', {
+      fontFamily: 'Orbitron',
+      fontSize: '14px',
+      color: PALETTE.accentSoft,
+      backgroundColor: '#173247',
+      padding: { left: 10, right: 10, top: 6, bottom: 6 }
+    }).setInteractive({ useHandCursor: true });
+    this.backButton.on('pointerdown', () => this.toggleExitPrompt());
+    this.input.keyboard?.on('keydown-ESC', () => this.toggleExitPrompt());
 
     this.turnText = this.add.text(width / 2, 60, 'TURN 1', {
       fontFamily: 'Orbitron',
@@ -163,14 +194,17 @@ export class ArenaScene extends Phaser.Scene {
 
     const arenaY = height / 2;
     const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
-    const spacing = 40;
-    const totalWidth = boardWidth * 2 + spacing;
-    const startX = (width - totalWidth) / 2;
+    const gridX = (width - boardWidth) / 2;
+    const gap = 36;
+    const enemyY = arenaY - boardWidth - gap / 2;
+    const playerY = arenaY + gap / 2;
 
-    this.playerGridContainer = this.createGrid(startX, arenaY - boardWidth / 2, 'YOUR GRID', true);
-    this.enemyGridContainer = this.createGrid(startX + boardWidth + spacing, arenaY - boardWidth / 2, 'ENEMY GRID', false);
+    this.enemyGridContainer = this.createGrid(gridX, enemyY, 'ENEMY GRID', false);
+    this.playerGridContainer = this.createGrid(gridX, playerY, 'YOUR GRID', true);
+    this.playerStatusPanel = this.add.container(24, 120);
+    this.enemyStatusPanel = this.add.container(width - 220, 120);
 
-    this.gameContainer.add([this.turnText, this.playerGridContainer, this.enemyGridContainer]);
+    this.gameContainer.add([this.turnText, this.playerGridContainer, this.enemyGridContainer, this.backButton, this.playerStatusPanel, this.enemyStatusPanel]);
   }
 
   private createGrid(x: number, y: number, title: string, isPlayer: boolean): Phaser.GameObjects.Container {
@@ -214,7 +248,8 @@ export class ArenaScene extends Phaser.Scene {
 
   private initializeBattle() {
     const playerDefs = getDiceDefinitions(this);
-    this.gameState = createMatchBattleState(playerDefs, playerDefs);
+    const enemyDefs = this.pickRandomEnemyLoadout(playerDefs);
+    this.gameState = createMatchBattleState(playerDefs, enemyDefs);
 
     const enemyPositions = this.generateEnemyPositions();
     enemyPositions.forEach((pos, index) => {
@@ -235,8 +270,13 @@ export class ArenaScene extends Phaser.Scene {
 
   private createHandArea() {
     const { width, height } = this.scale;
+    this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.typeId);
+    if (this.currentHandOrder.length === 0) {
+      this.currentHandOrder = [...DEFAULT_PLAYER_LOADOUT];
+    }
+
     const handY = height - 140;
-    const startX = (width - (PLAYER_HAND_DICE.length * 80)) / 2 + 40;
+    const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
 
     this.handContainer = this.add.container(0, 0);
 
@@ -248,12 +288,12 @@ export class ArenaScene extends Phaser.Scene {
 
     this.createRollAllButton(width / 2, handY - 35);
 
-    PLAYER_HAND_DICE.forEach((typeId, index) => {
+    this.currentHandOrder.forEach((typeId, index) => {
       const definition = this.definitions.get(typeId);
       if (!definition) return;
 
       const x = startX + index * 100;
-      const dieContainer = this.createDraggableDie(typeId, definition, x, handY, false);
+      const dieContainer = this.createDraggableDie(typeId, definition, x, handY, true);
       this.handDice.set(typeId, dieContainer);
       this.handContainer.add(dieContainer);
     });
@@ -262,7 +302,7 @@ export class ArenaScene extends Phaser.Scene {
   private createRollAllButton(x: number, y: number) {
     this.rollAllButton = this.add.rectangle(x, y, 100, 28, 0xf4b860, 0.9)
       .setInteractive({ useHandCursor: true });
-    this.add.text(x, y, 'ROLL ALL!', {
+    this.rollAllButtonLabel = this.add.text(x, y, 'ROLL ALL!', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: '#000000'
@@ -277,7 +317,7 @@ export class ArenaScene extends Phaser.Scene {
     if (this.diceRolled) return;
 
     let rollResults: string[] = [];
-    PLAYER_HAND_DICE.forEach((typeId) => {
+    this.currentHandOrder.forEach((typeId) => {
       const rolledPips = Math.floor(Math.random() * 6) + 1;
       this.dicePips.set(typeId, rolledPips);
       rollResults.push(`${typeId}:${rolledPips}`);
@@ -295,6 +335,7 @@ export class ArenaScene extends Phaser.Scene {
     this.diceRolled = true;
     this.rollAllButton.disableInteractive();
     this.rollAllButton.setFillStyle(0x7f8c8d, 0.5);
+    this.rollAllButtonLabel.setText('ROLLED');
 
     this.combatLog.setText(`Rolled: ${rollResults.join(', ')}`);
     this.debug.log('All dice rolled', { results: rollResults });
@@ -327,19 +368,28 @@ export class ArenaScene extends Phaser.Scene {
 
     if (draggable) {
       container.setInteractive({ draggable: true, useHandCursor: true });
+      this.input.setDraggable(container);
 
       container.on('dragstart', () => {
+        if (!this.diceRolled) {
+          return;
+        }
         container.setScale(1.1);
         container.setDepth(100);
         this.highlightValidDropZones(true);
       });
 
       container.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+        if (!this.diceRolled) return;
         container.x = dragX;
         container.y = dragY;
       });
 
       container.on('dragend', () => {
+        if (!this.diceRolled) {
+          this.returnDieToHand(container, typeId);
+          return;
+        }
         container.setScale(1);
         container.setDepth(0);
         this.highlightValidDropZones(false);
@@ -396,7 +446,7 @@ export class ArenaScene extends Phaser.Scene {
     const droppedZone = this.gridDropZones.find((zone) => {
       const bounds = zone.getBounds();
       return Phaser.Geom.Intersects.RectangleToRectangle(
-        new Phaser.Geom.Rectangle(container.x - 10, container.y - 10, 20, 20),
+        new Phaser.Geom.Rectangle(container.getBounds().centerX - 10, container.getBounds().centerY - 10, 20, 20),
         bounds
       );
     });
@@ -444,9 +494,9 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private returnDieToHand(container: Phaser.GameObjects.Container, typeId: DiceTypeId) {
-    const index = PLAYER_HAND_DICE.indexOf(typeId);
+    const index = this.currentHandOrder.indexOf(typeId);
     const { width } = this.scale;
-    const startX = (width - (PLAYER_HAND_DICE.length * 80)) / 2 + 40;
+    const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
     const handY = this.scale.height - 140;
     const targetX = startX + index * 80;
 
@@ -460,14 +510,15 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private updateCombatButtonState() {
-    const canStart = this.placedDiceCount >= DICE_PLACED_REQUIRED;
+    const requiredDice = this.currentHandOrder.length;
+    const canStart = this.placedDiceCount >= requiredDice;
     this.startCombatButton.setFillStyle(canStart ? 0xe74c3c : 0x7f8c8d, canStart ? 0.9 : 0.5);
     if (canStart) {
       this.startCombatButton.setInteractive({ useHandCursor: true });
       this.combatLog.setText('All dice placed! Click START COMBAT');
     } else {
       this.startCombatButton.disableInteractive();
-      this.combatLog.setText(`Place ${DICE_PLACED_REQUIRED - this.placedDiceCount} more dice...`);
+      this.combatLog.setText(`Place ${requiredDice - this.placedDiceCount} more dice...`);
     }
   }
 
@@ -507,6 +558,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyFogText.setVisible(false);
     this.renderEnemyDice();
 
+    this.playTurnBanner('START!');
     this.combatLog.setText('Combat started! Revealing enemy positions...');
     await this.delay(1000);
 
@@ -515,6 +567,11 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
+    const playerBoardDice = getBoardDice(this.gameState, 'player');
+    const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
+    const playerBonus = playerBoardDice.some((die) => die.typeId === 'Light') ? 1 : 0;
+    const enemyBonus = enemyBoardDice.some((die) => die.typeId === 'Light') ? 1 : 0;
+
     return {
       ...this.gameState,
       combatPhase: 'attacking',
@@ -523,9 +580,10 @@ export class ArenaScene extends Phaser.Scene {
           return die;
         }
 
-        const pips = die.ownerId === 'player'
+        const basePips = die.ownerId === 'player'
           ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
           : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
+        const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
 
         return {
           ...die,
@@ -546,7 +604,9 @@ export class ArenaScene extends Phaser.Scene {
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
-        const target = findAttackTarget(this.gameState, attacker, this.definitions);
+        const target = attacker.typeId === 'Broken'
+          ? this.findRandomTarget(attacker)
+          : findAttackTarget(this.gameState, attacker, this.definitions);
         if (!target) {
           this.combatLog.setText(`${ownerName} ${attacker.typeId} has no target!`);
           await this.delay(500);
@@ -581,6 +641,7 @@ export class ArenaScene extends Phaser.Scene {
     await this.returnDiceToHand();
 
     this.turnText.setText(`TURN ${this.gameState.turn}`);
+    this.playTurnBanner(`TURN ${this.gameState.turn}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
 
     this.startCombatButton.setInteractive({ useHandCursor: true });
@@ -600,9 +661,10 @@ export class ArenaScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
     const handY = height - 140;
-    const startX = (width - (PLAYER_HAND_DICE.length * 100)) / 2 + 50;
+    this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.typeId);
+    const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
 
-    PLAYER_HAND_DICE.forEach((typeId, index) => {
+    this.currentHandOrder.forEach((typeId, index) => {
       const definition = this.definitions.get(typeId);
       if (!definition) return;
 
@@ -614,6 +676,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.rollAllButton.setInteractive({ useHandCursor: true });
     this.rollAllButton.setFillStyle(0xf4b860, 0.9);
+    this.rollAllButtonLabel.setText('ROLL ALL!');
 
     this.debug.log('Dice returned to hand', { turn: this.gameState.turn });
     await this.delay(300);
@@ -653,6 +716,14 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private renderEnemyDice() {
+    const childrenToRemove: Phaser.GameObjects.GameObject[] = [];
+    this.enemyGridContainer.each((child: Phaser.GameObjects.GameObject) => {
+      if (child instanceof Phaser.GameObjects.Rectangle && child.getData('isDie')) childrenToRemove.push(child);
+      if (child instanceof Phaser.GameObjects.Text && child.name === 'die-info') childrenToRemove.push(child);
+      if (child instanceof Phaser.GameObjects.Graphics && child.name === 'hp-bar') childrenToRemove.push(child);
+    });
+    childrenToRemove.forEach((child) => child.destroy());
+
     const enemyDice = getBoardDice(this.gameState, 'enemy');
     enemyDice.forEach((die: DiceInstanceState) => {
       if (die.gridPosition) {
@@ -663,31 +734,30 @@ export class ArenaScene extends Phaser.Scene {
         const x = die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
         const y = die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
 
-        this.enemyGridContainer.add(this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, 0.28)
-          .setStrokeStyle(2, color));
+        const dieRect = this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, 0.28).setStrokeStyle(2, color);
+        dieRect.setData('isDie', true);
+        this.enemyGridContainer.add(dieRect);
 
-        this.enemyGridContainer.add(this.add.text(x, y - 8, definition.typeId.slice(0, 3).toUpperCase(), {
+        const label = this.add.text(x, y - 8, definition.typeId.slice(0, 3).toUpperCase(), {
           fontFamily: 'Orbitron',
           fontSize: '12px',
           color: definition.accent
-        }).setOrigin(0.5));
+        }).setOrigin(0.5);
+        label.setName('die-info');
+        this.enemyGridContainer.add(label);
 
-        const hpText = `${die.currentHealth}/${die.maxHealth}`;
-        this.enemyGridContainer.add(this.add.text(x, y + 10, hpText, {
-          fontFamily: 'Orbitron',
-          fontSize: '10px',
-          color: PALETTE.text
-        }).setOrigin(0.5));
+        this.renderHealthBar(this.enemyGridContainer, x, y + 16, die.currentHealth, die.maxHealth);
       }
     });
+    this.renderDiceStatusPanel(this.enemyStatusPanel, enemyDice, 'OPPONENT');
   }
 
   private generateEnemyPositions(): PlacedDie[] {
-    const types = ['Fire', 'Ice', 'Poison'];
+    const types = getAvailableHandDice(this.gameState, 'enemy').map((die) => die.typeId);
     const positions: PlacedDie[] = [];
     const usedCells = new Set<string>();
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < types.length; i++) {
       let row: number, col: number, key: string;
       do {
         row = Math.floor(Math.random() * 2);
@@ -718,6 +788,22 @@ export class ArenaScene extends Phaser.Scene {
         this.renderDie(this.playerGridContainer, die, die.gridPosition.row, die.gridPosition.col, true);
       }
     });
+    this.renderDiceStatusPanel(this.playerStatusPanel, playerDice, 'YOUR DICE');
+  }
+
+  private renderDiceStatusPanel(panel: Phaser.GameObjects.Container, dice: DiceInstanceState[], title: string) {
+    panel.removeAll(true);
+    panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }));
+    dice.forEach((diceUnit, index) => {
+      const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP`;
+      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : PALETTE.textMuted }));
+    });
+  }
+
+  private pickRandomEnemyLoadout(pool: DiceDefinition[]): DiceDefinition[] {
+    const targetCount = Math.max(3, Math.min(6, pool.length));
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, targetCount);
   }
 
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {
@@ -751,12 +837,41 @@ export class ArenaScene extends Phaser.Scene {
     container.add(pipLabel);
 
     const hpText = `${die.currentHealth}/${die.maxHealth}`;
-    const hpLabel = this.add.text(x, y + 18, hpText, {
+    const hpLabel = this.add.text(x, y + 24, hpText, {
       fontFamily: 'Orbitron',
-      fontSize: '9px',
+      fontSize: '8px',
       color: PALETTE.text
     }).setOrigin(0.5);
+    hpLabel.setName('die-info');
     container.add(hpLabel);
+    this.renderHealthBar(container, x, y + 16, die.currentHealth, die.maxHealth);
+    const ammo = Math.max(0, die.attacksRemaining);
+    const maxAmmo = Math.max(1, this.getPipCount(die.typeId));
+    this.renderAmmoBar(container, x + 24, y + 16, ammo, maxAmmo);
+  }
+
+  private renderHealthBar(container: Phaser.GameObjects.Container, x: number, y: number, hp: number, maxHp: number) {
+    const ratio = Phaser.Math.Clamp(maxHp > 0 ? hp / maxHp : 0, 0, 1);
+    const g = this.add.graphics();
+    g.name = 'hp-bar';
+    g.fillStyle(0x1f2f3d, 0.95);
+    g.fillRoundedRect(x - 20, y - 3, 40, 6, 2);
+    g.fillStyle(ratio > 0.5 ? 0x2ecc71 : ratio > 0.25 ? 0xf1c40f : 0xe74c3c, 1);
+    g.fillRoundedRect(x - 20, y - 3, 40 * ratio, 6, 2);
+    container.add(g);
+  }
+
+  private playTurnBanner(text: string) {
+    const { width } = this.scale;
+    const banner = this.add.text(width / 2, -80, text, {
+      fontFamily: 'Orbitron',
+      fontSize: '40px',
+      color: PALETTE.accent
+    }).setOrigin(0.5).setDepth(300);
+    this.tweens.add({ targets: banner, y: this.scale.height / 2, duration: 300, ease: 'Cubic.easeOut' });
+    this.time.delayedCall(1100, () => {
+      this.tweens.add({ targets: banner, y: this.scale.height + 80, alpha: 0, duration: 300, ease: 'Cubic.easeIn', onComplete: () => banner.destroy() });
+    });
   }
 
   private checkWinConditions(): boolean {
@@ -774,6 +889,13 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     return false;
+  }
+
+  private findRandomTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
+    const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+    const targets = getBoardDice(this.gameState, enemyOwner);
+    if (!targets.length) return undefined;
+    return targets[Math.floor(Math.random() * targets.length)];
   }
 
   private endGame(stage: 'victory' | 'defeat', message: string) {
@@ -810,6 +932,49 @@ export class ArenaScene extends Phaser.Scene {
 
     continueBtn.on('pointerover', () => continueBtn.setFillStyle(0x406987, 1));
     continueBtn.on('pointerout', () => continueBtn.setFillStyle(0x335770, 0.9));
-    continueBtn.on('pointerdown', () => this.scene.restart());
+    continueBtn.on('pointerdown', () => {
+      this.scene.wake('MenuScene');
+      this.scene.restart();
+    });
+  }
+
+  private toggleExitPrompt() {
+    if (this.exitPromptOpen) {
+      this.closeExitPrompt();
+      return;
+    }
+    this.exitPromptOpen = true;
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
+    const panel = this.add.rectangle(width / 2, height / 2, 380, 180, 0x102434, 0.98).setStrokeStyle(2, 0x406987);
+    const label = this.add.text(width / 2, height / 2 - 28, 'Quit Arena Match?', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5);
+    const hint = this.add.text(width / 2, height / 2 + 2, 'Press ESC again or Cancel to continue.', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5);
+    const cancel = this.add.text(width / 2 - 70, height / 2 + 48, 'CANCEL', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const quit = this.add.text(width / 2 + 70, height / 2 + 48, 'QUIT', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#9b2d2d', padding: { left: 12, right: 12, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    overlay.on('pointerdown', () => this.closeExitPrompt());
+    cancel.on('pointerdown', () => this.closeExitPrompt());
+    quit.on('pointerdown', () => {
+      this.scene.wake('MenuScene');
+      this.scene.start('MenuScene');
+    });
+    this.exitPromptElements = [overlay, panel, label, hint, cancel, quit];
+    this.exitPromptElements.forEach((node) => (node as any).setDepth?.(400));
+  }
+
+  private closeExitPrompt() {
+    this.exitPromptOpen = false;
+    this.exitPromptElements.forEach((node) => node.destroy());
+    this.exitPromptElements = [];
+  }
+
+  private renderAmmoBar(container: Phaser.GameObjects.Container, x: number, y: number, ammo: number, maxAmmo: number) {
+    const ratio = Phaser.Math.Clamp(maxAmmo > 0 ? ammo / maxAmmo : 0, 0, 1);
+    const g = this.add.graphics();
+    g.name = 'hp-bar';
+    g.fillStyle(0x1f2f3d, 0.95);
+    g.fillRoundedRect(x - 14, y - 3, 28, 6, 2);
+    g.fillStyle(0x6fa8ff, 1);
+    g.fillRoundedRect(x - 14, y - 3, 28 * ratio, 6, 2);
+    container.add(g);
   }
 }

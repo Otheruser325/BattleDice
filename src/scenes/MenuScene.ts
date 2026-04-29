@@ -26,7 +26,7 @@ export class MenuScene extends Phaser.Scene {
       .setTint(0x3d6f9a)
       .setAlpha(0.18);
 
-    this.add.rectangle(width / 2, height / 2, width, height, 0x051019, 0.88);
+    this.add.rectangle(width / 2, height / 2, width, height, 0x051019, 0.72);
     this.add.circle(width * 0.18, height * 0.24, 180, 0x1c4f71, 0.12);
     this.add.circle(width * 0.82, height * 0.18, 120, 0xf4b860, 0.08);
 
