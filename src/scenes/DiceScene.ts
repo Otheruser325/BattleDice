@@ -202,6 +202,18 @@ export class DiceScene extends Phaser.Scene {
         this.scene.restart();
       });
     }
+    if (assignable) {
+      assignBtn.on('pointerdown', () => {
+        const loadout = getSelectedLoadout(this);
+        const existingIndex = loadout.findIndex((entry) => entry === typeId);
+        if (existingIndex >= 0) return;
+        loadout[0] = typeId;
+        setSelectedLoadout(this, loadout);
+        closeModal();
+        onUpdate();
+        this.scene.restart();
+      });
+    }
     const closeModal = () => {
       this.modalElements.forEach((el) => el.destroy());
       this.modalElements = [];
