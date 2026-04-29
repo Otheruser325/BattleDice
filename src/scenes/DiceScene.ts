@@ -91,7 +91,7 @@ export class DiceScene extends Phaser.Scene {
       const manaLine = primarySkill?.type === 'Active' && primarySkill.manaNeeded
         ? `Mana ${primarySkill.manaNeeded}`
         : 'Passive ready';
-      this.add.text(x + 20, y + 78, `${primarySkill?.type.toUpperCase() ?? 'PASSIVE'}  |  ${manaLine}`, {
+      this.add.text(x + 20, y + 78, `${primarySkill?.type?.toUpperCase() ?? 'PASSIVE'}  |  ${manaLine}`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.accentSoft
@@ -111,10 +111,9 @@ export class DiceScene extends Phaser.Scene {
       });
 
       card.on('pointerdown', () => {
-        loadout[selectedSlot] = die.typeId;
-        setSelectedLoadout(this, loadout);
-        refreshSlots();
         this.openDiceModal(die.typeId, tokenText, () => {
+          loadout = getSelectedLoadout(this);
+          refreshSlots();
           tokens = getDiceTokens(this);
           tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
         });
@@ -150,7 +149,10 @@ export class DiceScene extends Phaser.Scene {
     const copyCost = nextClass <= 1 ? 0 : nextClass * 10;
     const canUpgrade = cls < 15 && getDiceTokens(this) >= tokenCost && progress.copies >= copyCost;
     const costText = this.add.text(width / 2, height / 2 + 55, `Class UP -> C${nextClass} | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
-    const upBtn = this.add.rectangle(width / 2, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
+    const assignable = !getSelectedLoadout(this).includes(typeId);
+    const assignBtn = this.add.rectangle(width / 2 - 110, height / 2 + 110, 180, 40, assignable ? 0x3498db : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: assignable });
+    const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, assignable ? 'ASSIGN!' : 'IN LOADOUT', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
+    const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2, height / 2 + 110, canUpgrade ? 'CLASS UP' : 'LOCKED', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const close = this.add.text(width / 2, height / 2 + 152, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     if (canUpgrade) {
@@ -162,13 +164,25 @@ export class DiceScene extends Phaser.Scene {
         this.openDiceModal(typeId, tokenText, onUpdate);
       });
     }
+    if (assignable) {
+      assignBtn.on('pointerdown', () => {
+        const loadout = getSelectedLoadout(this);
+        const existingIndex = loadout.findIndex((entry) => entry === typeId);
+        if (existingIndex >= 0) return;
+        loadout[0] = typeId;
+        setSelectedLoadout(this, loadout);
+        closeModal();
+        onUpdate();
+        this.scene.restart();
+      });
+    }
     const closeModal = () => {
       this.modalElements.forEach((el) => el.destroy());
       this.modalElements = [];
     };
     overlay.on('pointerdown', closeModal);
     close.on('pointerdown', closeModal);
-    this.modalElements = [overlay, panel, title, stats, skill, costText, upBtn, upTxt, close];
+    this.modalElements = [overlay, panel, title, stats, skill, costText, assignBtn, assignTxt, upBtn, upTxt, close];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
   }
 }

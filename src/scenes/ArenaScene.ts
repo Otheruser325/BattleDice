@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getDiceDefinitions } from '../data/dice';
+import { getDiceDefinitions, getDiceProgress } from '../data/dice';
 import {
   createMatchBattleState,
   getAvailableHandDice,
@@ -62,6 +62,7 @@ export class ArenaScene extends Phaser.Scene {
   private gridDropZones: Phaser.GameObjects.Rectangle[] = [];
   private dicePips: Map<string, number> = new Map();
   private enemyDicePips: Map<string, number> = new Map();
+  private enemyClassLevels: Map<string, number> = new Map();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
   private rollAllButtonLabel!: Phaser.GameObjects.Text;
   private diceRolled = false;
@@ -247,8 +248,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private initializeBattle() {
-    const playerDefs = getDiceDefinitions(this);
-    const enemyDefs = this.pickRandomEnemyLoadout(playerDefs);
+    const playerDefs = getDiceDefinitions(this).map((definition) => this.applyClassProgress(definition, getDiceProgress(this, definition.typeId).classLevel));
+    const enemyDefs = this.pickRandomEnemyLoadout(playerDefs).map((definition) => {
+      const classLevel = Phaser.Math.Between(1, 5);
+      this.enemyClassLevels.set(definition.typeId, classLevel);
+      return this.applyClassProgress(definition, classLevel);
+    });
     this.gameState = createMatchBattleState(playerDefs, enemyDefs);
 
     const enemyPositions = this.generateEnemyPositions();
@@ -266,6 +271,13 @@ export class ArenaScene extends Phaser.Scene {
     this.updateCombatButtonState();
 
     this.debug.log('Battle initialized', { turn: this.gameState.turn });
+  }
+  private applyClassProgress(definition: DiceDefinition, classLevel: number): DiceDefinition {
+    return {
+      ...definition,
+      attack: definition.attack + (classLevel - 1) * 2,
+      health: definition.health + (classLevel - 1) * 8
+    };
   }
 
   private createHandArea() {
@@ -609,9 +621,13 @@ export class ArenaScene extends Phaser.Scene {
           ? this.findRandomTarget(attacker)
           : findAttackTarget(this.gameState, attacker, this.definitions);
         if (!target) {
-          this.combatLog.setText(`${ownerName} ${attacker.typeId} has no target!`);
+          this.gameState = {
+            ...this.gameState,
+            dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: 0, hasFinishedAttacking: true } : die)
+          };
+          this.combatLog.setText(`${ownerName} ${attacker.typeId} is out of range and skips!`);
           await this.delay(500);
-          break;
+          continue;
         }
 
         const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
@@ -721,7 +737,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyGridContainer.each((child: Phaser.GameObjects.GameObject) => {
       if (child instanceof Phaser.GameObjects.Rectangle && child.getData('isDie')) childrenToRemove.push(child);
       if (child instanceof Phaser.GameObjects.Text && child.name === 'die-info') childrenToRemove.push(child);
-      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar')) childrenToRemove.push(child);
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar')) childrenToRemove.push(child);
     });
     childrenToRemove.forEach((child) => child.destroy());
 
@@ -739,7 +755,8 @@ export class ArenaScene extends Phaser.Scene {
         dieRect.setData('isDie', true);
         this.enemyGridContainer.add(dieRect);
 
-        const label = this.add.text(x, y - 8, definition.typeId.slice(0, 3).toUpperCase(), {
+    const classLevel = die.ownerId === 'player' ? getDiceProgress(this, die.typeId).classLevel : (this.enemyClassLevels.get(die.typeId) ?? 1);
+    const label = this.add.text(x, y - 8, `${definition.typeId.slice(0, 3).toUpperCase()} ${classLevel}♦`, {
           fontFamily: 'Orbitron',
           fontSize: '12px',
           color: definition.accent
@@ -783,7 +800,7 @@ export class ArenaScene extends Phaser.Scene {
       if (child instanceof Phaser.GameObjects.Text && child.name !== '') {
         childrenToRemove.push(child);
       }
-      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar')) {
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar')) {
         childrenToRemove.push(child);
       }
     });
@@ -856,7 +873,8 @@ export class ArenaScene extends Phaser.Scene {
     this.renderHealthBar(container, x, y + 16, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
     const maxAmmo = Math.max(1, this.getPipCount(die.typeId));
-    this.renderAmmoBar(container, x + 24, y + 16, ammo, maxAmmo);
+    this.renderAmmoBar(container, x + 22, y + 16, ammo, maxAmmo);
+    this.renderManaBar(container, x + 22, y + 24, maxAmmo - ammo, maxAmmo);
   }
 
   private renderHealthBar(container: Phaser.GameObjects.Container, x: number, y: number, hp: number, maxHp: number) {
@@ -980,7 +998,16 @@ export class ArenaScene extends Phaser.Scene {
     const ratio = Phaser.Math.Clamp(maxAmmo > 0 ? ammo / maxAmmo : 0, 0, 1);
     const g = this.add.graphics();
     g.name = 'ammo-bar';
-    g.name = 'hp-bar';
+    g.fillStyle(0x1f2f3d, 0.95);
+    g.fillRoundedRect(x - 14, y - 3, 28, 6, 2);
+    g.fillStyle(0x6fa8ff, 1);
+    g.fillRoundedRect(x - 14 + (28 * (1 - ratio)), y - 3, 28 * ratio, 6, 2);
+    container.add(g);
+  }
+  private renderManaBar(container: Phaser.GameObjects.Container, x: number, y: number, mana: number, maxMana: number) {
+    const ratio = Phaser.Math.Clamp(maxMana > 0 ? mana / maxMana : 0, 0, 1);
+    const g = this.add.graphics();
+    g.name = 'mana-bar';
     g.fillStyle(0x1f2f3d, 0.95);
     g.fillRoundedRect(x - 14, y - 3, 28, 6, 2);
     g.fillStyle(0x6fa8ff, 1);
@@ -1005,29 +1032,5 @@ export class ArenaScene extends Phaser.Scene {
       usedCells.add(key);
       this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
     });
-  private toggleExitPrompt() {
-    if (this.exitPromptOpen) {
-      this.closeExitPrompt();
-      return;
-    }
-    this.exitPromptOpen = true;
-    const { width, height } = this.scale;
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 380, 180, 0x102434, 0.98).setStrokeStyle(2, 0x406987);
-    const label = this.add.text(width / 2, height / 2 - 28, 'Quit Arena Match?', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5);
-    const hint = this.add.text(width / 2, height / 2 + 2, 'Press ESC again or Cancel to continue.', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5);
-    const cancel = this.add.text(width / 2 - 70, height / 2 + 48, 'CANCEL', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const quit = this.add.text(width / 2 + 70, height / 2 + 48, 'QUIT', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#9b2d2d', padding: { left: 12, right: 12, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    overlay.on('pointerdown', () => this.closeExitPrompt());
-    cancel.on('pointerdown', () => this.closeExitPrompt());
-    quit.on('pointerdown', () => this.scene.start('MenuScene'));
-    this.exitPromptElements = [overlay, panel, label, hint, cancel, quit];
-    this.exitPromptElements.forEach((node) => (node as any).setDepth?.(400));
-  }
-
-  private closeExitPrompt() {
-    this.exitPromptOpen = false;
-    this.exitPromptElements.forEach((node) => node.destroy());
-    this.exitPromptElements = [];
   }
 }
