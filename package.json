@@ -1,0 +1,20 @@
+{
+  "name": "battle-dice-autoroller",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "bundle:playtest": "esbuild src/main.ts --bundle --format=esm --platform=browser --outfile=main.js --sourcemap && npm run copy:gamedata",
+    "copy:gamedata": "node -e \"const fs=require('fs'),path=require('path');function copy(src,dst){fs.cpSync(src,dst,{recursive:true,force:true})}copy('public/gamedata','gamedata')\"",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "phaser": "3.88.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}

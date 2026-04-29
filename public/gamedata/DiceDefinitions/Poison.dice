@@ -1,0 +1,21 @@
+{
+  "typeId": "Poison",
+  "title": "Poison Dice",
+  "attack": 10,
+  "health": 80,
+  "range": 4,
+  "rangeLabel": "Long",
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Toxic Mark",
+      "description": "The targeted foe takes 10 poison damage per turn for 2 turns.",
+      "manaNeeded": 5,
+      "modifiers": {
+        "durationTurns": 2,
+        "notes": ["Applies 10 poison damage per turn."]
+      }
+    }
+  ],
+  "accent": "#86d68f"
+}

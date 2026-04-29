@@ -1,0 +1,54 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background:
+        radial-gradient(circle at top, rgba(35, 81, 120, 0.35), transparent 40%),
+        linear-gradient(180deg, #071018 0%, #0c1722 40%, #09111a 100%);
+    font-family: 'Orbitron', Arial, sans-serif;
+    overflow: hidden;
+    color: #f6f1dc;
+}
+
+@font-face {
+    font-family: 'Orbitron';
+    src: url('/assets/fonts/Orbitron-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Orbitron';
+    src: url('/assets/fonts/Orbitron-SemiBold.ttf') format('truetype');
+    font-weight: 600;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Orbitron';
+    src: url('/assets/fonts/Orbitron-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+}
+
+body {
+    display: grid;
+    place-items: center;
+}
+
+#game-container {
+    width: 100vw;
+    height: 100vh;
+}
+
+canvas {
+    display: block;
+    position: relative;
+    margin: 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 18px 50px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.03);
+    border-radius: 24px;
+}
