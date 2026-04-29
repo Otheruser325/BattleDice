@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getDiceDefinitions, getPrimarySkill } from '../data/dice';
+import { getDiceDefinitions, getPrimarySkill, getRangeLabel } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 
@@ -33,7 +33,7 @@ export class DiceScene extends Phaser.Scene {
         color: die.accent
       });
 
-      this.add.text(x + 20, y + 52, `ATK ${die.attack}   |   HP ${die.health}   |   RANGE ${die.range} (${die.rangeLabel})`, {
+      this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}   |   HP ${die.health}   |   RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.text

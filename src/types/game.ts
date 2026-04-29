@@ -1,5 +1,6 @@
 export type DiceTypeId = string;
-export type DiceSkillType = 'Passive' | 'Active';
+export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd';
+export type DiceRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
 
 export interface DiceSkillModifier {
   attackDelta?: number;
@@ -27,6 +28,7 @@ export interface DiceDefinition {
   health: number;
   range: number;
   rangeLabel: string;
+  rarity: DiceRarity;
   skills: DiceSkillDefinition[];
   accent: string;
 }

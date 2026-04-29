@@ -13,9 +13,12 @@
       "manaNeeded": 5,
       "modifiers": {
         "durationTurns": 2,
-        "notes": ["Applies 10 poison damage per turn."]
+        "notes": [
+          "Applies 10 poison damage per turn."
+        ]
       }
     }
   ],
-  "accent": "#86d68f"
+  "accent": "#86d68f",
+  "rarity": "Common"
 }

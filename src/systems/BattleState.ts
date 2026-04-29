@@ -241,35 +241,27 @@ export function executeAttack(
   let newState = spendAttack(state, attackerId);
   newState = applyDamage(newState, targetId, damage);
 
-  const updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
+  let updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
+  if (updatedTarget?.isDestroyed && updatedTarget.typeId === 'Skull' && Math.random() < 0.5) {
+    newState = {
+      ...newState,
+      dice: newState.dice.map((die) => (
+        die.instanceId === targetId
+          ? {
+              ...die,
+              isDestroyed: false,
+              zone: 'board',
+              currentHealth: Math.max(1, Math.floor(die.maxHealth * 0.5))
+            }
+          : die
+      ))
+    };
+    updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
+  }
 
   return {
     newState,
     damage,
     targetDestroyed: updatedTarget?.isDestroyed ?? false
-  };
-}
-
-export function beginCombatPhaseWithPips(state: MatchBattleState): MatchBattleState {
-  return {
-    ...state,
-    combatPhase: 'attacking',
-    dice: state.dice.map((die) => {
-      if (die.zone !== 'board' || die.isDestroyed) {
-        return die;
-      }
-
-      const pips = die.instanceId.includes('Fire') ? 3 :
-                   die.instanceId.includes('Ice') ? 2 :
-                   die.instanceId.includes('Poison') ? 1 :
-                   die.instanceId.includes('Wind') ? 1 :
-                   die.instanceId.includes('Lightning') ? 3 : 2;
-
-      return {
-        ...die,
-        hasFinishedAttacking: false,
-        attacksRemaining: pips
-      };
-    })
   };
 }
