@@ -9,6 +9,7 @@ const DICE_FLAGS_PATHS = [
 
 function getDefinitionPath(typeId: string) {
   return `gamedata/DiceDefinitions/${typeId}.dice`;
+  return `/gamedata/DiceDefinitions/${typeId}.dice`;
 }
 
 export class DiceCatalogLoader {

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { getAllDiceDefinitions, getPrimarySkill, getRangeLabel, getSelectedLoadout, setSelectedLoadout } from '../data/dice';
+import { getDiceDefinitions, getPrimarySkill, getRangeLabel } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 
