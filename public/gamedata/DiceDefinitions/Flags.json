@@ -1,3 +1,12 @@
 {
-  "fetchableTypeIds": ["Fire", "Ice", "Poison", "Lightning", "Wind"]
+  "fetchableTypeIds": [
+    "Fire",
+    "Ice",
+    "Poison",
+    "Lightning",
+    "Wind",
+    "Broken",
+    "Light",
+    "Skull"
+  ]
 }
