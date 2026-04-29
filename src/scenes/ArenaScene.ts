@@ -537,9 +537,9 @@ export class ArenaScene extends Phaser.Scene {
   private createCombatUI() {
     const { width, height } = this.scale;
     const centerX = width / 2;
-    const buttonY = height - 100;
+    const buttonY = height - 145;
 
-    this.combatLog = this.add.text(centerX, buttonY - 40, 'Place your dice, then start combat!', {
+    this.combatLog = this.add.text(centerX, buttonY - 70, 'Place your dice, then start combat!', {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: PALETTE.textMuted

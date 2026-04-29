@@ -212,7 +212,9 @@ export function findAttackTarget(
   if (!attackerPos) return undefined;
   const reachable = enemyDice
     .map((die) => {
-      const distance = Math.abs(die.gridPosition.row - attackerPos.row) + Math.abs(die.gridPosition.col - attackerPos.col);
+      const rowDelta = Math.abs(die.gridPosition.row - attackerPos.row);
+      const colDelta = Math.abs(die.gridPosition.col - attackerPos.col);
+      const distance = Math.max(rowDelta, colDelta);
       return { die, distance };
     })
     .filter(({ distance }) => distance <= Math.max(1, attackerDef.range))

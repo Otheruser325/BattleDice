@@ -25,6 +25,7 @@ export class DiceScene extends Phaser.Scene {
     4: { Common: 300, Uncommon: 450, Rare: 800, Epic: 1500, Legendary: 3000 },
     5: { Common: 500, Uncommon: 750, Rare: 1500, Epic: 3000, Legendary: 6000 }
   };
+  private cardScrollOffset = 0;
 
   constructor() {
     super(DiceScene.KEY);
@@ -64,24 +65,28 @@ export class DiceScene extends Phaser.Scene {
     };
     refreshSlots();
 
+    const cardsContainer = this.add.container(0, 0);
+    const cardsTopY = panel.y + 160;
+    const cardPitch = 210;
+
     definitions.forEach((die, index) => {
       const col = index % 3;
       const row = Math.floor(index / 3);
       const x = panel.x + 28 + col * 360;
-      const y = panel.y + 160 + row * 210;
+      const y = cardsTopY + row * cardPitch;
       const accent = Phaser.Display.Color.HexStringToColor(die.accent).color;
 
       const card = this.add.rectangle(x + 160, y + 84, 320, 176, 0x173247, 0.98).setInteractive({ useHandCursor: true })
         .setStrokeStyle(2, accent);
-      this.add.rectangle(x + 160, y + 22, 320, 42, accent, 0.18);
+      const header = this.add.rectangle(x + 160, y + 22, 320, 42, accent, 0.18);
 
-      this.add.text(x + 20, y + 10, die.title.toUpperCase(), {
+      const title = this.add.text(x + 20, y + 10, die.title.toUpperCase(), {
         fontFamily: 'Orbitron',
         fontSize: '20px',
         color: die.accent
       });
 
-      this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}   |   HP ${die.health}   |   RANGE ${die.range} (${getRangeLabel(die.range)})`, {
+      const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}   |   HP ${die.health}   |   RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.text
@@ -91,19 +96,19 @@ export class DiceScene extends Phaser.Scene {
       const manaLine = primarySkill?.type === 'Active' && primarySkill.manaNeeded
         ? `Mana ${primarySkill.manaNeeded}`
         : 'Passive ready';
-      this.add.text(x + 20, y + 78, `${primarySkill?.type?.toUpperCase() ?? 'PASSIVE'}  |  ${manaLine}`, {
+      const skillTypeLine = this.add.text(x + 20, y + 78, `${primarySkill?.type?.toUpperCase() ?? 'PASSIVE'}  |  ${manaLine}`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.accentSoft
       });
 
-      this.add.text(x + 20, y + 106, primarySkill?.title ?? 'No skill', {
+      const skillTitle = this.add.text(x + 20, y + 106, primarySkill?.title ?? 'No skill', {
         fontFamily: 'Orbitron',
         fontSize: '14px',
         color: PALETTE.text
       });
 
-      this.add.text(x + 20, y + 130, primarySkill?.description ?? '', {
+      const skillDesc = this.add.text(x + 20, y + 130, primarySkill?.description ?? '', {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.textMuted,
@@ -116,10 +121,31 @@ export class DiceScene extends Phaser.Scene {
           refreshSlots();
           tokens = getDiceTokens(this);
           tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
-        });
+        }, selectedSlot);
       });
       card.on('pointerover', () => card.setFillStyle(0x1f3e56, 1));
       card.on('pointerout', () => card.setFillStyle(0x173247, 0.98));
+
+      cardsContainer.add([card, header, title, statLine, skillTypeLine, skillTitle, skillDesc]);
+    });
+
+    const viewTop = panel.y + 150;
+    const viewHeight = panel.height - 230;
+    const maskGraphics = this.add.graphics();
+    maskGraphics.fillStyle(0xffffff, 1);
+    maskGraphics.fillRect(panel.x + 12, viewTop, panel.width - 24, viewHeight);
+    cardsContainer.setMask(maskGraphics.createGeometryMask());
+
+    const totalRows = Math.ceil(definitions.length / 3);
+    const contentHeight = totalRows * cardPitch;
+    const maxScroll = Math.max(0, contentHeight - viewHeight + 24);
+
+    this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      const withinX = pointer.worldX >= panel.x + 12 && pointer.worldX <= panel.right - 12;
+      const withinY = pointer.worldY >= viewTop && pointer.worldY <= viewTop + viewHeight;
+      if (!withinX || !withinY) return;
+      this.cardScrollOffset = Phaser.Math.Clamp(this.cardScrollOffset - dy * 0.35, -maxScroll, 0);
+      cardsContainer.y = this.cardScrollOffset;
     });
 
     this.input.keyboard?.on('keydown-TAB', (event: KeyboardEvent) => {
@@ -129,7 +155,7 @@ export class DiceScene extends Phaser.Scene {
     });
   }
 
-  private openDiceModal(typeId: string, tokenText: Phaser.GameObjects.Text, onUpdate: () => void) {
+  private openDiceModal(typeId: string, tokenText: Phaser.GameObjects.Text, onUpdate: () => void, selectedSlot: number) {
     this.modalElements.forEach((el) => el.destroy());
     this.modalElements = [];
     const die = getAllDiceDefinitions(this).find((definition) => definition.typeId === typeId);
@@ -161,7 +187,19 @@ export class DiceScene extends Phaser.Scene {
         setDiceProgress(this, typeId, { classLevel: cls + 1, copies: progress.copies - copyCost });
         tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click cards to assign selected slot`);
         onUpdate();
-        this.openDiceModal(typeId, tokenText, onUpdate);
+        this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot);
+      });
+    }
+    if (assignable) {
+      assignBtn.on('pointerdown', () => {
+        const loadout = getSelectedLoadout(this);
+        const existingIndex = loadout.findIndex((entry) => entry === typeId);
+        if (existingIndex >= 0) return;
+        loadout[selectedSlot] = typeId;
+        setSelectedLoadout(this, loadout);
+        closeModal();
+        onUpdate();
+        this.scene.restart();
       });
     }
     if (assignable) {
