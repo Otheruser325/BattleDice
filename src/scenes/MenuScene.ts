@@ -115,6 +115,7 @@ export class MenuScene extends Phaser.Scene {
 
   private refreshTabs() {
     this.tabButtons.forEach(({ tab, label, chip }) => {
+      if (!label?.scene || !chip?.scene) return;
       const active = tab.sceneKey === this.activeSceneKey;
       label.setColor(active ? PALETTE.text : PALETTE.textMuted);
       chip.setColor(active ? '#0b1520' : PALETTE.textMuted);
