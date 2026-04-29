@@ -160,6 +160,7 @@ export class ArenaScene extends Phaser.Scene {
       duration: 320,
       ease: 'Cubic.easeIn',
       onComplete: () => {
+        this.scene.sleep('MenuScene');
         this.uiContainer.destroy();
         this.createGameUI();
         this.initializeBattle();
@@ -844,6 +845,9 @@ export class ArenaScene extends Phaser.Scene {
     hpLabel.setName('die-info');
     container.add(hpLabel);
     this.renderHealthBar(container, x, y + 16, die.currentHealth, die.maxHealth);
+    const ammo = Math.max(0, die.attacksRemaining);
+    const maxAmmo = Math.max(1, this.getPipCount(die.typeId));
+    this.renderAmmoBar(container, x + 24, y + 16, ammo, maxAmmo);
   }
 
   private renderHealthBar(container: Phaser.GameObjects.Container, x: number, y: number, hp: number, maxHp: number) {
@@ -928,7 +932,50 @@ export class ArenaScene extends Phaser.Scene {
 
     continueBtn.on('pointerover', () => continueBtn.setFillStyle(0x406987, 1));
     continueBtn.on('pointerout', () => continueBtn.setFillStyle(0x335770, 0.9));
-    continueBtn.on('pointerdown', () => this.scene.restart());
+    continueBtn.on('pointerdown', () => {
+      this.scene.wake('MenuScene');
+      this.scene.restart();
+    });
+  }
+
+  private toggleExitPrompt() {
+    if (this.exitPromptOpen) {
+      this.closeExitPrompt();
+      return;
+    }
+    this.exitPromptOpen = true;
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
+    const panel = this.add.rectangle(width / 2, height / 2, 380, 180, 0x102434, 0.98).setStrokeStyle(2, 0x406987);
+    const label = this.add.text(width / 2, height / 2 - 28, 'Quit Arena Match?', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5);
+    const hint = this.add.text(width / 2, height / 2 + 2, 'Press ESC again or Cancel to continue.', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5);
+    const cancel = this.add.text(width / 2 - 70, height / 2 + 48, 'CANCEL', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const quit = this.add.text(width / 2 + 70, height / 2 + 48, 'QUIT', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#9b2d2d', padding: { left: 12, right: 12, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    overlay.on('pointerdown', () => this.closeExitPrompt());
+    cancel.on('pointerdown', () => this.closeExitPrompt());
+    quit.on('pointerdown', () => {
+      this.scene.wake('MenuScene');
+      this.scene.start('MenuScene');
+    });
+    this.exitPromptElements = [overlay, panel, label, hint, cancel, quit];
+    this.exitPromptElements.forEach((node) => (node as any).setDepth?.(400));
+  }
+
+  private closeExitPrompt() {
+    this.exitPromptOpen = false;
+    this.exitPromptElements.forEach((node) => node.destroy());
+    this.exitPromptElements = [];
+  }
+
+  private renderAmmoBar(container: Phaser.GameObjects.Container, x: number, y: number, ammo: number, maxAmmo: number) {
+    const ratio = Phaser.Math.Clamp(maxAmmo > 0 ? ammo / maxAmmo : 0, 0, 1);
+    const g = this.add.graphics();
+    g.name = 'hp-bar';
+    g.fillStyle(0x1f2f3d, 0.95);
+    g.fillRoundedRect(x - 14, y - 3, 28, 6, 2);
+    g.fillStyle(0x6fa8ff, 1);
+    g.fillRoundedRect(x - 14, y - 3, 28 * ratio, 6, 2);
+    container.add(g);
   }
 
   private toggleExitPrompt() {
