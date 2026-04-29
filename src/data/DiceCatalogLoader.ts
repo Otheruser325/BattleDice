@@ -6,8 +6,7 @@ import { DebugManager } from '../utils/DebugManager';
 const DICE_FLAGS_PATH = '/gamedata/DiceDefinitions/Flags.json';
 
 function getDefinitionPath(typeId: string) {
-  const capitalized = typeId.charAt(0).toUpperCase() + typeId.slice(1);
-  return `/gamedata/DiceDefinitions/${capitalized}.dice`;
+  return `/gamedata/DiceDefinitions/${typeId}.dice`;
 }
 
 export class DiceCatalogLoader {
@@ -23,7 +22,11 @@ export class DiceCatalogLoader {
       throw new Error('Dice Flags.json is missing or malformed.');
     }
 
-    const fetchableTypeIds = [...new Set(flags.fetchableTypeIds)];
+    const fetchableTypeIds = [...new Set(flags.fetchableTypeIds)]
+      .filter((typeId): typeId is string => typeof typeId === 'string')
+      .map((typeId) => typeId.trim())
+      .filter((typeId) => /^[A-Za-z][A-Za-z0-9_-]{1,31}$/.test(typeId))
+      .slice(0, 32);
     debug.log('Loading dice definitions from flags.', { fetchableTypeIds });
 
     await new Promise<void>((resolve, reject) => {

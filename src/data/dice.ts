@@ -29,6 +29,14 @@ export function getDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
   });
 }
 
+export function getRangeLabel(range: number): string {
+  if (range <= 0) return 'None';
+  if (range <= 2) return 'Small';
+  if (range <= 4) return 'Medium';
+  if (range <= 6) return 'Long';
+  return 'Very Long';
+}
+
 export function isTypeIdFetchable(scene: Phaser.Scene, typeId: DiceTypeId): boolean {
   return getDiceFlags(scene).fetchableTypeIds.includes(typeId);
 }
