@@ -1005,29 +1005,5 @@ export class ArenaScene extends Phaser.Scene {
       usedCells.add(key);
       this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
     });
-  private toggleExitPrompt() {
-    if (this.exitPromptOpen) {
-      this.closeExitPrompt();
-      return;
-    }
-    this.exitPromptOpen = true;
-    const { width, height } = this.scale;
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 380, 180, 0x102434, 0.98).setStrokeStyle(2, 0x406987);
-    const label = this.add.text(width / 2, height / 2 - 28, 'Quit Arena Match?', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5);
-    const hint = this.add.text(width / 2, height / 2 + 2, 'Press ESC again or Cancel to continue.', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5);
-    const cancel = this.add.text(width / 2 - 70, height / 2 + 48, 'CANCEL', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const quit = this.add.text(width / 2 + 70, height / 2 + 48, 'QUIT', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#9b2d2d', padding: { left: 12, right: 12, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    overlay.on('pointerdown', () => this.closeExitPrompt());
-    cancel.on('pointerdown', () => this.closeExitPrompt());
-    quit.on('pointerdown', () => this.scene.start('MenuScene'));
-    this.exitPromptElements = [overlay, panel, label, hint, cancel, quit];
-    this.exitPromptElements.forEach((node) => (node as any).setDepth?.(400));
-  }
-
-  private closeExitPrompt() {
-    this.exitPromptOpen = false;
-    this.exitPromptElements.forEach((node) => node.destroy());
-    this.exitPromptElements = [];
   }
 }

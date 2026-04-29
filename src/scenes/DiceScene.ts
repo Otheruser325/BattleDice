@@ -91,7 +91,7 @@ export class DiceScene extends Phaser.Scene {
       const manaLine = primarySkill?.type === 'Active' && primarySkill.manaNeeded
         ? `Mana ${primarySkill.manaNeeded}`
         : 'Passive ready';
-      this.add.text(x + 20, y + 78, `${primarySkill?.type.toUpperCase() ?? 'PASSIVE'}  |  ${manaLine}`, {
+      this.add.text(x + 20, y + 78, `${primarySkill?.type?.toUpperCase() ?? 'PASSIVE'}  |  ${manaLine}`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.accentSoft
