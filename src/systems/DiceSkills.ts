@@ -14,6 +14,8 @@ export interface DiceSkillRuntimeMeta {
   activeAttackDelta?: number;
   activeDurationTurns?: number;
   poisonDamage?: number;
+  onKillExtraAttacks?: number;
+  onDeathExtraAttacks?: number;
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
@@ -38,7 +40,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     activeExtraAttacks: primary?.type === 'Active' ? (modifiers?.extraAttacks ?? 0) : 0,
     activeAttackDelta: primary?.type === 'Active' ? (modifiers?.attackDelta ?? 0) : 0,
     activeDurationTurns: primary?.type === 'Active' ? (modifiers?.durationTurns ?? 0) : 0,
-    poisonDamage: (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage
+    poisonDamage: (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
+    onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
+    onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0
   };
 }
 

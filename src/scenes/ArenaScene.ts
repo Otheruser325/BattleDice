@@ -278,8 +278,11 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private initializeBattle() {
-    const playerDefs = getDiceDefinitions(this).map((definition) => this.applyClassProgress(definition, getDiceProgress(this, definition.typeId).classLevel));
-    const enemyDefs = this.pickRandomEnemyLoadout(playerDefs).map((definition) => {
+    const allDefinitions = getDiceDefinitions(this);
+    const playerDefs = allDefinitions
+      .filter((definition) => DEFAULT_PLAYER_LOADOUT.includes(definition.typeId))
+      .map((definition) => this.applyClassProgress(definition, getDiceProgress(this, definition.typeId).classLevel));
+    const enemyDefs = this.pickRandomEnemyLoadout(allDefinitions, new Set(playerDefs.map((die) => die.typeId))).map((definition) => {
       const classLevel = Phaser.Math.Between(1, 5);
       this.enemyClassLevels.set(definition.typeId, classLevel);
       return this.applyClassProgress(definition, classLevel);
@@ -690,6 +693,10 @@ export class ArenaScene extends Phaser.Scene {
         const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
         this.gameState = result.newState;
         this.applyOnHitSkillEffects(attacker, target);
+        if (result.targetDestroyed) {
+          this.applyOnKillSkillEffects(attacker);
+          this.applyOnDeathSkillEffects(target);
+        }
 
         this.combatLog.setText(
           `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${result.damage} damage!${result.targetDestroyed ? ' DESTROYED!' : ''}`
@@ -981,10 +988,37 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  private pickRandomEnemyLoadout(pool: DiceDefinition[]): DiceDefinition[] {
-    const targetCount = Math.max(3, Math.min(6, pool.length));
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  private pickRandomEnemyLoadout(pool: DiceDefinition[], excludeTypes: Set<string>): DiceDefinition[] {
+    const available = pool.filter((definition) => !excludeTypes.has(definition.typeId));
+    const source = available.length >= 3 ? available : pool;
+    const targetCount = Math.max(3, Math.min(6, source.length));
+    const shuffled = [...source].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, targetCount);
+  }
+
+  private applyOnKillSkillEffects(attacker: DiceInstanceState) {
+    const definition = this.definitions.get(attacker.typeId);
+    if (!definition) return;
+    const bonus = getRuntimeSkillMeta(definition).onKillExtraAttacks ?? 0;
+    if (bonus <= 0) return;
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
+    };
+  }
+
+  private applyOnDeathSkillEffects(defeated: DiceInstanceState) {
+    const definition = this.definitions.get(defeated.typeId);
+    if (!definition) return;
+    const bonus = getRuntimeSkillMeta(definition).onDeathExtraAttacks ?? 0;
+    if (bonus <= 0) return;
+    const allyOwner = defeated.ownerId;
+    const ally = getBoardDice(this.gameState, allyOwner).find((die) => die.instanceId !== defeated.instanceId);
+    if (!ally) return;
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => die.instanceId === ally.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
+    };
   }
 
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {

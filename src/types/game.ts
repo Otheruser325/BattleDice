@@ -1,5 +1,5 @@
 export type DiceTypeId = string;
-export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd';
+export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDeath';
 export type DiceRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
 export type DiceTargetingMode = 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
 
