@@ -4,7 +4,6 @@
   "attack": 6,
   "health": 120,
   "range": 3,
-  "rangeLabel": "Small",
   "rarity": "Rare",
   "skills": [
     {
@@ -16,5 +15,6 @@
       }
     }
   ],
-  "accent": "#f9e27d"
+  "accent": "#f9e27d",
+  "targetingMode": "Nearest"
 }

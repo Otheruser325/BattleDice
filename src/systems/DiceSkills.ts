@@ -8,12 +8,15 @@ export interface DiceSkillRuntimeMeta {
   reviveChance?: number;
   combatStartExtraAttacks?: number;
   combatEndExtraAttacks?: number;
-  hasRandomTargeting?: boolean;
+  targetingMode?: 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
   activeManaNeeded?: number;
   activeExtraAttacks?: number;
   activeAttackDelta?: number;
   activeDurationTurns?: number;
   poisonDamage?: number;
+  onKillExtraAttacks?: number;
+  onDeathExtraAttacks?: number;
+  distanceDamageBonusPerTile?: number;
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
@@ -33,12 +36,15 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     reviveChance,
     combatStartExtraAttacks: primary?.type === 'CombatStart' ? (modifiers?.extraAttacks ?? 0) : 0,
     combatEndExtraAttacks: primary?.type === 'CombatEnd' ? (modifiers?.extraAttacks ?? 0) : 0,
-    hasRandomTargeting: primary?.title.toLowerCase().includes('random') || primary?.description.toLowerCase().includes('random') || definition.typeId === 'Broken',
+    targetingMode: definition.targetingMode,
     activeManaNeeded: primary?.type === 'Active' ? (primary.manaNeeded ?? 0) : 0,
     activeExtraAttacks: primary?.type === 'Active' ? (modifiers?.extraAttacks ?? 0) : 0,
     activeAttackDelta: primary?.type === 'Active' ? (modifiers?.attackDelta ?? 0) : 0,
     activeDurationTurns: primary?.type === 'Active' ? (modifiers?.durationTurns ?? 0) : 0,
-    poisonDamage: (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage
+    poisonDamage: (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
+    onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
+    onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
+    distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile
   };
 }
 
@@ -57,6 +63,12 @@ export function resolveDamage(
   }
   if (meta.targetMaxHpBonusRate) {
     damage += Math.floor(target.maxHealth * meta.targetMaxHpBonusRate);
+  }
+  if (meta.distanceDamageBonusPerTile && attacker.gridPosition && target.gridPosition) {
+    const rowDelta = Math.abs(target.gridPosition.row - attacker.gridPosition.row) + 5;
+    const colDelta = Math.abs(target.gridPosition.col - attacker.gridPosition.col);
+    const distance = Math.max(rowDelta, colDelta);
+    damage += distance * meta.distanceDamageBonusPerTile;
   }
   return damage;
 }
