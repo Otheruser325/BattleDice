@@ -2,7 +2,7 @@
   "typeId": "Broken",
   "title": "Broken Dice",
   "attack": 15,
-  "health": 60,
+  "health": 120,
   "range": 5,
   "rangeLabel": "Long",
   "rarity": "Uncommon",
