@@ -3,7 +3,7 @@
   "title": "Iron Dice",
   "attack": 14,
   "health": 200,
-  "range": 3,
+  "range": 4,
   "rangeLabel": "Medium",
   "rarity": "Uncommon",
   "skills": [

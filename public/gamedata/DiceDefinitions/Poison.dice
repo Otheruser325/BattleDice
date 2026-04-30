@@ -3,8 +3,8 @@
   "title": "Poison Dice",
   "attack": 10,
   "health": 160,
-  "range": 4,
-  "rangeLabel": "Long",
+  "range": 5,
+  "rangeLabel": "Medium",
   "skills": [
     {
       "type": "Active",

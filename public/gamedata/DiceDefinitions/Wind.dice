@@ -3,7 +3,7 @@
   "title": "Wind Dice",
   "attack": 10,
   "health": 120,
-  "range": 5,
+  "range": 6,
   "rangeLabel": "Long",
   "skills": [
     {

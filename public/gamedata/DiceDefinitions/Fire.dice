@@ -3,7 +3,7 @@
   "title": "Fire Dice",
   "attack": 12,
   "health": 200,
-  "range": 3,
+  "range": 4,
   "rangeLabel": "Mid",
   "skills": [
     {
