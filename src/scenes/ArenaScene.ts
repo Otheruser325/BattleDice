@@ -30,7 +30,7 @@ interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | 'victory' | 'defeat';
 }
 
-const DEFAULT_PLAYER_LOADOUT: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Lightning', 'Wind'];
+const DEFAULT_PLAYER_LOADOUT: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'];
 
 const GRID_SIZE = 5;
 const TILE_SIZE = 64;
@@ -69,6 +69,7 @@ export class ArenaScene extends Phaser.Scene {
   private manaByInstance: Map<string, number> = new Map();
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
+  private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private poisonByInstance: Map<string, { damage: number; turns: number }> = new Map();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
   private rollAllButtonLabel!: Phaser.GameObjects.Text;
@@ -433,6 +434,7 @@ export class ArenaScene extends Phaser.Scene {
     switch (typeId) {
       case 'Fire': return 3;
       case 'Lightning': return 3;
+      case 'Electric': return 3;
       case 'Ice': return 2;
       case 'Poison': return 1;
       case 'Wind': return 1;
@@ -563,8 +565,12 @@ export class ArenaScene extends Phaser.Scene {
       color: '#ffffff'
     }).setOrigin(0.5);
 
-    this.startCombatButton.on('pointerover', () => this.startCombatButton.setFillStyle(0xc0392b, 1));
-    this.startCombatButton.on('pointerout', () => this.startCombatButton.setFillStyle(0xe74c3c, 0.9));
+    this.startCombatButton.on('pointerover', () => {
+      if (this.startCombatButton.input?.enabled) this.startCombatButton.setFillStyle(0xc0392b, 1);
+    });
+    this.startCombatButton.on('pointerout', () => {
+      if (this.startCombatButton.input?.enabled) this.startCombatButton.setFillStyle(0xe74c3c, 0.9);
+    });
     this.startCombatButton.on('pointerdown', () => this.startCombat());
   }
 
@@ -625,13 +631,15 @@ export class ArenaScene extends Phaser.Scene {
         const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
         const debuff = this.attackDeltaByInstance.get(die.instanceId);
         const buff = this.extraAttackTurnsByInstance.get(die.instanceId);
+        const mult = this.attackMultiplierTurnsByInstance.get(die.instanceId);
         const withDebuff = debuff ? Math.max(1, pips + debuff.delta) : pips;
         const withBuff = buff ? withDebuff + buff.extra : withDebuff;
+        const withMultiplier = mult ? Math.max(1, Math.floor(withBuff * mult.multiplier)) : withBuff;
 
         return {
           ...die,
           hasFinishedAttacking: false,
-          attacksRemaining: withBuff
+          attacksRemaining: withMultiplier
         };
       })
     };
@@ -716,7 +724,11 @@ export class ArenaScene extends Phaser.Scene {
         this.poisonByInstance.set(target.instanceId, { damage: poisonDamage, turns: poisonTurns });
       }
       if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
-        this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
+        if (attacker.typeId === 'Wind') {
+          this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: meta.activeDurationTurns! });
+        } else {
+          this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
+        }
       }
       if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
         this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
@@ -775,6 +787,14 @@ export class ArenaScene extends Phaser.Scene {
         this.extraAttackTurnsByInstance.delete(key);
       } else {
         this.extraAttackTurnsByInstance.set(key, { ...value, turns: nextTurns });
+      }
+    });
+    this.attackMultiplierTurnsByInstance.forEach((value, key) => {
+      const nextTurns = value.turns - 1;
+      if (nextTurns <= 0) {
+        this.attackMultiplierTurnsByInstance.delete(key);
+      } else {
+        this.attackMultiplierTurnsByInstance.set(key, { ...value, turns: nextTurns });
       }
     });
   }
@@ -906,7 +926,7 @@ export class ArenaScene extends Phaser.Scene {
 
         this.renderHealthBar(this.enemyGridContainer, x, y + 16, die.currentHealth, die.maxHealth);
         const ammo = Math.max(0, die.attacksRemaining);
-        const maxAmmo = Math.max(1, this.getPipCount(die.typeId));
+        const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking' ? Math.max(die.attacksRemaining, this.enemyDicePips.get(die.instanceId) ?? 1) : this.getPipCount(die.typeId));
         this.renderAmmoBar(this.enemyGridContainer, x + 24, y + 16, ammo, maxAmmo);
       }
     });
@@ -1014,7 +1034,7 @@ export class ArenaScene extends Phaser.Scene {
     container.add(hpLabel);
     this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
-    const maxAmmo = Math.max(1, this.getPipCount(die.typeId));
+    const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking' ? Math.max(die.attacksRemaining, pips) : this.getPipCount(die.typeId));
     const definitionSkill = this.definitions.get(die.typeId)?.skills[0];
     const manaNeeded = definitionSkill?.manaNeeded ?? maxAmmo;
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;

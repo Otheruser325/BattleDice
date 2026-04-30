@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
 import type { DiceDefinition, DiceTypeId, DiceFlags } from '../types/game';
 
-export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Lightning', 'Wind'] as const;
+export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'] as const;
 
 export const DICE_FLAGS_CACHE_KEY = 'dice:flags';
 const LOADOUT_KEY = 'dice:loadout';

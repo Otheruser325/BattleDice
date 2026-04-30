@@ -11,7 +11,7 @@
       "type": "Passive",
       "title": "Fractured Volley",
       "description": "Attacks a random foe in range.",
-	  "hasRandomTargeting": true
+	    "hasRandomTargeting": true
     }
   ],
   "accent": "#c5a880"
