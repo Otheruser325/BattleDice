@@ -3,8 +3,8 @@
   "title": "Electric Dice",
   "attack": 12,
   "health": 160,
-  "range": 3,
-  "rangeLabel": "Mid",
+  "range": 4,
+  "rangeLabel": "Medium",
   "skills": [
     {
       "type": "Passive",
