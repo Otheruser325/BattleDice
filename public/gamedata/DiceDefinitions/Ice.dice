@@ -4,7 +4,6 @@
   "attack": 8,
   "health": 180,
   "range": 5,
-  "rangeLabel": "Medium",
   "skills": [
     {
       "type": "Active",
@@ -18,5 +17,6 @@
     }
   ],
   "accent": "#8fd5ff",
-  "rarity": "Common"
+  "rarity": "Common",
+  "targetingMode": "Nearest"
 }
