@@ -623,11 +623,15 @@ export class ArenaScene extends Phaser.Scene {
           ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
           : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
         const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
+        const debuff = this.attackDeltaByInstance.get(die.instanceId);
+        const buff = this.extraAttackTurnsByInstance.get(die.instanceId);
+        const withDebuff = debuff ? Math.max(1, pips + debuff.delta) : pips;
+        const withBuff = buff ? withDebuff + buff.extra : withDebuff;
 
         return {
           ...die,
           hasFinishedAttacking: false,
-          attacksRemaining: pips
+          attacksRemaining: withBuff
         };
       })
     };
@@ -757,23 +761,22 @@ export class ArenaScene extends Phaser.Scene {
     };
   }
   private applyTimedSkillDecay() {
-    this.gameState = {
-      ...this.gameState,
-      dice: this.gameState.dice.map((die) => {
-        const debuff = this.attackDeltaByInstance.get(die.instanceId);
-        const buff = this.extraAttackTurnsByInstance.get(die.instanceId);
-        let next = die;
-        if (debuff && debuff.turns > 0) {
-          next = { ...next, attacksRemaining: Math.max(1, next.attacksRemaining + debuff.delta) };
-          this.attackDeltaByInstance.set(die.instanceId, { ...debuff, turns: debuff.turns - 1 });
-        }
-        if (buff && buff.turns > 0) {
-          next = { ...next, attacksRemaining: next.attacksRemaining + buff.extra };
-          this.extraAttackTurnsByInstance.set(die.instanceId, { ...buff, turns: buff.turns - 1 });
-        }
-        return next;
-      })
-    };
+    this.attackDeltaByInstance.forEach((value, key) => {
+      const nextTurns = value.turns - 1;
+      if (nextTurns <= 0) {
+        this.attackDeltaByInstance.delete(key);
+      } else {
+        this.attackDeltaByInstance.set(key, { ...value, turns: nextTurns });
+      }
+    });
+    this.extraAttackTurnsByInstance.forEach((value, key) => {
+      const nextTurns = value.turns - 1;
+      if (nextTurns <= 0) {
+        this.extraAttackTurnsByInstance.delete(key);
+      } else {
+        this.extraAttackTurnsByInstance.set(key, { ...value, turns: nextTurns });
+      }
+    });
   }
   private applyTurnBasedEffects() {
     this.poisonByInstance.forEach((effect, instanceId) => {

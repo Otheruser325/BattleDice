@@ -4,7 +4,7 @@
   "attack": 12,
   "health": 200,
   "range": 4,
-  "rangeLabel": "Mid",
+  "rangeLabel": "Medium",
   "skills": [
     {
       "type": "Passive",

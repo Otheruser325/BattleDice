@@ -6,10 +6,10 @@ const DICE_FLAGS_PATHS = [
   'gamedata/DiceDefinitions/Flags.json',
   '/gamedata/DiceDefinitions/Flags.json'
 ];
+const DICE_DATA_VERSION = '2026-04-30';
 
 function getDefinitionPath(typeId: string) {
-  return `gamedata/DiceDefinitions/${typeId}.dice`;
-  return `/gamedata/DiceDefinitions/${typeId}.dice`;
+  return `gamedata/DiceDefinitions/${typeId}.dice?v=${DICE_DATA_VERSION}`;
 }
 
 export class DiceCatalogLoader {
@@ -20,7 +20,7 @@ export class DiceCatalogLoader {
     let flags: DiceFlags | undefined;
     for (const path of DICE_FLAGS_PATHS) {
       try {
-        const res = await fetch(path, { credentials: 'same-origin' });
+        const res = await fetch(`${path}?v=${DICE_DATA_VERSION}`, { credentials: 'same-origin', cache: 'no-store' });
         if (!res.ok) continue;
         const contentType = res.headers.get('content-type') ?? '';
         if (!contentType.includes('application/json') && !path.endsWith('.json')) continue;
