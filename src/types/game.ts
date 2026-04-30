@@ -1,6 +1,7 @@
 export type DiceTypeId = string;
 export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd';
 export type DiceRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
+export type DiceTargetingMode = 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
 
 export interface DiceSkillModifier {
   attackDelta?: number;
@@ -27,7 +28,7 @@ export interface DiceDefinition {
   attack: number;
   health: number;
   range: number;
-  rangeLabel: string;
+  targetingMode: DiceTargetingMode;
   rarity: DiceRarity;
   skills: DiceSkillDefinition[];
   accent: string;
