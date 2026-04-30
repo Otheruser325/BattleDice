@@ -2,7 +2,7 @@
   "typeId": "Wind",
   "title": "Wind Dice",
   "attack": 10,
-  "health": 60,
+  "health": 120,
   "range": 5,
   "rangeLabel": "Long",
   "skills": [

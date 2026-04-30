@@ -4,6 +4,7 @@ import type {
   DiceOwnerId,
   MatchBattleState
 } from '../types/game';
+import { getRuntimeSkillMeta, resolveDamage } from './DiceSkills';
 
 export type { MatchBattleState };
 
@@ -212,7 +213,7 @@ export function findAttackTarget(
   if (!attackerPos) return undefined;
   const reachable = enemyDice
     .map((die) => {
-      const rowDelta = Math.abs(die.gridPosition.row - attackerPos.row);
+      const rowDelta = Math.abs(die.gridPosition.row - attackerPos.row) + 5;
       const colDelta = Math.abs(die.gridPosition.col - attackerPos.col);
       const distance = Math.max(rowDelta, colDelta);
       return { die, distance };
@@ -236,14 +237,15 @@ export function executeAttack(
     return { newState: state, damage: 0, targetDestroyed: false };
   }
 
-  const attackerDef = definitions.get(attacker.typeId);
-  const damage = attackerDef?.attack ?? 10;
+  const damage = resolveDamage(attacker, target, definitions);
 
   let newState = spendAttack(state, attackerId);
   newState = applyDamage(newState, targetId, damage);
 
   let updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
-  if (updatedTarget?.isDestroyed && updatedTarget.typeId === 'Skull' && Math.random() < 0.5) {
+  const targetDefinition = definitions.get(target.typeId);
+  const runtimeMeta = targetDefinition ? getRuntimeSkillMeta(targetDefinition) : undefined;
+  if (updatedTarget?.isDestroyed && runtimeMeta?.reviveChance && Math.random() < runtimeMeta.reviveChance) {
     newState = {
       ...newState,
       dice: newState.dice.map((die) => (

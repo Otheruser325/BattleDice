@@ -17,6 +17,7 @@ import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
+import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 
 interface PlacedDie {
   typeId: DiceTypeId;
@@ -65,6 +66,10 @@ export class ArenaScene extends Phaser.Scene {
   private dicePips: Map<string, number> = new Map();
   private enemyDicePips: Map<string, number> = new Map();
   private enemyClassLevels: Map<string, number> = new Map();
+  private manaByInstance: Map<string, number> = new Map();
+  private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
+  private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
+  private poisonByInstance: Map<string, { damage: number; turns: number }> = new Map();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
   private rollAllButtonLabel!: Phaser.GameObjects.Text;
   private diceRolled = false;
@@ -526,7 +531,9 @@ export class ArenaScene extends Phaser.Scene {
 
   private updateCombatButtonState() {
     const requiredDice = this.currentHandOrder.length;
-    const canStart = this.placedDiceCount >= requiredDice;
+    const boardPlaced = getBoardDice(this.gameState, 'player').length;
+    this.placedDiceCount = boardPlaced;
+    const canStart = this.placedDiceCount >= requiredDice && this.diceRolled;
     this.startCombatButton.setFillStyle(canStart ? 0xe74c3c : 0x7f8c8d, canStart ? 0.9 : 0.5);
     if (canStart) {
       this.startCombatButton.setInteractive({ useHandCursor: true });
@@ -562,12 +569,20 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private async startCombat() {
+    const requiredDice = this.currentHandOrder.length;
+    const boardPlaced = getBoardDice(this.gameState, 'player').length;
+    if (!this.diceRolled || boardPlaced < requiredDice) {
+      this.combatLog.setText(`Place all ${requiredDice} rolled dice before combat.`);
+      this.updateCombatButtonState();
+      return;
+    }
     this.startCombatButton.disableInteractive();
     this.startCombatButton.setFillStyle(0x7f8c8d, 0.5);
 
     this.gamePhase = { stage: 'combat' };
     this.placeEnemyDiceForTurn();
 
+    this.enemyDicePips.clear();
     this.invisiRollForEnemies();
 
     this.enemyFogOverlay.setVisible(false);
@@ -585,8 +600,16 @@ export class ArenaScene extends Phaser.Scene {
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
     const playerBoardDice = getBoardDice(this.gameState, 'player');
     const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
-    const playerBonus = playerBoardDice.some((die) => die.typeId === 'Light') ? 1 : 0;
-    const enemyBonus = enemyBoardDice.some((die) => die.typeId === 'Light') ? 1 : 0;
+    const playerBonus = playerBoardDice.reduce((sum, die) => {
+      const definition = this.definitions.get(die.typeId);
+      if (!definition) return sum;
+      return sum + (getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0);
+    }, 0);
+    const enemyBonus = enemyBoardDice.reduce((sum, die) => {
+      const definition = this.definitions.get(die.typeId);
+      if (!definition) return sum;
+      return sum + (getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0);
+    }, 0);
 
     return {
       ...this.gameState,
@@ -620,7 +643,9 @@ export class ArenaScene extends Phaser.Scene {
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
-        const target = attacker.typeId === 'Broken'
+        const attackerDefinition = this.definitions.get(attacker.typeId);
+        const hasRandomTargeting = attackerDefinition ? (getRuntimeSkillMeta(attackerDefinition).hasRandomTargeting ?? false) : false;
+        const target = hasRandomTargeting
           ? this.findRandomTarget(attacker)
           : findAttackTarget(this.gameState, attacker, this.definitions);
         if (!target) {
@@ -635,6 +660,7 @@ export class ArenaScene extends Phaser.Scene {
 
         const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
         this.gameState = result.newState;
+        this.applyOnHitSkillEffects(attacker, target);
 
         this.combatLog.setText(
           `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${result.damage} damage!${result.targetDestroyed ? ' DESTROYED!' : ''}`
@@ -655,10 +681,15 @@ export class ArenaScene extends Phaser.Scene {
     this.combatLog.setText('Combat phase complete!');
     await this.delay(1000);
 
+    this.applyCombatEndSkills();
+    this.applyTimedSkillDecay();
     this.gameState = resolveCombatPhase(this.gameState);
     this.gameState = endTurn(this.gameState);
 
     await this.returnDiceToHand();
+    this.applyTurnBasedEffects();
+    this.renderDice();
+    this.renderEnemyDice();
 
     this.turnText.setText(`TURN ${this.gameState.turn}`);
     this.playTurnBanner(`TURN ${this.gameState.turn}`);
@@ -666,6 +697,109 @@ export class ArenaScene extends Phaser.Scene {
 
     this.startCombatButton.setInteractive({ useHandCursor: true });
     this.startCombatButton.setFillStyle(0xe74c3c, 0.9);
+  }
+  private applyOnHitSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
+    const definition = this.definitions.get(attacker.typeId);
+    if (!definition || !target.gridPosition) return;
+    const meta = getRuntimeSkillMeta(definition);
+    const manaNeeded = meta.activeManaNeeded ?? 0;
+    const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+    const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
+    if (canCastActive) {
+      if (attacker.typeId === 'Poison') {
+        const poisonDamage = meta.poisonDamage ?? 10;
+        const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 2);
+        this.poisonByInstance.set(target.instanceId, { damage: poisonDamage, turns: poisonTurns });
+      }
+      if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
+        this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
+      }
+      if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
+        this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
+      }
+      this.manaByInstance.set(attacker.instanceId, 0);
+    } else if (manaNeeded > 0) {
+      this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+    }
+    if (meta.splashDamage) {
+      const splashTargets = getBoardDice(this.gameState, target.ownerId).filter((die) =>
+        die.instanceId !== target.instanceId &&
+        die.gridPosition &&
+        Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
+        Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 1
+      );
+      splashTargets.forEach((die) => {
+        this.gameState = executeAttack(this.gameState, attacker.instanceId, die.instanceId, new Map([[attacker.typeId, { ...definition, attack: meta.splashDamage! }]])).newState;
+      });
+    }
+    if (meta.chainDamage) {
+      const chainTarget = getBoardDice(this.gameState, target.ownerId).find((die) =>
+        die.instanceId !== target.instanceId &&
+        die.gridPosition &&
+        Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 2 &&
+        Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 2
+      );
+      if (chainTarget) {
+        this.gameState = executeAttack(this.gameState, attacker.instanceId, chainTarget.instanceId, new Map([[attacker.typeId, { ...definition, attack: meta.chainDamage }]])).newState;
+      }
+    }
+  }
+  private applyCombatEndSkills() {
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => {
+        if (die.zone !== 'board' || die.isDestroyed) return die;
+        const definition = this.definitions.get(die.typeId);
+        if (!definition) return die;
+        const bonus = getRuntimeSkillMeta(definition).combatEndExtraAttacks ?? 0;
+        return bonus > 0 ? { ...die, attacksRemaining: Math.max(0, die.attacksRemaining + bonus) } : die;
+      })
+    };
+  }
+  private applyTimedSkillDecay() {
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => {
+        const debuff = this.attackDeltaByInstance.get(die.instanceId);
+        const buff = this.extraAttackTurnsByInstance.get(die.instanceId);
+        let next = die;
+        if (debuff && debuff.turns > 0) {
+          next = { ...next, attacksRemaining: Math.max(1, next.attacksRemaining + debuff.delta) };
+          this.attackDeltaByInstance.set(die.instanceId, { ...debuff, turns: debuff.turns - 1 });
+        }
+        if (buff && buff.turns > 0) {
+          next = { ...next, attacksRemaining: next.attacksRemaining + buff.extra };
+          this.extraAttackTurnsByInstance.set(die.instanceId, { ...buff, turns: buff.turns - 1 });
+        }
+        return next;
+      })
+    };
+  }
+  private applyTurnBasedEffects() {
+    this.poisonByInstance.forEach((effect, instanceId) => {
+      if (effect.turns <= 0) return;
+      this.gameState = {
+        ...this.gameState,
+        dice: this.gameState.dice.map((die) => {
+          if (die.instanceId !== instanceId || die.isDestroyed) return die;
+          const currentHealth = Math.max(0, die.currentHealth - effect.damage);
+          const isDestroyed = currentHealth <= 0;
+          return {
+            ...die,
+            currentHealth,
+            isDestroyed,
+            zone: isDestroyed ? 'eliminated' : die.zone,
+            gridPosition: isDestroyed ? undefined : die.gridPosition,
+            hasFinishedAttacking: isDestroyed ? true : die.hasFinishedAttacking,
+            attacksRemaining: isDestroyed ? 0 : die.attacksRemaining
+          };
+        })
+      };
+      this.poisonByInstance.set(instanceId, { ...effect, turns: effect.turns - 1 });
+      if (effect.turns - 1 <= 0) {
+        this.poisonByInstance.delete(instanceId);
+      }
+    });
   }
 
   private async returnDiceToHand() {
@@ -875,11 +1009,14 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5);
     hpLabel.setName('die-info');
     container.add(hpLabel);
-    this.renderHealthBar(container, x, y + 16, die.currentHealth, die.maxHealth);
+    this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
     const maxAmmo = Math.max(1, this.getPipCount(die.typeId));
-    this.renderAmmoBar(container, x + 22, y + 16, ammo, maxAmmo);
-    this.renderManaBar(container, x + 22, y + 24, maxAmmo - ammo, maxAmmo);
+    const definitionSkill = this.definitions.get(die.typeId)?.skills[0];
+    const manaNeeded = definitionSkill?.manaNeeded ?? maxAmmo;
+    const mana = this.manaByInstance.get(die.instanceId) ?? 0;
+    this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);
+    this.renderManaBar(container, x, y + 34, mana, Math.max(1, manaNeeded));
   }
 
   private renderHealthBar(container: Phaser.GameObjects.Container, x: number, y: number, hp: number, maxHp: number) {
@@ -1004,9 +1141,9 @@ export class ArenaScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.name = 'ammo-bar';
     g.fillStyle(0x1f2f3d, 0.95);
-    g.fillRoundedRect(x - 14, y - 3, 28, 6, 2);
+    g.fillRoundedRect(x - 18, y - 3, 36, 5, 2);
     g.fillStyle(0x6fa8ff, 1);
-    g.fillRoundedRect(x - 14 + (28 * (1 - ratio)), y - 3, 28 * ratio, 6, 2);
+    g.fillRoundedRect(x - 18 + (36 * (1 - ratio)), y - 3, 36 * ratio, 5, 2);
     container.add(g);
   }
   private renderManaBar(container: Phaser.GameObjects.Container, x: number, y: number, mana: number, maxMana: number) {
@@ -1014,9 +1151,9 @@ export class ArenaScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.name = 'mana-bar';
     g.fillStyle(0x1f2f3d, 0.95);
-    g.fillRoundedRect(x - 14, y - 3, 28, 6, 2);
+    g.fillRoundedRect(x - 18, y - 3, 36, 5, 2);
     g.fillStyle(0x6fa8ff, 1);
-    g.fillRoundedRect(x - 14, y - 3, 28 * ratio, 6, 2);
+    g.fillRoundedRect(x - 18, y - 3, 36 * ratio, 5, 2);
     container.add(g);
   }
 
