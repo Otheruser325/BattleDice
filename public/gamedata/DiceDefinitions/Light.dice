@@ -3,7 +3,7 @@
   "title": "Light Dice",
   "attack": 6,
   "health": 120,
-  "range": 2,
+  "range": 3,
   "rangeLabel": "Small",
   "rarity": "Rare",
   "skills": [

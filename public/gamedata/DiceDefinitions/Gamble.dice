@@ -3,7 +3,7 @@
   "title": "Gamble Dice",
   "attack": 7,
   "health": 140,
-  "range": 4,
+  "range": 5,
   "rangeLabel": "Medium",
   "rarity": "Common",
   "skills": [

@@ -3,14 +3,15 @@
   "title": "Broken Dice",
   "attack": 15,
   "health": 120,
-  "range": 5,
+  "range": 6,
   "rangeLabel": "Long",
   "rarity": "Uncommon",
   "skills": [
     {
       "type": "Passive",
       "title": "Fractured Volley",
-      "description": "Attacks a random foe in range."
+      "description": "Attacks a random foe in range.",
+	  "hasRandomTargeting": true
     }
   ],
   "accent": "#c5a880"
