@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getDiceDefinitions, getDiceProgress } from '../data/dice';
+import { getAllDiceDefinitions, getDiceDefinitions, getDiceProgress } from '../data/dice';
 import {
   createMatchBattleState,
   getAvailableHandDice,
@@ -280,13 +280,11 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private initializeBattle() {
-    const allDefinitions = getDiceDefinitions(this);
-    const preferredPlayerDefs = allDefinitions
-      .filter((definition) => DEFAULT_PLAYER_LOADOUT.includes(definition.typeId));
-    const playerPool = preferredPlayerDefs.length > 0 ? preferredPlayerDefs : allDefinitions;
-    const playerDefs = playerPool
+    const playerLoadoutDefinitions = getDiceDefinitions(this);
+    const allDefinitions = getAllDiceDefinitions(this);
+    const playerDefs = playerLoadoutDefinitions
       .map((definition) => this.applyClassProgress(definition, getDiceProgress(this, definition.typeId).classLevel));
-    const enemyDefs = this.pickRandomEnemyLoadout(allDefinitions, new Set(playerDefs.map((die) => die.typeId))).map((definition) => {
+    const enemyDefs = this.pickRandomEnemyLoadout(allDefinitions, new Set()).map((definition) => {
       const classLevel = Phaser.Math.Between(1, 5);
       this.enemyClassLevels.set(definition.typeId, classLevel);
       return this.applyClassProgress(definition, classLevel);
