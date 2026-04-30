@@ -83,6 +83,7 @@ export class DiceScene extends Phaser.Scene {
       const x = panel.x + 28 + col * 360;
       const y = cardsTopY + row * cardPitch;
       const accent = Phaser.Display.Color.HexStringToColor(die.accent).color;
+      const cls = getDiceProgress(this, die.typeId).classLevel;
 
       const card = this.add.rectangle(x + 160, y + 84, 320, 176, 0x173247, 0.98).setInteractive({ useHandCursor: true })
         .setStrokeStyle(2, accent);
@@ -93,6 +94,11 @@ export class DiceScene extends Phaser.Scene {
         fontSize: '20px',
         color: die.accent
       });
+      const classTag = this.add.text(x + 286, y + 10, `C${cls}`, {
+        fontFamily: 'Orbitron',
+        fontSize: '14px',
+        color: PALETTE.accentSoft
+      }).setOrigin(1, 0);
 
       const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}   |   HP ${die.health}   |   RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
@@ -134,7 +140,7 @@ export class DiceScene extends Phaser.Scene {
       card.on('pointerover', () => card.setFillStyle(0x1f3e56, 1));
       card.on('pointerout', () => card.setFillStyle(0x173247, 0.98));
 
-      cardsContainer.add([card, header, title, statLine, skillTypeLine, skillTitle, skillDesc]);
+      cardsContainer.add([card, header, title, classTag, statLine, skillTypeLine, skillTitle, skillDesc]);
     });
 
     const viewTop = panel.y + 150;
@@ -189,7 +195,7 @@ export class DiceScene extends Phaser.Scene {
     const assignBtn = this.add.rectangle(width / 2 - 110, height / 2 + 110, 180, 40, assignable ? 0x3498db : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: assignable });
     const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, assignable ? 'ASSIGN!' : 'IN LOADOUT', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
-    const upTxt = this.add.text(width / 2, height / 2 + 110, canUpgrade ? 'CLASS UP' : 'LOCKED', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
+    const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, canUpgrade ? 'CLASS UP' : 'LOCKED', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const close = this.add.text(width / 2, height / 2 + 152, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     if (canUpgrade) {
       upBtn.on('pointerdown', () => {

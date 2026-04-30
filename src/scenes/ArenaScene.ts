@@ -16,6 +16,7 @@ import {
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
+import { buildSkillIndex } from '../data/SkillLoader';
 
 interface PlacedDie {
   typeId: DiceTypeId;
@@ -40,6 +41,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private gameState!: MatchBattleState;
   private definitions!: Map<DiceTypeId, DiceDefinition>;
+  private skillIndex: ReturnType<typeof buildSkillIndex> = new Map();
   private gamePhase: GamePhase = { stage: 'lobby' };
 
   private uiContainer!: Phaser.GameObjects.Container;
@@ -76,11 +78,12 @@ export class ArenaScene extends Phaser.Scene {
     const layout = getLayout(this);
 
     this.definitions = new Map(getDiceDefinitions(this).map((die) => [die.typeId, die]));
+    this.skillIndex = buildSkillIndex([...this.definitions.values()]);
 
     this.createBackground(layout);
     this.createLobbyUI();
 
-    this.debug.log('Arena scene created', { phase: this.gamePhase.stage });
+    this.debug.log('Arena scene created', { phase: this.gamePhase.stage, skillCount: this.skillIndex.size });
   }
 
   private createBackground(layout: ReturnType<typeof getLayout>) {
@@ -851,9 +854,11 @@ export class ArenaScene extends Phaser.Scene {
     label.setName('die-info');
     container.add(label);
 
-    const pips = isPlayer
-      ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
-      : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
+    const pips = this.gameState.combatPhase === 'attacking'
+      ? Math.max(0, die.attacksRemaining)
+      : (isPlayer
+        ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
+        : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId)));
     const pipLabel = this.add.text(x, y + 2, `${pips}♦`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
