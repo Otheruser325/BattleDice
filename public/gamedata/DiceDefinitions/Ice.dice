@@ -2,7 +2,7 @@
   "typeId": "Ice",
   "title": "Ice Dice",
   "attack": 8,
-  "health": 90,
+  "health": 180,
   "range": 4,
   "rangeLabel": "Long",
   "skills": [

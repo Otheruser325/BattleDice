@@ -1,0 +1,27 @@
+{
+  "typeId": "Gamble",
+  "title": "Gamble Dice",
+  "attack": 7,
+  "health": 140,
+  "range": 4,
+  "rangeLabel": "Medium",
+  "rarity": "Common",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Loaded Odds",
+      "description": "Deals random damage from 7 to 27 to a foe.",
+      "modifiers": {
+        "notes": [
+          "runtime:randomDamage"
+        ],
+        "attackDelta": 0,
+        "damageRange": [
+          7,
+          27
+        ]
+      }
+    }
+  ],
+  "accent": "#f7b267"
+}

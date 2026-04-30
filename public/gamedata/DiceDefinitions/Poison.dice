@@ -2,7 +2,7 @@
   "typeId": "Poison",
   "title": "Poison Dice",
   "attack": 10,
-  "health": 80,
+  "health": 160,
   "range": 4,
   "rangeLabel": "Long",
   "skills": [
@@ -15,7 +15,8 @@
         "durationTurns": 2,
         "notes": [
           "Applies 10 poison damage per turn."
-        ]
+        ],
+        "poisonDamage": 10
       }
     }
   ],

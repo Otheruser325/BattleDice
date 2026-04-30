@@ -1,0 +1,23 @@
+{
+  "typeId": "Iron",
+  "title": "Iron Dice",
+  "attack": 14,
+  "health": 200,
+  "range": 3,
+  "rangeLabel": "Medium",
+  "rarity": "Uncommon",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Crush Armor",
+      "description": "Deals up to 20% bonus damage of the target's max HP.",
+      "modifiers": {
+        "notes": [
+          "runtime:targetMaxHpBonusRate=0.2"
+        ],
+        "targetMaxHpBonusRate": 0.2
+      }
+    }
+  ],
+  "accent": "#9aa4b2"
+}

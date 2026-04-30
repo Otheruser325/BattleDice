@@ -2,7 +2,7 @@
   "typeId": "Lightning",
   "title": "Lightning Dice",
   "attack": 12,
-  "health": 80,
+  "health": 160,
   "range": 3,
   "rangeLabel": "Mid",
   "skills": [

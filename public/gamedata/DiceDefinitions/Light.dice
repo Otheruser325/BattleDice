@@ -2,7 +2,7 @@
   "typeId": "Light",
   "title": "Light Dice",
   "attack": 6,
-  "health": 60,
+  "health": 120,
   "range": 2,
   "rangeLabel": "Small",
   "rarity": "Rare",
