@@ -683,7 +683,8 @@ export class ArenaScene extends Phaser.Scene {
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
-        const target = findAttackTarget(this.gameState, attacker, this.definitions);
+        const beamTarget = this.findTranscendenceBeamTarget(attacker);
+        const target = beamTarget ?? findAttackTarget(this.gameState, attacker, this.definitions);
         if (!target) {
           this.gameState = {
             ...this.gameState,
@@ -696,6 +697,7 @@ export class ArenaScene extends Phaser.Scene {
 
         const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
         this.gameState = result.newState;
+        this.applyTranscendenceBeam(attacker, target);
         this.applyPassiveSkillEffects(attacker, target);
         this.applyActiveSkillEffects(attacker, target);
         if (result.targetDestroyed) {
@@ -1014,7 +1016,7 @@ export class ArenaScene extends Phaser.Scene {
     return shuffled.slice(0, targetCount);
   }
 
-  private applyOnKillSkillEffects(attacker: DiceInstanceState, defeated: DiceInstanceState) {
+  private applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
     const definition = this.definitions.get(attacker.typeId);
     if (!definition) return;
     const bonus = getRuntimeSkillMeta(definition).onKillExtraAttacks ?? 0;
@@ -1023,7 +1025,6 @@ export class ArenaScene extends Phaser.Scene {
       ...this.gameState,
       dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
     };
-    this.applyTranscendenceBeam(attacker, defeated);
   }
 
   private applyOnDeathSkillEffects(defeated: DiceInstanceState, _attacker: DiceInstanceState) {
@@ -1053,7 +1054,23 @@ export class ArenaScene extends Phaser.Scene {
     victims.forEach((die) => {
       this.gameState = executeAttack(this.gameState, attacker.instanceId, die.instanceId, new Map([[attacker.typeId, { ...this.definitions.get(attacker.typeId)!, attack: 300 }]])).newState;
     });
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: 0, hasFinishedAttacking: true } : die)
+    };
     this.transcendenceBeamUsed.add(attacker.instanceId);
+  }
+  private findTranscendenceBeamTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
+    const definition = this.definitions.get(attacker.typeId);
+    if (!definition) return undefined;
+    const meta = getRuntimeSkillMeta(definition);
+    const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.typeId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
+    if (!meta.hasTranscendence || basePips !== 6 || this.transcendenceBeamUsed.has(attacker.instanceId) || !attacker.gridPosition) return undefined;
+    const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+    const targets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition);
+    return targets
+      .map((die) => ({ die, distance: Math.max(Math.abs((die.gridPosition!.col - attacker.gridPosition!.col)), attacker.ownerId === 'player' ? ((4 - attacker.gridPosition!.row) + 1 + die.gridPosition!.row) : (attacker.gridPosition!.row + 1 + (4 - die.gridPosition!.row)))}))
+      .sort((a, b) => a.distance - b.distance)[0]?.die;
   }
 
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {

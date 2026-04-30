@@ -214,7 +214,10 @@ export function findAttackTarget(
   const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
   const reachable = enemyDice
     .map((die) => {
-      const rowDelta = Math.abs(die.gridPosition.row - attackerPos.row) + 5;
+      const boardSize = 5;
+      const rowDelta = attacker.ownerId === 'player'
+        ? ((boardSize - 1 - attackerPos.row) + 1 + die.gridPosition.row)
+        : (attackerPos.row + 1 + (boardSize - 1 - die.gridPosition.row));
       const colDelta = Math.abs(die.gridPosition.col - attackerPos.col);
       const distance = Math.max(rowDelta, colDelta);
       return { die, distance };
