@@ -1,0 +1,23 @@
+{
+  "typeId": "Transcendence",
+  "title": "Transcendence Dice",
+  "attack": 20,
+  "health": 160,
+  "range": 5,
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Perpendicular Beam",
+      "description": "If it rolls 6, attacks unleash a 300-damage beam along the target row/column.",
+      "modifiers": {
+        "notes": [
+          "runtime:beamOnSix=300",
+          "runtime:hasTranscendence"
+        ]
+      }
+    }
+  ],
+  "accent": "#b18cff",
+  "rarity": "Legendary",
+  "targetingMode": "Furthest"
+}

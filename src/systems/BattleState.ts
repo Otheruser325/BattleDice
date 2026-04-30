@@ -211,17 +211,34 @@ export function findAttackTarget(
 
   const attackerPos = attacker.gridPosition;
   if (!attackerPos) return undefined;
+  const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
   const reachable = enemyDice
     .map((die) => {
-      const rowDelta = Math.abs(die.gridPosition.row - attackerPos.row) + 5;
+      const boardSize = 5;
+      const rowDelta = attacker.ownerId === 'player'
+        ? ((boardSize - 1 - attackerPos.row) + 1 + die.gridPosition.row)
+        : (attackerPos.row + 1 + (boardSize - 1 - die.gridPosition.row));
       const colDelta = Math.abs(die.gridPosition.col - attackerPos.col);
       const distance = Math.max(rowDelta, colDelta);
       return { die, distance };
     })
-    .filter(({ distance }) => distance <= Math.max(1, attackerDef.range))
-    .sort((a, b) => a.distance - b.distance || a.die.gridPosition.row - b.die.gridPosition.row);
+    .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));
 
-  return reachable[0]?.die;
+  if (reachable.length === 0) return undefined;
+
+  const sortedByDistance = [...reachable].sort((a, b) => a.distance - b.distance || a.die.gridPosition.row - b.die.gridPosition.row || a.die.gridPosition.col - b.die.gridPosition.col);
+  if (mode === 'Nearest') return sortedByDistance[0]?.die;
+  if (mode === 'Furthest') return sortedByDistance[sortedByDistance.length - 1]?.die;
+
+  if (mode === 'Strongest') {
+    return [...reachable]
+      .sort((a, b) => b.die.currentHealth - a.die.currentHealth || b.die.maxHealth - a.die.maxHealth || a.distance - b.distance)[0]?.die;
+  }
+  if (mode === 'Weakest') {
+    return [...reachable]
+      .sort((a, b) => a.die.currentHealth - b.die.currentHealth || a.die.maxHealth - b.die.maxHealth || a.distance - b.distance)[0]?.die;
+  }
+  return reachable[Math.floor(Math.random() * reachable.length)]?.die;
 }
 
 export function executeAttack(
@@ -238,6 +255,7 @@ export function executeAttack(
   }
 
   const damage = resolveDamage(attacker, target, definitions);
+  const targetPosition = target.gridPosition;
 
   let newState = spendAttack(state, attackerId);
   newState = applyDamage(newState, targetId, damage);
@@ -254,7 +272,10 @@ export function executeAttack(
               ...die,
               isDestroyed: false,
               zone: 'board',
-              currentHealth: Math.max(1, Math.floor(die.maxHealth * 0.5))
+              currentHealth: die.maxHealth,
+              attacksRemaining: 0,
+              hasFinishedAttacking: false,
+              gridPosition: targetPosition
             }
           : die
       ))

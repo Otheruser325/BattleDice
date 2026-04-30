@@ -4,7 +4,6 @@
   "attack": 12,
   "health": 160,
   "range": 4,
-  "rangeLabel": "Medium",
   "skills": [
     {
       "type": "Passive",
@@ -16,5 +15,6 @@
     }
   ],
   "accent": "#ffd76d",
-  "rarity": "Common"
+  "rarity": "Common",
+  "targetingMode": "Nearest"
 }

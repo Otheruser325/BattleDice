@@ -4,7 +4,6 @@
   "attack": 14,
   "health": 200,
   "range": 4,
-  "rangeLabel": "Medium",
   "rarity": "Uncommon",
   "skills": [
     {
@@ -19,5 +18,6 @@
       }
     }
   ],
-  "accent": "#9aa4b2"
+  "accent": "#9aa4b2",
+  "targetingMode": "Strongest"
 }
