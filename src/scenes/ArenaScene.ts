@@ -691,10 +691,11 @@ export class ArenaScene extends Phaser.Scene {
 
         const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
         this.gameState = result.newState;
-        this.applyOnHitSkillEffects(attacker, target);
+        this.applyPassiveSkillEffects(attacker, target);
+        this.applyActiveSkillEffects(attacker, target);
         if (result.targetDestroyed) {
-          this.applyOnKillSkillEffects(attacker);
-          this.applyOnDeathSkillEffects(target);
+          this.applyOnKillSkillEffects(attacker, target);
+          this.applyOnDeathSkillEffects(target, attacker);
         }
 
         this.combatLog.setText(
@@ -736,33 +737,10 @@ export class ArenaScene extends Phaser.Scene {
 
     this.updateCombatButtonState();
   }
-  private applyOnHitSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
+  private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
     const definition = this.definitions.get(attacker.typeId);
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
-    const manaNeeded = meta.activeManaNeeded ?? 0;
-    const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
-    const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
-    if (canCastActive) {
-      if (attacker.typeId === 'Poison') {
-        const poisonDamage = meta.poisonDamage ?? 10;
-        const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 2);
-        this.poisonByInstance.set(target.instanceId, { damage: poisonDamage, turns: poisonTurns });
-      }
-      if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
-        if (attacker.typeId === 'Wind') {
-          this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: meta.activeDurationTurns! });
-        } else {
-          this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
-        }
-      }
-      if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
-        this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
-      }
-      this.manaByInstance.set(attacker.instanceId, 0);
-    } else if (manaNeeded > 0) {
-      this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
-    }
     if (meta.splashDamage) {
       const splashTargets = getBoardDice(this.gameState, target.ownerId).filter((die) =>
         die.instanceId !== target.instanceId &&
@@ -785,6 +763,31 @@ export class ArenaScene extends Phaser.Scene {
         this.gameState = executeAttack(this.gameState, attacker.instanceId, chainTarget.instanceId, new Map([[attacker.typeId, { ...definition, attack: meta.chainDamage }]])).newState;
       }
     }
+  }
+  private applyActiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
+    const definition = this.definitions.get(attacker.typeId);
+    if (!definition) return;
+    const meta = getRuntimeSkillMeta(definition);
+    const manaNeeded = meta.activeManaNeeded ?? 0;
+    const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+    const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
+    if (!canCastActive) {
+      if (manaNeeded > 0) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+      return;
+    }
+    if (attacker.typeId === 'Poison') {
+      const poisonDamage = meta.poisonDamage ?? 10;
+      const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 2);
+      this.poisonByInstance.set(target.instanceId, { damage: poisonDamage, turns: poisonTurns });
+    }
+    if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
+      if (attacker.typeId === 'Wind') this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: meta.activeDurationTurns! });
+      else this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
+    }
+    if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
+      this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
+    }
+    this.manaByInstance.set(attacker.instanceId, 0);
   }
   private applyCombatEndSkills() {
     this.gameState = {
@@ -943,8 +946,10 @@ export class ArenaScene extends Phaser.Scene {
 
     for (let i = 0; i < types.length; i++) {
       let row: number, col: number, key: string;
+      const definition = this.definitions.get(types[i] as DiceTypeId);
+      const range = definition?.range ?? 4;
       do {
-        row = Math.floor(Math.random() * 2);
+        row = this.pickEnemyRow(range);
         col = Math.floor(Math.random() * GRID_SIZE);
         key = `${row},${col}`;
       } while (usedCells.has(key));
@@ -952,6 +957,15 @@ export class ArenaScene extends Phaser.Scene {
       positions.push({ typeId: types[i] as DiceTypeId, row, col, pips: 1 });
     }
     return positions;
+  }
+  private pickEnemyRow(range: number): number {
+    if (range <= 3) {
+      const roll = Math.random();
+      if (roll < 0.45) return 0;
+      if (roll < 0.75) return 1;
+      return Phaser.Math.Between(2, GRID_SIZE - 1);
+    }
+    return Phaser.Math.Between(0, GRID_SIZE - 1);
   }
 
   private renderDice() {
@@ -995,7 +1009,7 @@ export class ArenaScene extends Phaser.Scene {
     return shuffled.slice(0, targetCount);
   }
 
-  private applyOnKillSkillEffects(attacker: DiceInstanceState) {
+  private applyOnKillSkillEffects(attacker: DiceInstanceState, defeated: DiceInstanceState) {
     const definition = this.definitions.get(attacker.typeId);
     if (!definition) return;
     const bonus = getRuntimeSkillMeta(definition).onKillExtraAttacks ?? 0;
@@ -1004,9 +1018,10 @@ export class ArenaScene extends Phaser.Scene {
       ...this.gameState,
       dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
     };
+    this.applyTranscendenceBeam(attacker, defeated);
   }
 
-  private applyOnDeathSkillEffects(defeated: DiceInstanceState) {
+  private applyOnDeathSkillEffects(defeated: DiceInstanceState, _attacker: DiceInstanceState) {
     const definition = this.definitions.get(defeated.typeId);
     if (!definition) return;
     const bonus = getRuntimeSkillMeta(definition).onDeathExtraAttacks ?? 0;
@@ -1018,6 +1033,17 @@ export class ArenaScene extends Phaser.Scene {
       ...this.gameState,
       dice: this.gameState.dice.map((die) => die.instanceId === ally.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
     };
+  }
+  private applyTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState) {
+    if (attacker.typeId !== 'Transcendence' || !attacker.gridPosition || !target.gridPosition) return;
+    const targetPos = target.gridPosition;
+    const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.typeId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
+    if (basePips !== 6) return;
+    const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+    const victims = getBoardDice(this.gameState, enemyOwner).filter((die) => die.instanceId !== target.instanceId && die.gridPosition && (die.gridPosition.row === targetPos.row || die.gridPosition.col === targetPos.col));
+    victims.forEach((die) => {
+      this.gameState = executeAttack(this.gameState, attacker.instanceId, die.instanceId, new Map([[attacker.typeId, { ...this.definitions.get(attacker.typeId)!, attack: 300 }]])).newState;
+    });
   }
 
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {
