@@ -459,7 +459,6 @@ export class ArenaScene extends Phaser.Scene {
   private getPipCount(typeId: DiceTypeId): number {
     switch (typeId) {
       case 'Fire': return 3;
-      case 'Lightning': return 3;
       case 'Electric': return 3;
       case 'Ice': return 2;
       case 'Poison': return 1;
