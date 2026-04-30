@@ -71,6 +71,7 @@ export class ArenaScene extends Phaser.Scene {
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private poisonByInstance: Map<string, { damage: number; turns: number }> = new Map();
+  private transcendenceBeamUsed: Set<string> = new Set();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
   private rollAllButtonLabel!: Phaser.GameObjects.Text;
   private diceRolled = false;
@@ -97,6 +98,7 @@ export class ArenaScene extends Phaser.Scene {
     this.poisonByInstance.clear();
     this.diceRolled = false;
     this.currentHandOrder = [];
+    this.transcendenceBeamUsed.clear();
   }
 
   create() {
@@ -279,8 +281,10 @@ export class ArenaScene extends Phaser.Scene {
 
   private initializeBattle() {
     const allDefinitions = getDiceDefinitions(this);
-    const playerDefs = allDefinitions
-      .filter((definition) => DEFAULT_PLAYER_LOADOUT.includes(definition.typeId))
+    const preferredPlayerDefs = allDefinitions
+      .filter((definition) => DEFAULT_PLAYER_LOADOUT.includes(definition.typeId));
+    const playerPool = preferredPlayerDefs.length > 0 ? preferredPlayerDefs : allDefinitions;
+    const playerDefs = playerPool
       .map((definition) => this.applyClassProgress(definition, getDiceProgress(this, definition.typeId).classLevel));
     const enemyDefs = this.pickRandomEnemyLoadout(allDefinitions, new Set(playerDefs.map((die) => die.typeId))).map((definition) => {
       const classLevel = Phaser.Math.Between(1, 5);
@@ -612,6 +616,7 @@ export class ArenaScene extends Phaser.Scene {
     this.placeEnemyDiceForTurn();
 
     this.enemyDicePips.clear();
+    this.transcendenceBeamUsed.clear();
     this.invisiRollForEnemies();
 
     this.enemyFogOverlay.setVisible(false);
@@ -1035,7 +1040,11 @@ export class ArenaScene extends Phaser.Scene {
     };
   }
   private applyTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState) {
-    if (attacker.typeId !== 'Transcendence' || !attacker.gridPosition || !target.gridPosition) return;
+    const definition = this.definitions.get(attacker.typeId);
+    if (!definition || !attacker.gridPosition || !target.gridPosition) return;
+    const meta = getRuntimeSkillMeta(definition);
+    if (!meta.hasTranscendence) return;
+    if (this.transcendenceBeamUsed.has(attacker.instanceId)) return;
     const targetPos = target.gridPosition;
     const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.typeId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
     if (basePips !== 6) return;
@@ -1044,6 +1053,7 @@ export class ArenaScene extends Phaser.Scene {
     victims.forEach((die) => {
       this.gameState = executeAttack(this.gameState, attacker.instanceId, die.instanceId, new Map([[attacker.typeId, { ...this.definitions.get(attacker.typeId)!, attack: 300 }]])).newState;
     });
+    this.transcendenceBeamUsed.add(attacker.instanceId);
   }
 
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {

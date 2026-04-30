@@ -17,6 +17,7 @@ export interface DiceSkillRuntimeMeta {
   onKillExtraAttacks?: number;
   onDeathExtraAttacks?: number;
   distanceDamageBonusPerTile?: number;
+  hasTranscendence?: boolean;
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
@@ -44,7 +45,8 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     poisonDamage: (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
     onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
     onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
-    distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile
+    distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile,
+    hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence'
   };
 }
 

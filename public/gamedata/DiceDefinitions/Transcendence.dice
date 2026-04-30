@@ -11,7 +11,8 @@
       "description": "If it rolls 6, attacks unleash a 300-damage beam along the target row/column.",
       "modifiers": {
         "notes": [
-          "runtime:beamOnSix=300"
+          "runtime:beamOnSix=300",
+          "runtime:hasTranscendence"
         ]
       }
     }
