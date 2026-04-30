@@ -23,7 +23,15 @@ export class DiceScene extends Phaser.Scene {
     2: { Common: 50, Uncommon: 75, Rare: 100, Epic: 200, Legendary: 500 },
     3: { Common: 150, Uncommon: 225, Rare: 400, Epic: 750, Legendary: 1500 },
     4: { Common: 300, Uncommon: 450, Rare: 800, Epic: 1500, Legendary: 3000 },
-    5: { Common: 500, Uncommon: 750, Rare: 1500, Epic: 3000, Legendary: 6000 }
+    5: { Common: 500, Uncommon: 750, Rare: 1500, Epic: 3000, Legendary: 6000 },
+    6: { Common: 800, Uncommon: 1200, Rare: 2500, Epic: 5000, Legendary: 10000 }
+  };
+  private readonly classCopyCosts: Record<number, Record<string, number>> = {
+    2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1 },
+    3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1 },
+    4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 1 },
+    5: { Common: 80, Uncommon: 50, Rare: 25, Epic: 8, Legendary: 2 },
+    6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 2 }
   };
   private cardScrollOffset = 0;
 
@@ -65,7 +73,7 @@ export class DiceScene extends Phaser.Scene {
     };
     refreshSlots();
 
-    const cardsContainer = this.add.container(0, 0);
+    const cardsContainer = this.add.container(0, 0).setDepth(6);
     const cardsTopY = panel.y + 160;
     const cardPitch = 210;
 
@@ -131,17 +139,19 @@ export class DiceScene extends Phaser.Scene {
 
     const viewTop = panel.y + 150;
     const viewHeight = panel.height - 230;
-    const maskGraphics = this.add.graphics();
-    maskGraphics.fillStyle(0xffffff, 1);
-    maskGraphics.fillRect(panel.x + 12, viewTop, panel.width - 24, viewHeight);
-    cardsContainer.setMask(maskGraphics.createGeometryMask());
+    const viewLeft = panel.x + 12;
+    const viewWidth = panel.width - 24;
+    const maskShape = this.add.rectangle(viewLeft, viewTop, viewWidth, viewHeight, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setVisible(false);
+    cardsContainer.setMask(maskShape.createGeometryMask());
 
     const totalRows = Math.ceil(definitions.length / 3);
     const contentHeight = totalRows * cardPitch;
     const maxScroll = Math.max(0, contentHeight - viewHeight + 24);
 
     this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
-      const withinX = pointer.worldX >= panel.x + 12 && pointer.worldX <= panel.right - 12;
+      const withinX = pointer.worldX >= viewLeft && pointer.worldX <= viewLeft + viewWidth;
       const withinY = pointer.worldY >= viewTop && pointer.worldY <= viewTop + viewHeight;
       if (!withinX || !withinY) return;
       this.cardScrollOffset = Phaser.Math.Clamp(this.cardScrollOffset - dy * 0.35, -maxScroll, 0);
@@ -172,7 +182,7 @@ export class DiceScene extends Phaser.Scene {
     const skill = this.add.text(width / 2, height / 2 - 35, `${getPrimarySkill(die)?.title ?? 'No skill'}\n${getPrimarySkill(die)?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
     const nextClass = Math.min(15, cls + 1);
     const tokenCost = this.classTokenCosts[nextClass]?.[die.rarity] ?? 0;
-    const copyCost = nextClass <= 1 ? 0 : nextClass * 10;
+    const copyCost = this.classCopyCosts[nextClass]?.[die.rarity] ?? (nextClass <= 1 ? 0 : nextClass * 10);
     const canUpgrade = cls < 15 && getDiceTokens(this) >= tokenCost && progress.copies >= copyCost;
     const costText = this.add.text(width / 2, height / 2 + 55, `Class UP -> C${nextClass} | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
     const assignable = !getSelectedLoadout(this).includes(typeId);
@@ -196,18 +206,6 @@ export class DiceScene extends Phaser.Scene {
         const existingIndex = loadout.findIndex((entry) => entry === typeId);
         if (existingIndex >= 0) return;
         loadout[selectedSlot] = typeId;
-        setSelectedLoadout(this, loadout);
-        closeModal();
-        onUpdate();
-        this.scene.restart();
-      });
-    }
-    if (assignable) {
-      assignBtn.on('pointerdown', () => {
-        const loadout = getSelectedLoadout(this);
-        const existingIndex = loadout.findIndex((entry) => entry === typeId);
-        if (existingIndex >= 0) return;
-        loadout[0] = typeId;
         setSelectedLoadout(this, loadout);
         closeModal();
         onUpdate();
