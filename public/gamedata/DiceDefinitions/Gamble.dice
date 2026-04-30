@@ -4,7 +4,6 @@
   "attack": 7,
   "health": 140,
   "range": 5,
-  "rangeLabel": "Medium",
   "rarity": "Common",
   "skills": [
     {
@@ -23,5 +22,6 @@
       }
     }
   ],
-  "accent": "#f7b267"
+  "accent": "#f7b267",
+  "targetingMode": "Nearest"
 }

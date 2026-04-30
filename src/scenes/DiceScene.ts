@@ -41,7 +41,8 @@ export class DiceScene extends Phaser.Scene {
 
   create() {
     const panel = drawPanel(this, 'DICE', 'Default loadout  |  five starter autorollers');
-    const definitions = getAllDiceDefinitions(this);
+    const rarityRank: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
+    const definitions = [...getAllDiceDefinitions(this)].sort((a, b) => (rarityRank[a.rarity] ?? 99) - (rarityRank[b.rarity] ?? 99) || a.title.localeCompare(b.title));
     let loadout = getSelectedLoadout(this);
     this.debug.log('Dice scene rendered.', { diceCount: definitions.length });
 
