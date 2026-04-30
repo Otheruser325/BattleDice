@@ -2,7 +2,7 @@
   "typeId": "Fire",
   "title": "Fire Dice",
   "attack": 12,
-  "health": 100,
+  "health": 200,
   "range": 3,
   "rangeLabel": "Mid",
   "skills": [

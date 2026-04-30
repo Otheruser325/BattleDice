@@ -1,6 +1,6 @@
 {
-  "typeId": "Lightning",
-  "title": "Lightning Dice",
+  "typeId": "Electric",
+  "title": "Electric Dice",
   "attack": 12,
   "health": 160,
   "range": 3,

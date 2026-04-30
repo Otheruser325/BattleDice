@@ -3,10 +3,12 @@
     "Fire",
     "Ice",
     "Poison",
-    "Lightning",
+    "Electric",
     "Wind",
     "Broken",
     "Light",
-    "Skull"
+    "Skull",
+    "Gamble",
+    "Iron"
   ]
 }

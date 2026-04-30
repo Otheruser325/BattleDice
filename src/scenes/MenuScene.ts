@@ -18,6 +18,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
+    this.tabButtons = [];
     const { width, height, dockY } = getLayout(this);
     this.debug.log('Menu scene created.');
 
@@ -91,6 +92,9 @@ export class MenuScene extends Phaser.Scene {
     }
 
     this.openTab(MENU_TABS.find((tab) => tab.sceneKey === this.activeSceneKey) ?? MENU_TABS[2]);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.tabButtons = [];
+    });
   }
 
   private openTab(tab: MenuTab) {
@@ -115,6 +119,7 @@ export class MenuScene extends Phaser.Scene {
 
   private refreshTabs() {
     this.tabButtons.forEach(({ tab, label, chip }) => {
+      if (!label?.scene || !chip?.scene) return;
       const active = tab.sceneKey === this.activeSceneKey;
       label.setColor(active ? PALETTE.text : PALETTE.textMuted);
       chip.setColor(active ? '#0b1520' : PALETTE.textMuted);
