@@ -3,7 +3,7 @@
   "title": "Skull Dice",
   "attack": 8,
   "health": 150,
-  "range": 2,
+  "range": 3,
   "rangeLabel": "Small",
   "rarity": "Rare",
   "skills": [
