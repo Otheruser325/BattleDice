@@ -16,7 +16,7 @@ export const PALETTE = {
 } as const;
 
 export const MENU_TABS = [
-  { label: 'Shop', sceneKey: 'ShopScene', status: 'WIP' },
+  { label: 'Shop', sceneKey: 'ShopScene', status: 'Offers' },
   { label: 'Dice', sceneKey: 'DiceScene', status: 'Loadout' },
   { label: 'Arena', sceneKey: 'ArenaScene', status: 'Demo' },
   { label: 'Casino', sceneKey: 'CasinoScene', status: 'WIP' },

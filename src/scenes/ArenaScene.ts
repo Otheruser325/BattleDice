@@ -10,6 +10,7 @@ import {
   findAttackTarget,
   executeAttack,
   applyDamage,
+  spendAttack,
   resolveCombatPhase,
   endTurn,
   type MatchBattleState
@@ -771,19 +772,41 @@ export class ArenaScene extends Phaser.Scene {
           continue;
         }
 
-        const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
-        this.gameState = result.newState;
-        this.applyTranscendenceBeam(attacker, target);
-        this.applyPassiveSkillEffects(attacker, target);
+        const attackerDef = this.definitions.get(attacker.typeId);
+        const attackerMeta = attackerDef ? getRuntimeSkillMeta(attackerDef) : undefined;
+        const currMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+        const meteorFires = (attackerMeta?.hasMeteorStrike ?? false) && currMana >= (attackerMeta?.activeManaNeeded ?? 7);
+        const deathFires = (attackerMeta?.hasDeathInstakill ?? false) && this.deathDiceTransformed.has(attacker.instanceId) && currMana >= (attackerMeta?.deathInstakillMana ?? 12);
+        const regularActiveFires = (attackerMeta?.activeManaNeeded ?? 0) > 0 && currMana >= (attackerMeta?.activeManaNeeded ?? 0) && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill;
+        const anyActiveFires = meteorFires || deathFires || regularActiveFires;
+        const BASIC_WITH_ACTIVE = new Set(['Ice', 'Poison']);
+        const skipBasicAttack = anyActiveFires && !BASIC_WITH_ACTIVE.has(attacker.typeId);
+
+        let damage = 0;
+        let targetDestroyed = false;
+
+        if (!skipBasicAttack) {
+          const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
+          this.gameState = result.newState;
+          damage = result.damage;
+          targetDestroyed = result.targetDestroyed;
+          this.applyTranscendenceBeam(attacker, target);
+          this.applyPassiveSkillEffects(attacker, target);
+        } else {
+          this.gameState = spendAttack(this.gameState, attacker.instanceId);
+        }
+
         this.applyActiveSkillEffects(attacker, target);
-        if (result.targetDestroyed) {
+        if (targetDestroyed) {
           this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
           this.checkDeathTransformCondition(target);
         }
 
         this.combatLog.setText(
-          `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${result.damage} damage!${result.targetDestroyed ? ' DESTROYED!' : ''}`
+          skipBasicAttack
+            ? `${ownerName} ${attacker.typeId} uses active skill!`
+            : `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${damage} damage!${targetDestroyed ? ' DESTROYED!' : ''}`
         );
 
         this.animateAttack(attacker, target);
@@ -835,7 +858,7 @@ export class ArenaScene extends Phaser.Scene {
         Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 1
       );
       splashTargets.forEach((die) => {
-        this.gameState = executeAttack(this.gameState, attacker.instanceId, die.instanceId, new Map([[attacker.typeId, { ...definition, attack: meta.splashDamage! }]])).newState;
+        this.gameState = applyDamage(this.gameState, die.instanceId, meta.splashDamage!);
       });
     }
     if (meta.chainDamage) {
@@ -846,7 +869,7 @@ export class ArenaScene extends Phaser.Scene {
         Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 2
       );
       if (chainTarget) {
-        this.gameState = executeAttack(this.gameState, attacker.instanceId, chainTarget.instanceId, new Map([[attacker.typeId, { ...definition, attack: meta.chainDamage }]])).newState;
+        this.gameState = applyDamage(this.gameState, chainTarget.instanceId, meta.chainDamage);
       }
     }
   }
@@ -907,8 +930,9 @@ export class ArenaScene extends Phaser.Scene {
     const manaNeeded = meta.activeManaNeeded ?? 0;
     const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
+    const windMultiplierActive = attacker.typeId === 'Wind' && this.attackMultiplierTurnsByInstance.has(attacker.instanceId);
     if (!canCastActive) {
-      if (manaNeeded > 0) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+      if (manaNeeded > 0 && !windMultiplierActive) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
       return;
     }
     if (attacker.typeId === 'Poison') {
@@ -917,8 +941,22 @@ export class ArenaScene extends Phaser.Scene {
       this.poisonByInstance.set(target.instanceId, { damage: poisonDamage, turns: poisonTurns });
     }
     if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
-      if (attacker.typeId === 'Wind') this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: meta.activeDurationTurns! });
-      else this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
+      if (attacker.typeId === 'Wind') {
+        this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: meta.activeDurationTurns! });
+        const freshAttacker = this.gameState.dice.find(d => d.instanceId === attacker.instanceId);
+        if (freshAttacker && !freshAttacker.isDestroyed) {
+          this.gameState = {
+            ...this.gameState,
+            dice: this.gameState.dice.map(d =>
+              d.instanceId === attacker.instanceId
+                ? { ...d, attacksRemaining: Math.max(1, d.attacksRemaining * 2) }
+                : d
+            )
+          };
+        }
+      } else {
+        this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
+      }
     }
     if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
       this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });

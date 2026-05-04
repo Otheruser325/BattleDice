@@ -24,7 +24,7 @@ export function createLoadoutInstances(
     maxHealth: definition.health,
     currentHealth: definition.health,
     isDestroyed: false,
-    hasFinishedAttacking: false,
+    hasFinishedAttacking: true,
     attacksRemaining: 0
   }));
 }
@@ -51,7 +51,7 @@ export function beginCombatPhase(state: MatchBattleState, attacksPerDie = 1): Ma
       die.zone === 'board' && !die.isDestroyed
         ? {
             ...die,
-            hasFinishedAttacking: false,
+            hasFinishedAttacking: true,
             attacksRemaining: attacksPerDie
           }
         : die
@@ -238,7 +238,8 @@ export function findAttackTarget(
     return [...reachable]
       .sort((a, b) => a.die.currentHealth - b.die.currentHealth || a.die.maxHealth - b.die.maxHealth || a.distance - b.distance)[0]?.die;
   }
-  return reachable[Math.floor(Math.random() * reachable.length)]?.die;
+  if (mode === 'Random') return reachable[Math.floor(Math.random() * reachable.length)]?.die;
+  return sortedByDistance[0]?.die;
 }
 
 export function executeAttack(
@@ -274,7 +275,7 @@ export function executeAttack(
               zone: 'board',
               currentHealth: die.maxHealth,
               attacksRemaining: 0,
-              hasFinishedAttacking: false,
+              hasFinishedAttacking: true,
               gridPosition: targetPosition
             }
           : die
