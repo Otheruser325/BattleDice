@@ -48,3 +48,6 @@ pids/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Phaser config
+project.config
