@@ -1,0 +1,21 @@
+{
+  "typeId": "Death",
+  "title": "Death Dice",
+  "attack": 10,
+  "health": 160,
+  "range": 4,
+  "rarity": "Epic",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Death Incarnate",
+      "description": "Transforms into Instakill Form when 2 allies are defeated, healing to full HP (320). In Instakill Form: accumulates mana and instantly kills a target at 12 mana.",
+      "manaNeeded": 12,
+      "modifiers": {
+        "notes": ["runtime:deathTransform", "runtime:deathInstakill"]
+      }
+    }
+  ],
+  "accent": "#9b59b6",
+  "targetingMode": "Nearest"
+}

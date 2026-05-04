@@ -8,7 +8,8 @@ import {
   getDiceTokens,
   getDiceProgress,
   setDiceProgress,
-  setDiceTokens
+  setDiceTokens,
+  DEFAULT_LOADOUT_IDS
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
@@ -39,8 +40,14 @@ export class DiceScene extends Phaser.Scene {
     super(DiceScene.KEY);
   }
 
+  private isDiceLocked(typeId: string): boolean {
+    if (DEFAULT_LOADOUT_IDS.has(typeId)) return false;
+    const progress = getDiceProgress(this, typeId);
+    return progress.copies === 0;
+  }
+
   create() {
-    const panel = drawPanel(this, 'DICE', 'Default loadout  |  five starter autorollers');
+    const panel = drawPanel(this, 'DICE', 'Loadout  |  Non-defaults unlock with copies');
     const rarityRank: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
     const definitions = [...getAllDiceDefinitions(this)].sort((a, b) => (rarityRank[a.rarity] ?? 99) - (rarityRank[b.rarity] ?? 99) || a.title.localeCompare(b.title));
     let loadout = getSelectedLoadout(this);
@@ -85,66 +92,79 @@ export class DiceScene extends Phaser.Scene {
       const y = cardsTopY + row * cardPitch;
       const accent = Phaser.Display.Color.HexStringToColor(die.accent).color;
       const cls = getDiceProgress(this, die.typeId).classLevel;
+      const locked = this.isDiceLocked(die.typeId);
 
-      const card = this.add.rectangle(x + 160, y + 84, 320, 176, 0x173247, 0.98).setInteractive({ useHandCursor: true })
-        .setStrokeStyle(2, accent);
-      const header = this.add.rectangle(x + 160, y + 22, 320, 42, accent, 0.18);
+      const cardFill = locked ? 0x111e28 : 0x173247;
+      const card = this.add.rectangle(x + 160, y + 84, 320, 176, cardFill, 0.98).setInteractive({ useHandCursor: !locked })
+        .setStrokeStyle(2, locked ? 0x2a3a47 : accent);
+      const header = this.add.rectangle(x + 160, y + 22, 320, 42, locked ? 0x1a2535 : accent, locked ? 0.12 : 0.18);
 
+      const titleColor = locked ? PALETTE.textMuted : die.accent;
       const title = this.add.text(x + 20, y + 10, die.title.toUpperCase(), {
         fontFamily: 'Orbitron',
         fontSize: '20px',
-        color: die.accent
+        color: titleColor
       });
-      const classTag = this.add.text(x + 286, y + 10, `C${cls}`, {
+      const classTag = this.add.text(x + 286, y + 10, locked ? 'LOCKED' : `C${cls}`, {
         fontFamily: 'Orbitron',
         fontSize: '14px',
-        color: PALETTE.accentSoft
+        color: locked ? PALETTE.danger : PALETTE.accentSoft
       }).setOrigin(1, 0);
 
       const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}   |   HP ${die.health}   |   RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
-        color: PALETTE.text
+        color: locked ? PALETTE.textMuted : PALETTE.text
       });
 
       const primarySkill = getPrimarySkill(die);
       const manaLine = primarySkill?.type === 'Active' && primarySkill.manaNeeded
         ? `Mana ${primarySkill.manaNeeded}`
-        : 'Passive ready';
+        : (primarySkill?.manaNeeded ? `Mana ${primarySkill.manaNeeded}` : 'Passive ready');
       const displayType = primarySkill?.type
         ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
         : 'PASSIVE';
       const skillTypeLine = this.add.text(x + 20, y + 78, `${displayType}  |  ${manaLine}`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
-        color: PALETTE.accentSoft
+        color: locked ? PALETTE.textMuted : PALETTE.accentSoft
       });
 
-      const skillTitle = this.add.text(x + 20, y + 106, primarySkill?.title ?? 'No skill', {
+      const skillTitle = this.add.text(x + 20, y + 106, locked ? '??? — Obtain copies to unlock' : (primarySkill?.title ?? 'No skill'), {
         fontFamily: 'Orbitron',
         fontSize: '14px',
-        color: PALETTE.text
+        color: locked ? PALETTE.textMuted : PALETTE.text
       });
 
-      const skillDesc = this.add.text(x + 20, y + 130, primarySkill?.description ?? '', {
+      const skillDesc = this.add.text(x + 20, y + 130, locked ? 'Visit the Shop to purchase copies of this die.' : (primarySkill?.description ?? ''), {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.textMuted,
         wordWrap: { width: 280 }
       });
 
-      card.on('pointerdown', () => {
-        this.openDiceModal(die.typeId, tokenText, () => {
-          loadout = getSelectedLoadout(this);
-          refreshSlots();
-          tokens = getDiceTokens(this);
-          tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
-        }, selectedSlot);
-      });
-      card.on('pointerover', () => card.setFillStyle(0x1f3e56, 1));
-      card.on('pointerout', () => card.setFillStyle(0x173247, 0.98));
+      if (!locked) {
+        card.on('pointerdown', () => {
+          this.openDiceModal(die.typeId, tokenText, () => {
+            loadout = getSelectedLoadout(this);
+            refreshSlots();
+            tokens = getDiceTokens(this);
+            tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
+          }, selectedSlot);
+        });
+        card.on('pointerover', () => card.setFillStyle(0x1f3e56, 1));
+        card.on('pointerout', () => card.setFillStyle(0x173247, 0.98));
+      }
 
       cardsContainer.add([card, header, title, classTag, statLine, skillTypeLine, skillTitle, skillDesc]);
+
+      if (locked) {
+        const lockOverlay = this.add.rectangle(x + 160, y + 84, 320, 176, 0x000000, 0.28);
+        const lockIcon = this.add.text(x + 160, y + 84, '🔒', {
+          fontSize: '28px'
+        }).setOrigin(0.5);
+        cardsContainer.add([lockOverlay, lockIcon]);
+      }
     });
 
     const viewTop = panel.y + 150;
@@ -183,24 +203,33 @@ export class DiceScene extends Phaser.Scene {
     const progress = getDiceProgress(this, typeId);
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 520, 360, 0x102434, 0.98).setStrokeStyle(2, 0x406987);
+    const panel = this.add.rectangle(width / 2, height / 2, 520, 380, 0x102434, 0.98).setStrokeStyle(2, 0x406987);
     const cls = progress.classLevel;
     const hp = die.health + (cls - 1) * 8;
     const atk = die.attack + (cls - 1) * 2;
-    const title = this.add.text(width / 2, height / 2 - 140, `${die.title} • CLASS ${cls}/15`, { fontFamily: 'Orbitron', fontSize: '20px', color: die.accent }).setOrigin(0.5);
-    const stats = this.add.text(width / 2, height / 2 - 95, `ATK ${atk}  |  HP ${hp}  |  RANGE ${die.range} (${getRangeLabel(die.range)})\nRARITY ${die.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
-    const skill = this.add.text(width / 2, height / 2 - 35, `${getPrimarySkill(die)?.title ?? 'No skill'}\n${getPrimarySkill(die)?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
+    const isMaxed = cls >= 15;
+    const title = this.add.text(width / 2, height / 2 - 155, `${die.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: die.accent }).setOrigin(0.5);
+    const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${die.range} (${getRangeLabel(die.range)})\nRARITY ${die.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const skill = this.add.text(width / 2, height / 2 - 50, `${getPrimarySkill(die)?.title ?? 'No skill'}\n${getPrimarySkill(die)?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
+
     const nextClass = Math.min(15, cls + 1);
     const tokenCost = this.classTokenCosts[nextClass]?.[die.rarity] ?? 0;
     const copyCost = this.classCopyCosts[nextClass]?.[die.rarity] ?? (nextClass <= 1 ? 0 : nextClass * 10);
-    const canUpgrade = cls < 15 && getDiceTokens(this) >= tokenCost && progress.copies >= copyCost;
-    const costText = this.add.text(width / 2, height / 2 + 55, `Class UP -> C${nextClass} | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
+    const canUpgrade = !isMaxed && getDiceTokens(this) >= tokenCost && progress.copies >= copyCost;
+
+    let costText: Phaser.GameObjects.Text;
+    if (isMaxed) {
+      costText = this.add.text(width / 2, height / 2 + 40, 'MAX CLASS REACHED — No more copies needed', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.success }).setOrigin(0.5);
+    } else {
+      costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
+    }
+
     const assignable = !getSelectedLoadout(this).includes(typeId);
     const assignBtn = this.add.rectangle(width / 2 - 110, height / 2 + 110, 180, 40, assignable ? 0x3498db : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: assignable });
     const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, assignable ? 'ASSIGN!' : 'IN LOADOUT', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
-    const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, canUpgrade ? 'CLASS UP' : 'LOCKED', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
-    const close = this.add.text(width / 2, height / 2 + 152, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
+    const close = this.add.text(width / 2, height / 2 + 160, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     if (canUpgrade) {
       upBtn.on('pointerdown', () => {
         setDiceTokens(this, getDiceTokens(this) - tokenCost);

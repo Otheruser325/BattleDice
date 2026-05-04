@@ -9,6 +9,7 @@ import {
   getNextAttacker,
   findAttackTarget,
   executeAttack,
+  applyDamage,
   resolveCombatPhase,
   endTurn,
   type MatchBattleState
@@ -77,6 +78,11 @@ export class ArenaScene extends Phaser.Scene {
   private diceRolled = false;
   private currentHandOrder: DiceTypeId[] = [];
 
+  private lavaPoolsByTile: Map<string, { damage: number; turns: number }> = new Map();
+  private deathDiceTransformed: Set<string> = new Set();
+  private deathAlliesDefeatedCount: Map<string, number> = new Map();
+  private permanentAttackBonusByInstance: Map<string, number> = new Map();
+
   constructor() {
     super(ArenaScene.KEY);
   }
@@ -99,13 +105,17 @@ export class ArenaScene extends Phaser.Scene {
     this.diceRolled = false;
     this.currentHandOrder = [];
     this.transcendenceBeamUsed.clear();
+    this.lavaPoolsByTile.clear();
+    this.deathDiceTransformed.clear();
+    this.deathAlliesDefeatedCount.clear();
+    this.permanentAttackBonusByInstance.clear();
   }
 
   create() {
     this.resetRuntimeState();
     const layout = getLayout(this);
 
-    this.definitions = new Map(getDiceDefinitions(this).map((die) => [die.typeId, die]));
+    this.definitions = new Map(getAllDiceDefinitions(this).map((die) => [die.typeId, die]));
     this.skillIndex = buildSkillIndex([...this.definitions.values()]);
 
     this.createBackground(layout);
@@ -284,18 +294,17 @@ export class ArenaScene extends Phaser.Scene {
     const allDefinitions = getAllDiceDefinitions(this);
     const playerDefs = playerLoadoutDefinitions
       .map((definition) => this.applyClassProgress(definition, getDiceProgress(this, definition.typeId).classLevel));
-    const enemyDefs = this.pickRandomEnemyLoadout(allDefinitions, new Set()).map((definition) => {
+
+    const enemyRawDefs = this.pickRandomEnemyLoadout(allDefinitions);
+    const enemyDefs = enemyRawDefs.map((definition) => {
       const classLevel = Phaser.Math.Between(1, 5);
       this.enemyClassLevels.set(definition.typeId, classLevel);
       return this.applyClassProgress(definition, classLevel);
     });
+
     this.gameState = createMatchBattleState(playerDefs, enemyDefs);
 
-    const enemyPositions = this.generateEnemyPositions();
-    enemyPositions.forEach((pos, index) => {
-      const instanceId = `enemy-${pos.typeId}-${index + 1}`;
-      this.gameState = placeDieOnBoard(this.gameState, instanceId, pos.row, pos.col);
-    });
+    this.generateEnemyPositions();
 
     this.turnText.setVisible(true);
     this.turnText.setText(`TURN ${this.gameState.turn}`);
@@ -305,8 +314,9 @@ export class ArenaScene extends Phaser.Scene {
     this.createCombatUI();
     this.updateCombatButtonState();
 
-    this.debug.log('Battle initialized', { turn: this.gameState.turn });
+    this.debug.log('Battle initialized', { turn: this.gameState.turn, playerCount: playerDefs.length, enemyCount: enemyDefs.length });
   }
+
   private applyClassProgress(definition: DiceDefinition, classLevel: number): DiceDefinition {
     return {
       ...definition,
@@ -626,6 +636,14 @@ export class ArenaScene extends Phaser.Scene {
     await this.delay(1000);
 
     this.gameState = this.beginCombatPhaseWithRolledPips();
+
+    this.applyLavaPoolDamageAtCombatStart();
+    this.renderDice();
+    this.renderEnemyDice();
+    this.renderLavaPools();
+
+    if (this.checkWinConditions()) return;
+
     await this.runCombatLoop();
   }
 
@@ -661,14 +679,74 @@ export class ArenaScene extends Phaser.Scene {
         const withDebuff = debuff ? Math.max(1, pips + debuff.delta) : pips;
         const withBuff = buff ? withDebuff + buff.extra : withDebuff;
         const withMultiplier = mult ? Math.max(1, Math.floor(withBuff * mult.multiplier)) : withBuff;
+        const permanentBonus = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
+        const withPermanent = withMultiplier + permanentBonus;
 
         return {
           ...die,
           hasFinishedAttacking: false,
-          attacksRemaining: withMultiplier
+          attacksRemaining: Math.max(1, withPermanent)
         };
       })
     };
+  }
+
+  private applyLavaPoolDamageAtCombatStart() {
+    if (this.lavaPoolsByTile.size === 0) return;
+    const allBoardDice = this.gameState.dice.filter(d => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
+    allBoardDice.forEach(die => {
+      const tileKey = `${die.ownerId}:${die.gridPosition!.row},${die.gridPosition!.col}`;
+      const pool = this.lavaPoolsByTile.get(tileKey);
+      if (pool) {
+        this.gameState = applyDamage(this.gameState, die.instanceId, pool.damage);
+        this.combatLog.setText(`${die.typeId} takes ${pool.damage} lava damage from the pool!`);
+      }
+    });
+  }
+
+  private renderLavaPools() {
+    const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
+
+    const removeOld = (container: Phaser.GameObjects.Container) => {
+      const toRemove: Phaser.GameObjects.GameObject[] = [];
+      container.each((child: Phaser.GameObjects.GameObject) => {
+        if (child instanceof Phaser.GameObjects.Graphics && child.name === 'lava-pool') {
+          toRemove.push(child);
+        }
+      });
+      toRemove.forEach(c => c.destroy());
+    };
+
+    removeOld(this.playerGridContainer);
+    removeOld(this.enemyGridContainer);
+
+    this.lavaPoolsByTile.forEach((pool, key) => {
+      const parts = key.split(':');
+      if (parts.length < 2) return;
+      const ownerId = parts[0];
+      const coords = parts[1].split(',');
+      if (coords.length < 2) return;
+      const row = parseInt(coords[0]);
+      const col = parseInt(coords[1]);
+      const container = ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+      const tileX = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+      const tileY = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+
+      const g = this.add.graphics();
+      g.name = 'lava-pool';
+      g.fillStyle(0xff4500, 0.45);
+      g.fillRoundedRect(tileX - TILE_SIZE / 2 + 4, tileY - TILE_SIZE / 2 + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
+      g.lineStyle(2, 0xff6b00, 0.85);
+      g.strokeRoundedRect(tileX - TILE_SIZE / 2 + 4, tileY - TILE_SIZE / 2 + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
+      container.add(g);
+
+      const turnLabel = this.add.text(tileX, tileY + TILE_SIZE / 2 - 10, `${pool.turns}T`, {
+        fontFamily: 'Orbitron', fontSize: '9px', color: '#ff8c00'
+      }).setOrigin(0.5);
+      turnLabel.setName('lava-pool');
+      container.add(turnLabel);
+    });
+    void boardWidth;
   }
 
   private async runCombatLoop() {
@@ -701,6 +779,7 @@ export class ArenaScene extends Phaser.Scene {
         if (result.targetDestroyed) {
           this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
+          this.checkDeathTransformCondition(target);
         }
 
         this.combatLog.setText(
@@ -731,6 +810,7 @@ export class ArenaScene extends Phaser.Scene {
     this.applyTurnBasedEffects();
     this.renderDice();
     this.renderEnemyDice();
+    this.renderLavaPools();
 
     if (this.checkWinConditions()) {
       return;
@@ -742,6 +822,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.updateCombatButtonState();
   }
+
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
     const definition = this.definitions.get(attacker.typeId);
     if (!definition || !target.gridPosition) return;
@@ -769,10 +850,60 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
   }
+
   private applyActiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
     const definition = this.definitions.get(attacker.typeId);
     if (!definition) return;
     const meta = getRuntimeSkillMeta(definition);
+
+    if (meta.hasMeteorStrike) {
+      const manaNeeded = meta.activeManaNeeded ?? 7;
+      const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+      if (currentMana >= manaNeeded) {
+        const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+        const enemies = getBoardDice(this.gameState, enemyOwner);
+        if (enemies.length > 0) {
+          const meteorTarget = enemies[Math.floor(Math.random() * enemies.length)];
+          const freshTarget = this.gameState.dice.find(d => d.instanceId === meteorTarget.instanceId);
+          if (freshTarget && !freshTarget.isDestroyed) {
+            this.gameState = applyDamage(this.gameState, freshTarget.instanceId, 60);
+            if (freshTarget.gridPosition) {
+              const lavaKey = `${enemyOwner}:${freshTarget.gridPosition.row},${freshTarget.gridPosition.col}`;
+              this.lavaPoolsByTile.set(lavaKey, { damage: 25, turns: 3 });
+            }
+            const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
+            this.combatLog.setText(`☄️ ${attacker.typeId} meteor strikes ${freshTarget.typeId} for 60 damage! Lava pool placed!${destroyed ? ' DESTROYED!' : ''}`);
+          }
+        }
+        this.manaByInstance.set(attacker.instanceId, 0);
+      } else {
+        this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+      }
+      return;
+    }
+
+    if (meta.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId)) {
+      const instakillMana = meta.deathInstakillMana ?? 12;
+      const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+      if (currentMana >= instakillMana) {
+        const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
+        if (freshTarget && !freshTarget.isDestroyed) {
+          this.gameState = applyDamage(this.gameState, freshTarget.instanceId, freshTarget.currentHealth);
+          this.combatLog.setText(`☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
+          const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
+          if (destroyed) {
+            this.applyOnKillSkillEffects(attacker, freshTarget);
+            this.applyOnDeathSkillEffects(freshTarget, attacker);
+            this.checkDeathTransformCondition(freshTarget);
+          }
+        }
+        this.manaByInstance.set(attacker.instanceId, 0);
+      } else {
+        this.manaByInstance.set(attacker.instanceId, Math.min(instakillMana, currentMana + 1));
+      }
+      return;
+    }
+
     const manaNeeded = meta.activeManaNeeded ?? 0;
     const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
@@ -794,6 +925,30 @@ export class ArenaScene extends Phaser.Scene {
     }
     this.manaByInstance.set(attacker.instanceId, 0);
   }
+
+  private checkDeathTransformCondition(defeated: DiceInstanceState) {
+    const owner = defeated.ownerId;
+    const alliesOfOwner = this.gameState.dice.filter(d => d.ownerId === owner && !d.isDestroyed && d.typeId === 'Death');
+    alliesOfOwner.forEach(deathDie => {
+      if (this.deathDiceTransformed.has(deathDie.instanceId)) return;
+      const count = (this.deathAlliesDefeatedCount.get(deathDie.instanceId) ?? 0) + 1;
+      this.deathAlliesDefeatedCount.set(deathDie.instanceId, count);
+      if (count >= 2) {
+        this.deathDiceTransformed.add(deathDie.instanceId);
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.map(d =>
+            d.instanceId === deathDie.instanceId
+              ? { ...d, maxHealth: 320, currentHealth: 320 }
+              : d
+          )
+        };
+        this.manaByInstance.set(deathDie.instanceId, 0);
+        this.combatLog.setText(`☠️ Death Dice transforms! HP surges to 320 — Instakill Form ACTIVE!`);
+      }
+    });
+  }
+
   private applyCombatEndSkills() {
     this.gameState = {
       ...this.gameState,
@@ -801,11 +956,19 @@ export class ArenaScene extends Phaser.Scene {
         if (die.zone !== 'board' || die.isDestroyed) return die;
         const definition = this.definitions.get(die.typeId);
         if (!definition) return die;
-        const bonus = getRuntimeSkillMeta(definition).combatEndExtraAttacks ?? 0;
+        const meta = getRuntimeSkillMeta(definition);
+        const bonus = meta.combatEndExtraAttacks ?? 0;
+
+        if (meta.hasGrowthPermanent) {
+          const current = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
+          this.permanentAttackBonusByInstance.set(die.instanceId, current + 1);
+        }
+
         return bonus > 0 ? { ...die, attacksRemaining: Math.max(0, die.attacksRemaining + bonus) } : die;
       })
     };
   }
+
   private applyTimedSkillDecay() {
     this.attackDeltaByInstance.forEach((value, key) => {
       const nextTurns = value.turns - 1;
@@ -831,7 +994,18 @@ export class ArenaScene extends Phaser.Scene {
         this.attackMultiplierTurnsByInstance.set(key, { ...value, turns: nextTurns });
       }
     });
+    const expiredLava: string[] = [];
+    this.lavaPoolsByTile.forEach((pool, key) => {
+      const nextTurns = pool.turns - 1;
+      if (nextTurns <= 0) {
+        expiredLava.push(key);
+      } else {
+        this.lavaPoolsByTile.set(key, { ...pool, turns: nextTurns });
+      }
+    });
+    expiredLava.forEach(k => this.lavaPoolsByTile.delete(k));
   }
+
   private applyTurnBasedEffects() {
     this.poisonByInstance.forEach((effect, instanceId) => {
       if (effect.turns <= 0) return;
@@ -944,25 +1118,26 @@ export class ArenaScene extends Phaser.Scene {
     this.renderDiceStatusPanel(this.enemyStatusPanel, enemyDice, 'OPPONENT');
   }
 
-  private generateEnemyPositions(): PlacedDie[] {
-    const types = getAvailableHandDice(this.gameState, 'enemy').map((die) => die.typeId);
-    const positions: PlacedDie[] = [];
+  private generateEnemyPositions() {
+    const enemyHandDice = getAvailableHandDice(this.gameState, 'enemy');
     const usedCells = new Set<string>();
 
-    for (let i = 0; i < types.length; i++) {
-      let row: number, col: number, key: string;
-      const definition = this.definitions.get(types[i] as DiceTypeId);
+    for (const die of enemyHandDice) {
+      const definition = this.definitions.get(die.typeId);
       const range = definition?.range ?? 4;
+      let row: number, col: number, key: string;
+      let attempts = 0;
       do {
         row = this.pickEnemyRow(range);
         col = Math.floor(Math.random() * GRID_SIZE);
         key = `${row},${col}`;
-      } while (usedCells.has(key));
+        attempts++;
+      } while (usedCells.has(key) && attempts < 50);
       usedCells.add(key);
-      positions.push({ typeId: types[i] as DiceTypeId, row, col, pips: 1 });
+      this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
     }
-    return positions;
   }
+
   private pickEnemyRow(range: number): number {
     if (range <= 3) {
       const roll = Math.random();
@@ -1001,17 +1176,42 @@ export class ArenaScene extends Phaser.Scene {
     panel.removeAll(true);
     panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }));
     dice.forEach((diceUnit, index) => {
-      const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP`;
-      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : PALETTE.textMuted }));
+      const isTransformed = diceUnit.typeId === 'Death' && this.deathDiceTransformed.has(diceUnit.instanceId);
+      const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${isTransformed ? ' ☠' : ''}`;
+      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (isTransformed ? '#9b59b6' : PALETTE.textMuted) }));
     });
   }
 
-  private pickRandomEnemyLoadout(pool: DiceDefinition[], excludeTypes: Set<string>): DiceDefinition[] {
-    const available = pool.filter((definition) => !excludeTypes.has(definition.typeId));
-    const source = available.length >= 3 ? available : pool;
-    const targetCount = Math.max(3, Math.min(6, source.length));
-    const shuffled = [...source].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, targetCount);
+  private pickRandomEnemyLoadout(pool: DiceDefinition[]): DiceDefinition[] {
+    const arr = [...pool];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+
+    const selected: DiceDefinition[] = [];
+    const used = new Set<string>();
+
+    for (const def of arr) {
+      if (selected.length >= 5) break;
+      if (!used.has(def.typeId)) {
+        selected.push(def);
+        used.add(def.typeId);
+      }
+    }
+
+    let safety = 0;
+    while (selected.length < 5 && arr.length > 0 && safety++ < 100) {
+      const pick = arr[Math.floor(Math.random() * arr.length)];
+      if (pick && !used.has(pick.typeId)) {
+        selected.push(pick);
+        used.add(pick.typeId);
+      } else if (pick) {
+        selected.push(pick);
+      }
+    }
+
+    return selected.slice(0, 5);
   }
 
   private applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
@@ -1038,6 +1238,7 @@ export class ArenaScene extends Phaser.Scene {
       dice: this.gameState.dice.map((die) => die.instanceId === ally.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
     };
   }
+
   private applyTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState) {
     const definition = this.definitions.get(attacker.typeId);
     if (!definition || !attacker.gridPosition || !target.gridPosition) return;
@@ -1058,6 +1259,7 @@ export class ArenaScene extends Phaser.Scene {
     };
     this.transcendenceBeamUsed.add(attacker.instanceId);
   }
+
   private findTranscendenceBeamTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
     const definition = this.definitions.get(attacker.typeId);
     if (!definition) return undefined;
@@ -1075,19 +1277,22 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.definitions.get(die.typeId);
     if (!definition) return;
 
-    const color = Phaser.Display.Color.HexStringToColor(definition.accent).color;
+    const isDeathTransformed = die.typeId === 'Death' && this.deathDiceTransformed.has(die.instanceId);
+    const accentHex = isDeathTransformed ? '#c06bdb' : definition.accent;
+    const color = Phaser.Display.Color.HexStringToColor(accentHex).color;
     const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
 
-    const dieRect = this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, 0.28)
+    const dieRect = this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, isDeathTransformed ? 0.55 : 0.28)
       .setStrokeStyle(2, color);
     dieRect.setData('isDie', true);
     container.add(dieRect);
 
-    const label = this.add.text(x, y - 12, definition.typeId.slice(0, 3).toUpperCase(), {
+    const shortLabel = isDeathTransformed ? '☠' : definition.typeId.slice(0, 3).toUpperCase();
+    const label = this.add.text(x, y - 12, shortLabel, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
-      color: definition.accent
+      color: accentHex
     }).setOrigin(0.5);
     label.setName('die-info');
     container.add(label);
@@ -1243,6 +1448,7 @@ export class ArenaScene extends Phaser.Scene {
     g.fillRoundedRect(x - 18 + (36 * (1 - ratio)), y - 3, 36 * ratio, 5, 2);
     container.add(g);
   }
+
   private renderManaBar(container: Phaser.GameObjects.Container, x: number, y: number, mana: number, maxMana: number) {
     const ratio = Phaser.Math.Clamp(maxMana > 0 ? mana / maxMana : 0, 0, 1);
     const g = this.add.graphics();

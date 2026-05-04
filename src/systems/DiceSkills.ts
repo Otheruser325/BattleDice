@@ -18,6 +18,11 @@ export interface DiceSkillRuntimeMeta {
   onDeathExtraAttacks?: number;
   distanceDamageBonusPerTile?: number;
   hasTranscendence?: boolean;
+  hasMeteorStrike?: boolean;
+  hasDeathTransform?: boolean;
+  hasDeathInstakill?: boolean;
+  deathInstakillMana?: number;
+  hasGrowthPermanent?: boolean;
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
@@ -29,6 +34,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
   const explicitRate = (modifiers as { targetMaxHpBonusRate?: number } | undefined)?.targetMaxHpBonusRate;
   const rateNote = notes.find((note) => note.startsWith('runtime:targetMaxHpBonusRate='));
   const parsedRate = rateNote ? Number(rateNote.split('=')[1]) : undefined;
+
+  const hasDeathInstakill = notes.includes('runtime:deathInstakill');
+
   return {
     randomDamage: range ? { min: range[0], max: range[1] } : undefined,
     targetMaxHpBonusRate: explicitRate ?? (Number.isFinite(parsedRate) ? parsedRate : undefined),
@@ -36,7 +44,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     chainDamage: modifiers?.chainDamage,
     reviveChance,
     combatStartExtraAttacks: primary?.type === 'CombatStart' ? (modifiers?.extraAttacks ?? 0) : 0,
-    combatEndExtraAttacks: primary?.type === 'CombatEnd' ? (modifiers?.extraAttacks ?? 0) : 0,
+    combatEndExtraAttacks: primary?.type === 'CombatEnd' && !notes.includes('runtime:growthPermanent') ? (modifiers?.extraAttacks ?? 0) : 0,
     targetingMode: definition.targetingMode,
     activeManaNeeded: primary?.type === 'Active' ? (primary.manaNeeded ?? 0) : 0,
     activeExtraAttacks: primary?.type === 'Active' ? (modifiers?.extraAttacks ?? 0) : 0,
@@ -46,7 +54,12 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
     onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
     distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile,
-    hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence'
+    hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence',
+    hasMeteorStrike: notes.includes('runtime:meteorStrike'),
+    hasDeathTransform: notes.includes('runtime:deathTransform'),
+    hasDeathInstakill,
+    deathInstakillMana: hasDeathInstakill ? (primary?.manaNeeded ?? 12) : undefined,
+    hasGrowthPermanent: notes.includes('runtime:growthPermanent')
   };
 }
 

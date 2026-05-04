@@ -1,0 +1,21 @@
+{
+  "typeId": "Meteor",
+  "title": "Meteor Dice",
+  "attack": 9,
+  "health": 150,
+  "range": 5,
+  "rarity": "Epic",
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Meteor Strike",
+      "description": "Throws a striking meteor at a random foe, causing 60 damage. Drops a lava pool on the hit tile lasting 3 turns. Foes standing on a lava tile take 25 damage at the start of combat.",
+      "manaNeeded": 7,
+      "modifiers": {
+        "notes": ["runtime:meteorStrike"]
+      }
+    }
+  ],
+  "accent": "#ff7a35",
+  "targetingMode": "Random"
+}
