@@ -83,6 +83,14 @@ export class ArenaScene extends Phaser.Scene {
   private deathDiceTransformed: Set<string> = new Set();
   private deathAlliesDefeatedCount: Map<string, number> = new Map();
   private permanentAttackBonusByInstance: Map<string, number> = new Map();
+  private instanceBaseAttack: Map<string, number> = new Map();
+
+  private modalContainer: Phaser.GameObjects.Container | null = null;
+  private modalEscHandler: (() => void) | null = null;
+  private configDifficulty: 'Easy' | 'Medium' | 'Hard' = 'Medium';
+  private configUseLevelling: boolean = true;
+  private configTurnCount: number = -1;
+  private turnLimit: number = -1;
 
   constructor() {
     super(ArenaScene.KEY);
@@ -110,6 +118,9 @@ export class ArenaScene extends Phaser.Scene {
     this.deathDiceTransformed.clear();
     this.deathAlliesDefeatedCount.clear();
     this.permanentAttackBonusByInstance.clear();
+    this.instanceBaseAttack.clear();
+    this.clearModeModal();
+    this.turnLimit = -1;
   }
 
   create() {
@@ -175,7 +186,7 @@ export class ArenaScene extends Phaser.Scene {
 
     playButton.on('pointerover', () => playButton.setFillStyle(0x27ae60, 1));
     playButton.on('pointerout', () => playButton.setFillStyle(0x2ecc71, 0.9));
-    playButton.on('pointerdown', () => this.startGame());
+    playButton.on('pointerdown', () => this.openModeSelectModal());
 
     const rules = this.add.text(centerX, centerY + 120, [
       'Win: Defeat all enemy dice',
@@ -191,6 +202,305 @@ export class ArenaScene extends Phaser.Scene {
 
     this.uiContainer.add([wipBadge, title, subtitle, playButton, rules]);
   }
+
+  // ── MATCH MODE MODAL ────────────────────────────────────────────────────────
+
+  private clearModeModal() {
+    this.clearModalEsc();
+    if (this.modalContainer) {
+      this.modalContainer.destroy(true);
+      this.modalContainer = null;
+    }
+  }
+
+  private setModalEsc(handler: () => void) {
+    this.clearModalEsc();
+    this.modalEscHandler = handler;
+    this.input.keyboard?.on('keydown-ESC', handler);
+  }
+
+  private clearModalEsc() {
+    if (this.modalEscHandler) {
+      this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+      this.modalEscHandler = null;
+    }
+  }
+
+  private openModeSelectModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const elements: Phaser.GameObjects.GameObject[] = [];
+
+    elements.push(
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 740, 330, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 136, 'CHOOSE YOUR MODE', {
+        fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
+      }).setOrigin(0.5)
+    );
+
+    const modes: { key: 'matchmaking' | 'singleplayer' | 'multiplayer'; label: string; desc: string }[] = [
+      { key: 'matchmaking',  label: 'MATCHMAKING',  desc: 'Pure PvP vs real players.\nNo bots — no turn limit.' },
+      { key: 'singleplayer', label: 'SINGLEPLAYER', desc: 'Battle a bot opponent.\nFully configurable.' },
+      { key: 'multiplayer',  label: 'MULTIPLAYER',  desc: 'Play against friends.\nFully configurable.' }
+    ];
+
+    const cardW = 196;
+    const cardH = 158;
+    const spacing = 222;
+    const startX = cx - spacing;
+
+    modes.forEach((mode, i) => {
+      const mx = startX + i * spacing;
+      const my = cy - 4;
+      const card = this.add.rectangle(mx, my, cardW, cardH, 0x19374d, 0.95)
+        .setStrokeStyle(1, 0x335770).setInteractive({ useHandCursor: true });
+      const labelText = this.add.text(mx, my - 40, mode.label, {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text
+      }).setOrigin(0.5);
+      const descText = this.add.text(mx, my + 14, mode.desc, {
+        fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted,
+        align: 'center', wordWrap: { width: 172 }
+      }).setOrigin(0.5);
+
+      card.on('pointerover', () => card.setFillStyle(0x233d52, 0.98));
+      card.on('pointerout',  () => card.setFillStyle(0x19374d, 0.95));
+      card.on('pointerdown', () => {
+        if (mode.key === 'matchmaking')  this.openMatchmakingModal();
+        else if (mode.key === 'singleplayer') this.openSingleplayerModal();
+        else this.openMultiplayerModal();
+      });
+      elements.push(card, labelText, descText);
+    });
+
+    const backBtn = this.add.text(cx, cy + 134, '← BACK', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
+      backgroundColor: '#173247', padding: { left: 14, right: 14, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => this.clearModeModal());
+    elements.push(backBtn);
+
+    this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
+    this.setModalEsc(() => this.clearModeModal());
+  }
+
+  private openMatchmakingModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const elements: Phaser.GameObjects.GameObject[] = [];
+
+    elements.push(
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 600, 300, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 112, 'MATCHMAKING', {
+        fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
+      }).setOrigin(0.5),
+      this.add.text(cx, cy - 60, 'Pure PvP — No bots, no turn limit.', {
+        fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text
+      }).setOrigin(0.5),
+      this.add.text(cx, cy - 22, 'Automatically finds a real opponent in the matchmaking\nqueue. Requires real players to be online.', {
+        fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted,
+        align: 'center', wordWrap: { width: 540 }
+      }).setOrigin(0.5)
+    );
+
+    const backBtn = this.add.text(cx - 90, cy + 104, '← BACK', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
+      backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => this.openModeSelectModal());
+    elements.push(backBtn);
+
+    const queueBtn = this.add.text(cx + 90, cy + 104, 'ENTER QUEUE →', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted,
+      backgroundColor: '#1e3347', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    queueBtn.on('pointerdown', () => {
+      AlertManager.toast(this, { type: 'warning', message: 'Online matchmaking is not yet available.' });
+    });
+    elements.push(queueBtn);
+
+    this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
+    this.setModalEsc(() => this.openModeSelectModal());
+  }
+
+  private openSingleplayerModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const elements: Phaser.GameObjects.GameObject[] = [];
+
+    elements.push(
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 640, 420, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 180, 'SINGLEPLAYER', {
+        fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
+      }).setOrigin(0.5),
+      this.add.text(cx - 265, cy - 118, 'Difficulty', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5),
+      this.add.text(cx - 265, cy - 60, 'Use Levelling', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5),
+      this.add.text(cx - 265, cy + 0, 'Turn Count', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5)
+    );
+
+    const rowContainer = this.add.container(0, 0);
+    elements.push(rowContainer);
+
+    this.makeSelectRow(
+      [{ label: 'EASY', value: 'Easy' as const }, { label: 'MEDIUM', value: 'Medium' as const }, { label: 'HARD', value: 'Hard' as const }],
+      () => this.configDifficulty, (v) => { this.configDifficulty = v; },
+      cx + 72, cy - 118, rowContainer
+    );
+    this.makeSelectRow(
+      [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
+      () => this.configUseLevelling, (v) => { this.configUseLevelling = v; },
+      cx - 12, cy - 60, rowContainer
+    );
+    this.makeSelectRow(
+      [{ label: '3', value: 3 }, { label: '5', value: 5 }, { label: '7', value: 7 }, { label: '10', value: 10 }, { label: '∞', value: -1 }],
+      () => this.configTurnCount, (v) => { this.configTurnCount = v; },
+      cx + 84, cy + 0, rowContainer
+    );
+
+    const noteText = this.add.text(cx, cy + 56, 'Difficulty changes bot class-level range.\nLevelling applies Class UP stat bonuses to all dice.', {
+      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
+    }).setOrigin(0.5);
+    elements.push(noteText);
+
+    const backBtn = this.add.text(cx - 90, cy + 168, '← BACK', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
+      backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => this.openModeSelectModal());
+    elements.push(backBtn);
+
+    const startBtn = this.add.text(cx + 90, cy + 168, 'START →', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: '#000000',
+      backgroundColor: '#2ecc71', padding: { left: 16, right: 16, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    startBtn.on('pointerdown', () => {
+      this.turnLimit = this.configTurnCount;
+      this.clearModeModal();
+      this.startGame();
+    });
+    elements.push(startBtn);
+
+    this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
+    this.setModalEsc(() => this.openModeSelectModal());
+  }
+
+  private openMultiplayerModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const elements: Phaser.GameObjects.GameObject[] = [];
+
+    elements.push(
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 640, 370, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 158, 'MULTIPLAYER', {
+        fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
+      }).setOrigin(0.5),
+      this.add.text(cx - 265, cy - 90, 'Use Levelling', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5),
+      this.add.text(cx - 265, cy - 28, 'Turn Count', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5)
+    );
+
+    const rowContainer = this.add.container(0, 0);
+    elements.push(rowContainer);
+
+    this.makeSelectRow(
+      [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
+      () => this.configUseLevelling, (v) => { this.configUseLevelling = v; },
+      cx - 12, cy - 90, rowContainer
+    );
+    this.makeSelectRow(
+      [{ label: '3', value: 3 }, { label: '5', value: 5 }, { label: '7', value: 7 }, { label: '10', value: 10 }, { label: '∞', value: -1 }],
+      () => this.configTurnCount, (v) => { this.configTurnCount = v; },
+      cx + 84, cy - 28, rowContainer
+    );
+
+    const noteText = this.add.text(cx, cy + 32, 'Play against friends in the same session.\nOnline connectivity for remote matches coming soon.', {
+      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
+    }).setOrigin(0.5);
+    elements.push(noteText);
+
+    const backBtn = this.add.text(cx - 90, cy + 140, '← BACK', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
+      backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => this.openModeSelectModal());
+    elements.push(backBtn);
+
+    const queueBtn = this.add.text(cx + 90, cy + 140, 'QUEUE →', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted,
+      backgroundColor: '#1e3347', padding: { left: 16, right: 16, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    queueBtn.on('pointerdown', () => {
+      AlertManager.toast(this, { type: 'warning', message: 'Online multiplayer is not yet available.' });
+    });
+    elements.push(queueBtn);
+
+    this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
+    this.setModalEsc(() => this.openModeSelectModal());
+  }
+
+  private makeSelectRow<T extends string | number | boolean>(
+    options: { label: string; value: T }[],
+    getter: () => T,
+    setter: (v: T) => void,
+    cx: number,
+    cy: number,
+    container: Phaser.GameObjects.Container
+  ): void {
+    const btnW = 72;
+    const gap = 8;
+    const totalW = options.length * btnW + (options.length - 1) * gap;
+    const startX = cx - totalW / 2 + btnW / 2;
+
+    const buttons: { rect: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text; value: T }[] = [];
+
+    const refresh = () => {
+      const selected = getter();
+      buttons.forEach(({ rect, text, value }) => {
+        const active = value === selected;
+        rect.setFillStyle(active ? 0xf4b860 : 0x173247, active ? 1 : 0.85);
+        rect.setStrokeStyle(1, active ? 0xf4b860 : 0x3f627c);
+        text.setColor(active ? '#0b1520' : '#99b2c3');
+      });
+    };
+
+    options.forEach((opt, i) => {
+      const x = startX + i * (btnW + gap);
+      const rect = this.add.rectangle(x, cy, btnW, 28, 0x173247, 0.85)
+        .setStrokeStyle(1, 0x3f627c).setInteractive({ useHandCursor: true });
+      const text = this.add.text(x, cy, opt.label, {
+        fontFamily: 'Orbitron', fontSize: '12px', color: '#99b2c3'
+      }).setOrigin(0.5);
+      rect.on('pointerdown', () => { setter(opt.value); refresh(); });
+      rect.on('pointerover', () => { if (getter() !== opt.value) rect.setFillStyle(0x233d52, 0.9); });
+      rect.on('pointerout', () => refresh());
+      buttons.push({ rect, text, value: opt.value });
+      container.add([rect, text]);
+    });
+
+    refresh();
+  }
+
+  // ── GAME START ───────────────────────────────────────────────────────────────
 
   private startGame() {
     this.resetRuntimeState();
@@ -290,20 +600,40 @@ export class ArenaScene extends Phaser.Scene {
     return container;
   }
 
+  private rollEnemyClassLevel(): number {
+    switch (this.configDifficulty) {
+      case 'Easy': return Phaser.Math.Between(1, 2);
+      case 'Hard': return Phaser.Math.Between(3, 8);
+      case 'Medium': default: return Phaser.Math.Between(1, 5);
+    }
+  }
+
   private initializeBattle() {
     const playerLoadoutDefinitions = getDiceDefinitions(this);
     const allDefinitions = getAllDiceDefinitions(this);
+
+    const effectiveLevel = (raw: number) => this.configUseLevelling ? raw : 1;
+
     const playerDefs = playerLoadoutDefinitions
-      .map((definition) => this.applyClassProgress(definition, getDiceProgress(this, definition.typeId).classLevel));
+      .map((definition) => this.applyClassProgress(definition, effectiveLevel(getDiceProgress(this, definition.typeId).classLevel)));
 
     const enemyRawDefs = this.pickRandomEnemyLoadout(allDefinitions);
     const enemyDefs = enemyRawDefs.map((definition) => {
-      const classLevel = Phaser.Math.Between(1, 5);
+      const classLevel = effectiveLevel(this.rollEnemyClassLevel());
       this.enemyClassLevels.set(definition.typeId, classLevel);
       return this.applyClassProgress(definition, classLevel);
     });
 
     this.gameState = createMatchBattleState(playerDefs, enemyDefs);
+
+    // Bug fix: store per-instance scaled attack so resolveDamage uses class-adjusted values
+    this.instanceBaseAttack.clear();
+    this.gameState.dice.forEach((die) => {
+      const scaledDef = die.ownerId === 'player'
+        ? playerDefs.find((d) => d.typeId === die.typeId)
+        : enemyDefs.find((d) => d.typeId === die.typeId);
+      if (scaledDef) this.instanceBaseAttack.set(die.instanceId, scaledDef.attack);
+    });
 
     this.generateEnemyPositions();
 
@@ -316,6 +646,16 @@ export class ArenaScene extends Phaser.Scene {
     this.updateCombatButtonState();
 
     this.debug.log('Battle initialized', { turn: this.gameState.turn, playerCount: playerDefs.length, enemyCount: enemyDefs.length });
+  }
+
+  private getDefinitionsForAttacker(attacker: DiceInstanceState): Map<string, DiceDefinition> {
+    const scaledAttack = this.instanceBaseAttack.get(attacker.instanceId);
+    if (scaledAttack === undefined) return this.definitions;
+    const baseDef = this.definitions.get(attacker.typeId);
+    if (!baseDef || baseDef.attack === scaledAttack) return this.definitions;
+    const modified = new Map(this.definitions);
+    modified.set(attacker.typeId, { ...baseDef, attack: scaledAttack });
+    return modified;
   }
 
   private applyClassProgress(definition: DiceDefinition, classLevel: number): DiceDefinition {
@@ -786,7 +1126,7 @@ export class ArenaScene extends Phaser.Scene {
         let targetDestroyed = false;
 
         if (!skipBasicAttack) {
-          const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.definitions);
+          const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.getDefinitionsForAttacker(attacker));
           this.gameState = result.newState;
           damage = result.damage;
           targetDestroyed = result.targetDestroyed;
@@ -831,6 +1171,7 @@ export class ArenaScene extends Phaser.Scene {
 
     await this.returnDiceToHand();
     this.applyTurnBasedEffects();
+    this.refreshHandAfterPoisonEffects();
     this.renderDice();
     this.renderEnemyDice();
     this.renderLavaPools();
@@ -839,11 +1180,49 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
+    if (this.turnLimit !== -1 && this.gameState.turn > this.turnLimit) {
+      this.resolveTurnLimitResult();
+      return;
+    }
+
     this.turnText.setText(`TURN ${this.gameState.turn}`);
     this.playTurnBanner(`TURN ${this.gameState.turn}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
 
     this.updateCombatButtonState();
+  }
+
+  private refreshHandAfterPoisonEffects() {
+    const deadInHand: string[] = [];
+    this.currentHandOrder.forEach((typeId) => {
+      const isDestroyed = this.gameState.dice.some(
+        (d) => d.ownerId === 'player' && d.typeId === typeId && d.isDestroyed
+      );
+      if (isDestroyed) deadInHand.push(typeId);
+    });
+    if (deadInHand.length === 0) return;
+
+    deadInHand.forEach((typeId) => {
+      this.handDice.get(typeId)?.destroy();
+      this.handDice.delete(typeId);
+    });
+    this.currentHandOrder = this.currentHandOrder.filter((t) => !deadInHand.includes(t));
+    this.combatLog.setText(
+      `${deadInHand.join(', ')} perished from poison between turns. ${this.currentHandOrder.length} dice remain.`
+    );
+    this.updateCombatButtonState();
+  }
+
+  private resolveTurnLimitResult() {
+    const playerLiving = getLivingDiceCount(this.gameState, 'player');
+    const enemyLiving = getLivingDiceCount(this.gameState, 'enemy');
+    if (playerLiving > enemyLiving) {
+      this.endGame('victory', `Turn limit reached! You have ${playerLiving} dice vs opponent's ${enemyLiving}.`);
+    } else if (enemyLiving > playerLiving) {
+      this.endGame('defeat', `Turn limit reached! Opponent has ${enemyLiving} dice vs your ${playerLiving}.`);
+    } else {
+      this.endGame('victory', `Turn limit reached — DRAW! Both sides have ${playerLiving} dice.`);
+    }
   }
 
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
