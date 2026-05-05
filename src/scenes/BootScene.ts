@@ -61,6 +61,10 @@ export class BootScene extends Phaser.Scene {
 
     this.load.image('menu-bg', MENU_BACKGROUND_PATH);
     this.load.image('settings-icon', SETTINGS_ICON_PATH);
+    for (let face = 1; face <= 6; face++) {
+      const names = ['one', 'two', 'three', 'four', 'five', 'six'];
+      this.load.image(`dice-face-${face}`, `/assets/images/dice/dice-six-faces-${names[face - 1]}.png`);
+    }
     DiceCatalogLoader.preloadFlags(this);
   }
 

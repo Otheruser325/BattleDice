@@ -18,7 +18,6 @@ import {
 const CARD_W = 316;
 const CARD_H = 210;
 const COL_COUNT = 3;
-const ROW_COUNT = 2;
 
 export class ShopScene extends Phaser.Scene {
   static readonly KEY = 'ShopScene';
@@ -48,7 +47,7 @@ export class ShopScene extends Phaser.Scene {
       color: PALETTE.textMuted
     });
 
-    const refreshLabel = this.buildRefreshLabel(panel);
+    this.buildRefreshLabel(panel);
 
     const gridStartX = panel.x + 28;
     const gridStartY = panel.y + 98;
