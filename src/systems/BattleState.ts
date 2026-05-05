@@ -225,7 +225,7 @@ export function findAttackTarget(
       const targetBattleRow = toBattlefieldRow(die.ownerId, die.gridPosition.row);
       const rowDelta = Math.abs(targetBattleRow - attackerBattleRow);
       const colDelta = Math.abs(die.gridPosition.col - attackerPos.col);
-      const distance = Math.max(rowDelta, colDelta);
+      const distance = rowDelta + colDelta;
       return { die, distance };
     })
     .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));

@@ -639,7 +639,7 @@ export class ArenaScene extends Phaser.Scene {
     this.generateEnemyPositions();
 
     this.turnText.setVisible(true);
-    this.turnText.setText(`TURN ${this.gameState.turn}`);
+    this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
 
     this.createHandArea();
     this.setupGridDropZones();
@@ -1187,13 +1187,13 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
-    if (this.turnLimit !== -1 && this.gameState.turn > this.turnLimit) {
+    if (this.turnLimit !== -1 && this.gameState.turn >= this.turnLimit) {
       this.resolveTurnLimitResult();
       return;
     }
 
-    this.turnText.setText(`TURN ${this.gameState.turn}`);
-    this.playTurnBanner(`TURN ${this.gameState.turn}`);
+    this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
+    this.playTurnBanner(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
 
     this.updateCombatButtonState();
