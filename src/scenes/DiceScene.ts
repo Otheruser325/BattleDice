@@ -127,7 +127,8 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
       const displayType = primarySkill?.type
         ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
         : 'PASSIVE';
-      const skillTypeLine = this.add.text(x + 20, y + 78, `${displayType}  |  ${manaLine}`, {
+      const skillTypeTag = primarySkill?.type === 'Active' ? '| Active' : '| Passive';
+      const skillTypeLine = this.add.text(x + 20, y + 78, `${displayType} ${skillTypeTag}  |  ${manaLine}`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: locked ? PALETTE.textMuted : PALETTE.accentSoft
