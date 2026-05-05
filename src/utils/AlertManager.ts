@@ -21,6 +21,7 @@ export class AlertManager {
   private static escHandler: ((event: KeyboardEvent) => void) | null = null;
   private static toastTimer: Phaser.Time.TimerEvent | null = null;
   private static toastElements: Phaser.GameObjects.GameObject[] = [];
+  private static toastMessage = '';
 
   static show(scene: Phaser.Scene, { message, type = 'warning', title }: AlertConfig) {
     if (!scene.add) {
@@ -74,6 +75,11 @@ export class AlertManager {
   }
 
   static toast(scene: Phaser.Scene, { message, type = 'success', durationMs = 1800 }: ToastConfig) {
+    if (this.toastElements.length > 0 && this.toastMessage === message) {
+      this.toastTimer?.remove(false);
+      this.toastTimer = scene.time.delayedCall(durationMs + 1000, () => this.clearToast());
+      return;
+    }
     this.clearToast();
 
     const { color } = this.getTypeConfig(type);
@@ -86,6 +92,7 @@ export class AlertManager {
       color: PALETTE.text
     }).setOrigin(0.5).setDepth(9001);
 
+    this.toastMessage = message;
     this.toastElements = [toastBg, toastText];
     this.toastTimer = scene.time.delayedCall(durationMs, () => this.clearToast());
   }
@@ -123,6 +130,7 @@ export class AlertManager {
     this.toastTimer = null;
     this.toastElements.forEach((entry) => entry.destroy());
     this.toastElements = [];
+    this.toastMessage = '';
   }
 
   private static getTypeConfig(type: AlertType) {

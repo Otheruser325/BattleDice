@@ -16,6 +16,7 @@ import {
   type MatchBattleState
 } from '../systems/BattleState';
 import { DebugManager } from '../utils/DebugManager';
+import { AlertManager } from '../utils/AlertManager';
 import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
@@ -638,7 +639,7 @@ export class ArenaScene extends Phaser.Scene {
     this.generateEnemyPositions();
 
     this.turnText.setVisible(true);
-    this.turnText.setText(`TURN ${this.gameState.turn}`);
+    this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
 
     this.createHandArea();
     this.setupGridDropZones();
@@ -988,6 +989,16 @@ export class ArenaScene extends Phaser.Scene {
     await this.runCombatLoop();
   }
 
+
+  private computeAttackCount(instanceId: string, basePips: number): number {
+    const debuff = this.attackDeltaByInstance.get(instanceId)?.delta ?? 0;
+    const buff = this.extraAttackTurnsByInstance.get(instanceId)?.extra ?? 0;
+    const mult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
+    const permanent = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
+    const adjusted = Math.max(1, basePips + debuff + buff + permanent);
+    return Math.max(1, Math.floor(adjusted * mult));
+  }
+
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
     const playerBoardDice = getBoardDice(this.gameState, 'player');
     const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
@@ -1014,14 +1025,7 @@ export class ArenaScene extends Phaser.Scene {
           ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
           : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
         const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
-        const debuff = this.attackDeltaByInstance.get(die.instanceId);
-        const buff = this.extraAttackTurnsByInstance.get(die.instanceId);
-        const mult = this.attackMultiplierTurnsByInstance.get(die.instanceId);
-        const withDebuff = debuff ? Math.max(1, pips + debuff.delta) : pips;
-        const withBuff = buff ? withDebuff + buff.extra : withDebuff;
-        const withMultiplier = mult ? Math.max(1, Math.floor(withBuff * mult.multiplier)) : withBuff;
-        const permanentBonus = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
-        const withPermanent = withMultiplier + permanentBonus;
+        const withPermanent = this.computeAttackCount(die.instanceId, pips);
 
         return {
           ...die,
@@ -1039,7 +1043,10 @@ export class ArenaScene extends Phaser.Scene {
       const tileKey = `${die.ownerId}:${die.gridPosition!.row},${die.gridPosition!.col}`;
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
+        const wasAlive = !die.isDestroyed;
         this.gameState = applyDamage(this.gameState, die.instanceId, pool.damage);
+        const after = this.gameState.dice.find((d) => d.instanceId === die.instanceId);
+        if (wasAlive && after?.isDestroyed) this.checkDeathTransformCondition(die);
         this.combatLog.setText(`${die.typeId} takes ${pool.damage} lava damage from the pool!`);
       }
     });
@@ -1180,13 +1187,13 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
-    if (this.turnLimit !== -1 && this.gameState.turn > this.turnLimit) {
+    if (this.turnLimit !== -1 && this.gameState.turn >= this.turnLimit) {
       this.resolveTurnLimitResult();
       return;
     }
 
-    this.turnText.setText(`TURN ${this.gameState.turn}`);
-    this.playTurnBanner(`TURN ${this.gameState.turn}`);
+    this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
+    this.playTurnBanner(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
 
     this.updateCombatButtonState();
@@ -1238,6 +1245,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       splashTargets.forEach((die) => {
         this.gameState = applyDamage(this.gameState, die.instanceId, meta.splashDamage!);
+        this.animateSkillEffect('fire', attacker, die);
       });
     }
     if (meta.chainDamage) {
@@ -1249,6 +1257,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       if (chainTarget) {
         this.gameState = applyDamage(this.gameState, chainTarget.instanceId, meta.chainDamage);
+        this.animateSkillEffect('electric', attacker, chainTarget);
       }
     }
   }
@@ -1314,10 +1323,18 @@ export class ArenaScene extends Phaser.Scene {
       if (manaNeeded > 0 && !windMultiplierActive) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
       return;
     }
+    if (attacker.typeId === 'Ice') {
+      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
+      if (freshTarget && !freshTarget.isDestroyed) {
+        this.gameState = applyDamage(this.gameState, freshTarget.instanceId, 16);
+        this.animateSkillEffect('ice', attacker, freshTarget);
+      }
+    }
     if (attacker.typeId === 'Poison') {
       const poisonDamage = meta.poisonDamage ?? 10;
       const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 2);
       this.poisonByInstance.set(target.instanceId, { damage: poisonDamage, turns: poisonTurns });
+      this.animateSkillEffect('poison', attacker, target);
     }
     if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
       if (attacker.typeId === 'Wind') {
@@ -1339,6 +1356,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
       this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
+      if (attacker.typeId === 'Ice') this.animateSkillEffect('ice', attacker, target);
     }
     this.manaByInstance.set(attacker.instanceId, 0);
   }
@@ -1356,12 +1374,13 @@ export class ArenaScene extends Phaser.Scene {
           ...this.gameState,
           dice: this.gameState.dice.map(d =>
             d.instanceId === deathDie.instanceId
-              ? { ...d, maxHealth: 320, currentHealth: 320 }
+              ? (() => { const transformedMaxHealth = d.maxHealth + 170; return { ...d, maxHealth: transformedMaxHealth, currentHealth: transformedMaxHealth }; })()
               : d
           )
         };
         this.manaByInstance.set(deathDie.instanceId, 0);
-        this.combatLog.setText(`☠️ Death Dice transforms! HP surges to 320 — Instakill Form ACTIVE!`);
+        this.combatLog.setText(`☠️ Death Dice transforms! Instakill Form ACTIVE!`);
+        this.animateTransformEffect(deathDie);
       }
     });
   }
@@ -1424,6 +1443,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyTurnBasedEffects() {
+    const newlyDefeated: DiceInstanceState[] = [];
     this.poisonByInstance.forEach((effect, instanceId) => {
       if (effect.turns <= 0) return;
       this.gameState = {
@@ -1432,6 +1452,7 @@ export class ArenaScene extends Phaser.Scene {
           if (die.instanceId !== instanceId || die.isDestroyed) return die;
           const currentHealth = Math.max(0, die.currentHealth - effect.damage);
           const isDestroyed = currentHealth <= 0;
+          if (isDestroyed && !die.isDestroyed) newlyDefeated.push(die);
           return {
             ...die,
             currentHealth,
@@ -1448,6 +1469,7 @@ export class ArenaScene extends Phaser.Scene {
         this.poisonByInstance.delete(instanceId);
       }
     });
+    newlyDefeated.forEach((die) => this.checkDeathTransformCondition(die));
   }
 
   private async returnDiceToHand() {
@@ -1486,6 +1508,35 @@ export class ArenaScene extends Phaser.Scene {
 
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => this.time.delayedCall(ms, resolve));
+  }
+
+
+  private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric', attacker: DiceInstanceState, target: DiceInstanceState) {
+    if (!attacker.gridPosition || !target.gridPosition) return;
+    const isPlayerAttacker = attacker.ownerId === 'player';
+    const attackerGrid = isPlayerAttacker ? this.playerGridContainer : this.enemyGridContainer;
+    const targetGrid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const ax = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const g = this.add.graphics();
+    if (kind === 'ice') { g.lineStyle(2, 0x8fd5ff, 0.9); g.strokeRect(tx - 18, ty - 18, 36, 36); }
+    if (kind === 'fire') { g.fillStyle(0xff8a3d, 0.25); g.fillTriangle(tx, ty - 18, tx - 14, ty + 16, tx + 14, ty + 16); }
+    if (kind === 'poison') { g.fillStyle(0x74d66f, 0.28); g.fillCircle(tx, ty, 14); g.fillCircle(tx + 12, ty - 8, 7); }
+    if (kind === 'electric') { g.lineStyle(2, 0xffef7a, 0.95); g.beginPath(); g.moveTo(ax, ay); g.lineTo((ax+tx)/2 - 8, (ay+ty)/2 + 6); g.lineTo((ax+tx)/2 + 6, (ay+ty)/2 - 5); g.lineTo(tx, ty); g.strokePath(); }
+    this.tweens.add({ targets: g, alpha: 0, duration: 420, onComplete: () => g.destroy() });
+  }
+
+  private animateTransformEffect(die: DiceInstanceState) {
+    if (!die.gridPosition) return;
+    const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ring = this.add.graphics();
+    ring.lineStyle(3, 0xc06bdb, 0.95);
+    ring.strokeCircle(x, y, 8);
+    this.tweens.add({ targets: ring, alpha: 0, scale: 3, duration: 500, onComplete: () => ring.destroy() });
   }
 
   private animateAttack(attacker: DiceInstanceState, target: DiceInstanceState) {

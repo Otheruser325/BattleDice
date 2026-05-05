@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
 
 export const PALETTE = {
-  ink: '#061018',
-  navy: '#0e2030',
-  panel: '#12293a',
-  panelAlt: '#19374d',
+  ink: '#0a1c29',
+  navy: '#17374d',
+  panel: '#1f4460',
+  panelAlt: '#2a5675',
   line: '#335770',
   accent: '#f4b860',
   accentSoft: '#ffd9a2',
@@ -47,10 +47,10 @@ export function getLayout(scene: Phaser.Scene) {
 export function drawPanel(scene: Phaser.Scene, title: string, subtitle: string) {
   const { content } = getLayout(scene);
 
-  scene.add.rectangle(content.centerX, content.centerY, content.width, content.height, 0x102434, 0.9)
+  scene.add.rectangle(content.centerX, content.centerY, content.width, content.height, 0x2f5f80, 0.78)
     .setStrokeStyle(2, 0x335770);
 
-  scene.add.rectangle(content.centerX, content.y + 42, content.width - 24, 62, 0x102535, 0.94)
+  scene.add.rectangle(content.centerX, content.y + 42, content.width - 24, 62, 0x3f7190, 0.72)
     .setStrokeStyle(1, 0x406987);
 
   scene.add.text(content.x + 28, content.y + 18, title, {
