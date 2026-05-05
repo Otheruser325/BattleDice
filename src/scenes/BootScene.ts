@@ -4,12 +4,13 @@ import { SettingsStore } from '../systems/SettingsStore';
 import { AlertManager } from '../utils/AlertManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { DebugManager } from '../utils/DebugManager';
+import { SCENE_KEYS } from './sceneKeys';
 
 const MENU_BACKGROUND_PATH = '/assets/images/bg/Background-floor.png';
 const SETTINGS_ICON_PATH = '/assets/images/ui/settings.png';
 
 export class BootScene extends Phaser.Scene {
-  static readonly KEY = 'BootScene';
+  static readonly KEY = SCENE_KEYS.Boot;
   private readonly debug = DebugManager.attachScene(BootScene.KEY);
   private titleText!: Phaser.GameObjects.Text;
   private progressLabel!: Phaser.GameObjects.Text;
@@ -83,7 +84,7 @@ export class BootScene extends Phaser.Scene {
         this,
         [this.titleText, this.progressBar, this.progressBox, this.progressLabel],
         320,
-        () => this.scene.start('MenuScene')
+        () => this.scene.start(SCENE_KEYS.Menu)
       );
     } catch (error) {
       this.debug.error('Failed to load dice catalog.', error);

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
+import { SCENE_KEYS } from './sceneKeys';
 import {
   getDiamonds,
   setDiamonds,
@@ -20,7 +21,7 @@ const CARD_H = 210;
 const COL_COUNT = 3;
 
 export class ShopScene extends Phaser.Scene {
-  static readonly KEY = 'ShopScene';
+  static readonly KEY = SCENE_KEYS.Shop;
   private readonly debug = DebugManager.attachScene(ShopScene.KEY);
 
   constructor() {
