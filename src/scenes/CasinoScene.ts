@@ -17,6 +17,10 @@ export class CasinoScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private shiftKey: Phaser.Input.Keyboard.Key | null = null;
 
+  constructor() {
+    super(CasinoScene.KEY);
+  }
+
   create() {
     const panel = drawPanel(this, 'CASINO', 'TABLES + CHESTS');
     this.add.rectangle(panel.centerX, panel.centerY - 10, 780, 360, 0x173247, 0.92).setStrokeStyle(1, 0x4f7ea1);
@@ -120,7 +124,8 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private render() {
-    this.diceTexts.forEach((t, i) => t.setText(String(this.dice[i])));
+    if (!this.scene.isActive()) return;
+    this.diceTexts.forEach((t, i) => { if (t?.scene) t.setText(String(this.dice[i] ?? 1)); });
     const progress = CasinoProgressStore.get(this);
     this.chestTexts.forEach((t, type) => t.setText(`${type}: ${progress.chests[type]}`));
   }

@@ -56,7 +56,7 @@ export class DiceScene extends Phaser.Scene {
 
     let tokens = getDiceTokens(this);
     const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`, {
-      fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft
+      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft
     });
     const slotText = this.add.text(panel.x + 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text });
     const slotBoxes: Phaser.GameObjects.Rectangle[] = [];
@@ -107,13 +107,14 @@ export class DiceScene extends Phaser.Scene {
         fontSize: '20px',
         color: titleColor
       });
-      const classTag = this.add.text(x + 286, y + 10, locked ? 'LOCKED' : `C${cls}`, {
+      const classTag = this.add.text(x + 300, y + 10, locked ? 'LOCKED' : `C${cls}`, {
         fontFamily: 'Orbitron',
         fontSize: '14px',
         color: locked ? PALETTE.danger : PALETTE.accentSoft
       }).setOrigin(1, 0);
 
-      const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}   |   HP ${die.health}   |   RANGE ${die.range} (${getRangeLabel(die.range)})`, {
+      const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}  |  HP ${die.health}
+RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: locked ? PALETTE.textMuted : PALETTE.text
@@ -225,7 +226,8 @@ export class DiceScene extends Phaser.Scene {
     const isMaxed = cls >= 15;
     const title = this.add.text(width / 2, height / 2 - 155, `${die.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: die.accent }).setOrigin(0.5);
     const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${die.range} (${getRangeLabel(die.range)})\nRARITY ${die.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
-    const skill = this.add.text(width / 2, height / 2 - 50, `${getPrimarySkill(die)?.title ?? 'No skill'}\n${getPrimarySkill(die)?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
+    const primary = getPrimarySkill(die);
+    const skill = this.add.text(width / 2, height / 2 - 50, `${primary?.title ?? 'No skill'} (${primary?.type ?? 'Passive'})\n${primary?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
 
     const nextClass = Math.min(15, cls + 1);
     const tokenCost = this.classTokenCosts[nextClass]?.[die.rarity] ?? 0;

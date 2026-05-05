@@ -1513,15 +1513,19 @@ export class ArenaScene extends Phaser.Scene {
 
   private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric', attacker: DiceInstanceState, target: DiceInstanceState) {
     if (!attacker.gridPosition || !target.gridPosition) return;
-    const color = kind === 'ice' ? 0x8fd5ff : kind === 'fire' ? 0xff8a3d : kind === 'poison' ? 0x74d66f : 0xffef7a;
-    const isPlayerTarget = target.ownerId === 'player';
-    const targetGrid = isPlayerTarget ? this.playerGridContainer : this.enemyGridContainer;
+    const isPlayerAttacker = attacker.ownerId === 'player';
+    const attackerGrid = isPlayerAttacker ? this.playerGridContainer : this.enemyGridContainer;
+    const targetGrid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const ax = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const g = this.add.graphics();
-    g.fillStyle(color, 0.35);
-    g.fillCircle(tx, ty, 18);
-    this.tweens.add({ targets: g, alpha: 0, scale: 1.6, duration: 350, onComplete: () => g.destroy() });
+    if (kind === 'ice') { g.lineStyle(2, 0x8fd5ff, 0.9); g.strokeRect(tx - 18, ty - 18, 36, 36); }
+    if (kind === 'fire') { g.fillStyle(0xff8a3d, 0.25); g.fillTriangle(tx, ty - 18, tx - 14, ty + 16, tx + 14, ty + 16); }
+    if (kind === 'poison') { g.fillStyle(0x74d66f, 0.28); g.fillCircle(tx, ty, 14); g.fillCircle(tx + 12, ty - 8, 7); }
+    if (kind === 'electric') { g.lineStyle(2, 0xffef7a, 0.95); g.beginPath(); g.moveTo(ax, ay); g.lineTo((ax+tx)/2 - 8, (ay+ty)/2 + 6); g.lineTo((ax+tx)/2 + 6, (ay+ty)/2 - 5); g.lineTo(tx, ty); g.strokePath(); }
+    this.tweens.add({ targets: g, alpha: 0, duration: 420, onComplete: () => g.destroy() });
   }
 
   private animateTransformEffect(die: DiceInstanceState) {
