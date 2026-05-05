@@ -19,6 +19,7 @@ export class DiceScene extends Phaser.Scene {
   private readonly debug = DebugManager.attachScene(DiceScene.KEY);
 
   private modalElements: Phaser.GameObjects.GameObject[] = [];
+  private modalEscHandler: (() => void) | null = null;
 
   private readonly classTokenCosts: Record<number, Record<string, number>> = {
     2: { Common: 50, Uncommon: 75, Rare: 100, Epic: 200, Legendary: 500 },
@@ -95,9 +96,10 @@ export class DiceScene extends Phaser.Scene {
       const locked = this.isDiceLocked(die.typeId);
 
       const cardFill = locked ? 0x111e28 : 0x173247;
-      const card = this.add.rectangle(x + 160, y + 84, 320, 176, cardFill, 0.98).setInteractive({ useHandCursor: !locked })
-        .setStrokeStyle(2, locked ? 0x2a3a47 : accent);
-      const header = this.add.rectangle(x + 160, y + 22, 320, 42, locked ? 0x1a2535 : accent, locked ? 0.12 : 0.18);
+      const cardWidth = 320;
+      const baseCardHeight = 176;
+      const cardTopY = y;
+      const header = this.add.rectangle(x + 160, cardTopY + 22, cardWidth, 42, locked ? 0x1a2535 : accent, locked ? 0.08 : 0.14);
 
       const titleColor = locked ? PALETTE.textMuted : die.accent;
       const title = this.add.text(x + 20, y + 10, die.title.toUpperCase(), {
@@ -124,7 +126,8 @@ export class DiceScene extends Phaser.Scene {
       const displayType = primarySkill?.type
         ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
         : 'PASSIVE';
-      const skillTypeLine = this.add.text(x + 20, y + 78, `${displayType}  |  ${manaLine}`, {
+      const skillTypeTag = primarySkill?.type === 'Active' ? '| Active' : '| Passive';
+      const skillTypeLine = this.add.text(x + 20, y + 78, `${displayType} ${skillTypeTag}  |  ${manaLine}`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: locked ? PALETTE.textMuted : PALETTE.accentSoft
@@ -143,6 +146,11 @@ export class DiceScene extends Phaser.Scene {
         wordWrap: { width: 280 }
       });
 
+      const computedCardHeight = Math.max(baseCardHeight, Math.ceil((skillDesc.y + skillDesc.height) - cardTopY + 18));
+      const card = this.add.rectangle(x + 160, cardTopY + computedCardHeight / 2, cardWidth, computedCardHeight, cardFill, 0.92).setInteractive({ useHandCursor: !locked })
+        .setStrokeStyle(2, locked ? 0x2a3a47 : accent);
+      header.setPosition(x + 160, cardTopY + 22);
+
       if (!locked) {
         card.on('pointerdown', () => {
           this.openDiceModal(die.typeId, tokenText, () => {
@@ -157,9 +165,10 @@ export class DiceScene extends Phaser.Scene {
       }
 
       cardsContainer.add([card, header, title, classTag, statLine, skillTypeLine, skillTitle, skillDesc]);
+      card.setDepth(0); header.setDepth(1);
 
       if (locked) {
-        const lockOverlay = this.add.rectangle(x + 160, y + 84, 320, 176, 0x000000, 0.28);
+        const lockOverlay = this.add.rectangle(x + 160, cardTopY + computedCardHeight / 2, 320, computedCardHeight, 0x000000, 0.22);
         const lockIcon = this.add.text(x + 160, y + 84, '🔒', {
           fontSize: '28px'
         }).setOrigin(0.5);
@@ -193,6 +202,12 @@ export class DiceScene extends Phaser.Scene {
       selectedSlot = (selectedSlot + 1) % 5;
       refreshSlots();
     });
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.modalEscHandler) this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+      this.modalEscHandler = null;
+      this.modalElements = [];
+    });
   }
 
   private openDiceModal(typeId: string, tokenText: Phaser.GameObjects.Text, onUpdate: () => void, selectedSlot: number) {
@@ -203,7 +218,7 @@ export class DiceScene extends Phaser.Scene {
     const progress = getDiceProgress(this, typeId);
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 520, 380, 0x102434, 0.98).setStrokeStyle(2, 0x406987);
+    const panel = this.add.rectangle(width / 2, height / 2, 540, 390, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
     const cls = progress.classLevel;
     const hp = die.health + (cls - 1) * 8;
     const atk = die.attack + (cls - 1) * 2;
@@ -254,9 +269,15 @@ export class DiceScene extends Phaser.Scene {
     const closeModal = () => {
       this.modalElements.forEach((el) => el.destroy());
       this.modalElements = [];
+      if (this.modalEscHandler) {
+        this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+        this.modalEscHandler = null;
+      }
     };
     overlay.on('pointerdown', closeModal);
     close.on('pointerdown', closeModal);
+    this.modalEscHandler = () => closeModal();
+    this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
     this.modalElements = [overlay, panel, title, stats, skill, costText, assignBtn, assignTxt, upBtn, upTxt, close];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
   }

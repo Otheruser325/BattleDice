@@ -15,16 +15,23 @@ export class CasinoScene extends Phaser.Scene {
   private diceTexts: Phaser.GameObjects.Text[] = [];
   private chestTexts = new Map<ChestType, Phaser.GameObjects.Text>();
   private statusText!: Phaser.GameObjects.Text;
+  private shiftKey: Phaser.Input.Keyboard.Key | null = null;
 
   create() {
     const panel = drawPanel(this, 'CASINO', 'TABLES + CHESTS');
-    this.add.rectangle(panel.centerX, panel.centerY - 10, 780, 360, 0x102434, 0.98).setStrokeStyle(1, 0x406987);
+    this.add.rectangle(panel.centerX, panel.centerY - 10, 780, 360, 0x173247, 0.92).setStrokeStyle(1, 0x4f7ea1);
     this.statusText = this.add.text(panel.centerX, panel.y + 88, 'Fives Roller: pay 10 chips to start a 3-roll hand.', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5);
 
     this.drawDiceRow(panel.centerX, panel.centerY - 72);
     this.drawButtons(panel.centerX, panel.centerY + 4);
     this.drawChestSidebar(panel.right - 135, panel.y + 116);
+    this.shiftKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT) ?? null;
     this.render();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.shiftKey = null;
+      this.diceTexts = [];
+      this.chestTexts.clear();
+    });
     this.debug.log('Casino scene ready');
   }
 
@@ -106,7 +113,7 @@ export class CasinoScene extends Phaser.Scene {
   private openChest(type: ChestType) {
     const curr = CasinoProgressStore.get(this).chests[type];
     if (curr <= 0) return AlertManager.toast(this, { type: 'warning', message: `No ${type} chests available.` });
-    const openCount = this.input.keyboard?.addKey('SHIFT').isDown ? curr : 1;
+    const openCount = this.shiftKey?.isDown ? curr : 1;
     CasinoProgressStore.mutate(this, (p) => ({ ...p, chests: { ...p.chests, [type]: Math.max(0, p.chests[type] - openCount) } }));
     AlertManager.toast(this, { type: 'success', message: `Opened ${openCount} ${type} chest${openCount > 1 ? 's' : ''}.` });
     this.render();

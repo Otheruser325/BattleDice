@@ -1040,7 +1040,10 @@ export class ArenaScene extends Phaser.Scene {
       const tileKey = `${die.ownerId}:${die.gridPosition!.row},${die.gridPosition!.col}`;
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
+        const wasAlive = !die.isDestroyed;
         this.gameState = applyDamage(this.gameState, die.instanceId, pool.damage);
+        const after = this.gameState.dice.find((d) => d.instanceId === die.instanceId);
+        if (wasAlive && after?.isDestroyed) this.checkDeathTransformCondition(die);
         this.combatLog.setText(`${die.typeId} takes ${pool.damage} lava damage from the pool!`);
       }
     });
@@ -1357,7 +1360,7 @@ export class ArenaScene extends Phaser.Scene {
           ...this.gameState,
           dice: this.gameState.dice.map(d =>
             d.instanceId === deathDie.instanceId
-              ? { ...d, maxHealth: 320, currentHealth: 320 }
+              ? (() => { const transformedMaxHealth = d.maxHealth + 170; return { ...d, maxHealth: transformedMaxHealth, currentHealth: transformedMaxHealth }; })()
               : d
           )
         };
@@ -1425,6 +1428,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyTurnBasedEffects() {
+    const newlyDefeated: DiceInstanceState[] = [];
     this.poisonByInstance.forEach((effect, instanceId) => {
       if (effect.turns <= 0) return;
       this.gameState = {
@@ -1433,6 +1437,7 @@ export class ArenaScene extends Phaser.Scene {
           if (die.instanceId !== instanceId || die.isDestroyed) return die;
           const currentHealth = Math.max(0, die.currentHealth - effect.damage);
           const isDestroyed = currentHealth <= 0;
+          if (isDestroyed && !die.isDestroyed) newlyDefeated.push(die);
           return {
             ...die,
             currentHealth,
@@ -1449,6 +1454,7 @@ export class ArenaScene extends Phaser.Scene {
         this.poisonByInstance.delete(instanceId);
       }
     });
+    newlyDefeated.forEach((die) => this.checkDeathTransformCondition(die));
   }
 
   private async returnDiceToHand() {
