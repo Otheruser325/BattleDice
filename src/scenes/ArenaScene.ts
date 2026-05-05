@@ -21,6 +21,7 @@ import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
+import { SCENE_KEYS } from './sceneKeys';
 
 
 interface GamePhase {
@@ -34,7 +35,7 @@ const TILE_SIZE = 64;
 const TILE_GAP = 8;
 
 export class ArenaScene extends Phaser.Scene {
-  static readonly KEY = 'ArenaScene';
+  static readonly KEY = SCENE_KEYS.Arena;
   private readonly debug = DebugManager.attachScene(ArenaScene.KEY);
 
   private gameState!: MatchBattleState;
@@ -509,7 +510,7 @@ export class ArenaScene extends Phaser.Scene {
       duration: 320,
       ease: 'Cubic.easeIn',
       onComplete: () => {
-        this.scene.sleep('MenuScene');
+        this.scene.sleep(SCENE_KEYS.Menu);
         this.uiContainer.destroy();
         this.createGameUI();
         this.initializeBattle();
@@ -1887,7 +1888,7 @@ export class ArenaScene extends Phaser.Scene {
     continueBtn.on('pointerover', () => continueBtn.setFillStyle(0x406987, 1));
     continueBtn.on('pointerout', () => continueBtn.setFillStyle(0x335770, 0.9));
     continueBtn.on('pointerdown', () => {
-      this.scene.wake('MenuScene');
+      this.scene.wake(SCENE_KEYS.Menu);
       this.scene.restart();
     });
   }
@@ -1908,8 +1909,8 @@ export class ArenaScene extends Phaser.Scene {
     overlay.on('pointerdown', () => this.closeExitPrompt());
     cancel.on('pointerdown', () => this.closeExitPrompt());
     quit.on('pointerdown', () => {
-      this.scene.wake('MenuScene');
-      this.scene.start('MenuScene');
+      this.scene.wake(SCENE_KEYS.Menu);
+      this.scene.start(SCENE_KEYS.Menu);
     });
     this.exitPromptElements = [overlay, panel, label, hint, cancel, quit];
     this.exitPromptElements.forEach((node) => (node as any).setDepth?.(400));

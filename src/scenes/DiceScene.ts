@@ -13,9 +13,10 @@ import {
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
+import { SCENE_KEYS } from './sceneKeys';
 
 export class DiceScene extends Phaser.Scene {
-  static readonly KEY = 'DiceScene';
+  static readonly KEY = SCENE_KEYS.Dice;
   private readonly debug = DebugManager.attachScene(DiceScene.KEY);
 
   private modalElements: Phaser.GameObjects.GameObject[] = [];
