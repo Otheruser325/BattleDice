@@ -7,6 +7,13 @@ import { DebugManager } from '../utils/DebugManager';
 
 const MENU_BACKGROUND_PATH = '/assets/images/bg/Background-floor.png';
 const SETTINGS_ICON_PATH = '/assets/images/ui/settings.png';
+const DIRECT_ACCESS_SCENES = new Set([
+  'ShopScene',
+  'DiceScene',
+  'ArenaScene',
+  'CasinoScene',
+  'AchievementsScene'
+]);
 
 export class BootScene extends Phaser.Scene {
   static readonly KEY = 'BootScene';
@@ -61,6 +68,10 @@ export class BootScene extends Phaser.Scene {
 
     this.load.image('menu-bg', MENU_BACKGROUND_PATH);
     this.load.image('settings-icon', SETTINGS_ICON_PATH);
+    for (let face = 1; face <= 6; face++) {
+      const names = ['one', 'two', 'three', 'four', 'five', 'six'];
+      this.load.image(`dice-face-${face}`, `/assets/images/dice/dice-six-faces-${names[face - 1]}.png`);
+    }
     DiceCatalogLoader.preloadFlags(this);
   }
 
@@ -79,7 +90,7 @@ export class BootScene extends Phaser.Scene {
         this,
         [this.titleText, this.progressBar, this.progressBox, this.progressLabel],
         320,
-        () => this.scene.start('MenuScene')
+        () => this.startRequestedScene()
       );
     } catch (error) {
       this.debug.error('Failed to load dice catalog.', error);
@@ -90,5 +101,17 @@ export class BootScene extends Phaser.Scene {
         message: 'The dice definition catalog could not be loaded. Check Flags.json and the referenced type-id files.'
       });
     }
+  }
+
+  private startRequestedScene() {
+    const requested = new URLSearchParams(window.location.search).get('scene') ?? window.location.hash.replace(/^#/, '');
+
+    if (DIRECT_ACCESS_SCENES.has(requested)) {
+      this.debug.log('Starting direct-access scene.', { sceneKey: requested });
+      this.scene.start(requested);
+      return;
+    }
+
+    this.scene.start('MenuScene');
   }
 }
