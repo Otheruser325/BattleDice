@@ -174,6 +174,8 @@ export function endTurn(state: MatchBattleState): MatchBattleState {
   };
 }
 
+const GRID_SIZE = 5;
+
 export function getNextAttacker(state: MatchBattleState, ownerId: DiceOwnerId): DiceInstanceState | undefined {
   const boardDice = state.dice
     .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
@@ -212,12 +214,16 @@ export function findAttackTarget(
   const attackerPos = attacker.gridPosition;
   if (!attackerPos) return undefined;
   const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
+  const toBattlefieldRow = (ownerId: DiceOwnerId, row: number) => (
+    ownerId === 'player' ? (GRID_SIZE - 1 - row) : (GRID_SIZE + row)
+  );
+
+  const attackerBattleRow = toBattlefieldRow(attacker.ownerId, attackerPos.row);
+
   const reachable = enemyDice
     .map((die) => {
-      const boardSize = 5;
-      const rowDelta = attacker.ownerId === 'player'
-        ? ((boardSize - 1 - attackerPos.row) + 1 + die.gridPosition.row)
-        : (attackerPos.row + 1 + (boardSize - 1 - die.gridPosition.row));
+      const targetBattleRow = toBattlefieldRow(die.ownerId, die.gridPosition.row);
+      const rowDelta = Math.abs(targetBattleRow - attackerBattleRow);
       const colDelta = Math.abs(die.gridPosition.col - attackerPos.col);
       const distance = Math.max(rowDelta, colDelta);
       return { die, distance };

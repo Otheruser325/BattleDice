@@ -17,5 +17,5 @@
     }
   ],
   "accent": "#ff7a35",
-  "targetingMode": "Random"
+  "targetingMode": "Nearest"
 }
