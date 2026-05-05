@@ -121,14 +121,10 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
       });
 
       const primarySkill = getPrimarySkill(die);
-      const manaLine = primarySkill?.type === 'Active' && primarySkill.manaNeeded
-        ? `Mana ${primarySkill.manaNeeded}`
-        : (primarySkill?.manaNeeded ? `Mana ${primarySkill.manaNeeded}` : 'Passive ready');
       const displayType = primarySkill?.type
         ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
         : 'PASSIVE';
-      const skillTypeTag = primarySkill?.type === 'Active' ? '| Active' : '| Passive';
-      const skillTypeLine = this.add.text(x + 20, y + 78, `${displayType} ${skillTypeTag}  |  ${manaLine}`, {
+      const skillTypeLine = this.add.text(x + 20, y + 78, displayType, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: locked ? PALETTE.textMuted : PALETTE.accentSoft

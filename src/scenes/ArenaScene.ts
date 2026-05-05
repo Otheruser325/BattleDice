@@ -22,12 +22,6 @@ import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/gam
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 
-interface PlacedDie {
-  typeId: DiceTypeId;
-  row: number;
-  col: number;
-  pips: number;
-}
 
 interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | 'victory' | 'defeat';
@@ -1245,6 +1239,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       splashTargets.forEach((die) => {
         this.gameState = applyDamage(this.gameState, die.instanceId, meta.splashDamage!);
+        if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
         this.animateSkillEffect('fire', attacker, die);
       });
     }
@@ -1257,6 +1252,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       if (chainTarget) {
         this.gameState = applyDamage(this.gameState, chainTarget.instanceId, meta.chainDamage);
+        if (this.gameState.dice.find((d) => d.instanceId === chainTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(chainTarget);
         this.animateSkillEffect('electric', attacker, chainTarget);
       }
     }
@@ -1283,6 +1279,7 @@ export class ArenaScene extends Phaser.Scene {
               this.lavaPoolsByTile.set(lavaKey, { damage: 25, turns: 3 });
             }
             const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
+            if (destroyed) this.checkDeathTransformCondition(freshTarget);
             this.combatLog.setText(`☄️ ${attacker.typeId} meteor strikes ${freshTarget.typeId} for 60 damage! Lava pool placed!${destroyed ? ' DESTROYED!' : ''}`);
           }
         }
@@ -1327,6 +1324,7 @@ export class ArenaScene extends Phaser.Scene {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         this.gameState = applyDamage(this.gameState, freshTarget.instanceId, 16);
+        if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
         this.animateSkillEffect('ice', attacker, freshTarget);
       }
     }
@@ -1363,23 +1361,38 @@ export class ArenaScene extends Phaser.Scene {
 
   private checkDeathTransformCondition(defeated: DiceInstanceState) {
     const owner = defeated.ownerId;
-    const alliesOfOwner = this.gameState.dice.filter(d => d.ownerId === owner && !d.isDestroyed && d.typeId === 'Death');
-    alliesOfOwner.forEach(deathDie => {
+    const deathDice = this.gameState.dice.filter((die) =>
+      die.ownerId === owner &&
+      !die.isDestroyed &&
+      die.typeId === 'Death'
+    );
+
+    deathDice.forEach((deathDie) => {
       if (this.deathDiceTransformed.has(deathDie.instanceId)) return;
-      const count = (this.deathAlliesDefeatedCount.get(deathDie.instanceId) ?? 0) + 1;
+      const definition = this.definitions.get(deathDie.typeId);
+      if (!definition || !getRuntimeSkillMeta(definition).hasDeathTransform) return;
+
+      const defeatedAllies = this.gameState.dice.filter((die) =>
+        die.ownerId === owner &&
+        die.instanceId !== deathDie.instanceId &&
+        die.isDestroyed
+      ).length;
+      const previous = this.deathAlliesDefeatedCount.get(deathDie.instanceId) ?? 0;
+      const count = Math.max(previous, defeatedAllies, defeated.instanceId === deathDie.instanceId ? previous : previous + 1);
       this.deathAlliesDefeatedCount.set(deathDie.instanceId, count);
+
       if (count >= 2) {
         this.deathDiceTransformed.add(deathDie.instanceId);
         this.gameState = {
           ...this.gameState,
-          dice: this.gameState.dice.map(d =>
-            d.instanceId === deathDie.instanceId
-              ? (() => { const transformedMaxHealth = d.maxHealth + 170; return { ...d, maxHealth: transformedMaxHealth, currentHealth: transformedMaxHealth }; })()
-              : d
+          dice: this.gameState.dice.map((die) =>
+            die.instanceId === deathDie.instanceId
+              ? { ...die, maxHealth: die.maxHealth * 2, currentHealth: die.maxHealth * 2 }
+              : die
           )
         };
         this.manaByInstance.set(deathDie.instanceId, 0);
-        this.combatLog.setText(`☠️ Death Dice transforms! Instakill Form ACTIVE!`);
+        this.combatLog.setText('☠️ Death Dice transforms! Max HP doubled — Instakill Form ACTIVE!');
         this.animateTransformEffect(deathDie);
       }
     });
@@ -1719,7 +1732,9 @@ export class ArenaScene extends Phaser.Scene {
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) => die.instanceId !== target.instanceId && die.gridPosition && (die.gridPosition.row === targetPos.row || die.gridPosition.col === targetPos.col));
     victims.forEach((die) => {
-      this.gameState = executeAttack(this.gameState, attacker.instanceId, die.instanceId, new Map([[attacker.typeId, { ...this.definitions.get(attacker.typeId)!, attack: 300 }]])).newState;
+      const result = executeAttack(this.gameState, attacker.instanceId, die.instanceId, new Map([[attacker.typeId, { ...this.definitions.get(attacker.typeId)!, attack: 300 }]]));
+      this.gameState = result.newState;
+      if (result.targetDestroyed) this.checkDeathTransformCondition(die);
     });
     this.gameState = {
       ...this.gameState,
