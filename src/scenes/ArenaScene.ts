@@ -16,6 +16,7 @@ import {
   type MatchBattleState
 } from '../systems/BattleState';
 import { DebugManager } from '../utils/DebugManager';
+import { AlertManager } from '../utils/AlertManager';
 import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
