@@ -1,8 +1,8 @@
 {
   "typeId": "Death",
   "title": "Death Dice",
-  "attack": 10,
-  "health": 160,
+  "attack": 20,
+  "health": 640,
   "range": 4,
   "rarity": "Epic",
   "skills": [
@@ -12,7 +12,15 @@
       "description": "Transforms into Instakill Form when 2 allies are defeated, doubling max HP and healing to full. In Instakill Form: accumulates mana and instantly kills a target at 12 mana.",
       "manaNeeded": 12,
       "modifiers": {
-        "notes": ["runtime:deathTransform", "runtime:deathInstakill"]
+        "notes": [
+          "runtime:deathTransform",
+          "runtime:deathInstakill",
+          "runtime:transformAccent=#c06bdb",
+          "runtime:transformSymbol=☠",
+          "runtime:transformTitle=Death Dice — Instakill Form",
+          "runtime:alternateButton=View Instakill Form",
+          "runtime:baseButton=View Death Dice"
+        ]
       }
     }
   ],

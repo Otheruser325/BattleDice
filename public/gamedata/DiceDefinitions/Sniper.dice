@@ -1,16 +1,16 @@
 {
   "typeId": "Sniper",
   "title": "Sniper Dice",
-  "attack": 10,
-  "health": 100,
+  "attack": 20,
+  "health": 400,
   "range": 7,
   "skills": [
     {
       "type": "Passive",
       "title": "Distance Mark",
-      "description": "Deal +3 damage for each tile of distance to the target.",
+      "description": "Deal +20% damage for each tile of distance to the target (+0.5% per Class UP).",
       "modifiers": {
-        "distanceDamageBonusPerTile": 3
+        "distanceDamageBonusRatePerTile": 0.2
       }
     }
   ],

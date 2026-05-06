@@ -1,19 +1,25 @@
 {
   "typeId": "Transcendence",
   "title": "Transcendence Dice",
-  "attack": 20,
-  "health": 160,
+  "attack": 40,
+  "health": 640,
   "range": 5,
   "skills": [
     {
       "type": "Passive",
       "title": "Perpendicular Beam",
-      "description": "If it rolls 6, attacks unleash a 300-damage beam along the target row/column.",
+      "description": "If it rolls 6, transforms into The Transcendence and beam attacks consume 6 attacks to strike through the target row/column for 600 damage.",
       "modifiers": {
         "notes": [
-          "runtime:beamOnSix=300",
-          "runtime:hasTranscendence"
-        ]
+          "runtime:beamOnSix=600",
+          "runtime:hasTranscendence",
+          "runtime:transformAccent=#6ff6ff",
+          "runtime:transformSymbol=✦",
+          "runtime:transformTitle=The Transcendence",
+          "runtime:alternateButton=View The Transcendence",
+          "runtime:baseButton=View Base Form"
+        ],
+        "beamDamage": 600
       }
     }
   ],

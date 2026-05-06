@@ -1,8 +1,8 @@
 {
   "typeId": "Light",
   "title": "Light Dice",
-  "attack": 6,
-  "health": 120,
+  "attack": 12,
+  "health": 480,
   "range": 3,
   "rarity": "Rare",
   "skills": [

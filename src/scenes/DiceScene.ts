@@ -13,9 +13,12 @@ import {
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
+import { applyClassProgression, getClassProgressionPreview } from '../systems/ClassProgression';
+import { getRuntimeSkillMeta } from '../systems/DiceSkills';
+import { SCENE_KEYS } from './sceneKeys';
 
 export class DiceScene extends Phaser.Scene {
-  static readonly KEY = 'DiceScene';
+  static readonly KEY = SCENE_KEYS.Dice;
   private readonly debug = DebugManager.attachScene(DiceScene.KEY);
 
   private modalElements: Phaser.GameObjects.GameObject[] = [];
@@ -93,6 +96,7 @@ export class DiceScene extends Phaser.Scene {
       const y = cardsTopY + row * cardPitch;
       const accent = Phaser.Display.Color.HexStringToColor(die.accent).color;
       const cls = getDiceProgress(this, die.typeId).classLevel;
+      const displayedDie = applyClassProgression(die, cls);
       const locked = this.isDiceLocked(die.typeId);
 
       const cardFill = locked ? 0x111e28 : 0x173247;
@@ -113,14 +117,14 @@ export class DiceScene extends Phaser.Scene {
         color: locked ? PALETTE.danger : PALETTE.accentSoft
       }).setOrigin(1, 0);
 
-      const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${die.attack}  |  HP ${die.health}
+      const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${displayedDie.attack}  |  HP ${displayedDie.health}
 RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: locked ? PALETTE.textMuted : PALETTE.text
       });
 
-      const primarySkill = getPrimarySkill(die);
+      const primarySkill = getPrimarySkill(displayedDie);
       const displayType = primarySkill?.type
         ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
         : 'PASSIVE';
@@ -136,7 +140,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         color: locked ? PALETTE.textMuted : PALETTE.text
       });
 
-      const skillDesc = this.add.text(x + 20, y + 130, locked ? 'Visit the Shop to purchase copies of this die.' : (primarySkill?.description ?? ''), {
+      const skillDesc = this.add.text(x + 20, y + 130, locked ? 'Visit the Shop to purchase copies of this die.' : (displayedDie.skills[0]?.description ?? ''), {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.textMuted,
@@ -207,22 +211,74 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     });
   }
 
-  private openDiceModal(typeId: string, tokenText: Phaser.GameObjects.Text, onUpdate: () => void, selectedSlot: number) {
+
+  private getAlternateFormLabel(die: ReturnType<typeof getAllDiceDefinitions>[number], showingAlternate: boolean): string | null {
+    const meta = getRuntimeSkillMeta(die);
+    if (!meta.alternateButton || !meta.baseButton) return null;
+    return showingAlternate ? meta.baseButton : meta.alternateButton;
+  }
+
+  private getModalDisplayDie(die: ReturnType<typeof getAllDiceDefinitions>[number], classLevel: number, showAlternate: boolean) {
+    const scaled = applyClassProgression(die, classLevel);
+    if (!showAlternate) return scaled;
+
+    const meta = getRuntimeSkillMeta(scaled);
+    if (!meta.transformTitle) return scaled;
+
+    if (meta.hasDeathTransform) {
+      return {
+        ...scaled,
+        title: meta.transformTitle,
+        health: scaled.health * 2,
+        accent: meta.transformAccent ?? scaled.accent,
+        skills: [{
+          type: 'Active' as const,
+          title: "Reaper's Touch",
+          description: 'At 12 mana, instantly kills the target. Death transforms into this form after 2 allies are defeated.',
+          manaNeeded: meta.deathInstakillMana ?? 12,
+          modifiers: { notes: ['runtime:deathInstakill'] }
+        }]
+      };
+    }
+
+    if (meta.hasTranscendence) {
+      return {
+        ...scaled,
+        title: meta.transformTitle,
+        accent: meta.transformAccent ?? scaled.accent,
+        skills: [{
+          type: 'Passive' as const,
+          title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
+          description: `Rolled 6 form: beam attacks consume 6 attacks and fire a wide cyan beam through the target row and column for ${meta.beamDamage ?? 600} damage.`,
+          modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
+        }]
+      };
+    }
+
+    return scaled;
+  }
+
+  private openDiceModal(typeId: string, tokenText: Phaser.GameObjects.Text, onUpdate: () => void, selectedSlot: number, showAlternate = false) {
     this.modalElements.forEach((el) => el.destroy());
     this.modalElements = [];
+    if (this.modalEscHandler) {
+      this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+      this.modalEscHandler = null;
+    }
     const die = getAllDiceDefinitions(this).find((definition) => definition.typeId === typeId);
     if (!die) return;
     const progress = getDiceProgress(this, typeId);
+    const displayDie = this.getModalDisplayDie(die, progress.classLevel, showAlternate);
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 540, 390, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
     const cls = progress.classLevel;
-    const hp = die.health + (cls - 1) * 8;
-    const atk = die.attack + (cls - 1) * 2;
+    const hp = displayDie.health;
+    const atk = displayDie.attack;
     const isMaxed = cls >= 15;
-    const title = this.add.text(width / 2, height / 2 - 155, `${die.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: die.accent }).setOrigin(0.5);
-    const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${die.range} (${getRangeLabel(die.range)})\nRARITY ${die.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
-    const primary = getPrimarySkill(die);
+    const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: displayDie.accent }).setOrigin(0.5);
+    const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})\nRARITY ${displayDie.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const primary = getPrimarySkill(displayDie);
     const skill = this.add.text(width / 2, height / 2 - 50, `${primary?.title ?? 'No skill'} (${primary?.type ?? 'Passive'})\n${primary?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
 
     const nextClass = Math.min(15, cls + 1);
@@ -234,7 +290,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     if (isMaxed) {
       costText = this.add.text(width / 2, height / 2 + 40, 'MAX CLASS REACHED — No more copies needed', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.success }).setOrigin(0.5);
     } else {
-      costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
+      costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} (+10% multiplicative stats/skills) | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
     }
 
     const assignable = !getSelectedLoadout(this).includes(typeId);
@@ -242,14 +298,39 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, assignable ? 'ASSIGN!' : 'IN LOADOUT', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
-    const close = this.add.text(width / 2, height / 2 + 160, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const upgradePreview = getClassProgressionPreview(die, cls);
+    const previewLines = [`ATK +${upgradePreview.attackDelta}`, `HP +${upgradePreview.healthDelta}`, ...upgradePreview.skillDeltas];
+    const upgradeTooltip = this.add.text(width / 2 + 110, height / 2 + 62, previewLines.join('\n'), {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.success,
+      align: 'center',
+      backgroundColor: '#0d2231',
+      padding: { left: 8, right: 8, top: 6, bottom: 6 }
+    }).setOrigin(0.5).setVisible(false);
+    const alternateLabel = this.getAlternateFormLabel(die, showAlternate);
+    const altBtn = this.add.text(width / 2, height / 2 + 142, alternateLabel ?? '', { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft, backgroundColor: '#224b66', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5);
+    if (alternateLabel) {
+      altBtn.setInteractive({ useHandCursor: true });
+      altBtn.on('pointerdown', () => this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot, !showAlternate));
+    } else {
+      altBtn.setVisible(false);
+    }
+    const close = this.add.text(width / 2, height / 2 + 170, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     if (canUpgrade) {
+      const showUpgradeTooltip = () => upgradeTooltip.setVisible(true);
+      const hideUpgradeTooltip = () => upgradeTooltip.setVisible(false);
+      upTxt.setInteractive({ useHandCursor: true });
+      upBtn.on('pointerover', showUpgradeTooltip);
+      upTxt.on('pointerover', showUpgradeTooltip);
+      upBtn.on('pointerout', hideUpgradeTooltip);
+      upTxt.on('pointerout', hideUpgradeTooltip);
       upBtn.on('pointerdown', () => {
         setDiceTokens(this, getDiceTokens(this) - tokenCost);
         setDiceProgress(this, typeId, { classLevel: cls + 1, copies: progress.copies - copyCost });
         tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click cards to assign selected slot`);
         onUpdate();
-        this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot);
+        this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot, showAlternate);
       });
     }
     if (assignable) {
@@ -276,7 +357,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     close.on('pointerdown', closeModal);
     this.modalEscHandler = () => closeModal();
     this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
-    this.modalElements = [overlay, panel, title, stats, skill, costText, assignBtn, assignTxt, upBtn, upTxt, close];
+    this.modalElements = [overlay, panel, title, stats, skill, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
   }
 }

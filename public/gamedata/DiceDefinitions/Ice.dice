@@ -1,18 +1,19 @@
 {
   "typeId": "Ice",
   "title": "Ice Dice",
-  "attack": 8,
-  "health": 180,
+  "attack": 16,
+  "health": 720,
   "range": 5,
   "skills": [
     {
       "type": "Active",
       "title": "Chill Lock",
-      "description": "Deals 16 damage and reduces the target's attack count by 1 for 2 turns, never below 1.",
+      "description": "Deals 32 damage and immediately reduces the target's current attack count by 1 for 2 turns, never below 1.",
       "manaNeeded": 6,
       "modifiers": {
         "attackDelta": -1,
-        "durationTurns": 2
+        "durationTurns": 2,
+        "activeDamage": 32
       }
     }
   ],
