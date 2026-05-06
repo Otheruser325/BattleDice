@@ -3,11 +3,12 @@ import { SettingsStore } from '../systems/SettingsStore';
 import { PALETTE } from '../ui/theme';
 import type { AppSettings } from '../types/game';
 import { DebugManager } from '../utils/DebugManager';
+import { SCENE_KEYS } from './sceneKeys';
 
 type SettingKey = keyof AppSettings;
 
 export class SettingsScene extends Phaser.Scene {
-  static readonly KEY = 'SettingsScene';
+  static readonly KEY = SCENE_KEYS.Settings;
 
   private modalOpen = false;
   private modalElements: Phaser.GameObjects.GameObject[] = [];

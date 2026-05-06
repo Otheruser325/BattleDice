@@ -8,12 +8,13 @@
     {
       "type": "Passive",
       "title": "Perpendicular Beam",
-      "description": "If it rolls 6, attacks unleash a 300-damage beam along the target row/column.",
+      "description": "If it rolls 6, transforms into The Transcendence and beam attacks consume 6 attacks to strike through the target row/column for 300 damage.",
       "modifiers": {
         "notes": [
           "runtime:beamOnSix=300",
           "runtime:hasTranscendence"
-        ]
+        ],
+        "beamDamage": 300
       }
     }
   ],

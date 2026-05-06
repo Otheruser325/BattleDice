@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { SCENE_KEYS, type SceneKey } from '../scenes/sceneKeys';
 
 export const PALETTE = {
   ink: '#0a1c29',
@@ -16,12 +17,12 @@ export const PALETTE = {
 } as const;
 
 export const MENU_TABS = [
-  { label: 'Shop', sceneKey: 'ShopScene', status: 'Offers' },
-  { label: 'Dice', sceneKey: 'DiceScene', status: 'Loadout' },
-  { label: 'Arena', sceneKey: 'ArenaScene', status: 'Demo' },
-  { label: 'Casino', sceneKey: 'CasinoScene', status: 'WIP' },
-  { label: 'Achievements', sceneKey: 'AchievementsScene', status: 'WIP' }
-] as const;
+  { label: 'Shop', sceneKey: SCENE_KEYS.Shop, status: 'Offers' },
+  { label: 'Dice', sceneKey: SCENE_KEYS.Dice, status: 'Loadout' },
+  { label: 'Arena', sceneKey: SCENE_KEYS.Arena, status: 'Demo' },
+  { label: 'Casino', sceneKey: SCENE_KEYS.Casino, status: 'Ready' },
+  { label: 'Achievements', sceneKey: SCENE_KEYS.Achievements, status: 'WIP' }
+] as const satisfies readonly { label: string; sceneKey: SceneKey; status: string }[];
 
 export function getLayout(scene: Phaser.Scene) {
   const { width, height } = scene.scale;

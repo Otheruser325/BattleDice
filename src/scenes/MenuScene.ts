@@ -3,13 +3,14 @@ import { AlertManager } from '../utils/AlertManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { DebugManager } from '../utils/DebugManager';
 import { MENU_TABS, PALETTE, getLayout } from '../ui/theme';
+import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
 export class MenuScene extends Phaser.Scene {
-  static readonly KEY = 'MenuScene';
+  static readonly KEY = SCENE_KEYS.Menu;
 
-  private activeSceneKey = 'ArenaScene';
+  private activeSceneKey: SceneKey = SCENE_KEYS.Arena;
   private tabButtons: Array<{ tab: MenuTab; container: Phaser.GameObjects.Container; label: Phaser.GameObjects.Text; chip: Phaser.GameObjects.Text; }> = [];
   private readonly debug = DebugManager.attachScene(MenuScene.KEY);
 
@@ -87,8 +88,8 @@ export class MenuScene extends Phaser.Scene {
       this.tabButtons.push({ tab, container, label, chip });
     });
 
-    if (!this.scene.isActive('SettingsScene')) {
-      this.scene.launch('SettingsScene');
+    if (!this.scene.isActive(SCENE_KEYS.Settings)) {
+      this.scene.launch(SCENE_KEYS.Settings);
     }
 
     this.openTab(MENU_TABS.find((tab) => tab.sceneKey === this.activeSceneKey) ?? MENU_TABS[2]);
@@ -105,8 +106,8 @@ export class MenuScene extends Phaser.Scene {
     this.activeSceneKey = tab.sceneKey;
     this.debug.event('Opening tab.', { tab: tab.label, sceneKey: tab.sceneKey, status: tab.status });
     this.scene.launch(tab.sceneKey);
-    this.scene.bringToTop(this.scene.key);
-    this.scene.bringToTop('SettingsScene');
+    this.scene.bringToTop(MenuScene.KEY);
+    this.scene.bringToTop(SCENE_KEYS.Settings);
     this.refreshTabs();
 
     if (tab.status === 'WIP') {

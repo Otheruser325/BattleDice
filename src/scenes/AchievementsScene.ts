@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
+import { SCENE_KEYS } from './sceneKeys';
 
 export class AchievementsScene extends Phaser.Scene {
-  static readonly KEY = 'AchievementsScene';
+  static readonly KEY = SCENE_KEYS.Achievements;
   private readonly debug = DebugManager.attachScene(AchievementsScene.KEY);
 
   constructor() {

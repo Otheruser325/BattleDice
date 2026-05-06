@@ -4,6 +4,7 @@ import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, setDiceProgress } from '../data/dice';
+import { SCENE_KEYS } from './sceneKeys';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -17,59 +18,22 @@ const CHEST_TYPES: ChestType[] = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Master
 const RARITY_RANK: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
 
 export class CasinoScene extends Phaser.Scene {
-  static readonly KEY = 'CasinoScene';
+  static readonly KEY = SCENE_KEYS.Casino;
 
-  private dice: number[] = [1, 1, 1, 1, 1];
-  private locks: boolean[] = [false, false, false, false, false];
-  private rollsLeft = 3;
-  private tableActive = false;
-
-  private diceImages: Phaser.GameObjects.Image[] = [];
-  private lockTexts: Phaser.GameObjects.Text[] = [];
-  private chestTexts = new Map<ChestType, Phaser.GameObjects.Text>();
-  private chipText!: Phaser.GameObjects.Text;
-  private statusText!: Phaser.GameObjects.Text;
-
-  private dice: number[] = [1, 1, 1, 1, 1];
-  private locks: boolean[] = [false, false, false, false, false];
-  private rollsLeft = 3;
-  private tableActive = false;
-
-  private diceImages: Phaser.GameObjects.Image[] = [];
-  private lockTexts: Phaser.GameObjects.Text[] = [];
-  private chestTexts = new Map<ChestType, Phaser.GameObjects.Text>();
-  private chipText!: Phaser.GameObjects.Text;
-  private statusText!: Phaser.GameObjects.Text;
-
-  private rarityRank: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
-
-  private rollChestReward(type: ChestType): { typeId: string; title: string; rarity: string; copies: number; isNew: boolean } | null {
-    const defs = getAllDiceDefinitions(this);
-    const byRarity = (rarity: string) => defs.filter((d) => d.rarity === rarity);
-    const pick = (arr: typeof defs) => (arr.length ? arr[Math.floor(Math.random() * arr.length)] : null);
-    const r = Math.random() * 100;
-
-    let rarity: 'Common'|'Uncommon'|'Rare'|'Epic'|'Legendary' = 'Common';
-    if (type === 'Bronze') rarity = r < 95 ? 'Common' : 'Uncommon';
-    if (type === 'Silver') rarity = r < 40 ? 'Common' : (r < 90 ? 'Uncommon' : 'Rare');
-    if (type === 'Gold') rarity = r < 20 ? 'Common' : (r < 55 ? 'Uncommon' : (r < 97 ? 'Rare' : 'Epic'));
-    if (type === 'Diamond') rarity = r < 11 ? 'Uncommon' : (r < 44 ? 'Rare' : (r < 99 ? 'Epic' : 'Legendary'));
-    if (type === 'Master') rarity = r < 20 ? 'Rare' : (r < 70 ? 'Epic' : 'Legendary');
-
-    const die = pick(byRarity(rarity));
-    if (!die) return null;
-    let copies = 1;
-    if (type === 'Bronze') copies = Phaser.Math.Between(1, 5);
-    if (type === 'Silver') copies = rarity === 'Rare' ? Phaser.Math.Between(1, 5) : Phaser.Math.Between(3, 10);
-    if (type === 'Gold') copies = rarity === 'Rare' ? Phaser.Math.Between(3, 10) : rarity === 'Epic' ? Phaser.Math.Between(1, 5) : Phaser.Math.Between(5, 25);
-    if (type === 'Diamond') copies = rarity === 'Rare' ? Phaser.Math.Between(10, 50) : rarity === 'Epic' ? Phaser.Math.Between(3, 10) : rarity === 'Legendary' ? Phaser.Math.Between(1, 3) : Phaser.Math.Between(15, 75);
-    if (type === 'Master') copies = rarity === 'Epic' ? Phaser.Math.Between(8, 40) : rarity === 'Legendary' ? Phaser.Math.Between(1, 5) : Phaser.Math.Between(100, 250);
-
-    const progress = getDiceProgress(this, die.typeId);
-    const isNew = progress.copies <= 0;
-    setDiceProgress(this, die.typeId, { classLevel: progress.classLevel, copies: progress.copies + copies });
-    return { typeId: die.typeId, title: die.title, rarity: die.rarity, copies, isNew };
+  constructor() {
+    super(CasinoScene.KEY);
   }
+
+  private dice: number[] = [1, 1, 1, 1, 1];
+  private locks: boolean[] = [false, false, false, false, false];
+  private rollsLeft = 3;
+  private tableActive = false;
+
+  private diceImages: Phaser.GameObjects.Image[] = [];
+  private lockTexts: Phaser.GameObjects.Text[] = [];
+  private chestTexts = new Map<ChestType, Phaser.GameObjects.Text>();
+  private chipText!: Phaser.GameObjects.Text;
+  private statusText!: Phaser.GameObjects.Text;
 
   create() {
     this.resetRuntimeUiState();
@@ -78,9 +42,12 @@ export class CasinoScene extends Phaser.Scene {
     this.add.rectangle(panel.centerX, panel.centerY - 10, 780, 360, 0x173247, 0.92)
       .setStrokeStyle(1, 0x4f7ea1);
 
+    this.add.rectangle(panel.centerX, panel.y + 62, 180, 30, 0x0d2231, 0.95)
+      .setStrokeStyle(1, 0xf4b860);
+
     this.chipText = this.add.text(panel.centerX, panel.y + 62, '', {
       fontFamily: 'Orbitron',
-      fontSize: '15px',
+      fontSize: '16px',
       color: PALETTE.accentSoft
     }).setOrigin(0.5);
 
@@ -399,7 +366,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private render() {
-    if (!this.scene.isActive()) return;
+    if (!this.scene.isActive(CasinoScene.KEY)) return;
     this.diceImages.forEach((image, i) => {
       if (image?.scene) image.setTexture(this.getDiceTextureKey(this.dice[i] ?? 1));
     });
@@ -410,9 +377,8 @@ export class CasinoScene extends Phaser.Scene {
     });
     const progress = CasinoProgressStore.get(this);
     this.chipText.setText(`CHIPS: ${progress.chips}`);
-    this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : 'Fives Roller: pay 10 chips to start a 3-roll hand.');
+    this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips to start a 3-roll hand.`);
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
   }
 
-  private render(){ if(!this.scene.isActive())return; this.diceTexts.forEach((t,i)=>{if(t?.scene)t.setText(String(this.dice[i]??1));}); const p=CasinoProgressStore.get(this); this.statusText.setText(this.tableActive?`Rolls left: ${this.rollsLeft}`:'Fives Roller: pay 10 chips to start a 3-roll hand.'); this.chestTexts.forEach((t,type)=>t.setText(`${type}: ${p.chests[type]}`)); }
 }

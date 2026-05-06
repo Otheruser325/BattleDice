@@ -9,12 +9,12 @@
     {
       "type": "Passive",
       "title": "Crush Armor",
-      "description": "Deals up to 20% bonus damage of the target's max HP.",
+      "description": "Deals bonus damage equal to 20% of the target's current HP (+0.5% per Class UP).",
       "modifiers": {
         "notes": [
-          "runtime:targetMaxHpBonusRate=0.2"
+          "runtime:targetCurrentHpBonusRate=0.2"
         ],
-        "targetMaxHpBonusRate": 0.2
+        "targetCurrentHpBonusRate": 0.2
       }
     }
   ],

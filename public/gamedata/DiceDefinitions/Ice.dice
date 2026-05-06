@@ -12,7 +12,8 @@
       "manaNeeded": 6,
       "modifiers": {
         "attackDelta": -1,
-        "durationTurns": 2
+        "durationTurns": 2,
+        "activeDamage": 16
       }
     }
   ],
