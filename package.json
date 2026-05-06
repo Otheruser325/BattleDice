@@ -4,11 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "bundle:playtest": "esbuild src/main.ts --bundle --format=esm --platform=browser --outfile=main.js --sourcemap && npm run copy:gamedata",
-    "copy:gamedata": "node -e \"const fs=require('fs'),path=require('path');function copy(src,dst){fs.cpSync(src,dst,{recursive:true,force:true})}copy('public/gamedata','gamedata')\"",
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "bundle:playtest": "esbuild src/main.ts --bundle --format=esm --platform=browser --outfile=main.js --sourcemap && npm run copy:playtest-assets",
+    "dev": "npm run bundle:playtest && vite",
+    "build": "tsc --noEmit && npm run bundle:playtest && vite build && npm run clean:playtest-assets",
+    "preview": "vite preview",
+    "copy:playtest-assets": "node -e \"const fs=require('fs');function reset(src,dst){fs.rmSync(dst,{recursive:true,force:true});fs.cpSync(src,dst,{recursive:true,force:true})}reset('public/gamedata','gamedata');reset('public/assets','assets')\"",
+    "clean:playtest-assets": "node -e \"const fs=require('fs');for(const target of ['main.js','main.js.map','gamedata','assets'])fs.rmSync(target,{recursive:true,force:true})\"",
+    "dev:clean": "npm run clean:playtest-assets"
   },
   "dependencies": {
     "phaser": "3.88.2"

@@ -29,14 +29,22 @@ export class DiceScene extends Phaser.Scene {
     3: { Common: 150, Uncommon: 225, Rare: 400, Epic: 750, Legendary: 1500 },
     4: { Common: 300, Uncommon: 450, Rare: 800, Epic: 1500, Legendary: 3000 },
     5: { Common: 500, Uncommon: 750, Rare: 1500, Epic: 3000, Legendary: 6000 },
-    6: { Common: 800, Uncommon: 1200, Rare: 2500, Epic: 5000, Legendary: 10000 }
+    6: { Common: 800, Uncommon: 1200, Rare: 2500, Epic: 5000, Legendary: 10000 },
+    7: { Common: 1200, Uncommon: 1800, Rare: 3750, Epic: 7500, Legendary: 15000 },
+    8: { Common: 2000, Uncommon: 3000, Rare: 6000, Epic: 10000, Legendary: 20000 },
+    9: { Common: 4000, Uncommon: 6000, Rare: 12000, Epic: 20000, Legendary: 40000 },
+    10: { Common: 6000, Uncommon: 9000, Rare: 18000, Epic: 30000, Legendary: 60000 }
   };
   private readonly classCopyCosts: Record<number, Record<string, number>> = {
     2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1 },
     3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1 },
     4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 1 },
     5: { Common: 80, Uncommon: 50, Rare: 25, Epic: 8, Legendary: 2 },
-    6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 2 }
+    6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 2 },
+    7: { Common: 200, Uncommon: 150, Rare: 75, Epic: 15, Legendary: 3 },
+    8: { Common: 400, Uncommon: 250, Rare: 120, Epic: 20, Legendary: 3 },
+    9: { Common: 700, Uncommon: 425, Rare: 200, Epic: 25, Legendary: 4 },
+    10: { Common: 1000, Uncommon: 750, Rare: 250, Epic: 30, Legendary: 4 }
   };
   private cardScrollOffset = 0;
 
