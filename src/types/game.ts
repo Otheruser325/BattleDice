@@ -11,6 +11,17 @@ export interface DiceSkillModifier {
   durationTurns?: number;
   splashDamage?: number;
   chainDamage?: number;
+  poisonDamage?: number;
+  activeDamage?: number;
+  meteorDamage?: number;
+  lavaDamage?: number;
+  beamDamage?: number;
+  reviveChance?: number;
+  damageRange?: [number, number];
+  targetMaxHpBonusRate?: number;
+  targetCurrentHpBonusRate?: number;
+  distanceDamageBonusPerTile?: number;
+  distanceDamageBonusRatePerTile?: number;
   notes?: string[];
 }
 

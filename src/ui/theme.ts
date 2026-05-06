@@ -20,7 +20,7 @@ export const MENU_TABS = [
   { label: 'Shop', sceneKey: SCENE_KEYS.Shop, status: 'Offers' },
   { label: 'Dice', sceneKey: SCENE_KEYS.Dice, status: 'Loadout' },
   { label: 'Arena', sceneKey: SCENE_KEYS.Arena, status: 'Demo' },
-  { label: 'Casino', sceneKey: SCENE_KEYS.Casino, status: 'WIP' },
+  { label: 'Casino', sceneKey: SCENE_KEYS.Casino, status: 'Ready' },
   { label: 'Achievements', sceneKey: SCENE_KEYS.Achievements, status: 'WIP' }
 ] as const satisfies readonly { label: string; sceneKey: SceneKey; status: string }[];
 

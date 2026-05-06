@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Last Rattle",
-      "description": "When defeated, it comes back to life with a 50% chance.",
+      "description": "When defeated, it comes back to life with a 50% chance (+1% per Class UP).",
       "modifiers": {
         "reviveChance": 0.5
       }

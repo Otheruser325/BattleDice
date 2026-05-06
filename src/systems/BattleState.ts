@@ -280,8 +280,8 @@ export function executeAttack(
               isDestroyed: false,
               zone: 'board',
               currentHealth: die.maxHealth,
-              attacksRemaining: 0,
-              hasFinishedAttacking: true,
+              attacksRemaining: target.attacksRemaining,
+              hasFinishedAttacking: target.hasFinishedAttacking,
               gridPosition: targetPosition
             }
           : die

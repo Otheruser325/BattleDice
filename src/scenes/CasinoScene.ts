@@ -42,9 +42,12 @@ export class CasinoScene extends Phaser.Scene {
     this.add.rectangle(panel.centerX, panel.centerY - 10, 780, 360, 0x173247, 0.92)
       .setStrokeStyle(1, 0x4f7ea1);
 
+    this.add.rectangle(panel.centerX, panel.y + 62, 180, 30, 0x0d2231, 0.95)
+      .setStrokeStyle(1, 0xf4b860);
+
     this.chipText = this.add.text(panel.centerX, panel.y + 62, '', {
       fontFamily: 'Orbitron',
-      fontSize: '15px',
+      fontSize: '16px',
       color: PALETTE.accentSoft
     }).setOrigin(0.5);
 
@@ -374,7 +377,7 @@ export class CasinoScene extends Phaser.Scene {
     });
     const progress = CasinoProgressStore.get(this);
     this.chipText.setText(`CHIPS: ${progress.chips}`);
-    this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : 'Fives Roller: pay 10 chips to start a 3-roll hand.');
+    this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips to start a 3-roll hand.`);
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
   }
 
