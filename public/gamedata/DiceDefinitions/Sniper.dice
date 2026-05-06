@@ -1,8 +1,8 @@
 {
   "typeId": "Sniper",
   "title": "Sniper Dice",
-  "attack": 10,
-  "health": 100,
+  "attack": 20,
+  "health": 400,
   "range": 7,
   "skills": [
     {

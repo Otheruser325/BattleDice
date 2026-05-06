@@ -22,6 +22,7 @@ import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/gam
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { applyClassProgression } from '../systems/ClassProgression';
+import { getCombatDistance, getCoveredEnemyRows, getCoveredEnemyTileCount } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 
 
@@ -81,6 +82,8 @@ export class ArenaScene extends Phaser.Scene {
   private deathAlliesDefeatedCount: Map<string, number> = new Map();
   private permanentAttackBonusByInstance: Map<string, number> = new Map();
   private instanceDefinitionOverrides: Map<string, DiceDefinition> = new Map();
+  private instanceClassLevels: Map<string, number> = new Map();
+  private enemyLoadoutRevealed = false;
 
   private modalContainer: Phaser.GameObjects.Container | null = null;
   private modalEscHandler: (() => void) | null = null;
@@ -116,8 +119,10 @@ export class ArenaScene extends Phaser.Scene {
     this.deathAlliesDefeatedCount.clear();
     this.permanentAttackBonusByInstance.clear();
     this.instanceDefinitionOverrides.clear();
+    this.instanceClassLevels.clear();
     this.clearModeModal();
     this.turnLimit = -1;
+    this.enemyLoadoutRevealed = false;
   }
 
   create() {
@@ -611,8 +616,13 @@ export class ArenaScene extends Phaser.Scene {
 
     const effectiveLevel = (raw: number) => this.configUseLevelling ? raw : 1;
 
+    const playerClassLevels = new Map<DiceTypeId, number>();
     const playerDefs = playerLoadoutDefinitions
-      .map((definition) => this.applyClassProgress(definition, effectiveLevel(getDiceProgress(this, definition.typeId).classLevel)));
+      .map((definition) => {
+        const classLevel = effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
+        playerClassLevels.set(definition.typeId, classLevel);
+        return this.applyClassProgress(definition, classLevel);
+      });
 
     const enemyRawDefs = this.pickRandomEnemyLoadout(allDefinitions);
     const enemyDefs = enemyRawDefs.map((definition) => {
@@ -629,7 +639,12 @@ export class ArenaScene extends Phaser.Scene {
       const scaledDef = die.ownerId === 'player'
         ? playerDefs.find((d) => d.typeId === die.typeId)
         : enemyDefs.find((d) => d.typeId === die.typeId);
-      if (scaledDef) this.instanceDefinitionOverrides.set(die.instanceId, scaledDef);
+      if (scaledDef) {
+        this.instanceDefinitionOverrides.set(die.instanceId, scaledDef);
+        this.instanceClassLevels.set(die.instanceId, die.ownerId === 'player'
+          ? (playerClassLevels.get(die.typeId) ?? 1)
+          : (this.enemyClassLevels.get(die.typeId) ?? 1));
+      }
     });
 
     this.generateEnemyPositions();
@@ -1135,7 +1150,7 @@ export class ArenaScene extends Phaser.Scene {
         const deathFires = (attackerMeta?.hasDeathInstakill ?? false) && this.deathDiceTransformed.has(attacker.instanceId) && currMana >= (attackerMeta?.deathInstakillMana ?? 12);
         const regularActiveFires = (attackerMeta?.activeManaNeeded ?? 0) > 0 && currMana >= (attackerMeta?.activeManaNeeded ?? 0) && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill;
         const anyActiveFires = meteorFires || deathFires || regularActiveFires;
-        const BASIC_WITH_ACTIVE = new Set(['Ice', 'Poison']);
+        const BASIC_WITH_ACTIVE = new Set(['Poison']);
         const skipBasicAttack = anyActiveFires && !BASIC_WITH_ACTIVE.has(attacker.typeId);
 
         let damage = 0;
@@ -1151,6 +1166,7 @@ export class ArenaScene extends Phaser.Scene {
             this.gameState = result.newState;
             damage = result.damage;
             targetDestroyed = result.targetDestroyed;
+            this.showDamageText(target, damage);
             this.applyPassiveSkillEffects(attacker, target);
           }
         } else {
@@ -1183,6 +1199,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     this.combatLog.setText('Combat phase complete!');
+    this.enemyLoadoutRevealed = true;
     await this.delay(1000);
 
     this.applyCombatEndSkills();
@@ -1259,6 +1276,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       splashTargets.forEach((die) => {
         this.gameState = applyDamage(this.gameState, die.instanceId, meta.splashDamage!);
+        this.showDamageText(die, meta.splashDamage!, '#ff9f58');
         if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
         this.animateSkillEffect('fire', attacker, die);
       });
@@ -1272,6 +1290,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       if (chainTarget) {
         this.gameState = applyDamage(this.gameState, chainTarget.instanceId, meta.chainDamage);
+        this.showDamageText(chainTarget, meta.chainDamage, '#fff176');
         if (this.gameState.dice.find((d) => d.instanceId === chainTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(chainTarget);
         this.animateSkillEffect('electric', attacker, chainTarget);
       }
@@ -1296,6 +1315,7 @@ export class ArenaScene extends Phaser.Scene {
             const meteorDamage = meta.meteorDamage ?? 60;
             const lavaDamage = meta.lavaDamage ?? 25;
             this.gameState = applyDamage(this.gameState, freshTarget.instanceId, meteorDamage);
+            this.showDamageText(freshTarget, meteorDamage, '#ff9f58');
             if (freshTarget.gridPosition) {
               const lavaKey = `${enemyOwner}:${freshTarget.gridPosition.row},${freshTarget.gridPosition.col}`;
               this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: 3 });
@@ -1346,6 +1366,15 @@ export class ArenaScene extends Phaser.Scene {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         this.gameState = applyDamage(this.gameState, freshTarget.instanceId, meta.activeDamage ?? 16);
+        this.showDamageText(freshTarget, meta.activeDamage ?? 16, '#8fd5ff');
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.map((die) => {
+            if (die.instanceId !== freshTarget.instanceId || die.isDestroyed || die.attacksRemaining <= 0) return die;
+            const attacksRemaining = Math.max(1, die.attacksRemaining - 1);
+            return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
+          })
+        };
         if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
         this.animateSkillEffect('ice', attacker, freshTarget);
       }
@@ -1653,7 +1682,10 @@ export class ArenaScene extends Phaser.Scene {
         this.renderDie(this.enemyGridContainer, die, die.gridPosition.row, die.gridPosition.col, false);
       }
     });
-    this.renderDiceStatusPanel(this.enemyStatusPanel, enemyDice, 'OPPONENT');
+    const statusDice = enemyDice.length > 0 || !this.enemyLoadoutRevealed
+      ? enemyDice
+      : this.gameState.dice.filter((die) => die.ownerId === 'enemy' && !die.isDestroyed);
+    this.renderDiceStatusPanel(this.enemyStatusPanel, statusDice, this.enemyLoadoutRevealed ? 'OPPONENT LOADOUT' : 'OPPONENT');
   }
 
   private generateEnemyPositions() {
@@ -1714,10 +1746,10 @@ export class ArenaScene extends Phaser.Scene {
     panel.removeAll(true);
     panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }));
     dice.forEach((diceUnit, index) => {
-      const isDeathTransformed = diceUnit.typeId === 'Death' && this.deathDiceTransformed.has(diceUnit.instanceId);
-      const isTranscendenceTransformed = diceUnit.typeId === 'Transcendence' && this.transcendenceTransformed.has(diceUnit.instanceId);
-      const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${isDeathTransformed ? ' ☠' : isTranscendenceTransformed ? ' ✦' : ''}`;
-      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (isDeathTransformed ? '#9b59b6' : isTranscendenceTransformed ? '#6ff6ff' : PALETTE.textMuted) }));
+      const visual = this.getTransformedVisual(diceUnit);
+      const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
+      const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${visual ? ` ${visual.symbol}` : ''}`;
+      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} Class UP C${classLevel}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }));
     });
   }
 
@@ -1796,6 +1828,7 @@ export class ArenaScene extends Phaser.Scene {
     let primaryDestroyed = false;
     victims.forEach((die) => {
       this.gameState = applyDamage(this.gameState, die.instanceId, damage);
+      this.showDamageText(die, damage, '#9ff8ff');
       const destroyed = this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed ?? false;
       if (destroyed) this.checkDeathTransformCondition(die);
       if (die.instanceId === target.instanceId) primaryDestroyed = destroyed;
@@ -1833,27 +1866,66 @@ export class ArenaScene extends Phaser.Scene {
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const targets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition);
     return targets
-      .map((die) => ({ die, distance: Math.max(Math.abs((die.gridPosition!.col - attacker.gridPosition!.col)), attacker.ownerId === 'player' ? ((4 - attacker.gridPosition!.row) + 1 + die.gridPosition!.row) : (attacker.gridPosition!.row + 1 + (4 - die.gridPosition!.row)))}))
+      .map((die) => ({ die, distance: getCombatDistance(attacker, die) }))
       .sort((a, b) => a.distance - b.distance)[0]?.die;
+  }
+
+
+  private getTransformedVisual(die: DiceInstanceState): { accent: string; symbol: string } | null {
+    const definition = this.getDefinitionForInstance(die);
+    if (!definition) return null;
+    const meta = getRuntimeSkillMeta(definition);
+    const isDeathTransformed = meta.hasDeathTransform && this.deathDiceTransformed.has(die.instanceId);
+    const isTranscendenceTransformed = meta.hasTranscendence && this.transcendenceTransformed.has(die.instanceId);
+    if (!isDeathTransformed && !isTranscendenceTransformed) return null;
+    return {
+      accent: meta.transformAccent ?? definition.accent,
+      symbol: meta.transformSymbol ?? '✦'
+    };
+  }
+
+  private getRangeCoverageText(die: DiceInstanceState): string {
+    const definition = this.getDefinitionForInstance(die);
+    if (!definition || !die.gridPosition) return `${die.typeId} range unavailable.`;
+    const coveredRows = getCoveredEnemyRows(die, definition.range);
+    const rowText = coveredRows.length > 0 ? coveredRows.map((row) => row + 1).join(', ') : 'none';
+    const tileCount = getCoveredEnemyTileCount(die, definition.range);
+    return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${definition.range}: covers ${tileCount}/25 enemy tiles (rows ${rowText}).`;
+  }
+
+  private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a') {
+    if (!target.gridPosition || amount <= 0) return;
+    const grid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const x = grid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const y = grid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18;
+    const text = this.add.text(x, y, `-${amount}`, {
+      fontFamily: 'Orbitron',
+      fontSize: '16px',
+      color,
+      stroke: '#071018',
+      strokeThickness: 4
+    }).setOrigin(0.5).setDepth(300);
+    this.tweens.add({ targets: text, y: y - 24, alpha: 0, duration: 640, ease: 'Cubic.easeOut', onComplete: () => text.destroy() });
   }
 
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {
     const definition = this.getDefinitionForInstance(die);
     if (!definition) return;
 
-    const isDeathTransformed = die.typeId === 'Death' && this.deathDiceTransformed.has(die.instanceId);
-    const isTranscendenceTransformed = die.typeId === 'Transcendence' && this.transcendenceTransformed.has(die.instanceId);
-    const accentHex = isDeathTransformed ? '#c06bdb' : isTranscendenceTransformed ? '#6ff6ff' : definition.accent;
+    const visual = this.getTransformedVisual(die);
+    const accentHex = visual?.accent ?? definition.accent;
     const color = Phaser.Display.Color.HexStringToColor(accentHex).color;
     const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
 
-    const dieRect = this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, (isDeathTransformed || isTranscendenceTransformed) ? 0.55 : 0.28)
-      .setStrokeStyle(2, color);
+    const dieRect = this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, visual ? 0.55 : 0.28)
+      .setStrokeStyle(2, color)
+      .setInteractive({ useHandCursor: true });
     dieRect.setData('isDie', true);
+    dieRect.on('pointerdown', () => this.combatLog.setText(this.getRangeCoverageText(die)));
     container.add(dieRect);
 
-    const shortLabel = isDeathTransformed ? '☠' : isTranscendenceTransformed ? '✦' : definition.typeId.slice(0, 3).toUpperCase();
+    const shortLabel = visual?.symbol ?? definition.typeId.slice(0, 3).toUpperCase();
     const label = this.add.text(x, y - 12, shortLabel, {
       fontFamily: 'Orbitron',
       fontSize: '11px',

@@ -1,8 +1,8 @@
 {
   "typeId": "Broken",
   "title": "Broken Dice",
-  "attack": 15,
-  "health": 120,
+  "attack": 30,
+  "health": 480,
   "range": 6,
   "rarity": "Uncommon",
   "skills": [

@@ -15,6 +15,44 @@ interface ChestRewardEntry {
 }
 
 const CHEST_TYPES: ChestType[] = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Master'];
+
+type RewardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
+
+interface ChestDropRateEntry {
+  rarity: RewardRarity;
+  rate: number;
+  copies: [number, number];
+}
+
+const CHEST_DROP_RATES: Record<ChestType, ChestDropRateEntry[]> = {
+  Bronze: [
+    { rarity: 'Common', rate: 95, copies: [1, 5] },
+    { rarity: 'Uncommon', rate: 5, copies: [1, 5] }
+  ],
+  Silver: [
+    { rarity: 'Common', rate: 40, copies: [3, 10] },
+    { rarity: 'Uncommon', rate: 50, copies: [3, 10] },
+    { rarity: 'Rare', rate: 10, copies: [1, 5] }
+  ],
+  Gold: [
+    { rarity: 'Common', rate: 20, copies: [5, 25] },
+    { rarity: 'Uncommon', rate: 35, copies: [5, 25] },
+    { rarity: 'Rare', rate: 42, copies: [3, 10] },
+    { rarity: 'Epic', rate: 3, copies: [1, 5] }
+  ],
+  Diamond: [
+    { rarity: 'Uncommon', rate: 11, copies: [15, 75] },
+    { rarity: 'Rare', rate: 33, copies: [10, 50] },
+    { rarity: 'Epic', rate: 55, copies: [3, 10] },
+    { rarity: 'Legendary', rate: 1, copies: [1, 3] }
+  ],
+  Master: [
+    { rarity: 'Rare', rate: 20, copies: [100, 250] },
+    { rarity: 'Epic', rate: 50, copies: [8, 40] },
+    { rarity: 'Legendary', rate: 30, copies: [1, 5] }
+  ]
+};
+
 const RARITY_RANK: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
 
 export class CasinoScene extends Phaser.Scene {
@@ -199,24 +237,55 @@ export class CasinoScene extends Phaser.Scene {
     this.render();
   }
 
+
+  private getChestDropRateText(type: ChestType) {
+    return CHEST_DROP_RATES[type]
+      .map((entry) => `${entry.rarity}: ${entry.rate}% • ${entry.copies[0]}-${entry.copies[1]} cards`)
+      .join('\n');
+  }
+
   private openChestModal(type: ChestType) {
     const amount = CasinoProgressStore.get(this).chests[type];
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 560, 320, 0x153449, 0.97).setStrokeStyle(2, 0x4f7ea1);
-    const title = this.add.text(width / 2, height / 2 - 120, `${type} Chest`, {
+    const panel = this.add.rectangle(width / 2, height / 2, 620, 360, 0x153449, 0.97).setStrokeStyle(2, 0x4f7ea1);
+    const title = this.add.text(width / 2, height / 2 - 140, `${type} Chest`, {
       fontFamily: 'Orbitron',
       fontSize: '24px',
       color: PALETTE.accent
     }).setOrigin(0.5);
-    const chest = this.add.rectangle(width / 2, height / 2 - 20, 120, 90, 0x2f5f80, 0.95).setStrokeStyle(2, 0x8fd5ff);
-    const count = this.add.text(width / 2, height / 2 + 42, `Available: ${amount}`, {
+    const chest = this.add.rectangle(width / 2, height / 2 - 30, 120, 90, 0x2f5f80, 0.95).setStrokeStyle(2, 0x8fd5ff);
+    const count = this.add.text(width / 2, height / 2 + 32, `Available: ${amount}`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted
     }).setOrigin(0.5);
 
-    const close = () => [overlay, panel, title, chest, count, open, openAll, closeBtn].forEach((o) => o.destroy());
+    const dropInfo = this.add.text(width / 2, height / 2 + 92, this.getChestDropRateText(type), {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.success,
+      align: 'center',
+      backgroundColor: '#0d2231',
+      padding: { left: 8, right: 8, top: 6, bottom: 6 }
+    }).setOrigin(0.5).setVisible(false);
+    const ratesBtn = this.add.text(width / 2 + 98, height / 2 - 144, '?', {
+      fontFamily: 'Orbitron',
+      fontSize: '15px',
+      color: '#0b1520',
+      backgroundColor: PALETTE.accent,
+      padding: { left: 7, right: 7, top: 2, bottom: 2 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    let dropInfoPinned = false;
+    const toggleDropInfo = () => {
+      dropInfoPinned = !dropInfoPinned;
+      dropInfo.setVisible(dropInfoPinned);
+    };
+    ratesBtn.on('pointerover', () => dropInfo.setVisible(true));
+    ratesBtn.on('pointerout', () => { if (!dropInfoPinned) dropInfo.setVisible(false); });
+    ratesBtn.on('pointerdown', toggleDropInfo);
+
+    const close = () => [overlay, panel, title, chest, count, dropInfo, ratesBtn, open, openAll, closeBtn].forEach((o) => o.destroy());
     const doOpen = (all: boolean) => {
       const latest = CasinoProgressStore.get(this).chests[type];
       const openCount = all ? latest : Math.min(1, latest);
@@ -225,21 +294,21 @@ export class CasinoScene extends Phaser.Scene {
       close();
     };
 
-    const open = this.add.text(width / 2 - 90, height / 2 + 92, 'Open', {
+    const open = this.add.text(width / 2 - 90, height / 2 + 122, 'Open', {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: '#dff4ff',
       backgroundColor: amount > 0 ? '#2878b8' : '#5d6770',
       padding: { left: 12, right: 12, top: 6, bottom: 6 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const openAll = this.add.text(width / 2 + 90, height / 2 + 92, 'Open All!', {
+    const openAll = this.add.text(width / 2 + 90, height / 2 + 122, 'Open All!', {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: '#eaffea',
       backgroundColor: amount > 0 ? '#2c9b52' : '#5d6770',
       padding: { left: 12, right: 12, top: 6, bottom: 6 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const closeBtn = this.add.text(width / 2, height / 2 + 130, 'Close', {
+    const closeBtn = this.add.text(width / 2, height / 2 + 158, 'Close', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
@@ -283,24 +352,18 @@ export class CasinoScene extends Phaser.Scene {
     const defs = getAllDiceDefinitions(this);
     const byRarity = (rarity: string) => defs.filter((definition) => definition.rarity === rarity);
     const pick = (pool: typeof defs) => (pool.length ? pool[Math.floor(Math.random() * pool.length)] : null);
-    const r = Math.random() * 100;
+    const table = CHEST_DROP_RATES[type];
+    const roll = Math.random() * 100;
+    let cumulative = 0;
+    const selected = table.find((entry) => {
+      cumulative += entry.rate;
+      return roll < cumulative;
+    }) ?? table[table.length - 1];
 
-    let rarity: 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' = 'Common';
-    if (type === 'Bronze') rarity = r < 95 ? 'Common' : 'Uncommon';
-    if (type === 'Silver') rarity = r < 40 ? 'Common' : (r < 90 ? 'Uncommon' : 'Rare');
-    if (type === 'Gold') rarity = r < 20 ? 'Common' : (r < 55 ? 'Uncommon' : (r < 97 ? 'Rare' : 'Epic'));
-    if (type === 'Diamond') rarity = r < 11 ? 'Uncommon' : (r < 44 ? 'Rare' : (r < 99 ? 'Epic' : 'Legendary'));
-    if (type === 'Master') rarity = r < 20 ? 'Rare' : (r < 70 ? 'Epic' : 'Legendary');
-
-    const die = pick(byRarity(rarity));
+    const die = pick(byRarity(selected.rarity));
     if (!die) return null;
 
-    let copies = 1;
-    if (type === 'Bronze') copies = Phaser.Math.Between(1, 5);
-    if (type === 'Silver') copies = rarity === 'Rare' ? Phaser.Math.Between(1, 5) : Phaser.Math.Between(3, 10);
-    if (type === 'Gold') copies = rarity === 'Rare' ? Phaser.Math.Between(3, 10) : rarity === 'Epic' ? Phaser.Math.Between(1, 5) : Phaser.Math.Between(5, 25);
-    if (type === 'Diamond') copies = rarity === 'Rare' ? Phaser.Math.Between(10, 50) : rarity === 'Epic' ? Phaser.Math.Between(3, 10) : rarity === 'Legendary' ? Phaser.Math.Between(1, 3) : Phaser.Math.Between(15, 75);
-    if (type === 'Master') copies = rarity === 'Epic' ? Phaser.Math.Between(8, 40) : rarity === 'Legendary' ? Phaser.Math.Between(1, 5) : Phaser.Math.Between(100, 250);
+    const copies = Phaser.Math.Between(selected.copies[0], selected.copies[1]);
 
     const progress = getDiceProgress(this, die.typeId);
     const isNew = progress.copies <= 0;

@@ -13,7 +13,8 @@ import {
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
-import { applyClassProgression } from '../systems/ClassProgression';
+import { applyClassProgression, getClassProgressionPreview } from '../systems/ClassProgression';
+import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 
 export class DiceScene extends Phaser.Scene {
@@ -28,14 +29,22 @@ export class DiceScene extends Phaser.Scene {
     3: { Common: 150, Uncommon: 225, Rare: 400, Epic: 750, Legendary: 1500 },
     4: { Common: 300, Uncommon: 450, Rare: 800, Epic: 1500, Legendary: 3000 },
     5: { Common: 500, Uncommon: 750, Rare: 1500, Epic: 3000, Legendary: 6000 },
-    6: { Common: 800, Uncommon: 1200, Rare: 2500, Epic: 5000, Legendary: 10000 }
+    6: { Common: 800, Uncommon: 1200, Rare: 2500, Epic: 5000, Legendary: 10000 },
+    7: { Common: 1200, Uncommon: 1800, Rare: 3750, Epic: 7500, Legendary: 15000 },
+    8: { Common: 2000, Uncommon: 3000, Rare: 6000, Epic: 10000, Legendary: 20000 },
+    9: { Common: 4000, Uncommon: 6000, Rare: 12000, Epic: 20000, Legendary: 40000 },
+    10: { Common: 6000, Uncommon: 9000, Rare: 18000, Epic: 30000, Legendary: 60000 }
   };
   private readonly classCopyCosts: Record<number, Record<string, number>> = {
     2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1 },
     3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1 },
     4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 1 },
     5: { Common: 80, Uncommon: 50, Rare: 25, Epic: 8, Legendary: 2 },
-    6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 2 }
+    6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 2 },
+    7: { Common: 200, Uncommon: 150, Rare: 75, Epic: 15, Legendary: 3 },
+    8: { Common: 400, Uncommon: 250, Rare: 120, Epic: 20, Legendary: 3 },
+    9: { Common: 700, Uncommon: 425, Rare: 200, Epic: 25, Legendary: 4 },
+    10: { Common: 1000, Uncommon: 750, Rare: 250, Epic: 30, Legendary: 4 }
   };
   private cardScrollOffset = 0;
 
@@ -123,7 +132,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         color: locked ? PALETTE.textMuted : PALETTE.text
       });
 
-      const primarySkill = getPrimarySkill(die);
+      const primarySkill = getPrimarySkill(displayedDie);
       const displayType = primarySkill?.type
         ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
         : 'PASSIVE';
@@ -139,7 +148,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         color: locked ? PALETTE.textMuted : PALETTE.text
       });
 
-      const skillDesc = this.add.text(x + 20, y + 130, locked ? 'Visit the Shop to purchase copies of this die.' : (applyClassProgression(die, cls).skills[0]?.description ?? ''), {
+      const skillDesc = this.add.text(x + 20, y + 130, locked ? 'Visit the Shop to purchase copies of this die.' : (displayedDie.skills[0]?.description ?? ''), {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.textMuted,
@@ -211,43 +220,49 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
   }
 
 
-  private getAlternateFormLabel(typeId: string, showingAlternate: boolean): string | null {
-    if (typeId === 'Death') return showingAlternate ? 'View Death Dice' : 'View Instakill Form';
-    if (typeId === 'Transcendence') return showingAlternate ? 'View Base Form' : 'View The Transcendence';
-    return null;
+  private getAlternateFormLabel(die: ReturnType<typeof getAllDiceDefinitions>[number], showingAlternate: boolean): string | null {
+    const meta = getRuntimeSkillMeta(die);
+    if (!meta.alternateButton || !meta.baseButton) return null;
+    return showingAlternate ? meta.baseButton : meta.alternateButton;
   }
 
   private getModalDisplayDie(die: ReturnType<typeof getAllDiceDefinitions>[number], classLevel: number, showAlternate: boolean) {
     const scaled = applyClassProgression(die, classLevel);
     if (!showAlternate) return scaled;
-    if (die.typeId === 'Death') {
+
+    const meta = getRuntimeSkillMeta(scaled);
+    if (!meta.transformTitle) return scaled;
+
+    if (meta.hasDeathTransform) {
       return {
         ...scaled,
-        title: 'Death Dice — Instakill Form',
+        title: meta.transformTitle,
         health: scaled.health * 2,
-        accent: '#c06bdb',
+        accent: meta.transformAccent ?? scaled.accent,
         skills: [{
           type: 'Active' as const,
           title: "Reaper's Touch",
           description: 'At 12 mana, instantly kills the target. Death transforms into this form after 2 allies are defeated.',
-          manaNeeded: 12,
+          manaNeeded: meta.deathInstakillMana ?? 12,
           modifiers: { notes: ['runtime:deathInstakill'] }
         }]
       };
     }
-    if (die.typeId === 'Transcendence') {
+
+    if (meta.hasTranscendence) {
       return {
         ...scaled,
-        title: 'The Transcendence',
-        accent: '#6ff6ff',
+        title: meta.transformTitle,
+        accent: meta.transformAccent ?? scaled.accent,
         skills: [{
           type: 'Passive' as const,
-          title: 'Perpendicular Beam',
-          description: 'Rolled 6 form: beam attacks consume 6 attacks and fire a wide cyan beam through the target row and column.',
-          modifiers: { beamDamage: scaled.skills[0]?.modifiers?.beamDamage ?? 300, notes: ['runtime:hasTranscendence'] }
+          title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
+          description: `Rolled 6 form: beam attacks consume 6 attacks and fire a wide cyan beam through the target row and column for ${meta.beamDamage ?? 600} damage.`,
+          modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
         }]
       };
     }
+
     return scaled;
   }
 
@@ -291,7 +306,17 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, assignable ? 'ASSIGN!' : 'IN LOADOUT', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
-    const alternateLabel = this.getAlternateFormLabel(typeId, showAlternate);
+    const upgradePreview = getClassProgressionPreview(die, cls);
+    const previewLines = [`ATK +${upgradePreview.attackDelta}`, `HP +${upgradePreview.healthDelta}`, ...upgradePreview.skillDeltas];
+    const upgradeTooltip = this.add.text(width / 2 + 110, height / 2 + 62, previewLines.join('\n'), {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.success,
+      align: 'center',
+      backgroundColor: '#0d2231',
+      padding: { left: 8, right: 8, top: 6, bottom: 6 }
+    }).setOrigin(0.5).setVisible(false);
+    const alternateLabel = this.getAlternateFormLabel(die, showAlternate);
     const altBtn = this.add.text(width / 2, height / 2 + 142, alternateLabel ?? '', { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft, backgroundColor: '#224b66', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5);
     if (alternateLabel) {
       altBtn.setInteractive({ useHandCursor: true });
@@ -301,6 +326,13 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     }
     const close = this.add.text(width / 2, height / 2 + 170, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     if (canUpgrade) {
+      const showUpgradeTooltip = () => upgradeTooltip.setVisible(true);
+      const hideUpgradeTooltip = () => upgradeTooltip.setVisible(false);
+      upTxt.setInteractive({ useHandCursor: true });
+      upBtn.on('pointerover', showUpgradeTooltip);
+      upTxt.on('pointerover', showUpgradeTooltip);
+      upBtn.on('pointerout', hideUpgradeTooltip);
+      upTxt.on('pointerout', hideUpgradeTooltip);
       upBtn.on('pointerdown', () => {
         setDiceTokens(this, getDiceTokens(this) - tokenCost);
         setDiceProgress(this, typeId, { classLevel: cls + 1, copies: progress.copies - copyCost });
@@ -333,7 +365,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     close.on('pointerdown', closeModal);
     this.modalEscHandler = () => closeModal();
     this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
-    this.modalElements = [overlay, panel, title, stats, skill, costText, assignBtn, assignTxt, upBtn, upTxt, altBtn, close];
+    this.modalElements = [overlay, panel, title, stats, skill, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
   }
 }

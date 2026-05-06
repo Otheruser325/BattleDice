@@ -1,4 +1,5 @@
 import type { DiceDefinition, DiceInstanceState } from '../types/game';
+import { getCombatDistance } from './CombatRange';
 
 export interface DiceSkillRuntimeMeta {
   randomDamage?: { min: number; max: number };
@@ -29,6 +30,11 @@ export interface DiceSkillRuntimeMeta {
   hasDeathInstakill?: boolean;
   deathInstakillMana?: number;
   hasGrowthPermanent?: boolean;
+  transformAccent?: string;
+  transformSymbol?: string;
+  transformTitle?: string;
+  alternateButton?: string;
+  baseButton?: string;
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
@@ -46,6 +52,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
   const beamNote = notes.find((note) => note.startsWith('runtime:beamOnSix='));
   const parsedBeamDamage = beamNote ? Number(beamNote.split('=')[1]) : undefined;
 
+  const getNoteValue = (prefix: string) => notes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
   const hasDeathInstakill = notes.includes('runtime:deathInstakill');
 
   return {
@@ -76,7 +83,12 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     hasDeathTransform: notes.includes('runtime:deathTransform'),
     hasDeathInstakill,
     deathInstakillMana: hasDeathInstakill ? (primary?.manaNeeded ?? 12) : undefined,
-    hasGrowthPermanent: notes.includes('runtime:growthPermanent')
+    hasGrowthPermanent: notes.includes('runtime:growthPermanent'),
+    transformAccent: getNoteValue('runtime:transformAccent='),
+    transformSymbol: getNoteValue('runtime:transformSymbol='),
+    transformTitle: getNoteValue('runtime:transformTitle='),
+    alternateButton: getNoteValue('runtime:alternateButton='),
+    baseButton: getNoteValue('runtime:baseButton=')
   };
 }
 
@@ -100,9 +112,7 @@ export function resolveDamage(
     damage += Math.floor(target.currentHealth * meta.targetCurrentHpBonusRate);
   }
   if ((meta.distanceDamageBonusPerTile || meta.distanceDamageBonusRatePerTile) && attacker.gridPosition && target.gridPosition) {
-    const rowDelta = Math.abs(target.gridPosition.row - attacker.gridPosition.row) + 5;
-    const colDelta = Math.abs(target.gridPosition.col - attacker.gridPosition.col);
-    const distance = Math.max(rowDelta, colDelta);
+    const distance = getCombatDistance(attacker, target);
     if (meta.distanceDamageBonusPerTile) {
       damage += distance * meta.distanceDamageBonusPerTile;
     }

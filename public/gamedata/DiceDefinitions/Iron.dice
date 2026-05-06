@@ -1,20 +1,20 @@
 {
   "typeId": "Iron",
   "title": "Iron Dice",
-  "attack": 14,
-  "health": 200,
+  "attack": 28,
+  "health": 800,
   "range": 4,
   "rarity": "Uncommon",
   "skills": [
     {
       "type": "Passive",
       "title": "Crush Armor",
-      "description": "Deals bonus damage equal to 20% of the target's current HP (+0.5% per Class UP).",
+      "description": "Deals bonus damage equal to 15% of the target's current HP (+0.5% per Class UP).",
       "modifiers": {
         "notes": [
-          "runtime:targetCurrentHpBonusRate=0.2"
+          "runtime:targetCurrentHpBonusRate=0.15"
         ],
-        "targetCurrentHpBonusRate": 0.2
+        "targetCurrentHpBonusRate": 0.15
       }
     }
   ],

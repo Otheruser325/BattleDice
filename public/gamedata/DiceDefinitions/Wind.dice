@@ -1,8 +1,8 @@
 {
   "typeId": "Wind",
   "title": "Wind Dice",
-  "attack": 10,
-  "health": 120,
+  "attack": 20,
+  "health": 480,
   "range": 6,
   "skills": [
     {
