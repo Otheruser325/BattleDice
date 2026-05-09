@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getAllDiceDefinitions, getDiceDefinitions, getDiceProgress } from '../data/dice';
+import { getAllDiceDefinitions, getDiceDefinitions, getDiceProgress, getDiceTokens, setDiceTokens } from '../data/dice';
 import {
   createMatchBattleState,
   getAvailableHandDice,
@@ -35,6 +35,7 @@ const DEFAULT_PLAYER_LOADOUT: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Electric
 const GRID_SIZE = 5;
 const TILE_SIZE = 64;
 const TILE_GAP = 8;
+const MATCH_TOKEN_REWARDS: Record<'victory' | 'defeat', number> = { victory: 500, defeat: 50 };
 
 export class ArenaScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Arena;
@@ -2007,7 +2008,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private endGame(stage: 'victory' | 'defeat', message: string) {
+    if (this.gamePhase.stage === 'victory' || this.gamePhase.stage === 'defeat') return;
     this.gamePhase = { stage };
+
+    const tokenReward = MATCH_TOKEN_REWARDS[stage];
+    setDiceTokens(this, getDiceTokens(this) + tokenReward);
+    const rewardMessage = `${message} +${tokenReward} Dice Tokens awarded.`;
 
     const { width, height } = this.scale;
     const centerX = width / 2;
@@ -2024,7 +2030,7 @@ export class ArenaScene extends Phaser.Scene {
       color: titleColor
     }).setOrigin(0.5);
 
-    this.add.text(centerX, centerY, message, {
+    this.add.text(centerX, centerY, rewardMessage, {
       fontFamily: 'Orbitron',
       fontSize: '18px',
       color: PALETTE.text

@@ -3,7 +3,7 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
-import { getAllDiceDefinitions, getDiceProgress, setDiceProgress } from '../data/dice';
+import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, setDiceProgress, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 
 interface ChestRewardEntry {
@@ -14,7 +14,20 @@ interface ChestRewardEntry {
   isNew: boolean;
 }
 
+interface ChestOpenRewards {
+  entries: ChestRewardEntry[];
+  diceTokens: number;
+}
+
 const CHEST_TYPES: ChestType[] = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Master'];
+
+const CHEST_TOKEN_REWARDS: Record<ChestType, [number, number]> = {
+  Bronze: [5, 10],
+  Silver: [20, 40],
+  Gold: [60, 120],
+  Diamond: [150, 360],
+  Master: [500, 1500]
+};
 
 type RewardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
 
@@ -71,6 +84,7 @@ export class CasinoScene extends Phaser.Scene {
   private lockTexts: Phaser.GameObjects.Text[] = [];
   private chestTexts = new Map<ChestType, Phaser.GameObjects.Text>();
   private chipText!: Phaser.GameObjects.Text;
+  private comboText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
 
   create() {
@@ -96,7 +110,15 @@ export class CasinoScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this.drawDiceRow(panel.centerX, panel.centerY - 72);
-    this.drawButtons(panel.centerX, panel.centerY + 4);
+
+    this.comboText = this.add.text(panel.centerX, panel.centerY - 18, '', {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.success,
+      align: 'center'
+    }).setOrigin(0.5);
+
+    this.drawButtons(panel.centerX, panel.centerY + 18);
     this.drawChestSidebar(panel.right - 145, panel.y + 112);
     this.render();
   }
@@ -239,9 +261,11 @@ export class CasinoScene extends Phaser.Scene {
 
 
   private getChestDropRateText(type: ChestType) {
-    return CHEST_DROP_RATES[type]
+    const [minTokens, maxTokens] = CHEST_TOKEN_REWARDS[type];
+    const cardRates = CHEST_DROP_RATES[type]
       .map((entry) => `${entry.rarity}: ${entry.rate}% • ${entry.copies[0]}-${entry.copies[1]} cards`)
       .join('\n');
+    return `${cardRates}\nDice Tokens: +${minTokens}-${maxTokens}`;
   }
 
   private openChestModal(type: ChestType) {
@@ -327,25 +351,37 @@ export class CasinoScene extends Phaser.Scene {
       ...progress,
       chests: { ...progress.chests, [type]: Math.max(0, progress.chests[type] - openCount) }
     }));
-    const merged = new Map<string, ChestRewardEntry>();
-    for (let i = 0; i < openCount; i++) {
-      const reward = this.rollChestReward(type);
-      if (!reward) continue;
-      const current = merged.get(reward.typeId);
-      merged.set(reward.typeId, current
-        ? { ...current, copies: current.copies + reward.copies, isNew: current.isNew || reward.isNew }
-        : reward);
-    }
-
-    const entries = [...merged.values()].sort((a, b) => (
+    const rewards = this.rollChestOpenRewards(type, openCount);
+    const entries = rewards.entries.sort((a, b) => (
       RARITY_RANK[a.rarity] - RARITY_RANK[b.rarity] || a.title.localeCompare(b.title)
     ));
     const burst = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, 120, 90, 0x8fd5ff, 0.25)
       .setStrokeStyle(2, 0xffffff)
       .setDepth(9999);
     this.tweens.add({ targets: burst, scale: isAll ? 4 : 2, alpha: 0, duration: isAll ? 520 : 320, onComplete: () => burst.destroy() });
-    this.showRewardsModal(type, entries);
+    this.showRewardsModal(type, entries, rewards.diceTokens);
     this.render();
+  }
+
+  private rollChestOpenRewards(type: ChestType, openCount: number): ChestOpenRewards {
+    const merged = new Map<string, ChestRewardEntry>();
+    const tokenRange = CHEST_TOKEN_REWARDS[type];
+    let diceTokens = 0;
+
+    for (let i = 0; i < openCount; i++) {
+      diceTokens += Phaser.Math.Between(tokenRange[0], tokenRange[1]);
+      const reward = this.rollChestReward(type);
+      if (!reward) continue;
+
+      const current = merged.get(reward.typeId);
+      merged.set(reward.typeId, current
+        ? { ...current, copies: current.copies + reward.copies, isNew: current.isNew || reward.isNew }
+        : reward);
+    }
+
+    setDiceTokens(this, getDiceTokens(this) + diceTokens);
+
+    return { entries: [...merged.values()], diceTokens };
   }
 
   private rollChestReward(type: ChestType): ChestRewardEntry | null {
@@ -371,7 +407,7 @@ export class CasinoScene extends Phaser.Scene {
     return { typeId: die.typeId, title: die.title, rarity: die.rarity, copies, isNew };
   }
 
-  private showRewardsModal(type: ChestType, entries: ChestRewardEntry[]) {
+  private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number) {
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.58).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 930, 560, 0x153449, 0.98).setStrokeStyle(2, 0x4f7ea1);
@@ -379,6 +415,11 @@ export class CasinoScene extends Phaser.Scene {
       fontFamily: 'Orbitron',
       fontSize: '28px',
       color: PALETTE.accent
+    }).setOrigin(0.5);
+    const tokenSummary = this.add.text(width / 2, height / 2 - 214, `+${diceTokens} Dice Tokens`, {
+      fontFamily: 'Orbitron',
+      fontSize: '16px',
+      color: PALETTE.accentSoft
     }).setOrigin(0.5);
     const closeBtn = this.add.text(width / 2, height / 2 + 252, 'Close', {
       fontFamily: 'Orbitron',
@@ -418,7 +459,7 @@ export class CasinoScene extends Phaser.Scene {
 
     const close = () => {
       this.input.off('wheel', wheelHandler);
-      [overlay, panel, title, closeBtn, container, mask].forEach((obj) => obj.destroy());
+      [overlay, panel, title, tokenSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
     };
     closeBtn.on('pointerdown', close);
     overlay.on('pointerdown', close);
@@ -440,6 +481,10 @@ export class CasinoScene extends Phaser.Scene {
     });
     const progress = CasinoProgressStore.get(this);
     this.chipText.setText(`CHIPS: ${progress.chips}`);
+    const currentCombo = evaluateFivesCombo(this.dice);
+    this.comboText.setText(
+      `Current Fives: ${currentCombo.combo} • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
+    );
     this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips to start a 3-roll hand.`);
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
   }
