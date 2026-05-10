@@ -33,6 +33,11 @@ function formatSkillInfo(definition: DiceDefinition, locked = false): string {
   return definition.skills.map((skill, index) => formatSkillEntry(skill, index, definition.skills.length)).join('\n\n');
 }
 
+function formatSkillType(type: string | undefined): string {
+  if (!type) return 'Passive';
+  return type.replace(/([a-z])([A-Z])/g, '$1 $2');
+}
+
 export class DiceScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Dice;
   private readonly debug = DebugManager.attachScene(DiceScene.KEY);
