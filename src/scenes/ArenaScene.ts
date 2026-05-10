@@ -22,7 +22,7 @@ import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/gam
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { applyClassProgression } from '../systems/ClassProgression';
-import { getCombatDistance, getCoveredEnemyRows, getCoveredEnemyTileCount } from '../systems/CombatRange';
+import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 
 
@@ -85,6 +85,7 @@ export class ArenaScene extends Phaser.Scene {
   private instanceDefinitionOverrides: Map<string, DiceDefinition> = new Map();
   private instanceClassLevels: Map<string, number> = new Map();
   private enemyLoadoutRevealed = false;
+  private rangeHighlightObjects: Phaser.GameObjects.GameObject[] = [];
 
   private modalContainer: Phaser.GameObjects.Container | null = null;
   private modalEscHandler: (() => void) | null = null;
@@ -124,6 +125,7 @@ export class ArenaScene extends Phaser.Scene {
     this.clearModeModal();
     this.turnLimit = -1;
     this.enemyLoadoutRevealed = false;
+    this.clearRangeHighlights();
   }
 
   create() {
@@ -551,15 +553,19 @@ export class ArenaScene extends Phaser.Scene {
       color: PALETTE.accent
     }).setOrigin(0.5).setVisible(false);
 
-    const arenaY = height / 2;
+    const arenaY = height / 2 - 50;
     const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
-    const gridX = (width - boardWidth) / 2;
     const gap = 36;
-    const enemyY = arenaY - boardWidth - gap / 2;
-    const playerY = arenaY + gap / 2;
+    const boardScale = Math.min(1, (width - 64) / (boardWidth * 2 + gap));
+    const scaledBoardWidth = boardWidth * boardScale;
+    const playerX = width / 2 - gap / 2 - scaledBoardWidth;
+    const enemyX = width / 2 + gap / 2;
+    const gridY = arenaY - scaledBoardWidth / 2;
 
-    this.enemyGridContainer = this.createGrid(gridX, enemyY, 'ENEMY GRID', false);
-    this.playerGridContainer = this.createGrid(gridX, playerY, 'YOUR GRID', true);
+    this.playerGridContainer = this.createGrid(playerX, gridY, 'YOUR GRID', true);
+    this.enemyGridContainer = this.createGrid(enemyX, gridY, 'ENEMY GRID', false);
+    this.playerGridContainer.setScale(boardScale);
+    this.enemyGridContainer.setScale(boardScale);
     this.playerStatusPanel = this.add.container(24, 120);
     this.enemyStatusPanel = this.add.container(width - 220, 120);
 
@@ -896,6 +902,7 @@ export class ArenaScene extends Phaser.Scene {
       this.debug.log('Creating new die instance', { typeId, instanceId });
     }
     this.gameState = placeDieOnBoard(this.gameState, instanceId, gridPos.row, gridPos.col);
+    this.clearRangeHighlights();
 
     container.destroy();
     this.handDice.delete(typeId);
@@ -978,6 +985,7 @@ export class ArenaScene extends Phaser.Scene {
     this.startCombatButton.setFillStyle(0x7f8c8d, 0.5);
 
     this.gamePhase = { stage: 'combat' };
+    this.clearRangeHighlights();
     this.placeEnemyDiceForTurn();
 
     this.enemyDicePips.clear();
@@ -1742,7 +1750,7 @@ export class ArenaScene extends Phaser.Scene {
     const statusDice = enemyDice.length > 0 || !this.enemyLoadoutRevealed
       ? enemyDice
       : this.gameState.dice.filter((die) => die.ownerId === 'enemy' && !die.isDestroyed);
-    this.renderDiceStatusPanel(this.enemyStatusPanel, statusDice, this.enemyLoadoutRevealed ? 'OPPONENT LOADOUT' : 'OPPONENT');
+    this.renderDiceStatusPanel(this.enemyStatusPanel, statusDice, "OPPONENT'S DICE");
   }
 
   private generateEnemyPositions() {
@@ -1755,8 +1763,8 @@ export class ArenaScene extends Phaser.Scene {
       let row: number, col: number, key: string;
       let attempts = 0;
       do {
-        row = this.pickEnemyRow(range);
-        col = Math.floor(Math.random() * GRID_SIZE);
+        row = Phaser.Math.Between(0, GRID_SIZE - 1);
+        col = this.pickEnemyColumn(range);
         key = `${row},${col}`;
         attempts++;
       } while (usedCells.has(key) && attempts < 50);
@@ -1765,12 +1773,12 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  private pickEnemyRow(range: number): number {
+  private pickEnemyColumn(range: number): number {
     if (range <= 3) {
       const roll = Math.random();
-      if (roll < 0.45) return 0;
-      if (roll < 0.75) return 1;
-      return Phaser.Math.Between(2, GRID_SIZE - 1);
+      if (roll < 0.45) return GRID_SIZE - 1;
+      if (roll < 0.75) return GRID_SIZE - 2;
+      return Phaser.Math.Between(0, GRID_SIZE - 3);
     }
     return Phaser.Math.Between(0, GRID_SIZE - 1);
   }
@@ -1796,9 +1804,10 @@ export class ArenaScene extends Phaser.Scene {
         this.renderDie(this.playerGridContainer, die, die.gridPosition.row, die.gridPosition.col, true);
       }
     });
-    const statusDice = playerDice.length > 0
+    const livingPlayerDice = this.gameState.dice.filter((die) => die.ownerId === 'player' && !die.isDestroyed);
+    const statusDice = this.gameState.combatPhase === 'attacking' && playerDice.length > 0
       ? playerDice
-      : this.gameState.dice.filter((die) => die.ownerId === 'player' && !die.isDestroyed);
+      : livingPlayerDice;
     this.renderDiceStatusPanel(this.playerStatusPanel, statusDice, 'YOUR DICE');
   }
 
@@ -1940,10 +1949,11 @@ export class ArenaScene extends Phaser.Scene {
   private getRangeCoverageText(die: DiceInstanceState): string {
     const definition = this.getDefinitionForInstance(die);
     if (!definition || !die.gridPosition) return `${die.typeId} range unavailable.`;
-    const coveredRows = getCoveredEnemyRows(die, definition.range);
-    const rowText = coveredRows.length > 0 ? coveredRows.map((row) => row + 1).join(', ') : 'none';
+    const coveredColumns = getCoveredEnemyColumns(die, definition.range);
+    const columnText = coveredColumns.length > 0 ? coveredColumns.map((col) => col + 1).join(', ') : 'none';
     const tileCount = getCoveredEnemyTileCount(die, definition.range);
-    return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${definition.range}: covers ${tileCount}/25 enemy tiles (rows ${rowText}).`;
+    const tintName = die.ownerId === 'player' ? 'blue' : 'red';
+    return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${definition.range}: ${tintName} coverage hits ${tileCount}/25 enemy tiles (columns ${columnText}, all rows).`;
   }
 
   private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a') {
@@ -1980,6 +1990,48 @@ export class ArenaScene extends Phaser.Scene {
     this.tweens.add({ targets: text, y: y - 24, alpha: 0, duration: 640, ease: 'Cubic.easeOut', onComplete: () => text.destroy() });
   }
 
+
+  private clearRangeHighlights() {
+    this.rangeHighlightObjects.forEach((obj) => obj.destroy());
+    this.rangeHighlightObjects = [];
+  }
+
+  private showRangeHighlights(die: DiceInstanceState) {
+    const definition = this.getDefinitionForInstance(die);
+    if (!definition || !die.gridPosition) return;
+
+    this.clearRangeHighlights();
+    const targetOwner = die.ownerId === 'player' ? 'enemy' : 'player';
+    const targetGrid = targetOwner === 'enemy' ? this.enemyGridContainer : this.playerGridContainer;
+    const color = die.ownerId === 'player' ? 0x2f8cff : 0xff4d4d;
+    const label = die.ownerId === 'player' ? 'BLUE' : 'RED';
+
+    for (let row = 0; row < GRID_SIZE; row++) {
+      for (let col = 0; col < GRID_SIZE; col++) {
+        const proxyTarget: DiceInstanceState = {
+          ...die,
+          ownerId: targetOwner,
+          gridPosition: { row, col }
+        };
+        if (getCombatDistance(die, proxyTarget) > Math.max(1, definition.range)) continue;
+
+        const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+        const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+        const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, 0.24)
+          .setStrokeStyle(2, color, 0.85);
+        highlight.setName('range-highlight');
+        const text = this.add.text(x, y, label, {
+          fontFamily: 'Orbitron',
+          fontSize: '10px',
+          color: die.ownerId === 'player' ? '#9fd0ff' : '#ffaaaa'
+        }).setOrigin(0.5);
+        text.setName('range-highlight');
+        targetGrid.add([highlight, text]);
+        this.rangeHighlightObjects.push(highlight, text);
+      }
+    }
+  }
+
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {
     const definition = this.getDefinitionForInstance(die);
     if (!definition) return;
@@ -1994,7 +2046,10 @@ export class ArenaScene extends Phaser.Scene {
       .setStrokeStyle(2, color)
       .setInteractive({ useHandCursor: true });
     dieRect.setData('isDie', true);
-    dieRect.on('pointerdown', () => this.combatLog.setText(this.getRangeCoverageText(die)));
+    dieRect.on('pointerdown', () => {
+      this.showRangeHighlights(die);
+      this.combatLog.setText(this.getRangeCoverageText(die));
+    });
     container.add(dieRect);
 
     const shortLabel = visual?.symbol ?? definition.typeId.slice(0, 3).toUpperCase();
@@ -2212,8 +2267,8 @@ export class ArenaScene extends Phaser.Scene {
       let key = '';
       let attempts = 0;
       do {
-        row = Math.floor(Math.random() * 2);
-        col = Math.floor(Math.random() * GRID_SIZE);
+        row = Math.floor(Math.random() * GRID_SIZE);
+        col = Phaser.Math.Between(3, GRID_SIZE - 1);
         key = `${row},${col}`;
         attempts++;
       } while (usedCells.has(key) && attempts < 50);

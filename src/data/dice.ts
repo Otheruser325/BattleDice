@@ -111,13 +111,21 @@ export interface ShopOffer {
   diamondCost: number;
   rarity: string;
   isFreebie: boolean;
+  isDiceTokenOffer?: boolean;
   purchased: boolean;
 }
+
+export const DICE_TOKEN_DIAMOND_OFFERS = [
+  { id: 'dice-tokens-1k', coinAmount: 1_000, diamondCost: 50 },
+  { id: 'dice-tokens-10k', coinAmount: 10_000, diamondCost: 450 },
+  { id: 'dice-tokens-100k', coinAmount: 100_000, diamondCost: 4_000 }
+] as const;
 
 export interface ShopState {
   offers: ShopOffer[];
   generatedDay: number;
   freebieClaimedThisSession: boolean;
+  diceTokenFirstPurchaseIds: string[];
 }
 
 function getDayNumber(): number {
@@ -125,7 +133,13 @@ function getDayNumber(): number {
 }
 
 export function getShopState(scene: Phaser.Scene): ShopState {
-  return (scene.registry.get(SHOP_STATE_KEY) as ShopState | undefined) ?? { offers: [], generatedDay: -1, freebieClaimedThisSession: false };
+  const state = (scene.registry.get(SHOP_STATE_KEY) as Partial<ShopState> | undefined) ?? {};
+  return {
+    offers: state.offers ?? [],
+    generatedDay: state.generatedDay ?? -1,
+    freebieClaimedThisSession: state.freebieClaimedThisSession ?? false,
+    diceTokenFirstPurchaseIds: state.diceTokenFirstPurchaseIds ?? []
+  };
 }
 
 export function setShopState(scene: Phaser.Scene, state: ShopState) {
@@ -152,7 +166,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const existing = getShopState(scene);
   const currentDay = getDayNumber();
 
-  if (existing.generatedDay === currentDay && existing.offers.length === 6) {
+  if (existing.generatedDay === currentDay && existing.offers.some((offer) => offer.isDiceTokenOffer)) {
     return existing;
   }
 
@@ -209,10 +223,26 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
     });
   });
 
+  DICE_TOKEN_DIAMOND_OFFERS.forEach((tokenOffer) => {
+    offers.push({
+      id: tokenOffer.id,
+      typeId: '',
+      isCoinOffer: true,
+      copies: 0,
+      coinAmount: tokenOffer.coinAmount,
+      diamondCost: tokenOffer.diamondCost,
+      rarity: 'Diamond',
+      isFreebie: false,
+      isDiceTokenOffer: true,
+      purchased: false
+    });
+  });
+
   const newState: ShopState = {
     offers,
     generatedDay: currentDay,
-    freebieClaimedThisSession: false
+    freebieClaimedThisSession: false,
+    diceTokenFirstPurchaseIds: existing.diceTokenFirstPurchaseIds
   };
 
   setShopState(scene, newState);
