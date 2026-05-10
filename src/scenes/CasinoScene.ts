@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
-import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
+import { evaluateFivesCombo, type ChestType, type FivesComboType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, setDiceProgress, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
@@ -67,6 +67,18 @@ const CHEST_DROP_RATES: Record<ChestType, ChestDropRateEntry[]> = {
 };
 
 const RARITY_RANK: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
+
+const COMBO_EXAMPLES: Record<FivesComboType, string> = {
+  'No combo': 'No pair / no straight',
+  Pair: '2-2-x-x-x',
+  'Two Pair': '2-2-5-5-x',
+  'Three-of-a-kind': '3-3-3-x-x',
+  'Full House': '4-4-4-6-6',
+  'Small Straight': '1-2-3-4-x',
+  'Large Straight': '1-2-3-4-5',
+  'Four-of-a-kind': '5-5-5-5-x',
+  'Five-of-a-kind': '6-6-6-6-6'
+};
 
 export class CasinoScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Casino;
@@ -483,7 +495,7 @@ export class CasinoScene extends Phaser.Scene {
     this.chipText.setText(`CHIPS: ${progress.chips}`);
     const currentCombo = evaluateFivesCombo(this.dice);
     this.comboText.setText(
-      `Current Fives: ${currentCombo.combo} • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
+      `Current Fives: ${currentCombo.combo} (${COMBO_EXAMPLES[currentCombo.combo]}) • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
     );
     this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips to start a 3-roll hand.`);
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));

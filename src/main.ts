@@ -7,6 +7,7 @@ import { DiceScene } from './scenes/DiceScene';
 import { ArenaScene } from './scenes/ArenaScene';
 import { CasinoScene } from './scenes/CasinoScene';
 import { AchievementsScene } from './scenes/AchievementsScene';
+import { DevScene } from './scenes/DevScene';
 import { DebugManager } from './utils/DebugManager';
 
 DebugManager.installGlobalHooks();
@@ -24,6 +25,7 @@ const config: Phaser.Types.Core.GameConfig = {
     ArenaScene,
     CasinoScene,
     AchievementsScene,
+    DevScene,
     MenuScene,
     SettingsScene
   ],

@@ -1,5 +1,5 @@
 export type ChestType = 'Bronze' | 'Silver' | 'Gold' | 'Diamond' | 'Master';
-export type FivesComboType = 'Runt' | 'Pair' | 'Two Pair' | 'Triple' | 'Full House' | 'Small Straight' | 'Large Straight' | 'Four-of-a-kind' | 'Five-of-a-kind';
+export type FivesComboType = 'No combo' | 'Pair' | 'Two Pair' | 'Three-of-a-kind' | 'Full House' | 'Small Straight' | 'Large Straight' | 'Four-of-a-kind' | 'Five-of-a-kind';
 
 export interface ComboPayout {
   combo: FivesComboType;
@@ -27,8 +27,8 @@ export function evaluateFivesCombo(dice: number[]): ComboPayout {
   if (groups[0] === 3 && groups[1] === 2) return { combo: 'Full House', chestType: 'Diamond', chestCount: pipSum, pipSum };
   if (isLargeStraight) return { combo: 'Large Straight', chestType: 'Gold', chestCount: pipSum, pipSum };
   if (hasSmallStraight) return { combo: 'Small Straight', chestType: 'Silver', chestCount: pipSum, pipSum };
-  if (groups[0] === 3) return { combo: 'Triple', chestType: 'Gold', chestCount: pipSum, pipSum };
+  if (groups[0] === 3) return { combo: 'Three-of-a-kind', chestType: 'Gold', chestCount: pipSum, pipSum };
   if (groups[0] === 2 && groups[1] === 2) return { combo: 'Two Pair', chestType: 'Silver', chestCount: pipSum, pipSum };
   if (groups[0] === 2) return { combo: 'Pair', chestType: 'Bronze', chestCount: pipSum, pipSum };
-  return { combo: 'Runt', chestType: 'Bronze', chestCount: 5, pipSum };
+  return { combo: 'No combo', chestType: 'Bronze', chestCount: 5, pipSum };
 }
