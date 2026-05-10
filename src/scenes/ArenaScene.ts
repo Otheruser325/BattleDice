@@ -86,6 +86,7 @@ export class ArenaScene extends Phaser.Scene {
   private instanceClassLevels: Map<string, number> = new Map();
   private enemyLoadoutRevealed = false;
   private rangeHighlightObjects: Phaser.GameObjects.GameObject[] = [];
+  private highlightedRangeInstanceId: string | null = null;
 
   private modalContainer: Phaser.GameObjects.Container | null = null;
   private modalEscHandler: (() => void) | null = null;
@@ -693,18 +694,18 @@ export class ArenaScene extends Phaser.Scene {
       this.currentHandOrder = [...DEFAULT_PLAYER_LOADOUT];
     }
 
-    const handY = height - 140;
+    const handY = height - 110;
     const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
 
     this.handContainer = this.add.container(0, 0);
 
-    this.add.text(width / 2, handY - 70, 'CLICK ROLL ALL, THEN DRAG DICE TO YOUR GRID', {
+    this.add.text(width / 2, handY - 95, 'CLICK ROLL ALL, THEN DRAG DICE TO YOUR GRID', {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: PALETTE.accent
     }).setOrigin(0.5);
 
-    this.createRollAllButton(width / 2, handY - 35);
+    this.createRollAllButton(width / 2, handY - 58);
 
     this.currentHandOrder.forEach((typeId, index) => {
       const definition = this.definitions.get(typeId);
@@ -918,8 +919,8 @@ export class ArenaScene extends Phaser.Scene {
     const index = this.currentHandOrder.indexOf(typeId);
     const { width } = this.scale;
     const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
-    const handY = this.scale.height - 140;
-    const targetX = startX + index * 80;
+    const handY = this.scale.height - 110;
+    const targetX = startX + index * 100;
 
     this.tweens.add({
       targets: container,
@@ -948,9 +949,9 @@ export class ArenaScene extends Phaser.Scene {
   private createCombatUI() {
     const { width, height } = this.scale;
     const centerX = width / 2;
-    const buttonY = height - 145;
+    const buttonY = height - 46;
 
-    this.combatLog = this.add.text(centerX, buttonY - 70, 'Place your dice, then start combat!', {
+    this.combatLog = this.add.text(centerX, height - 200, 'Place your dice, then start combat!', {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: PALETTE.textMuted
@@ -1172,7 +1173,7 @@ export class ArenaScene extends Phaser.Scene {
         const deathFires = (attackerMeta?.hasDeathInstakill ?? false) && this.deathDiceTransformed.has(attacker.instanceId) && currMana >= (attackerMeta?.deathInstakillMana ?? 12);
         const regularActiveFires = (attackerMeta?.activeManaNeeded ?? 0) > 0 && currMana >= (attackerMeta?.activeManaNeeded ?? 0) && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill;
         const anyActiveFires = meteorFires || deathFires || regularActiveFires;
-        const BASIC_WITH_ACTIVE = new Set(['Poison']);
+        const BASIC_WITH_ACTIVE = new Set(['Ice', 'Poison']);
         const skipBasicAttack = anyActiveFires && !BASIC_WITH_ACTIVE.has(attacker.typeId);
 
         let damage = 0;
@@ -1208,7 +1209,7 @@ export class ArenaScene extends Phaser.Scene {
             : `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${damage} damage!${targetDestroyed ? ' DESTROYED!' : ''}`
         );
 
-        if (!beamTarget) this.animateAttack(attacker, target);
+        if (!beamTarget && !skipBasicAttack) this.animateAttack(attacker, target);
         this.renderDice();
         this.renderEnemyDice();
 
@@ -1221,6 +1222,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     this.combatLog.setText('Combat phase complete!');
+    this.clearRangeHighlights();
     this.enemyLoadoutRevealed = true;
     await this.delay(1000);
 
@@ -1287,9 +1289,9 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  private getWeakestDamagedAlly(ownerId: DiceInstanceState['ownerId']): DiceInstanceState | undefined {
+  private getWeakestDamagedAlly(ownerId: DiceInstanceState['ownerId'], excludedInstanceId?: string): DiceInstanceState | undefined {
     return this.gameState.dice
-      .filter((die) => die.ownerId === ownerId && !die.isDestroyed && die.currentHealth < die.maxHealth)
+      .filter((die) => die.ownerId === ownerId && die.instanceId !== excludedInstanceId && !die.isDestroyed && die.currentHealth < die.maxHealth)
       .sort((a, b) => (a.currentHealth / a.maxHealth) - (b.currentHealth / b.maxHealth) || a.currentHealth - b.currentHealth)[0];
   }
 
@@ -1412,7 +1414,7 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
     if (meta.activeHeal !== undefined) {
-      const healTarget = this.getWeakestDamagedAlly(attacker.ownerId);
+      const healTarget = this.getWeakestDamagedAlly(attacker.ownerId, attacker.instanceId);
       if (healTarget) {
         const healAmount = meta.activeHeal;
         this.gameState = {
@@ -1612,7 +1614,7 @@ export class ArenaScene extends Phaser.Scene {
     this.renderEnemyDice();
 
     const { width, height } = this.scale;
-    const handY = height - 140;
+    const handY = height - 110;
     this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.typeId);
     const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
 
@@ -1686,7 +1688,10 @@ export class ArenaScene extends Phaser.Scene {
     const worldTargetY = targetGrid.y + targetY;
 
     const graphics = this.add.graphics();
-    graphics.lineStyle(3, 0xff6b6b, 0.8);
+    const definition = this.getDefinitionForInstance(attacker);
+    const beamHex = this.getTransformedVisual(attacker)?.accent ?? definition?.accent ?? '#ff6b6b';
+    const beamColor = Phaser.Display.Color.HexStringToColor(beamHex).color;
+    graphics.lineStyle(3, beamColor, 0.82);
     graphics.strokeLineShape(new Phaser.Geom.Line(worldAttackerX, worldAttackerY, worldTargetX, worldTargetY));
 
     this.tweens.add({
@@ -1994,13 +1999,20 @@ export class ArenaScene extends Phaser.Scene {
   private clearRangeHighlights() {
     this.rangeHighlightObjects.forEach((obj) => obj.destroy());
     this.rangeHighlightObjects = [];
+    this.highlightedRangeInstanceId = null;
   }
 
   private showRangeHighlights(die: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(die);
     if (!definition || !die.gridPosition) return;
 
+    if (this.highlightedRangeInstanceId === die.instanceId) {
+      this.clearRangeHighlights();
+      return;
+    }
+
     this.clearRangeHighlights();
+    this.highlightedRangeInstanceId = die.instanceId;
     const targetOwner = die.ownerId === 'player' ? 'enemy' : 'player';
     const targetGrid = targetOwner === 'enemy' ? this.enemyGridContainer : this.playerGridContainer;
     const color = die.ownerId === 'player' ? 0x2f8cff : 0xff4d4d;

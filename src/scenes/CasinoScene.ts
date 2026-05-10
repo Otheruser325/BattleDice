@@ -307,28 +307,29 @@ export class CasinoScene extends Phaser.Scene {
     const amount = CasinoProgressStore.get(this).chests[type];
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 620, 360, 0x153449, 0.97).setStrokeStyle(2, 0x4f7ea1);
-    const title = this.add.text(width / 2, height / 2 - 140, `${type} Chest`, {
+    const panel = this.add.rectangle(width / 2, height / 2, 680, 420, 0x153449, 0.97).setStrokeStyle(2, 0x4f7ea1);
+    const title = this.add.text(width / 2, height / 2 - 170, `${type} Chest`, {
       fontFamily: 'Orbitron',
       fontSize: '24px',
       color: PALETTE.accent
     }).setOrigin(0.5);
-    const chest = this.add.rectangle(width / 2, height / 2 - 30, 120, 90, 0x2f5f80, 0.95).setStrokeStyle(2, 0x8fd5ff);
-    const count = this.add.text(width / 2, height / 2 + 32, `Available: ${amount}`, {
+    const chest = this.add.rectangle(width / 2, height / 2 - 62, 120, 90, 0x2f5f80, 0.95).setStrokeStyle(2, 0x8fd5ff);
+    const count = this.add.text(width / 2, height / 2 + 0, `Available: ${amount}`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted
     }).setOrigin(0.5);
 
-    const dropInfo = this.add.text(width / 2, height / 2 + 92, this.getChestDropRateText(type), {
+    const dropInfo = this.add.text(width / 2, height / 2 + 74, this.getChestDropRateText(type), {
       fontFamily: 'Orbitron',
-      fontSize: '11px',
+      fontSize: '10px',
       color: PALETTE.success,
       align: 'center',
       backgroundColor: '#0d2231',
-      padding: { left: 8, right: 8, top: 6, bottom: 6 }
+      padding: { left: 8, right: 8, top: 6, bottom: 6 },
+      wordWrap: { width: 560 }
     }).setOrigin(0.5).setVisible(false);
-    const ratesBtn = this.add.text(width / 2 + 98, height / 2 - 144, '?', {
+    const ratesBtn = this.add.text(width / 2 + 160, height / 2 - 170, '?', {
       fontFamily: 'Orbitron',
       fontSize: '15px',
       color: '#0b1520',
@@ -344,7 +345,12 @@ export class CasinoScene extends Phaser.Scene {
     ratesBtn.on('pointerout', () => { if (!dropInfoPinned) dropInfo.setVisible(false); });
     ratesBtn.on('pointerdown', toggleDropInfo);
 
-    const close = () => [overlay, panel, title, chest, count, dropInfo, ratesBtn, open, openAll, closeBtn].forEach((o) => o.destroy());
+    const escHandler = () => close();
+    this.input.keyboard?.on('keydown-ESC', escHandler);
+    const close = () => {
+      this.input.keyboard?.off('keydown-ESC', escHandler);
+      [overlay, panel, title, chest, count, dropInfo, ratesBtn, open, openAll, closeBtn].forEach((o) => o.destroy());
+    };
     const doOpen = (all: boolean) => {
       const latest = CasinoProgressStore.get(this).chests[type];
       const openCount = all ? latest : Math.min(1, latest);
@@ -353,21 +359,21 @@ export class CasinoScene extends Phaser.Scene {
       close();
     };
 
-    const open = this.add.text(width / 2 - 90, height / 2 + 122, 'Open', {
+    const open = this.add.text(width / 2 - 100, height / 2 + 146, 'Open', {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: '#dff4ff',
       backgroundColor: amount > 0 ? '#2878b8' : '#5d6770',
       padding: { left: 12, right: 12, top: 6, bottom: 6 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const openAll = this.add.text(width / 2 + 90, height / 2 + 122, 'Open All!', {
+    const openAll = this.add.text(width / 2 + 100, height / 2 + 146, 'Open All!', {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: '#eaffea',
       backgroundColor: amount > 0 ? '#2c9b52' : '#5d6770',
       padding: { left: 12, right: 12, top: 6, bottom: 6 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const closeBtn = this.add.text(width / 2, height / 2 + 158, 'Close', {
+    const closeBtn = this.add.text(width / 2, height / 2 + 184, 'Close', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
@@ -485,15 +491,19 @@ export class CasinoScene extends Phaser.Scene {
 
     const maxScroll = Math.max(0, Math.ceil(entries.length / 3) * 92 - 460);
     let offset = 0;
-    const wheelHandler = (_pointer: Phaser.Input.Pointer, _go: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
-      if (!overlay.active) return;
-      offset = Phaser.Math.Clamp(offset - dy * 0.4, -maxScroll, 0);
+    const scrollBounds = new Phaser.Geom.Rectangle(width / 2 - 430, height / 2 - 220, 860, 460);
+    const wheelHandler = (pointer: Phaser.Input.Pointer, _go: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      if (!overlay.active || !Phaser.Geom.Rectangle.Contains(scrollBounds, pointer.x, pointer.y)) return;
+      offset = Phaser.Math.Clamp(offset - dy * 0.8, -maxScroll, 0);
       container.y = (height / 2 - 220) + offset;
     };
     this.input.on('wheel', wheelHandler);
 
+    const escHandler = () => close();
+    this.input.keyboard?.on('keydown-ESC', escHandler);
     const close = () => {
       this.input.off('wheel', wheelHandler);
+      this.input.keyboard?.off('keydown-ESC', escHandler);
       [overlay, panel, title, tokenSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
     };
     closeBtn.on('pointerdown', close);
