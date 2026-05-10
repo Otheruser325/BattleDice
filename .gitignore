@@ -33,6 +33,9 @@ pids/
 # Output of 'npm pack'
 *.tgz
 
+# Build output
+dist/
+
 # IDE files
 .vscode/
 .idea/
