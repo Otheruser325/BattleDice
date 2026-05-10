@@ -1,0 +1,28 @@
+{
+  "typeId": "Time",
+  "title": "Time Dice",
+  "attack": 22,
+  "health": 720,
+  "range": 5,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Temporal Acceleration",
+      "description": "During combat, ally dice matching this die's rolled pip count gain +1 attack count.",
+      "modifiers": {
+        "pipMatchAllyAttackDelta": 1
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Temporal Dilation",
+      "description": "During combat, foe dice matching this die's rolled pip count lose -1 attack count, never below 1.",
+      "modifiers": {
+        "pipMatchFoeAttackDelta": -1
+      }
+    }
+  ],
+  "accent": "#d7b8ff",
+  "targetingMode": "Nearest"
+}

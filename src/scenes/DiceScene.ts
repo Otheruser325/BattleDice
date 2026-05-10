@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import {
   getAllDiceDefinitions,
-  getPrimarySkill,
   getRangeLabel,
   getSelectedLoadout,
   setSelectedLoadout,
@@ -16,6 +15,23 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { applyClassProgression, getClassProgressionPreview } from '../systems/ClassProgression';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
+import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
+
+function formatSkillType(type: string | undefined): string {
+  if (!type) return 'Passive';
+  return type.replace(/([a-z])([A-Z])/g, '$1 $2');
+}
+
+function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number): string {
+  const prefix = total > 1 ? `${index + 1}. ` : '';
+  return `${prefix}${skill.title} (${formatSkillType(skill.type)})\n${skill.description}`;
+}
+
+function formatSkillInfo(definition: DiceDefinition, locked = false): string {
+  if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
+  if (definition.skills.length === 0) return 'No skill';
+  return definition.skills.map((skill, index) => formatSkillEntry(skill, index, definition.skills.length)).join('\n\n');
+}
 
 export class DiceScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Dice;
@@ -23,6 +39,7 @@ export class DiceScene extends Phaser.Scene {
 
   private modalElements: Phaser.GameObjects.GameObject[] = [];
   private modalEscHandler: (() => void) | null = null;
+  private modalWheelHandler: ((pointer: Phaser.Input.Pointer, gameObjects: Phaser.GameObjects.GameObject[], dx: number, dy: number) => void) | null = null;
 
   private readonly classTokenCosts: Record<number, Record<string, number>> = {
     2: { Common: 50, Uncommon: 75, Rare: 100, Epic: 200, Legendary: 500 },
@@ -95,7 +112,7 @@ export class DiceScene extends Phaser.Scene {
 
     const cardsContainer = this.add.container(0, 0).setDepth(6);
     const cardsTopY = panel.y + 160;
-    const cardPitch = 210;
+    const cardPitch = 250;
 
     definitions.forEach((die, index) => {
       const col = index % 3;
@@ -132,23 +149,17 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         color: locked ? PALETTE.textMuted : PALETTE.text
       });
 
-      const primarySkill = getPrimarySkill(displayedDie);
-      const displayType = primarySkill?.type
-        ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
-        : 'PASSIVE';
+      const skillInfo = formatSkillInfo(displayedDie, locked);
+      const displayType = locked
+        ? 'LOCKED'
+        : (displayedDie.skills.length === 1 ? formatSkillType(displayedDie.skills[0]?.type).toUpperCase() : `${displayedDie.skills.length} SKILLS`);
       const skillTypeLine = this.add.text(x + 20, y + 78, displayType, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: locked ? PALETTE.textMuted : PALETTE.accentSoft
       });
 
-      const skillTitle = this.add.text(x + 20, y + 106, locked ? '??? — Obtain copies to unlock' : (primarySkill?.title ?? 'No skill'), {
-        fontFamily: 'Orbitron',
-        fontSize: '14px',
-        color: locked ? PALETTE.textMuted : PALETTE.text
-      });
-
-      const skillDesc = this.add.text(x + 20, y + 130, locked ? 'Visit the Shop to purchase copies of this die.' : (displayedDie.skills[0]?.description ?? ''), {
+      const skillDesc = this.add.text(x + 20, y + 104, skillInfo, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.textMuted,
@@ -173,7 +184,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         card.on('pointerout', () => card.setFillStyle(0x173247, 0.98));
       }
 
-      cardsContainer.add([card, header, title, classTag, statLine, skillTypeLine, skillTitle, skillDesc]);
+      cardsContainer.add([card, header, title, classTag, statLine, skillTypeLine, skillDesc]);
       card.setDepth(0); header.setDepth(1);
 
       if (locked) {
@@ -214,7 +225,9 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.modalEscHandler) this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+      if (this.modalWheelHandler) this.input.off('wheel', this.modalWheelHandler);
       this.modalEscHandler = null;
+      this.modalWheelHandler = null;
       this.modalElements = [];
     });
   }
@@ -257,7 +270,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         skills: [{
           type: 'Passive' as const,
           title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
-          description: `Rolled 6 form: beam attacks consume 6 attacks and fire a wide cyan beam through the target row and column for ${meta.beamDamage ?? 600} damage.`,
+          description: `Rolled 6 form: beam attacks consume all remaining attacks and fire a wide cyan beam through the target row and column for ${meta.beamDamage ?? 600} damage.`,
           modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
         }]
       };
@@ -273,6 +286,10 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
       this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
       this.modalEscHandler = null;
     }
+    if (this.modalWheelHandler) {
+      this.input.off('wheel', this.modalWheelHandler);
+      this.modalWheelHandler = null;
+    }
     const die = getAllDiceDefinitions(this).find((definition) => definition.typeId === typeId);
     if (!die) return;
     const progress = getDiceProgress(this, typeId);
@@ -286,8 +303,38 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     const isMaxed = cls >= 15;
     const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: displayDie.accent }).setOrigin(0.5);
     const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})\nRARITY ${displayDie.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
-    const primary = getPrimarySkill(displayDie);
-    const skill = this.add.text(width / 2, height / 2 - 50, `${primary?.title ?? 'No skill'} (${primary?.type ?? 'Passive'})\n${primary?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
+    const skillViewportWidth = 470;
+    const skillViewportHeight = 112;
+    const skillViewportTop = height / 2 - 88;
+    const skillTextContent = formatSkillInfo(displayDie);
+    const skillContainer = this.add.container(width / 2, skillViewportTop);
+    const skill = this.add.text(0, 0, skillTextContent, {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.textMuted,
+      align: 'center',
+      wordWrap: { width: 440 }
+    }).setOrigin(0.5, 0);
+    skillContainer.add(skill);
+    const skillMaskShape = this.add.rectangle(width / 2 - skillViewportWidth / 2, skillViewportTop, skillViewportWidth, skillViewportHeight, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setVisible(false);
+    skillContainer.setMask(skillMaskShape.createGeometryMask());
+    const maxSkillScroll = Math.max(0, skill.height - skillViewportHeight);
+    const skillScrollHint = this.add.text(width / 2, skillViewportTop + skillViewportHeight + 4, maxSkillScroll > 0 ? 'Scroll for more skill info' : '', {
+      fontFamily: 'Orbitron',
+      fontSize: '10px',
+      color: PALETTE.textMuted
+    }).setOrigin(0.5);
+    let skillScrollOffset = 0;
+    this.modalWheelHandler = (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      const withinX = pointer.worldX >= width / 2 - skillViewportWidth / 2 && pointer.worldX <= width / 2 + skillViewportWidth / 2;
+      const withinY = pointer.worldY >= skillViewportTop && pointer.worldY <= skillViewportTop + skillViewportHeight;
+      if (!withinX || !withinY || maxSkillScroll <= 0) return;
+      skillScrollOffset = Phaser.Math.Clamp(skillScrollOffset - dy * 0.35, -maxSkillScroll, 0);
+      skillContainer.y = skillViewportTop + skillScrollOffset;
+    };
+    this.input.on('wheel', this.modalWheelHandler);
 
     const nextClass = Math.min(15, cls + 1);
     const tokenCost = this.classTokenCosts[nextClass]?.[die.rarity] ?? 0;
@@ -360,12 +407,16 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
         this.modalEscHandler = null;
       }
+      if (this.modalWheelHandler) {
+        this.input.off('wheel', this.modalWheelHandler);
+        this.modalWheelHandler = null;
+      }
     };
     overlay.on('pointerdown', closeModal);
     close.on('pointerdown', closeModal);
     this.modalEscHandler = () => closeModal();
     this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
-    this.modalElements = [overlay, panel, title, stats, skill, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
+    this.modalElements = [overlay, panel, title, stats, skillContainer, skillMaskShape, skillScrollHint, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
   }
 }

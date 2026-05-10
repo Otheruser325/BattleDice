@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SCENE_KEYS, type SceneKey } from '../scenes/sceneKeys';
+import { ENABLE_DEV_MENU } from '../utils/BuildFlags';
 
 export const PALETTE = {
   ink: '#0a1c29',
@@ -16,7 +17,7 @@ export const PALETTE = {
   danger: '#ff897d'
 } as const;
 
-export const MENU_TABS = [
+const BASE_MENU_TABS = [
   { label: 'Shop', sceneKey: SCENE_KEYS.Shop, status: 'Offers' },
   { label: 'Dice', sceneKey: SCENE_KEYS.Dice, status: 'Loadout' },
   { label: 'Arena', sceneKey: SCENE_KEYS.Arena, status: 'Demo' },
@@ -24,6 +25,8 @@ export const MENU_TABS = [
   { label: 'Achievements', sceneKey: SCENE_KEYS.Achievements, status: 'WIP' },
   { label: 'Dev', sceneKey: SCENE_KEYS.Dev, status: 'Debug' }
 ] as const satisfies readonly { label: string; sceneKey: SceneKey; status: string }[];
+
+export const MENU_TABS = BASE_MENU_TABS.filter((tab) => ENABLE_DEV_MENU || tab.sceneKey !== SCENE_KEYS.Dev);
 
 export function getLayout(scene: Phaser.Scene) {
   const { width, height } = scene.scale;

@@ -6,7 +6,7 @@ const DICE_FLAGS_PATHS = [
   'gamedata/DiceDefinitions/Flags.json',
   '/gamedata/DiceDefinitions/Flags.json'
 ];
-const DICE_DATA_VERSION = '2026-04-30';
+const DICE_DATA_VERSION = '2026-05-10';
 
 function getDefinitionPath(typeId: string) {
   return `gamedata/DiceDefinitions/${typeId}.dice?v=${DICE_DATA_VERSION}`;

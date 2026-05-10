@@ -13,6 +13,7 @@ export interface DiceSkillModifier {
   chainDamage?: number;
   poisonDamage?: number;
   activeDamage?: number;
+  activeHeal?: number;
   meteorDamage?: number;
   lavaDamage?: number;
   beamDamage?: number;
@@ -20,6 +21,10 @@ export interface DiceSkillModifier {
   damageRange?: [number, number];
   targetMaxHpBonusRate?: number;
   targetCurrentHpBonusRate?: number;
+  berserkThresholdRate?: number;
+  berserkDamageMultiplier?: number;
+  pipMatchAllyAttackDelta?: number;
+  pipMatchFoeAttackDelta?: number;
   distanceDamageBonusPerTile?: number;
   distanceDamageBonusRatePerTile?: number;
   notes?: string[];
