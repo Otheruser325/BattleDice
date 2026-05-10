@@ -95,7 +95,7 @@ export function getPrimarySkill(definition: DiceDefinition) {
 }
 
 export function getDiamonds(scene: Phaser.Scene): number {
-  return (scene.registry.get(DIAMONDS_KEY) as number | undefined) ?? 50;
+  return (scene.registry.get(DIAMONDS_KEY) as number | undefined) ?? 100;
 }
 
 export function setDiamonds(scene: Phaser.Scene, amount: number) {
@@ -154,18 +154,18 @@ export function setShopState(scene: Phaser.Scene, state: ShopState) {
 }
 
 const DIAMOND_COST_BY_RARITY: Record<string, number> = {
-  Common: 5,
-  Uncommon: 10,
-  Rare: 20,
-  Epic: 40,
-  Legendary: 80
+  Common: 10,
+  Uncommon: 20,
+  Rare: 50,
+  Epic: 150,
+  Legendary: 250
 };
 
 const COPIES_BY_RARITY: Record<string, number> = {
-  Common: 4,
-  Uncommon: 3,
-  Rare: 2,
-  Epic: 1,
+  Common: 20,
+  Uncommon: 15,
+  Rare: 10,
+  Epic: 3,
   Legendary: 1
 };
 
@@ -201,8 +201,8 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
     id: 'freebie',
     typeId: freebieIsCoin ? '' : (shuffled[0]?.typeId ?? ''),
     isCoinOffer: freebieIsCoin,
-    copies: freebieIsCoin ? 0 : 3,
-    coinAmount: freebieIsCoin ? 200 : 0,
+    copies: freebieIsCoin ? 0 : 5,
+    coinAmount: freebieIsCoin ? 300 : 0,
     diamondCost: 0,
     rarity: freebieIsCoin ? 'Common' : (shuffled[0]?.rarity ?? 'Common'),
     isFreebie: true,
