@@ -112,6 +112,7 @@ export interface ShopOffer {
   rarity: string;
   isFreebie: boolean;
   isDiceTokenOffer?: boolean;
+  isCasinoChipOffer?: boolean;
   purchased: boolean;
 }
 
@@ -119,6 +120,12 @@ export const DICE_TOKEN_DIAMOND_OFFERS = [
   { id: 'dice-tokens-1k', coinAmount: 1_000, diamondCost: 50 },
   { id: 'dice-tokens-10k', coinAmount: 10_000, diamondCost: 450 },
   { id: 'dice-tokens-100k', coinAmount: 100_000, diamondCost: 4_000 }
+] as const;
+
+export const CASINO_CHIP_DIAMOND_OFFERS = [
+  { id: 'casino-chips-10', coinAmount: 10, diamondCost: 50 },
+  { id: 'casino-chips-100', coinAmount: 100, diamondCost: 450 },
+  { id: 'casino-chips-1000', coinAmount: 1_000, diamondCost: 4_000 }
 ] as const;
 
 export interface ShopState {
@@ -166,7 +173,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const existing = getShopState(scene);
   const currentDay = getDayNumber();
 
-  if (existing.generatedDay === currentDay && existing.offers.some((offer) => offer.isDiceTokenOffer)) {
+  if (existing.generatedDay === currentDay && existing.offers.some((offer) => offer.isDiceTokenOffer) && existing.offers.some((offer) => offer.isCasinoChipOffer)) {
     return existing;
   }
 
@@ -234,6 +241,21 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
       rarity: 'Diamond',
       isFreebie: false,
       isDiceTokenOffer: true,
+      purchased: false
+    });
+  });
+
+  CASINO_CHIP_DIAMOND_OFFERS.forEach((chipOffer) => {
+    offers.push({
+      id: chipOffer.id,
+      typeId: '',
+      isCoinOffer: true,
+      copies: 0,
+      coinAmount: chipOffer.coinAmount,
+      diamondCost: chipOffer.diamondCost,
+      rarity: 'Casino',
+      isFreebie: false,
+      isCasinoChipOffer: true,
       purchased: false
     });
   });

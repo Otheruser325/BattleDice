@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { SCENE_KEYS } from './sceneKeys';
+import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import {
   getDiamonds,
   setDiamonds,
@@ -18,7 +19,7 @@ import {
 } from '../data/dice';
 
 const CARD_W = 316;
-const CARD_H = 210;
+const CARD_H = 190;
 const CARD_GAP = 12;
 const COL_COUNT = 3;
 
@@ -81,9 +82,10 @@ export class ShopScene extends Phaser.Scene {
       scrollThumb.y = gridStartY + (maxScroll > 0 ? travel * (scrollY / maxScroll) : 0);
     };
 
-    this.add.zone(panel.centerX, gridStartY + gridHeight / 2, panel.width - 36, gridHeight + 16)
-      .setInteractive()
-      .on('wheel', (_pointer: Phaser.Input.Pointer, _dx: number, dy: number) => updateScroll(dy));
+    const scrollBounds = new Phaser.Geom.Rectangle(panel.x + 18, gridStartY - 8, panel.width - 36, gridHeight + 16);
+    this.input.on('wheel', (pointer: Phaser.Input.Pointer, _go: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      if (Phaser.Geom.Rectangle.Contains(scrollBounds, pointer.x, pointer.y)) updateScroll(dy);
+    });
 
     const cardObjects: Phaser.GameObjects.GameObject[][] = [];
 
@@ -94,7 +96,7 @@ export class ShopScene extends Phaser.Scene {
       const y = row * (CARD_H + CARD_GAP);
 
       const def = allDefs.find((d) => d.typeId === offer.typeId);
-      const accentHex = offer.isDiceTokenOffer ? '#7ec8e3' : (def?.accent ?? '#f4b860');
+      const accentHex = offer.isDiceTokenOffer ? '#7ec8e3' : (offer.isCasinoChipOffer ? '#f4b860' : (def?.accent ?? '#f4b860'));
       const accent = Phaser.Display.Color.HexStringToColor(accentHex).color;
 
       const objs = this.buildOfferCard(x, y, offer, accentHex, accent, () => {
@@ -110,7 +112,9 @@ export class ShopScene extends Phaser.Scene {
         if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
 
         const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
-        if (offer.isCoinOffer) {
+        if (offer.isCasinoChipOffer) {
+          CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount }));
+        } else if (offer.isCoinOffer) {
           setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
         } else {
           const progress = getDiceProgress(this, offer.typeId);
@@ -150,7 +154,7 @@ export class ShopScene extends Phaser.Scene {
     });
     updateScroll(0);
 
-    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Dice Token diamond bundles give 2× tokens on first ever buy', {
+    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Dice Token bundles give 2× tokens on first ever buy  •  Casino chips have no first-buy bonus', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted
@@ -188,7 +192,7 @@ export class ShopScene extends Phaser.Scene {
     const effectivelyClaimed = isClaimed || isFrebieClaimed;
     const canAfford = offer.isFreebie ? true : getDiamonds(this) >= offer.diamondCost;
 
-    const cardColor = offer.isFreebie ? 0x1a3a20 : 0x173247;
+    const cardColor = offer.isFreebie ? 0x1a3a20 : (offer.isCasinoChipOffer ? 0x2a2438 : 0x173247);
     const borderColor = offer.isFreebie ? 0x2ecc71 : accentColor;
 
     const card = this.add.rectangle(x + CARD_W / 2, y + CARD_H / 2, CARD_W, CARD_H, cardColor, 0.97)
@@ -215,9 +219,11 @@ export class ShopScene extends Phaser.Scene {
       objs.push(rarTag);
     }
 
-    const nameLine = offer.isCoinOffer
-      ? 'Dice Tokens'
-      : (offer.typeId ? offer.typeId + ' Dice' : '—');
+    const nameLine = offer.isCasinoChipOffer
+      ? 'Casino Chips'
+      : (offer.isCoinOffer
+        ? 'Dice Tokens'
+        : (offer.typeId ? offer.typeId + ' Dice' : '—'));
     const nameText = this.add.text(x + 8, y + 48, nameLine.toUpperCase(), {
       fontFamily: 'Orbitron', fontSize: '17px', color: effectivelyClaimed ? PALETTE.textMuted : (offer.isFreebie ? '#8ae0a1' : accentHex)
     });
@@ -225,9 +231,11 @@ export class ShopScene extends Phaser.Scene {
 
     const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
     const tokenAmount = offer.coinAmount * (firstTokenPurchase ? 2 : 1);
-    const descLine = offer.isCoinOffer
-      ? `+${tokenAmount.toLocaleString()} Dice Tokens${firstTokenPurchase ? ' (2× first buy)' : ''}`
-      : `×${offer.copies} ${offer.copies === 1 ? 'copy' : 'copies'}`;
+    const descLine = offer.isCasinoChipOffer
+      ? `+${offer.coinAmount.toLocaleString()} Casino Chips`
+      : (offer.isCoinOffer
+        ? `+${tokenAmount.toLocaleString()} Dice Tokens${firstTokenPurchase ? ' (2× first buy)' : ''}`
+        : `×${offer.copies} ${offer.copies === 1 ? 'copy' : 'copies'}`);
     const descText = this.add.text(x + 8, y + 80, descLine, {
       fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text
     });
