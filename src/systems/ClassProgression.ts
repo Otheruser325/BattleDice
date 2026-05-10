@@ -5,6 +5,7 @@ export const CLASS_UP_STAT_MULTIPLIER = 1.1;
 export const SKULL_REVIVE_CHANCE_PER_CLASS = 0.01;
 export const SNIPER_DISTANCE_RATE_PER_CLASS = 0.005;
 export const IRON_CURRENT_HP_RATE_PER_CLASS = 0.005;
+export const BERSERK_THRESHOLD_RATE_PER_CLASS = 0.01;
 
 export interface ClassProgressionPreview {
   attackDelta: number;
@@ -47,6 +48,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     modifiers.chainDamage = scaleFlatDamage(source.chainDamage, multiplier);
     modifiers.poisonDamage = scaleFlatDamage(source.poisonDamage, multiplier);
     modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
+    modifiers.activeHeal = scaleFlatDamage(source.activeHeal, multiplier);
     modifiers.meteorDamage = scaleFlatDamage(source.meteorDamage, multiplier);
     modifiers.lavaDamage = scaleFlatDamage(source.lavaDamage, multiplier);
     modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
@@ -62,6 +64,10 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     if (definition.typeId === 'Iron' && source.targetCurrentHpBonusRate !== undefined) {
       modifiers.targetCurrentHpBonusRate = source.targetCurrentHpBonusRate + IRON_CURRENT_HP_RATE_PER_CLASS * classUps;
+    }
+
+    if (definition.typeId === 'Berserk' && source.berserkThresholdRate !== undefined) {
+      modifiers.berserkThresholdRate = Math.min(0.95, source.berserkThresholdRate + BERSERK_THRESHOLD_RATE_PER_CLASS * classUps);
     }
 
     return { ...skill, modifiers };
@@ -96,6 +102,9 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.chainDamage !== undefined) {
     return `Attacks chain onto a nearby target in a 2-tile radius for ${modifiers.chainDamage} bonus damage.`;
   }
+  if (modifiers.activeHeal !== undefined) {
+    return `Heals the weakest ally for ${modifiers.activeHeal} HP.`;
+  }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
     return `Deals ${modifiers.activeDamage} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
   }
@@ -106,7 +115,10 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Throws a striking meteor at a random foe, causing ${modifiers.meteorDamage} damage. Drops a lava pool on the hit tile lasting 3 turns. Foes standing on a lava tile take ${modifiers.lavaDamage} damage at the start of combat.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
-    return `If it rolls 6, transforms into The Transcendence and beam attacks consume 6 attacks to strike through the target row/column for ${modifiers.beamDamage} damage.`;
+    return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the target row/column for ${modifiers.beamDamage} damage.`;
+  }
+  if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
+    return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
   }
   if (modifiers.targetCurrentHpBonusRate !== undefined) {
     return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP.`;
@@ -137,6 +149,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Splash damage', currentModifiers.splashDamage, nextModifiers.splashDamage);
   pushNumericDelta('Chain damage', currentModifiers.chainDamage, nextModifiers.chainDamage);
   pushNumericDelta('Active damage', currentModifiers.activeDamage, nextModifiers.activeDamage);
+  pushNumericDelta('Healing', currentModifiers.activeHeal, nextModifiers.activeHeal);
   pushNumericDelta('Poison damage', currentModifiers.poisonDamage, nextModifiers.poisonDamage);
   pushNumericDelta('Meteor damage', currentModifiers.meteorDamage, nextModifiers.meteorDamage);
   pushNumericDelta('Lava damage', currentModifiers.lavaDamage, nextModifiers.lavaDamage);
@@ -158,6 +171,10 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   if (currentModifiers.targetCurrentHpBonusRate !== undefined && nextModifiers.targetCurrentHpBonusRate !== undefined) {
     const delta = nextModifiers.targetCurrentHpBonusRate - currentModifiers.targetCurrentHpBonusRate;
     if (delta > 0) skillDeltas.push(`Current HP damage +${formatPercent(delta)}`);
+  }
+  if (currentModifiers.berserkThresholdRate !== undefined && nextModifiers.berserkThresholdRate !== undefined) {
+    const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;
+    if (delta > 0) skillDeltas.push(`Berserk threshold +${formatPercent(delta)}`);
   }
 
   return {

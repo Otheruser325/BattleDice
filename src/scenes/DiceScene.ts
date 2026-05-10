@@ -17,6 +17,11 @@ import { applyClassProgression, getClassProgressionPreview } from '../systems/Cl
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 
+function formatSkillType(type: string | undefined): string {
+  if (!type) return 'Passive';
+  return type.replace(/([a-z])([A-Z])/g, '$1 $2');
+}
+
 export class DiceScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Dice;
   private readonly debug = DebugManager.attachScene(DiceScene.KEY);
@@ -134,7 +139,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
 
       const primarySkill = getPrimarySkill(displayedDie);
       const displayType = primarySkill?.type
-        ? primarySkill.type.replace('CombatStart', 'Combat Start').replace('CombatEnd', 'Combat End').toUpperCase()
+        ? formatSkillType(primarySkill.type).toUpperCase()
         : 'PASSIVE';
       const skillTypeLine = this.add.text(x + 20, y + 78, displayType, {
         fontFamily: 'Orbitron',
@@ -287,7 +292,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
     const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: displayDie.accent }).setOrigin(0.5);
     const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})\nRARITY ${displayDie.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
     const primary = getPrimarySkill(displayDie);
-    const skill = this.add.text(width / 2, height / 2 - 50, `${primary?.title ?? 'No skill'} (${primary?.type ?? 'Passive'})\n${primary?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
+    const skill = this.add.text(width / 2, height / 2 - 50, `${primary?.title ?? 'No skill'} (${formatSkillType(primary?.type)})\n${primary?.description ?? ''}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 440 } }).setOrigin(0.5);
 
     const nextClass = Math.min(15, cls + 1);
     const tokenCost = this.classTokenCosts[nextClass]?.[die.rarity] ?? 0;

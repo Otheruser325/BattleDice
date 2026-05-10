@@ -1,0 +1,17 @@
+{
+  "typeId": "Time",
+  "title": "Time Dice",
+  "attack": 22,
+  "health": 720,
+  "range": 5,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Temporal Sync",
+      "description": "During combat, dice matching this die's rolled pip count gain +1 ally attack count and foes matching it lose -1 attack count, never below 1."
+    }
+  ],
+  "accent": "#d7b8ff",
+  "targetingMode": "Nearest"
+}

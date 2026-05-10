@@ -1,0 +1,21 @@
+{
+  "typeId": "Healing",
+  "title": "Healing Dice",
+  "attack": 18,
+  "health": 700,
+  "range": 5,
+  "rarity": "Rare",
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Restorative Pulse",
+      "description": "Heals the weakest ally for 200 HP.",
+      "manaNeeded": 6,
+      "modifiers": {
+        "activeHeal": 200
+      }
+    }
+  ],
+  "accent": "#7dff9f",
+  "targetingMode": "Weakest"
+}
