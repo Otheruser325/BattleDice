@@ -5,6 +5,7 @@ export const SCENE_KEYS = {
   Arena: 'ArenaScene',
   Casino: 'CasinoScene',
   Achievements: 'AchievementsScene',
+  Dev: 'DevScene',
   Menu: 'MenuScene',
   Settings: 'SettingsScene'
 } as const;

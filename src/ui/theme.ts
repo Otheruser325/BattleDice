@@ -21,7 +21,8 @@ export const MENU_TABS = [
   { label: 'Dice', sceneKey: SCENE_KEYS.Dice, status: 'Loadout' },
   { label: 'Arena', sceneKey: SCENE_KEYS.Arena, status: 'Demo' },
   { label: 'Casino', sceneKey: SCENE_KEYS.Casino, status: 'Ready' },
-  { label: 'Achievements', sceneKey: SCENE_KEYS.Achievements, status: 'WIP' }
+  { label: 'Achievements', sceneKey: SCENE_KEYS.Achievements, status: 'WIP' },
+  { label: 'Dev', sceneKey: SCENE_KEYS.Dev, status: 'Debug' }
 ] as const satisfies readonly { label: string; sceneKey: SceneKey; status: string }[];
 
 export function getLayout(scene: Phaser.Scene) {
