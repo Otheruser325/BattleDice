@@ -8,8 +8,19 @@
   "skills": [
     {
       "type": "Passive",
-      "title": "Temporal Sync",
-      "description": "During combat, dice matching this die's rolled pip count gain +1 ally attack count and foes matching it lose -1 attack count, never below 1."
+      "title": "Temporal Acceleration",
+      "description": "During combat, ally dice matching this die's rolled pip count gain +1 attack count.",
+      "modifiers": {
+        "pipMatchAllyAttackDelta": 1
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Temporal Dilation",
+      "description": "During combat, foe dice matching this die's rolled pip count lose -1 attack count, never below 1.",
+      "modifiers": {
+        "pipMatchFoeAttackDelta": -1
+      }
     }
   ],
   "accent": "#d7b8ff",

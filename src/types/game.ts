@@ -23,6 +23,8 @@ export interface DiceSkillModifier {
   targetCurrentHpBonusRate?: number;
   berserkThresholdRate?: number;
   berserkDamageMultiplier?: number;
+  pipMatchAllyAttackDelta?: number;
+  pipMatchFoeAttackDelta?: number;
   distanceDamageBonusPerTile?: number;
   distanceDamageBonusRatePerTile?: number;
   notes?: string[];

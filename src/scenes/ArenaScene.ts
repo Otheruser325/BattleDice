@@ -506,7 +506,9 @@ export class ArenaScene extends Phaser.Scene {
   // ── GAME START ───────────────────────────────────────────────────────────────
 
   private startGame() {
+    const selectedTurnLimit = this.configTurnCount;
     this.resetRuntimeState();
+    this.turnLimit = selectedTurnLimit;
     this.gamePhase = { stage: 'placement' };
     const loading = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x050d14, 0.95).setDepth(500);
     const loadingLabel = this.add.text(this.scale.width / 2, this.scale.height / 2, 'BATTLE DICE\nCaching arena...', { fontFamily: 'Orbitron', fontSize: '24px', color: PALETTE.text, align: 'center' }).setOrigin(0.5).setDepth(501);
@@ -1028,12 +1030,21 @@ export class ArenaScene extends Phaser.Scene {
     const rolledPipsFor = (die: DiceInstanceState) => die.ownerId === 'player'
       ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
       : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
-    const collectTimePips = (dice: DiceInstanceState[]) => dice
-      .filter((die) => die.typeId === 'Time')
-      .map((die) => rolledPipsFor(die));
-    const playerTimePips = collectTimePips(playerBoardDice);
-    const enemyTimePips = collectTimePips(enemyBoardDice);
-    const countMatches = (values: number[], pip: number) => values.filter((value) => value === pip).length;
+    const collectPipAttackAuras = (dice: DiceInstanceState[]) => dice
+      .map((die) => {
+        const definition = this.getDefinitionForInstance(die);
+        if (!definition) return null;
+        const meta = getRuntimeSkillMeta(definition);
+        const allyDelta = meta.pipMatchAllyAttackDelta ?? 0;
+        const foeDelta = meta.pipMatchFoeAttackDelta ?? 0;
+        if (allyDelta === 0 && foeDelta === 0) return null;
+        return { pips: rolledPipsFor(die), allyDelta, foeDelta };
+      })
+      .filter((aura): aura is { pips: number; allyDelta: number; foeDelta: number } => aura !== null);
+    const playerPipAttackAuras = collectPipAttackAuras(playerBoardDice);
+    const enemyPipAttackAuras = collectPipAttackAuras(enemyBoardDice);
+    const sumMatchingDelta = (auras: Array<{ pips: number; allyDelta: number; foeDelta: number }>, pip: number, side: 'ally' | 'foe') =>
+      auras.reduce((total, aura) => total + (aura.pips === pip ? (side === 'ally' ? aura.allyDelta : aura.foeDelta) : 0), 0);
 
     return {
       ...this.gameState,
@@ -1049,10 +1060,10 @@ export class ArenaScene extends Phaser.Scene {
           this.transcendenceTransformed.add(die.instanceId);
         }
         const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
-        const allyTimePips = die.ownerId === 'player' ? playerTimePips : enemyTimePips;
-        const foeTimePips = die.ownerId === 'player' ? enemyTimePips : playerTimePips;
-        const timeDelta = countMatches(allyTimePips, basePips) - countMatches(foeTimePips, basePips);
-        const withPermanent = this.computeAttackCount(die.instanceId, pips, timeDelta);
+        const allyPipAttackAuras = die.ownerId === 'player' ? playerPipAttackAuras : enemyPipAttackAuras;
+        const foePipAttackAuras = die.ownerId === 'player' ? enemyPipAttackAuras : playerPipAttackAuras;
+        const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, basePips, 'ally') + sumMatchingDelta(foePipAttackAuras, basePips, 'foe');
+        const withPermanent = this.computeAttackCount(die.instanceId, pips, pipAuraDelta);
 
         return {
           ...die,
@@ -1208,7 +1219,6 @@ export class ArenaScene extends Phaser.Scene {
     this.applyCombatEndSkills();
     this.applyTimedSkillDecay();
     this.gameState = resolveCombatPhase(this.gameState);
-    this.gameState = endTurn(this.gameState);
 
     await this.returnDiceToHand();
     this.applyTurnBasedEffects();
@@ -1226,6 +1236,7 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
+    this.gameState = endTurn(this.gameState);
     this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.playTurnBanner(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);

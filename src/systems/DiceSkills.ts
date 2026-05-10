@@ -22,6 +22,8 @@ export interface DiceSkillRuntimeMeta {
   distanceDamageBonusRatePerTile?: number;
   berserkThresholdRate?: number;
   berserkDamageMultiplier?: number;
+  pipMatchAllyAttackDelta?: number;
+  pipMatchFoeAttackDelta?: number;
   activeDamage?: number;
   activeHeal?: number;
   meteorDamage?: number;
@@ -43,6 +45,11 @@ export interface DiceSkillRuntimeMeta {
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
   const primary = definition.skills[0];
   const modifiers = primary?.modifiers;
+  const allModifiers = definition.skills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
+  const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
+    const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
+    return sum === 0 ? undefined : sum;
+  };
   const range = (modifiers as { damageRange?: [number, number] } | undefined)?.damageRange;
   const reviveChance = (modifiers as { reviveChance?: number } | undefined)?.reviveChance;
   const notes = modifiers?.notes ?? [];
@@ -79,6 +86,8 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     distanceDamageBonusRatePerTile: (modifiers as { distanceDamageBonusRatePerTile?: number } | undefined)?.distanceDamageBonusRatePerTile,
     berserkThresholdRate: (modifiers as { berserkThresholdRate?: number } | undefined)?.berserkThresholdRate,
     berserkDamageMultiplier: (modifiers as { berserkDamageMultiplier?: number } | undefined)?.berserkDamageMultiplier,
+    pipMatchAllyAttackDelta: sumModifier('pipMatchAllyAttackDelta'),
+    pipMatchFoeAttackDelta: sumModifier('pipMatchFoeAttackDelta'),
     activeDamage: (modifiers as { activeDamage?: number } | undefined)?.activeDamage,
     activeHeal: (modifiers as { activeHeal?: number } | undefined)?.activeHeal,
     meteorDamage: (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
