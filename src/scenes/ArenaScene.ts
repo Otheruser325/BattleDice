@@ -1038,13 +1038,13 @@ export class ArenaScene extends Phaser.Scene {
         const allyDelta = meta.pipMatchAllyAttackDelta ?? 0;
         const foeDelta = meta.pipMatchFoeAttackDelta ?? 0;
         if (allyDelta === 0 && foeDelta === 0) return null;
-        return { pips: rolledPipsFor(die), allyDelta, foeDelta };
+        return { sourceId: die.instanceId, pips: rolledPipsFor(die), allyDelta, foeDelta };
       })
-      .filter((aura): aura is { pips: number; allyDelta: number; foeDelta: number } => aura !== null);
+      .filter((aura): aura is { sourceId: string; pips: number; allyDelta: number; foeDelta: number } => aura !== null);
     const playerPipAttackAuras = collectPipAttackAuras(playerBoardDice);
     const enemyPipAttackAuras = collectPipAttackAuras(enemyBoardDice);
-    const sumMatchingDelta = (auras: Array<{ pips: number; allyDelta: number; foeDelta: number }>, pip: number, side: 'ally' | 'foe') =>
-      auras.reduce((total, aura) => total + (aura.pips === pip ? (side === 'ally' ? aura.allyDelta : aura.foeDelta) : 0), 0);
+    const sumMatchingDelta = (auras: Array<{ sourceId: string; pips: number; allyDelta: number; foeDelta: number }>, die: DiceInstanceState, side: 'ally' | 'foe') =>
+      auras.reduce((total, aura) => total + (aura.sourceId !== die.instanceId && aura.pips === rolledPipsFor(die) ? (side === 'ally' ? aura.allyDelta : aura.foeDelta) : 0), 0);
 
     return {
       ...this.gameState,
@@ -1062,7 +1062,7 @@ export class ArenaScene extends Phaser.Scene {
         const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
         const allyPipAttackAuras = die.ownerId === 'player' ? playerPipAttackAuras : enemyPipAttackAuras;
         const foePipAttackAuras = die.ownerId === 'player' ? enemyPipAttackAuras : playerPipAttackAuras;
-        const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, basePips, 'ally') + sumMatchingDelta(foePipAttackAuras, basePips, 'foe');
+        const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, die, 'ally') + sumMatchingDelta(foePipAttackAuras, die, 'foe');
         const withPermanent = this.computeAttackCount(die.instanceId, pips, pipAuraDelta);
 
         return {
@@ -1219,10 +1219,7 @@ export class ArenaScene extends Phaser.Scene {
     this.applyCombatEndSkills();
     this.applyTimedSkillDecay();
     this.gameState = resolveCombatPhase(this.gameState);
-
-    await this.returnDiceToHand();
     this.applyTurnBasedEffects();
-    this.refreshHandAfterPoisonEffects();
     this.renderDice();
     this.renderEnemyDice();
     this.renderLavaPools();
@@ -1241,6 +1238,11 @@ export class ArenaScene extends Phaser.Scene {
     this.playTurnBanner(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
 
+    await this.returnDiceToHand();
+    this.refreshHandAfterPoisonEffects();
+    this.renderDice();
+    this.renderEnemyDice();
+    this.renderLavaPools();
     this.updateCombatButtonState();
   }
 

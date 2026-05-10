@@ -9,6 +9,7 @@ import { CasinoScene } from './scenes/CasinoScene';
 import { AchievementsScene } from './scenes/AchievementsScene';
 import { DevScene } from './scenes/DevScene';
 import { DebugManager } from './utils/DebugManager';
+import { ENABLE_DEV_MENU } from './utils/BuildFlags';
 
 DebugManager.installGlobalHooks();
 
@@ -25,7 +26,7 @@ const config: Phaser.Types.Core.GameConfig = {
     ArenaScene,
     CasinoScene,
     AchievementsScene,
-    DevScene,
+    ...(ENABLE_DEV_MENU ? [DevScene] : []),
     MenuScene,
     SettingsScene
   ],
