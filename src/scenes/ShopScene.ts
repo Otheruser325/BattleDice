@@ -13,11 +13,13 @@ import {
   setShopState,
   getShopState,
   getAllDiceDefinitions,
-  type ShopOffer
+  type ShopOffer,
+  type ShopState
 } from '../data/dice';
 
 const CARD_W = 316;
 const CARD_H = 210;
+const CARD_GAP = 12;
 const COL_COUNT = 3;
 
 export class ShopScene extends Phaser.Scene {
@@ -52,7 +54,36 @@ export class ShopScene extends Phaser.Scene {
 
     const gridStartX = panel.x + 28;
     const gridStartY = panel.y + 98;
+    const gridHeight = panel.bottom - gridStartY - 56;
     const colGap = (panel.width - 56 - COL_COUNT * CARD_W) / (COL_COUNT - 1);
+    const contentHeight = Math.ceil(state.offers.length / COL_COUNT) * (CARD_H + CARD_GAP) - CARD_GAP;
+    const maxScroll = Math.max(0, contentHeight - gridHeight);
+    let scrollY = 0;
+
+    const scrollContainer = this.add.container(0, gridStartY);
+    const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(panel.x + 18, gridStartY - 8, panel.width - 36, gridHeight + 16);
+    scrollContainer.setMask(maskShape.createGeometryMask());
+
+    const scrollThumb = this.add.rectangle(panel.right - 12, gridStartY, 6, Math.max(36, gridHeight * (gridHeight / Math.max(gridHeight, contentHeight))), 0x7ec8e3, 0.65)
+      .setOrigin(0.5, 0);
+    this.add.text(panel.centerX, gridStartY - 16, 'Scroll for more offers', {
+      fontFamily: 'Orbitron',
+      fontSize: '10px',
+      color: maxScroll > 0 ? PALETTE.textMuted : '#00000000'
+    }).setOrigin(0.5);
+
+    const updateScroll = (delta: number) => {
+      scrollY = Phaser.Math.Clamp(scrollY + delta, 0, maxScroll);
+      scrollContainer.y = gridStartY - scrollY;
+      const travel = Math.max(0, gridHeight - scrollThumb.height);
+      scrollThumb.y = gridStartY + (maxScroll > 0 ? travel * (scrollY / maxScroll) : 0);
+    };
+
+    this.add.zone(panel.centerX, gridStartY + gridHeight / 2, panel.width - 36, gridHeight + 16)
+      .setInteractive()
+      .on('wheel', (_pointer: Phaser.Input.Pointer, _dx: number, dy: number) => updateScroll(dy));
 
     const cardObjects: Phaser.GameObjects.GameObject[][] = [];
 
@@ -60,10 +91,10 @@ export class ShopScene extends Phaser.Scene {
       const col = index % COL_COUNT;
       const row = Math.floor(index / COL_COUNT);
       const x = gridStartX + col * (CARD_W + colGap);
-      const y = gridStartY + row * (CARD_H + 12);
+      const y = row * (CARD_H + CARD_GAP);
 
       const def = allDefs.find((d) => d.typeId === offer.typeId);
-      const accentHex = def?.accent ?? '#f4b860';
+      const accentHex = offer.isDiceTokenOffer ? '#7ec8e3' : (def?.accent ?? '#f4b860');
       const accent = Phaser.Display.Color.HexStringToColor(accentHex).color;
 
       const objs = this.buildOfferCard(x, y, offer, accentHex, accent, () => {
@@ -78,8 +109,9 @@ export class ShopScene extends Phaser.Scene {
         if (targetOffer.purchased) return;
         if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
 
+        const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
         if (offer.isCoinOffer) {
-          setDiceTokens(this, getDiceTokens(this) + offer.coinAmount);
+          setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
         } else {
           const progress = getDiceProgress(this, offer.typeId);
           if (progress.classLevel < 15) {
@@ -99,7 +131,10 @@ export class ShopScene extends Phaser.Scene {
         setShopState(this, {
           ...shopState,
           offers: updatedOffers,
-          freebieClaimedThisSession: offer.isFreebie ? true : shopState.freebieClaimedThisSession
+          freebieClaimedThisSession: offer.isFreebie ? true : shopState.freebieClaimedThisSession,
+          diceTokenFirstPurchaseIds: firstTokenPurchase
+            ? [...shopState.diceTokenFirstPurchaseIds, offer.id]
+            : shopState.diceTokenFirstPurchaseIds
         });
 
         offer.purchased = true;
@@ -107,16 +142,23 @@ export class ShopScene extends Phaser.Scene {
         objs.forEach((o) => o.destroy());
         const refreshedOffer = { ...offer, purchased: true };
         const newObjs = this.buildOfferCard(x, y, refreshedOffer, accentHex, accent, () => {});
+        newObjs.forEach((obj) => scrollContainer.add(obj));
         cardObjects[index] = newObjs;
       });
+      objs.forEach((obj) => scrollContainer.add(obj));
       cardObjects[index] = objs;
     });
+    updateScroll(0);
 
-    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Higher rarity = higher cost  •  No copies awarded to maxed dice', {
+    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Dice Token diamond bundles give 2× tokens on first ever buy', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted
     }).setOrigin(0.5);
+  }
+
+  private isFirstDiceTokenPurchase(shopState: ShopState, offer: ShopOffer): boolean {
+    return Boolean(offer.isDiceTokenOffer && !shopState.diceTokenFirstPurchaseIds.includes(offer.id));
   }
 
   private buildRefreshLabel(panel: Phaser.Geom.Rectangle): Phaser.GameObjects.Text {
@@ -181,8 +223,10 @@ export class ShopScene extends Phaser.Scene {
     });
     objs.push(nameText);
 
+    const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
+    const tokenAmount = offer.coinAmount * (firstTokenPurchase ? 2 : 1);
     const descLine = offer.isCoinOffer
-      ? `+${offer.coinAmount} Dice Tokens`
+      ? `+${tokenAmount.toLocaleString()} Dice Tokens${firstTokenPurchase ? ' (2× first buy)' : ''}`
       : `×${offer.copies} ${offer.copies === 1 ? 'copy' : 'copies'}`;
     const descText = this.add.text(x + 8, y + 80, descLine, {
       fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text
