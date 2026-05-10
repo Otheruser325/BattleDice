@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, drawPanel } from '../ui/theme';
-import { CasinoProgressStore } from '../systems/CasinoProgressStore';
-import { evaluateFivesCombo, type ChestType, type FivesComboType } from '../systems/CasinoComboTypes';
+import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgressStore';
+import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, setDiceProgress, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
@@ -68,18 +68,6 @@ const CHEST_DROP_RATES: Record<ChestType, ChestDropRateEntry[]> = {
 
 const RARITY_RANK: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
 
-const COMBO_EXAMPLES: Record<FivesComboType, string> = {
-  'No combo': 'No pair / no straight',
-  Pair: '2-2-x-x-x',
-  'Two Pair': '2-2-5-5-x',
-  'Three-of-a-kind': '3-3-3-x-x',
-  'Full House': '4-4-4-6-6',
-  'Small Straight': '1-2-3-4-x',
-  'Large Straight': '1-2-3-4-5',
-  'Four-of-a-kind': '5-5-5-5-x',
-  'Five-of-a-kind': '6-6-6-6-6'
-};
-
 export class CasinoScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Casino;
 
@@ -140,10 +128,44 @@ export class CasinoScene extends Phaser.Scene {
     this.diceImages = [];
     this.lockTexts = [];
     this.chestTexts.clear();
+
+    const savedHand = CasinoProgressStore.get(this).fivesHand;
+    if (savedHand?.tableActive) {
+      this.restoreFivesHand(savedHand);
+      return;
+    }
+
+    this.clearFivesHandRuntime();
+  }
+
+  private restoreFivesHand(hand: FivesHandState) {
+    this.dice = [...hand.dice];
+    this.locks = [...hand.locks];
+    this.rollsLeft = hand.rollsLeft;
+    this.tableActive = hand.tableActive;
+  }
+
+  private clearFivesHandRuntime() {
     this.tableActive = false;
     this.rollsLeft = 3;
     this.locks = [false, false, false, false, false];
     this.dice = [1, 1, 1, 1, 1];
+  }
+
+  private saveFivesHand() {
+    CasinoProgressStore.mutate(this, (current) => ({
+      ...current,
+      fivesHand: {
+        dice: [...this.dice],
+        locks: [...this.locks],
+        rollsLeft: this.rollsLeft,
+        tableActive: this.tableActive
+      }
+    }));
+  }
+
+  private clearSavedFivesHand() {
+    CasinoProgressStore.mutate(this, (current) => ({ ...current, fivesHand: null }));
   }
 
   private drawDiceRow(cx: number, y: number) {
@@ -163,6 +185,7 @@ export class CasinoScene extends Phaser.Scene {
       lock.on('pointerdown', () => {
         if (!this.tableActive || this.rollsLeft >= 3 || this.rollsLeft <= 0) return;
         this.locks[i] = !this.locks[i];
+        this.saveFivesHand();
         this.render();
       });
 
@@ -230,11 +253,11 @@ export class CasinoScene extends Phaser.Scene {
     if (this.tableActive) return AlertManager.toast(this, { type: 'warning', message: 'Finish current table first.' });
     if (progress.chips < 10) return AlertManager.toast(this, { type: 'warning', message: 'Need 10 chips for Fives.' });
 
-    CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - 10 }));
     this.dice = [1, 1, 1, 1, 1];
     this.locks = [false, false, false, false, false];
     this.rollsLeft = 3;
     this.tableActive = true;
+    CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - 10 }));
     this.rollDice();
     this.render();
   }
@@ -243,6 +266,7 @@ export class CasinoScene extends Phaser.Scene {
     if (!this.tableActive || this.rollsLeft <= 0) return;
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
+    this.saveFivesHand();
     this.render();
   }
 
@@ -253,9 +277,8 @@ export class CasinoScene extends Phaser.Scene {
       ...current,
       chests: { ...current.chests, [payout.chestType]: current.chests[payout.chestType] + payout.chestCount }
     }));
-    this.tableActive = false;
-    this.rollsLeft = 3;
-    this.locks = [false, false, false, false, false];
+    this.clearFivesHandRuntime();
+    this.clearSavedFivesHand();
     this.render();
   }
 
@@ -495,7 +518,7 @@ export class CasinoScene extends Phaser.Scene {
     this.chipText.setText(`CHIPS: ${progress.chips}`);
     const currentCombo = evaluateFivesCombo(this.dice);
     this.comboText.setText(
-      `Current Fives: ${currentCombo.combo} (${COMBO_EXAMPLES[currentCombo.combo]}) • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
+      `Current Fives: ${currentCombo.combo} — ${currentCombo.layout} • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
     );
     this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips to start a 3-roll hand.`);
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
