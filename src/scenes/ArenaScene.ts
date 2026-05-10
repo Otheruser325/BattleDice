@@ -506,7 +506,9 @@ export class ArenaScene extends Phaser.Scene {
   // ── GAME START ───────────────────────────────────────────────────────────────
 
   private startGame() {
+    const selectedTurnLimit = this.configTurnCount;
     this.resetRuntimeState();
+    this.turnLimit = selectedTurnLimit;
     this.gamePhase = { stage: 'placement' };
     const loading = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x050d14, 0.95).setDepth(500);
     const loadingLabel = this.add.text(this.scale.width / 2, this.scale.height / 2, 'BATTLE DICE\nCaching arena...', { fontFamily: 'Orbitron', fontSize: '24px', color: PALETTE.text, align: 'center' }).setOrigin(0.5).setDepth(501);
@@ -775,6 +777,8 @@ export class ArenaScene extends Phaser.Scene {
     (pipText as Phaser.GameObjects.Text).setName('pipText');
 
     container.add([bg, label, pipText]);
+    const handDie = this.getPlayerHandDie(typeId);
+    if (handDie) this.renderStatusEffects(container, 0, 0, handDie);
 
     if (draggable) {
       container.setInteractive({ draggable: true, useHandCursor: true });
@@ -1001,12 +1005,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private computeAttackCount(instanceId: string, basePips: number): number {
+  private computeAttackCount(instanceId: string, basePips: number, timeDelta = 0): number {
     const debuff = this.attackDeltaByInstance.get(instanceId)?.delta ?? 0;
     const buff = this.extraAttackTurnsByInstance.get(instanceId)?.extra ?? 0;
     const mult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
     const permanent = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
-    const adjusted = Math.max(1, basePips + debuff + buff + permanent);
+    const adjusted = Math.max(1, basePips + timeDelta + debuff + buff + permanent);
     return Math.max(1, Math.floor(adjusted * mult));
   }
 
@@ -1023,6 +1027,24 @@ export class ArenaScene extends Phaser.Scene {
       if (!definition) return sum;
       return sum + (getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0);
     }, 0);
+    const rolledPipsFor = (die: DiceInstanceState) => die.ownerId === 'player'
+      ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
+      : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
+    const collectPipAttackAuras = (dice: DiceInstanceState[]) => dice
+      .map((die) => {
+        const definition = this.getDefinitionForInstance(die);
+        if (!definition) return null;
+        const meta = getRuntimeSkillMeta(definition);
+        const allyDelta = meta.pipMatchAllyAttackDelta ?? 0;
+        const foeDelta = meta.pipMatchFoeAttackDelta ?? 0;
+        if (allyDelta === 0 && foeDelta === 0) return null;
+        return { pips: rolledPipsFor(die), allyDelta, foeDelta };
+      })
+      .filter((aura): aura is { pips: number; allyDelta: number; foeDelta: number } => aura !== null);
+    const playerPipAttackAuras = collectPipAttackAuras(playerBoardDice);
+    const enemyPipAttackAuras = collectPipAttackAuras(enemyBoardDice);
+    const sumMatchingDelta = (auras: Array<{ pips: number; allyDelta: number; foeDelta: number }>, pip: number, side: 'ally' | 'foe') =>
+      auras.reduce((total, aura) => total + (aura.pips === pip ? (side === 'ally' ? aura.allyDelta : aura.foeDelta) : 0), 0);
 
     return {
       ...this.gameState,
@@ -1032,15 +1054,16 @@ export class ArenaScene extends Phaser.Scene {
           return die;
         }
 
-        const basePips = die.ownerId === 'player'
-          ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
-          : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
+        const basePips = rolledPipsFor(die);
         const definition = this.getDefinitionForInstance(die);
         if (definition && getRuntimeSkillMeta(definition).hasTranscendence && basePips === 6) {
           this.transcendenceTransformed.add(die.instanceId);
         }
         const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
-        const withPermanent = this.computeAttackCount(die.instanceId, pips);
+        const allyPipAttackAuras = die.ownerId === 'player' ? playerPipAttackAuras : enemyPipAttackAuras;
+        const foePipAttackAuras = die.ownerId === 'player' ? enemyPipAttackAuras : playerPipAttackAuras;
+        const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, basePips, 'ally') + sumMatchingDelta(foePipAttackAuras, basePips, 'foe');
+        const withPermanent = this.computeAttackCount(die.instanceId, pips, pipAuraDelta);
 
         return {
           ...die,
@@ -1122,16 +1145,6 @@ export class ArenaScene extends Phaser.Scene {
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
-        if (this.isTranscendenceBeamExhausted(attacker)) {
-          this.gameState = {
-            ...this.gameState,
-            dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, hasFinishedAttacking: true } : die)
-          };
-          this.combatLog.setText(`${ownerName} ${attacker.typeId} cannot afford another beam and powers down.`);
-          await this.delay(500);
-          continue;
-        }
-
         const beamTarget = this.findTranscendenceBeamTarget(attacker);
         const target = beamTarget ?? findAttackTarget(this.gameState, attacker, this.getDefinitionsForCombat(attacker));
         if (!target) {
@@ -1206,7 +1219,6 @@ export class ArenaScene extends Phaser.Scene {
     this.applyCombatEndSkills();
     this.applyTimedSkillDecay();
     this.gameState = resolveCombatPhase(this.gameState);
-    this.gameState = endTurn(this.gameState);
 
     await this.returnDiceToHand();
     this.applyTurnBasedEffects();
@@ -1224,6 +1236,7 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
+    this.gameState = endTurn(this.gameState);
     this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.playTurnBanner(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
@@ -1262,6 +1275,31 @@ export class ArenaScene extends Phaser.Scene {
     } else {
       this.endGame('victory', `Turn limit reached — DRAW! Both sides have ${playerLiving} dice.`);
     }
+  }
+
+  private getWeakestDamagedAlly(ownerId: DiceInstanceState['ownerId']): DiceInstanceState | undefined {
+    return this.gameState.dice
+      .filter((die) => die.ownerId === ownerId && !die.isDestroyed && die.currentHealth < die.maxHealth)
+      .sort((a, b) => (a.currentHealth / a.maxHealth) - (b.currentHealth / b.maxHealth) || a.currentHealth - b.currentHealth)[0];
+  }
+
+  private isBerserkActive(die: DiceInstanceState): boolean {
+    const definition = this.getDefinitionForInstance(die);
+    if (!definition || die.isDestroyed || die.maxHealth <= 0) return false;
+    const meta = getRuntimeSkillMeta(definition);
+    return meta.berserkThresholdRate !== undefined && die.currentHealth / die.maxHealth < meta.berserkThresholdRate;
+  }
+
+  private getStatusEffects(die: DiceInstanceState): Array<'slow' | 'poison' | 'berserk'> {
+    const effects: Array<'slow' | 'poison' | 'berserk'> = [];
+    if ((this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0) < 0) effects.push('slow');
+    if (this.poisonByInstance.has(die.instanceId)) effects.push('poison');
+    if (this.isBerserkActive(die)) effects.push('berserk');
+    return effects;
+  }
+
+  private getPlayerHandDie(typeId: DiceTypeId): DiceInstanceState | undefined {
+    return this.gameState.dice.find((die) => die.ownerId === 'player' && die.typeId === typeId && die.zone === 'hand' && !die.isDestroyed);
   }
 
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
@@ -1362,6 +1400,21 @@ export class ArenaScene extends Phaser.Scene {
     if (!canCastActive) {
       if (manaNeeded > 0 && !windMultiplierActive) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
       return;
+    }
+    if (meta.activeHeal !== undefined) {
+      const healTarget = this.getWeakestDamagedAlly(attacker.ownerId);
+      if (healTarget) {
+        const healAmount = meta.activeHeal;
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.map((die) => {
+            if (die.instanceId !== healTarget.instanceId || die.isDestroyed) return die;
+            return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healAmount) };
+          })
+        };
+        this.showHealText(healTarget, healAmount);
+        this.animateSkillEffect('heal', attacker, healTarget);
+      }
     }
     if (attacker.typeId === 'Ice') {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
@@ -1576,7 +1629,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric', attacker: DiceInstanceState, target: DiceInstanceState) {
+  private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal', attacker: DiceInstanceState, target: DiceInstanceState) {
     if (!attacker.gridPosition || !target.gridPosition) return;
     const isPlayerAttacker = attacker.ownerId === 'player';
     const attackerGrid = isPlayerAttacker ? this.playerGridContainer : this.enemyGridContainer;
@@ -1590,6 +1643,7 @@ export class ArenaScene extends Phaser.Scene {
     if (kind === 'fire') { g.fillStyle(0xff8a3d, 0.25); g.fillTriangle(tx, ty - 18, tx - 14, ty + 16, tx + 14, ty + 16); }
     if (kind === 'poison') { g.fillStyle(0x74d66f, 0.28); g.fillCircle(tx, ty, 14); g.fillCircle(tx + 12, ty - 8, 7); }
     if (kind === 'electric') { g.lineStyle(2, 0xffef7a, 0.95); g.beginPath(); g.moveTo(ax, ay); g.lineTo((ax+tx)/2 - 8, (ay+ty)/2 + 6); g.lineTo((ax+tx)/2 + 6, (ay+ty)/2 - 5); g.lineTo(tx, ty); g.strokePath(); }
+    if (kind === 'heal') { g.lineStyle(3, 0x7dff9f, 0.95); g.strokeCircle(tx, ty, 18); g.lineBetween(tx - 10, ty, tx + 10, ty); g.lineBetween(tx, ty - 10, tx, ty + 10); }
     this.tweens.add({ targets: g, alpha: 0, duration: 420, onComplete: () => g.destroy() });
   }
 
@@ -1672,8 +1726,8 @@ export class ArenaScene extends Phaser.Scene {
     const childrenToRemove: Phaser.GameObjects.GameObject[] = [];
     this.enemyGridContainer.each((child: Phaser.GameObjects.GameObject) => {
       if (child instanceof Phaser.GameObjects.Rectangle && child.getData('isDie')) childrenToRemove.push(child);
-      if (child instanceof Phaser.GameObjects.Text && child.name === 'die-info') childrenToRemove.push(child);
-      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar')) childrenToRemove.push(child);
+      if (child instanceof Phaser.GameObjects.Text && (child.name === 'die-info' || child.name === 'status-effect')) childrenToRemove.push(child);
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar' || child.name === 'status-effect')) childrenToRemove.push(child);
     });
     childrenToRemove.forEach((child) => child.destroy());
 
@@ -1728,7 +1782,7 @@ export class ArenaScene extends Phaser.Scene {
       if (child instanceof Phaser.GameObjects.Text && child.name !== '') {
         childrenToRemove.push(child);
       }
-      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar')) {
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar' || child.name === 'status-effect')) {
         childrenToRemove.push(child);
       }
     });
@@ -1740,7 +1794,10 @@ export class ArenaScene extends Phaser.Scene {
         this.renderDie(this.playerGridContainer, die, die.gridPosition.row, die.gridPosition.col, true);
       }
     });
-    this.renderDiceStatusPanel(this.playerStatusPanel, playerDice, 'YOUR DICE');
+    const statusDice = playerDice.length > 0
+      ? playerDice
+      : this.gameState.dice.filter((die) => die.ownerId === 'player' && !die.isDestroyed);
+    this.renderDiceStatusPanel(this.playerStatusPanel, statusDice, 'YOUR DICE');
   }
 
   private renderDiceStatusPanel(panel: Phaser.GameObjects.Container, dice: DiceInstanceState[], title: string) {
@@ -1750,7 +1807,7 @@ export class ArenaScene extends Phaser.Scene {
       const visual = this.getTransformedVisual(diceUnit);
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
       const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${visual ? ` ${visual.symbol}` : ''}`;
-      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} Class UP C${classLevel}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }));
+      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }));
     });
   }
 
@@ -1839,11 +1896,10 @@ export class ArenaScene extends Phaser.Scene {
       ...this.gameState,
       dice: this.gameState.dice.map((die) => {
         if (die.instanceId !== attacker.instanceId) return die;
-        const attacksRemaining = Math.max(0, die.attacksRemaining - 6);
         return {
           ...die,
-          attacksRemaining,
-          hasFinishedAttacking: attacksRemaining < 6
+          attacksRemaining: 0,
+          hasFinishedAttacking: true
         };
       })
     };
@@ -1852,18 +1908,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private isTranscendenceBeamExhausted(attacker: DiceInstanceState): boolean {
-    if (!this.transcendenceTransformed.has(attacker.instanceId) || attacker.attacksRemaining >= 6) return false;
-    const definition = this.getDefinitionForInstance(attacker);
-    return !!definition && !!getRuntimeSkillMeta(definition).hasTranscendence;
-  }
-
   private findTranscendenceBeamTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return undefined;
     const meta = getRuntimeSkillMeta(definition);
     const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.typeId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
-    if (!meta.hasTranscendence || basePips !== 6 || !this.transcendenceTransformed.has(attacker.instanceId) || !attacker.gridPosition || attacker.attacksRemaining < 6) return undefined;
+    if (!meta.hasTranscendence || basePips !== 6 || !this.transcendenceTransformed.has(attacker.instanceId) || !attacker.gridPosition || attacker.attacksRemaining <= 0) return undefined;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const targets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition);
     return targets
@@ -1903,6 +1953,25 @@ export class ArenaScene extends Phaser.Scene {
       fontFamily: 'Orbitron',
       fontSize: '16px',
       color,
+      stroke: '#071018',
+      strokeThickness: 4
+    }).setOrigin(0.5).setDepth(300);
+    this.tweens.add({ targets: text, y: y - 24, alpha: 0, duration: 640, ease: 'Cubic.easeOut', onComplete: () => text.destroy() });
+  }
+
+  private showHealText(target: DiceInstanceState, amount: number) {
+    const fallbackHand = target.ownerId === 'player' ? this.handDice.get(target.typeId) : undefined;
+    if (!target.gridPosition && !fallbackHand) return;
+    const x = target.gridPosition
+      ? (target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer).x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
+      : fallbackHand!.x;
+    const y = target.gridPosition
+      ? (target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer).y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18
+      : fallbackHand!.y - 24;
+    const text = this.add.text(x, y, `+${amount}`, {
+      fontFamily: 'Orbitron',
+      fontSize: '16px',
+      color: '#7dff9f',
       stroke: '#071018',
       strokeThickness: 4
     }).setOrigin(0.5).setDepth(300);
@@ -1956,6 +2025,7 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5);
     hpLabel.setName('die-info');
     container.add(hpLabel);
+    this.renderStatusEffects(container, x, y, die);
     this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
     const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking' ? Math.max(die.attacksRemaining, pips) : this.getPipCount(die.typeId));
@@ -1964,6 +2034,34 @@ export class ArenaScene extends Phaser.Scene {
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
     this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);
     this.renderManaBar(container, x, y + 34, mana, Math.max(1, manaNeeded));
+  }
+
+  private renderStatusEffects(container: Phaser.GameObjects.Container, x: number, y: number, die: DiceInstanceState) {
+    const effects = this.getStatusEffects(die);
+    if (effects.length === 0) return;
+    const palette: Record<'slow' | 'poison' | 'berserk', { color: number; icon: string }> = {
+      slow: { color: 0x8fd5ff, icon: '❄' },
+      poison: { color: 0x74d66f, icon: '☠' },
+      berserk: { color: 0xff4d4d, icon: '!' }
+    };
+    effects.forEach((effect, index) => {
+      const px = x - 22 + index * 16;
+      const py = y - 24;
+      const g = this.add.graphics();
+      g.name = 'status-effect';
+      g.fillStyle(palette[effect].color, 0.9);
+      g.fillCircle(px, py, 7);
+      g.lineStyle(1, 0xffffff, 0.8);
+      g.strokeCircle(px, py, 7);
+      container.add(g);
+      const icon = this.add.text(px, py, palette[effect].icon, {
+        fontFamily: 'Orbitron',
+        fontSize: '9px',
+        color: '#071018'
+      }).setOrigin(0.5);
+      icon.setName('status-effect');
+      container.add(icon);
+    });
   }
 
   private renderHealthBar(container: Phaser.GameObjects.Container, x: number, y: number, hp: number, maxHp: number) {

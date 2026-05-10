@@ -20,7 +20,12 @@ export interface DiceSkillRuntimeMeta {
   onDeathExtraAttacks?: number;
   distanceDamageBonusPerTile?: number;
   distanceDamageBonusRatePerTile?: number;
+  berserkThresholdRate?: number;
+  berserkDamageMultiplier?: number;
+  pipMatchAllyAttackDelta?: number;
+  pipMatchFoeAttackDelta?: number;
   activeDamage?: number;
+  activeHeal?: number;
   meteorDamage?: number;
   lavaDamage?: number;
   beamDamage?: number;
@@ -40,6 +45,11 @@ export interface DiceSkillRuntimeMeta {
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
   const primary = definition.skills[0];
   const modifiers = primary?.modifiers;
+  const allModifiers = definition.skills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
+  const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
+    const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
+    return sum === 0 ? undefined : sum;
+  };
   const range = (modifiers as { damageRange?: [number, number] } | undefined)?.damageRange;
   const reviveChance = (modifiers as { reviveChance?: number } | undefined)?.reviveChance;
   const notes = modifiers?.notes ?? [];
@@ -74,7 +84,12 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
     distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile,
     distanceDamageBonusRatePerTile: (modifiers as { distanceDamageBonusRatePerTile?: number } | undefined)?.distanceDamageBonusRatePerTile,
+    berserkThresholdRate: (modifiers as { berserkThresholdRate?: number } | undefined)?.berserkThresholdRate,
+    berserkDamageMultiplier: (modifiers as { berserkDamageMultiplier?: number } | undefined)?.berserkDamageMultiplier,
+    pipMatchAllyAttackDelta: sumModifier('pipMatchAllyAttackDelta'),
+    pipMatchFoeAttackDelta: sumModifier('pipMatchFoeAttackDelta'),
     activeDamage: (modifiers as { activeDamage?: number } | undefined)?.activeDamage,
+    activeHeal: (modifiers as { activeHeal?: number } | undefined)?.activeHeal,
     meteorDamage: (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
     lavaDamage: (modifiers as { lavaDamage?: number } | undefined)?.lavaDamage,
     beamDamage: (modifiers as { beamDamage?: number } | undefined)?.beamDamage ?? (Number.isFinite(parsedBeamDamage) ? parsedBeamDamage : undefined),
@@ -110,6 +125,9 @@ export function resolveDamage(
   }
   if (meta.targetCurrentHpBonusRate) {
     damage += Math.floor(target.currentHealth * meta.targetCurrentHpBonusRate);
+  }
+  if (meta.berserkThresholdRate !== undefined && meta.berserkDamageMultiplier !== undefined && attacker.maxHealth > 0 && attacker.currentHealth / attacker.maxHealth < meta.berserkThresholdRate) {
+    damage = Math.max(1, Math.round(damage * meta.berserkDamageMultiplier));
   }
   if ((meta.distanceDamageBonusPerTile || meta.distanceDamageBonusRatePerTile) && attacker.gridPosition && target.gridPosition) {
     const distance = getCombatDistance(attacker, target);
