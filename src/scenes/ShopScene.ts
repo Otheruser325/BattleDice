@@ -159,7 +159,7 @@ export class ShopScene extends Phaser.Scene {
     });
     updateScroll(0);
 
-    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Dice Token bundles give 2× tokens on first ever buy  •  Currency bundles are infinitely purchasable', {
+    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Gem dice offers can roll 1×-10× copies/cost  •  Currency bundles are infinitely purchasable', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted

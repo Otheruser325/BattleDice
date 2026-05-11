@@ -1368,8 +1368,7 @@ export class ArenaScene extends Phaser.Scene {
   private getPierceBehindTargets(attacker: DiceInstanceState, target: DiceInstanceState, range: number): DiceInstanceState[] {
     if (!attacker.gridPosition || !target.gridPosition || range <= 0) return [];
     const rowStep = Math.sign(target.gridPosition.row - attacker.gridPosition.row);
-    const colStep = Math.sign(target.gridPosition.col - attacker.gridPosition.col);
-    if (rowStep === 0 && colStep === 0) return [];
+    const colStep = attacker.ownerId === 'player' ? 1 : -1;
     const enemies = getBoardDice(this.gameState, target.ownerId);
     const targets: DiceInstanceState[] = [];
     for (let i = 1; i <= range; i++) {
@@ -2277,7 +2276,7 @@ export class ArenaScene extends Phaser.Scene {
     this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
     const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking' ? Math.max(die.attacksRemaining, pips) : this.getPipCount(die.typeId));
-    const definitionSkill = this.getDefinitionForInstance(die)?.skills[0];
+    const definitionSkill = this.getDefinitionForInstance(die)?.skills.find((skill) => skill.manaNeeded !== undefined);
     const manaNeeded = definitionSkill?.manaNeeded ?? maxAmmo;
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
     this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);

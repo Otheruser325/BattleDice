@@ -3,6 +3,7 @@ import { SettingsStore } from '../systems/SettingsStore';
 import { PALETTE } from '../ui/theme';
 import type { AppSettings } from '../types/game';
 import { DebugManager } from '../utils/DebugManager';
+import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 import { SCENE_KEYS } from './sceneKeys';
 
 type SettingKey = keyof AppSettings;
@@ -130,6 +131,10 @@ export class SettingsScene extends Phaser.Scene {
       pill.setStrokeStyle(1, on ? 0xffdfa4 : 0x4b6e89);
       value.setText(on ? 'ON' : 'OFF');
       value.setColor(on ? '#071018' : PALETTE.textMuted);
+      if (key === 'music') {
+        const preferredMusic = this.scene.isActive(SCENE_KEYS.Arena) ? AUDIO_KEYS.arenaMusic : AUDIO_KEYS.menuMusic;
+        AudioManager.refreshMusicForSettings(this, preferredMusic);
+      }
     };
 
     pill.on('pointerdown', flip);
