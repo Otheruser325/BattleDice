@@ -24,10 +24,14 @@ import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { applyClassProgression } from '../systems/ClassProgression';
 import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
+import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 
+
+type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
+type MatchResultStage = 'victory' | 'defeat' | 'draw';
 
 interface GamePhase {
-  stage: 'lobby' | 'placement' | 'combat' | 'resolved' | 'victory' | 'defeat';
+  stage: 'lobby' | 'placement' | 'combat' | 'resolved' | MatchResultStage;
 }
 
 const DEFAULT_PLAYER_LOADOUT: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'];
@@ -35,7 +39,23 @@ const DEFAULT_PLAYER_LOADOUT: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Electric
 const GRID_SIZE = 5;
 const TILE_SIZE = 64;
 const TILE_GAP = 8;
-const MATCH_TOKEN_REWARDS: Record<'victory' | 'defeat', number> = { victory: 500, defeat: 50 };
+const MATCH_TOKEN_REWARDS: Record<MatchResultStage, number> = { victory: 500, defeat: 50, draw: 200 };
+const BOT_FIRST_WIN_REWARDS: Record<BotDifficulty, { tokens: number; chips: number }> = {
+  Baby: { tokens: 500, chips: 20 },
+  Easy: { tokens: 1_000, chips: 40 },
+  Medium: { tokens: 2_000, chips: 60 },
+  Hard: { tokens: 5_000, chips: 80 },
+  Nightmare: { tokens: 10_000, chips: 100 }
+};
+const BOT_FIRST_WIN_KEY = 'arena:claimedBotFirstWins';
+
+const BOT_DIFFICULTY_CLASSES: Record<BotDifficulty, [number, number]> = {
+  Baby: [1, 1],
+  Easy: [1, 3],
+  Medium: [3, 6],
+  Hard: [5, 9],
+  Nightmare: [7, 12]
+};
 
 export class ArenaScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Arena;
@@ -90,7 +110,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private modalContainer: Phaser.GameObjects.Container | null = null;
   private modalEscHandler: (() => void) | null = null;
-  private configDifficulty: 'Easy' | 'Medium' | 'Hard' = 'Medium';
+  private configDifficulty: BotDifficulty = 'Medium';
   private configUseLevelling: boolean = true;
   private configTurnCount: number = -1;
   private turnLimit: number = -1;
@@ -362,7 +382,7 @@ export class ArenaScene extends Phaser.Scene {
     elements.push(rowContainer);
 
     this.makeSelectRow(
-      [{ label: 'EASY', value: 'Easy' as const }, { label: 'MEDIUM', value: 'Medium' as const }, { label: 'HARD', value: 'Hard' as const }],
+      [{ label: 'BABY', value: 'Baby' as const }, { label: 'EASY', value: 'Easy' as const }, { label: 'MEDIUM', value: 'Medium' as const }, { label: 'HARD', value: 'Hard' as const }, { label: 'NIGHTMARE', value: 'Nightmare' as const }],
       () => this.configDifficulty, (v) => { this.configDifficulty = v; },
       cx + 72, cy - 118, rowContainer
     );
@@ -377,7 +397,7 @@ export class ArenaScene extends Phaser.Scene {
       cx + 84, cy + 0, rowContainer
     );
 
-    const noteText = this.add.text(cx, cy + 56, 'Difficulty changes bot class-level range.\nLevelling applies Class UP stat and skill bonuses to all dice.', {
+    const noteText = this.add.text(cx, cy + 56, 'Difficulty changes bot loadout, class range, and placement style.\nFirst win on each difficulty grants bonus Tokens + Chips.', {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
     }).setOrigin(0.5);
     elements.push(noteText);
@@ -472,7 +492,7 @@ export class ArenaScene extends Phaser.Scene {
     cy: number,
     container: Phaser.GameObjects.Container
   ): void {
-    const btnW = 72;
+    const btnW = options.length > 4 ? 88 : 72;
     const gap = 8;
     const totalW = options.length * btnW + (options.length - 1) * gap;
     const startX = cx - totalW / 2 + btnW / 2;
@@ -613,11 +633,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private rollEnemyClassLevel(): number {
-    switch (this.configDifficulty) {
-      case 'Easy': return Phaser.Math.Between(1, 2);
-      case 'Hard': return Phaser.Math.Between(3, 8);
-      case 'Medium': default: return Phaser.Math.Between(1, 5);
-    }
+    const [minClass, maxClass] = BOT_DIFFICULTY_CLASSES[this.configDifficulty];
+    return Phaser.Math.Between(minClass, maxClass);
   }
 
   private initializeBattle() {
@@ -1285,7 +1302,7 @@ export class ArenaScene extends Phaser.Scene {
     } else if (enemyLiving > playerLiving) {
       this.endGame('defeat', `Turn limit reached! Opponent has ${enemyLiving} dice vs your ${playerLiving}.`);
     } else {
-      this.endGame('victory', `Turn limit reached — DRAW! Both sides have ${playerLiving} dice.`);
+      this.endGame('draw', `Turn limit reached — DRAW! Both sides have ${playerLiving} dice.`);
     }
   }
 
@@ -1779,13 +1796,24 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private pickEnemyColumn(range: number): number {
-    if (range <= 3) {
-      const roll = Math.random();
-      if (roll < 0.45) return GRID_SIZE - 1;
-      if (roll < 0.75) return GRID_SIZE - 2;
-      return Phaser.Math.Between(0, GRID_SIZE - 3);
+    switch (this.configDifficulty) {
+      case 'Baby':
+        return Math.random() < 0.85 ? this.pickRandomColumn([0, 1]) : Phaser.Math.Between(0, GRID_SIZE - 1);
+      case 'Easy':
+        return Math.random() < 0.82 ? this.pickRandomColumn([1, 2]) : 0;
+      case 'Hard':
+        if (range <= 3) return Math.random() < 0.75 ? this.pickRandomColumn([0, 1]) : Phaser.Math.Between(0, GRID_SIZE - 1);
+        if (range >= 5) return Math.random() < 0.8 ? this.pickRandomColumn([2, 3, 4]) : Phaser.Math.Between(0, GRID_SIZE - 1);
+        return Phaser.Math.Between(0, GRID_SIZE - 1);
+      case 'Nightmare':
+        if (range <= 3) return 0;
+        if (range === 4) return 1;
+        if (range === 5) return 2;
+        return this.pickRandomColumn([3, 4]);
+      case 'Medium':
+      default:
+        return Phaser.Math.Between(0, GRID_SIZE - 1);
     }
-    return Phaser.Math.Between(0, GRID_SIZE - 1);
   }
 
   private renderDice() {
@@ -1828,7 +1856,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private pickRandomEnemyLoadout(pool: DiceDefinition[]): DiceDefinition[] {
-    const arr = [...pool];
+    const weightedPool = this.buildDifficultyWeightedPool(pool);
+    const arr = [...weightedPool];
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -1836,7 +1865,6 @@ export class ArenaScene extends Phaser.Scene {
 
     const selected: DiceDefinition[] = [];
     const used = new Set<string>();
-
     for (const def of arr) {
       if (selected.length >= 5) break;
       if (!used.has(def.typeId)) {
@@ -1848,15 +1876,28 @@ export class ArenaScene extends Phaser.Scene {
     let safety = 0;
     while (selected.length < 5 && arr.length > 0 && safety++ < 100) {
       const pick = arr[Math.floor(Math.random() * arr.length)];
-      if (pick && !used.has(pick.typeId)) {
-        selected.push(pick);
-        used.add(pick.typeId);
-      } else if (pick) {
-        selected.push(pick);
-      }
+      if (!pick) continue;
+      selected.push(pick);
     }
 
     return selected.slice(0, 5);
+  }
+
+  private buildDifficultyWeightedPool(pool: DiceDefinition[]): DiceDefinition[] {
+    const allowed = pool.filter((definition) => {
+      if (this.configDifficulty === 'Baby') return definition.rarity !== 'Epic' && definition.rarity !== 'Legendary';
+      if (this.configDifficulty === 'Easy') return definition.rarity !== 'Legendary';
+      if (this.configDifficulty === 'Nightmare') return definition.rarity !== 'Common';
+      return true;
+    });
+
+    const source = allowed.length >= 5 ? allowed : pool;
+    return source.flatMap((definition) => {
+      let weight = 2;
+      if (this.configDifficulty === 'Hard' && definition.rarity === 'Common') weight = 1;
+      if (this.configDifficulty === 'Nightmare' && definition.rarity === 'Uncommon') weight = 1;
+      return Array.from({ length: weight }, () => definition);
+    });
   }
 
   private applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
@@ -2174,13 +2215,47 @@ export class ArenaScene extends Phaser.Scene {
     return false;
   }
 
-  private endGame(stage: 'victory' | 'defeat', message: string) {
-    if (this.gamePhase.stage === 'victory' || this.gamePhase.stage === 'defeat') return;
+  private getClaimedBotFirstWins(): BotDifficulty[] {
+    const stored = this.registry.get(BOT_FIRST_WIN_KEY) as BotDifficulty[] | undefined;
+    if (stored) return stored;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(BOT_FIRST_WIN_KEY) ?? '[]') as BotDifficulty[];
+      this.registry.set(BOT_FIRST_WIN_KEY, parsed);
+      return parsed;
+    } catch {
+      return [];
+    }
+  }
+
+  private hasClaimedBotFirstWin(difficulty: BotDifficulty): boolean {
+    return this.getClaimedBotFirstWins().includes(difficulty);
+  }
+
+  private markBotFirstWinClaimed(difficulty: BotDifficulty) {
+    const next = [...new Set([...this.getClaimedBotFirstWins(), difficulty])];
+    this.registry.set(BOT_FIRST_WIN_KEY, next);
+    localStorage.setItem(BOT_FIRST_WIN_KEY, JSON.stringify(next));
+  }
+
+  private endGame(stage: MatchResultStage, message: string) {
+    if (this.gamePhase.stage === 'victory' || this.gamePhase.stage === 'defeat' || this.gamePhase.stage === 'draw') return;
     this.gamePhase = { stage };
 
-    const tokenReward = MATCH_TOKEN_REWARDS[stage];
+    const baseTokenReward = MATCH_TOKEN_REWARDS[stage];
+    let tokenReward = baseTokenReward;
+    let chipReward = 0;
+    if (stage === 'victory' && !this.hasClaimedBotFirstWin(this.configDifficulty)) {
+      const firstWinReward = BOT_FIRST_WIN_REWARDS[this.configDifficulty];
+      tokenReward += firstWinReward.tokens;
+      chipReward += firstWinReward.chips;
+      this.markBotFirstWinClaimed(this.configDifficulty);
+    }
     setDiceTokens(this, getDiceTokens(this) + tokenReward);
-    const rewardMessage = `${message} +${tokenReward} Dice Tokens awarded.`;
+    if (chipReward > 0) {
+      CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + chipReward }));
+    }
+    const chipMessage = chipReward > 0 ? ` +${chipReward} Casino Chips awarded.` : '';
+    const rewardMessage = `${message} +${tokenReward} Dice Tokens awarded.${chipMessage}`;
 
     const { width, height } = this.scale;
     const centerX = width / 2;
@@ -2188,8 +2263,8 @@ export class ArenaScene extends Phaser.Scene {
 
     this.add.rectangle(centerX, centerY, width, height, 0x000000, 0.7);
 
-    const titleColor = stage === 'victory' ? PALETTE.success : PALETTE.danger;
-    const titleText = stage === 'victory' ? 'VICTORY!' : 'DEFEAT';
+    const titleColor = stage === 'victory' ? PALETTE.success : (stage === 'draw' ? PALETTE.accentSoft : PALETTE.danger);
+    const titleText = stage === 'victory' ? 'VICTORY!' : (stage === 'draw' ? 'DRAW!' : 'DEFEAT');
 
     this.add.text(centerX, centerY - 60, titleText, {
       fontFamily: 'Orbitron',
@@ -2274,18 +2349,28 @@ export class ArenaScene extends Phaser.Scene {
     const enemyHandDice = getAvailableHandDice(this.gameState, 'enemy');
     const usedCells = new Set<string>();
     enemyHandDice.forEach((die) => {
-      let row = 0;
-      let col = 0;
-      let key = '';
-      let attempts = 0;
-      do {
-        row = Math.floor(Math.random() * GRID_SIZE);
-        col = Phaser.Math.Between(3, GRID_SIZE - 1);
-        key = `${row},${col}`;
-        attempts++;
-      } while (usedCells.has(key) && attempts < 50);
-      usedCells.add(key);
-      this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
+      this.placeEnemyDieUsingBehavior(die, usedCells);
     });
+  }
+
+  private placeEnemyDieUsingBehavior(die: DiceInstanceState, usedCells: Set<string>) {
+    const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
+    const range = definition?.range ?? 4;
+    let row = 0;
+    let col = 0;
+    let key = '';
+    let attempts = 0;
+    do {
+      row = Phaser.Math.Between(0, GRID_SIZE - 1);
+      col = this.pickEnemyColumn(range);
+      key = `${row},${col}`;
+      attempts++;
+    } while (usedCells.has(key) && attempts < 50);
+    usedCells.add(key);
+    this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
+  }
+
+  private pickRandomColumn(columns: number[]): number {
+    return columns[Phaser.Math.Between(0, columns.length - 1)] ?? 0;
   }
 }

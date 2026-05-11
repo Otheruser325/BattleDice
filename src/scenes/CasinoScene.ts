@@ -286,12 +286,58 @@ export class CasinoScene extends Phaser.Scene {
     const progress = CasinoProgressStore.get(this);
     if (this.tableActive) return AlertManager.toast(this, { type: 'warning', message: 'Finish current table first.' });
     if (progress.chips < 2) return AlertManager.toast(this, { type: 'warning', message: 'Need 2 chips for Craps.' });
+
+    const outcome = this.resolveCrapsRound();
+    this.dice = [outcome.finalRoll[0], outcome.finalRoll[1], 1, 1, 1];
+    this.locks = [true, true, false, false, false];
+
     CasinoProgressStore.mutate(this, (current) => ({
       ...current,
       chips: current.chips - 2,
-      chests: { ...current.chests, Bronze: current.chests.Bronze + Phaser.Math.Between(1, 6) }
+      chests: outcome.chestType
+        ? { ...current.chests, [outcome.chestType]: current.chests[outcome.chestType] + outcome.chestCount }
+        : current.chests
     }));
-    this.render();
+
+    const chestText = outcome.chestType ? `${outcome.chestType} x${outcome.chestCount}` : 'no chest';
+    this.statusText.setText(`Craps: ${outcome.summary} • ${chestText}`);
+    this.render(outcome.summary, chestText);
+  }
+
+  private rollCrapsDice(): [number, number] {
+    return [Phaser.Math.Between(1, 6), Phaser.Math.Between(1, 6)];
+  }
+
+  private resolveCrapsRound(): { finalRoll: [number, number]; summary: string; chestType: ChestType | null; chestCount: number } {
+    const firstRoll = this.rollCrapsDice();
+    const firstSum = firstRoll[0] + firstRoll[1];
+    if (firstSum === 7 || firstSum === 11) {
+      return { finalRoll: firstRoll, summary: `Natural ${firstSum} on ${firstRoll.join('+')}`, chestType: 'Gold', chestCount: firstSum };
+    }
+    if (firstSum === 2 || firstSum === 3 || firstSum === 12) {
+      return { finalRoll: firstRoll, summary: `Craps ${firstSum} on ${firstRoll.join('+')}`, chestType: null, chestCount: 0 };
+    }
+
+    const point = firstSum;
+    let finalRoll = firstRoll;
+    for (let rollCount = 1; rollCount <= 60; rollCount++) {
+      finalRoll = this.rollCrapsDice();
+      const sum = finalRoll[0] + finalRoll[1];
+      if (sum === point) {
+        const isHardPoint = finalRoll[0] === finalRoll[1];
+        return {
+          finalRoll,
+          summary: `Point ${point} made with ${finalRoll.join('+')}`,
+          chestType: isHardPoint ? 'Gold' : 'Silver',
+          chestCount: sum
+        };
+      }
+      if (sum === 7) {
+        return { finalRoll, summary: `Seven-out against point ${point} (${finalRoll.join('+')})`, chestType: null, chestCount: 0 };
+      }
+    }
+
+    return { finalRoll, summary: `Point ${point} pushed after a long table`, chestType: 'Bronze', chestCount: point };
   }
 
 
@@ -514,14 +560,15 @@ export class CasinoScene extends Phaser.Scene {
     return `dice-face-${Phaser.Math.Clamp(Math.floor(pip), 1, 6)}`;
   }
 
-  private render() {
+  private render(crapsSummary?: string, crapsChestText?: string) {
     if (!this.scene.isActive(CasinoScene.KEY)) return;
     this.diceImages.forEach((image, i) => {
       if (image?.scene) image.setTexture(this.getDiceTextureKey(this.dice[i] ?? 1));
     });
     this.lockTexts.forEach((text, i) => {
       if (!text?.scene) return;
-      text.setText(this.locks[i] ? 'LOCKED' : 'UNLOCK');
+      const isCrapsDie = !this.tableActive && this.locks[i] && i < 2;
+      text.setText(isCrapsDie ? 'CRAPS' : (this.locks[i] ? 'LOCKED' : 'UNLOCK'));
       text.setColor(this.locks[i] ? PALETTE.accentSoft : PALETTE.textMuted);
     });
     const progress = CasinoProgressStore.get(this);
@@ -530,7 +577,9 @@ export class CasinoScene extends Phaser.Scene {
     this.comboText.setText(
       `Current Fives: ${currentCombo.combo} — ${currentCombo.layout} • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
     );
-    this.statusText.setText(this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips to start a 3-roll hand.`);
+    this.statusText.setText(crapsSummary
+      ? `Craps: ${crapsSummary} • ${crapsChestText}`
+      : (this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
   }
 

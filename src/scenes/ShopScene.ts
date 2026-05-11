@@ -108,7 +108,7 @@ export class ShopScene extends Phaser.Scene {
         const offerIdx = shopState.offers.findIndex((o) => o.id === offer.id);
         if (offerIdx < 0) return;
         const targetOffer = shopState.offers[offerIdx];
-        if (targetOffer.purchased) return;
+        if (targetOffer.purchased && !this.isInfiniteCurrencyOffer(offer)) return;
         if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
 
         const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
@@ -130,7 +130,7 @@ export class ShopScene extends Phaser.Scene {
         }
 
         const updatedOffers = shopState.offers.map((o, i) =>
-          i === offerIdx ? { ...o, purchased: true } : o
+          i === offerIdx ? { ...o, purchased: this.isInfiniteCurrencyOffer(offer) ? false : true } : o
         );
         setShopState(this, {
           ...shopState,
@@ -140,6 +140,11 @@ export class ShopScene extends Phaser.Scene {
             ? [...shopState.diceTokenFirstPurchaseIds, offer.id]
             : shopState.diceTokenFirstPurchaseIds
         });
+
+        if (this.isInfiniteCurrencyOffer(offer)) {
+          this.scene.restart();
+          return;
+        }
 
         offer.purchased = true;
 
@@ -154,7 +159,7 @@ export class ShopScene extends Phaser.Scene {
     });
     updateScroll(0);
 
-    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Dice Token bundles give 2× tokens on first ever buy  •  Casino chips have no first-buy bonus', {
+    this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Dice Token bundles give 2× tokens on first ever buy  •  Currency bundles are infinitely purchasable', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted
@@ -163,6 +168,17 @@ export class ShopScene extends Phaser.Scene {
 
   private isFirstDiceTokenPurchase(shopState: ShopState, offer: ShopOffer): boolean {
     return Boolean(offer.isDiceTokenOffer && !shopState.diceTokenFirstPurchaseIds.includes(offer.id));
+  }
+
+  private isInfiniteCurrencyOffer(offer: ShopOffer): boolean {
+    return Boolean(offer.isDiceTokenOffer || offer.isCasinoChipOffer);
+  }
+
+  private getOfferHeaderLabel(offer: ShopOffer): string {
+    if (offer.isDiceTokenOffer) return 'DICE TOKEN VAULT';
+    if (offer.isCasinoChipOffer) return 'CASINO CHIP STACK';
+    if (offer.isFreebie) return '★ DAILY FREEBIE';
+    return offer.rarity.toUpperCase();
   }
 
   private buildRefreshLabel(panel: Phaser.Geom.Rectangle): Phaser.GameObjects.Text {
@@ -189,7 +205,8 @@ export class ShopScene extends Phaser.Scene {
     const isClaimed = offer.purchased;
     const shopState = getShopState(this);
     const isFrebieClaimed = offer.isFreebie && shopState.freebieClaimedThisSession;
-    const effectivelyClaimed = isClaimed || isFrebieClaimed;
+    const isInfiniteOffer = this.isInfiniteCurrencyOffer(offer);
+    const effectivelyClaimed = !isInfiniteOffer && (isClaimed || isFrebieClaimed);
     const canAfford = offer.isFreebie ? true : getDiamonds(this) >= offer.diamondCost;
 
     const cardColor = offer.isFreebie ? 0x1a3a20 : (offer.isCasinoChipOffer ? 0x2a2438 : 0x173247);
@@ -204,20 +221,14 @@ export class ShopScene extends Phaser.Scene {
       effectivelyClaimed ? 0x1f2f3d : (offer.isFreebie ? 0x27ae60 : accentColor), effectivelyClaimed ? 0.3 : 0.22);
     objs.push(header);
 
-    if (offer.isFreebie) {
-      const freeTag = this.add.text(x + 8, y + 10, '★ DAILY FREEBIE', {
-        fontFamily: 'Orbitron', fontSize: '13px', color: effectivelyClaimed ? PALETTE.textMuted : '#2ecc71'
-      });
-      objs.push(freeTag);
-    } else {
-      const rarityColors: Record<string, string> = {
-        Common: '#aaaaaa', Uncommon: '#3dc45d', Rare: '#5ba3ff', Epic: '#c06bdb', Legendary: '#f4b860'
-      };
-      const rarTag = this.add.text(x + 8, y + 10, offer.rarity.toUpperCase(), {
-        fontFamily: 'Orbitron', fontSize: '12px', color: rarityColors[offer.rarity] ?? PALETTE.accentSoft
-      });
-      objs.push(rarTag);
-    }
+    const headerLabel = this.getOfferHeaderLabel(offer);
+    const rarityColors: Record<string, string> = {
+      Common: '#aaaaaa', Uncommon: '#3dc45d', Rare: '#5ba3ff', Epic: '#c06bdb', Legendary: '#f4b860', Diamond: '#7ec8e3', Casino: '#f4b860'
+    };
+    const headerTag = this.add.text(x + CARD_W / 2, y + 10, headerLabel, {
+      fontFamily: 'Orbitron', fontSize: offer.isFreebie ? '13px' : '12px', color: effectivelyClaimed ? PALETTE.textMuted : (rarityColors[offer.rarity] ?? PALETTE.accentSoft)
+    }).setOrigin(0.5, 0);
+    objs.push(headerTag);
 
     const nameLine = offer.isCasinoChipOffer
       ? 'Casino Chips'
