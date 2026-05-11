@@ -11,6 +11,24 @@ const DICE_TOKENS_KEY = 'dice:tokens';
 const DIAMONDS_KEY = 'shop:diamonds';
 const SHOP_STATE_KEY = 'shop:state';
 
+function readStored<T>(key: string): T | undefined {
+  try {
+    if (typeof localStorage === 'undefined') return undefined;
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStored<T>(key: string, value: T) {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Registry state still keeps the session playable when localStorage is unavailable.
+  }
+}
+
 export type DefaultLoadoutTypeId = (typeof DEFAULT_LOADOUT)[number];
 
 export function getDiceFlags(scene: Phaser.Scene): DiceFlags {
@@ -44,11 +62,18 @@ export function getAllDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
 export function getSelectedLoadout(scene: Phaser.Scene): DiceTypeId[] {
   const stored = scene.registry.get(LOADOUT_KEY) as DiceTypeId[] | undefined;
   if (stored?.length === 5) return stored;
+  const saved = readStored<DiceTypeId[]>(LOADOUT_KEY);
+  if (saved?.length === 5) {
+    scene.registry.set(LOADOUT_KEY, saved);
+    return saved;
+  }
   return [...DEFAULT_LOADOUT];
 }
 
 export function setSelectedLoadout(scene: Phaser.Scene, loadout: DiceTypeId[]) {
-  scene.registry.set(LOADOUT_KEY, loadout.slice(0, 5));
+  const next = loadout.slice(0, 5);
+  scene.registry.set(LOADOUT_KEY, next);
+  writeStored(LOADOUT_KEY, next);
 }
 
 export interface DiceProgressState {
@@ -57,25 +82,38 @@ export interface DiceProgressState {
 }
 
 export function getDiceTokens(scene: Phaser.Scene): number {
-  return (scene.registry.get(DICE_TOKENS_KEY) as number | undefined) ?? 5000;
+  const stored = scene.registry.get(DICE_TOKENS_KEY) as number | undefined;
+  if (stored !== undefined) return stored;
+  const saved = readStored<number>(DICE_TOKENS_KEY);
+  const tokens = typeof saved === 'number' ? saved : 5000;
+  scene.registry.set(DICE_TOKENS_KEY, tokens);
+  return tokens;
 }
 
 export function setDiceTokens(scene: Phaser.Scene, tokens: number) {
-  scene.registry.set(DICE_TOKENS_KEY, Math.max(0, Math.floor(tokens)));
+  const next = Math.max(0, Math.floor(tokens));
+  scene.registry.set(DICE_TOKENS_KEY, next);
+  writeStored(DICE_TOKENS_KEY, next);
 }
 
 export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DiceProgressState {
-  const store = (scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined) ?? {};
+  let store = scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined;
+  if (!store) {
+    store = readStored<Record<string, DiceProgressState>>(DICE_PROGRESS_KEY) ?? {};
+    scene.registry.set(DICE_PROGRESS_KEY, store);
+  }
   const defaultCopies = DEFAULT_LOADOUT_IDS.has(typeId) ? 200 : 0;
   return store[typeId] ?? { classLevel: 1, copies: defaultCopies };
 }
 
 export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: DiceProgressState) {
   const store = (scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined) ?? {};
-  scene.registry.set(DICE_PROGRESS_KEY, {
+  const updated = {
     ...store,
     [typeId]: { classLevel: Math.max(1, Math.min(15, next.classLevel)), copies: Math.max(0, next.copies) }
-  });
+  };
+  scene.registry.set(DICE_PROGRESS_KEY, updated);
+  writeStored(DICE_PROGRESS_KEY, updated);
 }
 
 export function getRangeLabel(range: number): string {
@@ -95,11 +133,18 @@ export function getPrimarySkill(definition: DiceDefinition) {
 }
 
 export function getDiamonds(scene: Phaser.Scene): number {
-  return (scene.registry.get(DIAMONDS_KEY) as number | undefined) ?? 100;
+  const stored = scene.registry.get(DIAMONDS_KEY) as number | undefined;
+  if (stored !== undefined) return stored;
+  const saved = readStored<number>(DIAMONDS_KEY);
+  const diamonds = typeof saved === 'number' ? saved : 100;
+  scene.registry.set(DIAMONDS_KEY, diamonds);
+  return diamonds;
 }
 
 export function setDiamonds(scene: Phaser.Scene, amount: number) {
-  scene.registry.set(DIAMONDS_KEY, Math.max(0, Math.floor(amount)));
+  const next = Math.max(0, Math.floor(amount));
+  scene.registry.set(DIAMONDS_KEY, next);
+  writeStored(DIAMONDS_KEY, next);
 }
 
 export interface ShopOffer {
@@ -140,7 +185,11 @@ function getDayNumber(): number {
 }
 
 export function getShopState(scene: Phaser.Scene): ShopState {
-  const state = (scene.registry.get(SHOP_STATE_KEY) as Partial<ShopState> | undefined) ?? {};
+  let state = scene.registry.get(SHOP_STATE_KEY) as Partial<ShopState> | undefined;
+  if (!state) {
+    state = readStored<Partial<ShopState>>(SHOP_STATE_KEY) ?? {};
+    scene.registry.set(SHOP_STATE_KEY, state);
+  }
   return {
     offers: state.offers ?? [],
     generatedDay: state.generatedDay ?? -1,
@@ -151,6 +200,7 @@ export function getShopState(scene: Phaser.Scene): ShopState {
 
 export function setShopState(scene: Phaser.Scene, state: ShopState) {
   scene.registry.set(SHOP_STATE_KEY, state);
+  writeStored(SHOP_STATE_KEY, state);
 }
 
 const DIAMOND_COST_BY_RARITY: Record<string, number> = {
@@ -172,8 +222,16 @@ const COPIES_BY_RARITY: Record<string, number> = {
 export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const existing = getShopState(scene);
   const currentDay = getDayNumber();
+  const existingFreebie = existing.offers.find((offer) => offer.isFreebie);
+  const freebieCopiesByRarity: Record<string, number> = { Common: 20, Uncommon: 10, Rare: 5 };
+  const existingFreebieUsesCurrentRules = Boolean(
+    existingFreebie &&
+    !existingFreebie.isCoinOffer &&
+    existingFreebie.rarity in freebieCopiesByRarity &&
+    existingFreebie.copies === freebieCopiesByRarity[existingFreebie.rarity]
+  );
 
-  if (existing.generatedDay === currentDay && existing.offers.some((offer) => offer.isDiceTokenOffer) && existing.offers.some((offer) => offer.isCasinoChipOffer)) {
+  if (existing.generatedDay === currentDay && existingFreebieUsesCurrentRules && existing.offers.some((offer) => offer.isDiceTokenOffer) && existing.offers.some((offer) => offer.isCasinoChipOffer)) {
     return existing;
   }
 
@@ -196,15 +254,17 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
 
   const offers: ShopOffer[] = [];
 
-  const freebieIsCoin = seededRandom() < 0.5;
+  const freebieRoll = seededRandom();
+  const freebieRarity = freebieRoll < 0.45 ? 'Common' : (freebieRoll < 0.75 ? 'Uncommon' : 'Rare');
+  const freebieDef = shuffled.find((def) => def.rarity === freebieRarity) ?? shuffled.find((def) => ['Common', 'Uncommon', 'Rare'].includes(def.rarity));
   offers.push({
     id: 'freebie',
-    typeId: freebieIsCoin ? '' : (shuffled[0]?.typeId ?? ''),
-    isCoinOffer: freebieIsCoin,
-    copies: freebieIsCoin ? 0 : 5,
-    coinAmount: freebieIsCoin ? 300 : 0,
+    typeId: freebieDef?.typeId ?? '',
+    isCoinOffer: false,
+    copies: freebieCopiesByRarity[freebieDef?.rarity ?? freebieRarity] ?? 20,
+    coinAmount: 0,
     diamondCost: 0,
-    rarity: freebieIsCoin ? 'Common' : (shuffled[0]?.rarity ?? 'Common'),
+    rarity: freebieDef?.rarity ?? freebieRarity,
     isFreebie: true,
     purchased: false
   });
@@ -217,13 +277,16 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   }
 
   slotDefs.slice(0, 5).forEach((def, i) => {
+    const copyMultiplier = 1 + Math.floor(seededRandom() * 10);
+    const baseCopies = COPIES_BY_RARITY[def.rarity] ?? 1;
+    const baseDiamondCost = DIAMOND_COST_BY_RARITY[def.rarity] ?? 10;
     offers.push({
       id: `slot-${i}`,
       typeId: def.typeId,
       isCoinOffer: false,
-      copies: COPIES_BY_RARITY[def.rarity] ?? 1,
+      copies: baseCopies * copyMultiplier,
       coinAmount: 0,
-      diamondCost: DIAMOND_COST_BY_RARITY[def.rarity] ?? 10,
+      diamondCost: baseDiamondCost * copyMultiplier,
       rarity: def.rarity,
       isFreebie: false,
       purchased: false
