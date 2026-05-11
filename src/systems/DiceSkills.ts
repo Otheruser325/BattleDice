@@ -29,6 +29,12 @@ export interface DiceSkillRuntimeMeta {
   meteorDamage?: number;
   lavaDamage?: number;
   beamDamage?: number;
+  pierceBehindRange?: number;
+  pierceBehindDamage?: number;
+  hammerDamage?: number;
+  hasSpearActive?: boolean;
+  hasSolitudePreCombat?: boolean;
+  hasJudgmentHammer?: boolean;
   hasTranscendence?: boolean;
   hasMeteorStrike?: boolean;
   hasDeathTransform?: boolean;
@@ -45,6 +51,8 @@ export interface DiceSkillRuntimeMeta {
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
   const primary = definition.skills[0];
   const modifiers = primary?.modifiers;
+  const activeSkill = definition.skills.find((skill) => skill.type === 'Active');
+  const activeModifiers = activeSkill?.modifiers;
   const allModifiers = definition.skills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
   const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
     const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
@@ -75,10 +83,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     combatStartExtraAttacks: primary?.type === 'CombatStart' ? (modifiers?.extraAttacks ?? 0) : 0,
     combatEndExtraAttacks: primary?.type === 'CombatEnd' && !notes.includes('runtime:growthPermanent') ? (modifiers?.extraAttacks ?? 0) : 0,
     targetingMode: definition.targetingMode,
-    activeManaNeeded: primary?.type === 'Active' ? (primary.manaNeeded ?? 0) : 0,
-    activeExtraAttacks: primary?.type === 'Active' ? (modifiers?.extraAttacks ?? 0) : 0,
-    activeAttackDelta: primary?.type === 'Active' ? (modifiers?.attackDelta ?? 0) : 0,
-    activeDurationTurns: primary?.type === 'Active' ? (modifiers?.durationTurns ?? 0) : 0,
+    activeManaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
+    activeExtraAttacks: activeSkill ? (activeModifiers?.extraAttacks ?? 0) : 0,
+    activeAttackDelta: activeSkill ? (activeModifiers?.attackDelta ?? 0) : 0,
+    activeDurationTurns: activeSkill ? (activeModifiers?.durationTurns ?? 0) : 0,
     poisonDamage: (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
     onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
     onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
@@ -88,11 +96,17 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     berserkDamageMultiplier: (modifiers as { berserkDamageMultiplier?: number } | undefined)?.berserkDamageMultiplier,
     pipMatchAllyAttackDelta: sumModifier('pipMatchAllyAttackDelta'),
     pipMatchFoeAttackDelta: sumModifier('pipMatchFoeAttackDelta'),
-    activeDamage: (modifiers as { activeDamage?: number } | undefined)?.activeDamage,
-    activeHeal: (modifiers as { activeHeal?: number } | undefined)?.activeHeal,
+    activeDamage: (activeModifiers as { activeDamage?: number } | undefined)?.activeDamage ?? (modifiers as { activeDamage?: number } | undefined)?.activeDamage,
+    activeHeal: (activeModifiers as { activeHeal?: number } | undefined)?.activeHeal ?? (modifiers as { activeHeal?: number } | undefined)?.activeHeal,
     meteorDamage: (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
     lavaDamage: (modifiers as { lavaDamage?: number } | undefined)?.lavaDamage,
     beamDamage: (modifiers as { beamDamage?: number } | undefined)?.beamDamage ?? (Number.isFinite(parsedBeamDamage) ? parsedBeamDamage : undefined),
+    pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange ?? (activeModifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
+    pierceBehindDamage: (activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage ?? (modifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage,
+    hammerDamage: (modifiers as { hammerDamage?: number } | undefined)?.hammerDamage,
+    hasSpearActive: notes.includes('runtime:spearActive') || (activeModifiers?.notes ?? []).includes('runtime:spearActive'),
+    hasSolitudePreCombat: notes.includes('runtime:solitudePreCombat'),
+    hasJudgmentHammer: notes.includes('runtime:judgmentHammer'),
     hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence',
     hasMeteorStrike: notes.includes('runtime:meteorStrike'),
     hasDeathTransform: notes.includes('runtime:deathTransform'),

@@ -17,6 +17,9 @@ export interface DiceSkillModifier {
   meteorDamage?: number;
   lavaDamage?: number;
   beamDamage?: number;
+  pierceBehindRange?: number;
+  pierceBehindDamage?: number;
+  hammerDamage?: number;
   reviveChance?: number;
   damageRange?: [number, number];
   targetMaxHpBonusRate?: number;

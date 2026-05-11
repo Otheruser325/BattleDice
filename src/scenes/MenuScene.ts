@@ -4,6 +4,7 @@ import { AnimationManager } from '../utils/AnimationManager';
 import { DebugManager } from '../utils/DebugManager';
 import { MENU_TABS, PALETTE, getLayout } from '../ui/theme';
 import { SCENE_KEYS, type SceneKey } from './sceneKeys';
+import { AudioManager } from '../utils/AudioManager';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
@@ -22,6 +23,7 @@ export class MenuScene extends Phaser.Scene {
     this.tabButtons = [];
     const { width, height, dockY } = getLayout(this);
     this.debug.log('Menu scene created.');
+    AudioManager.playMusic(this, 'menu-music');
 
     this.add.image(width / 2, height / 2, 'menu-bg')
       .setDisplaySize(width, height)
@@ -99,6 +101,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private openTab(tab: MenuTab) {
+    AudioManager.playSfx(this, 'ui-click');
     if (this.scene.isActive(this.activeSceneKey)) {
       this.scene.stop(this.activeSceneKey);
     }

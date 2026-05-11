@@ -6,6 +6,7 @@ export const SKULL_REVIVE_CHANCE_PER_CLASS = 0.01;
 export const SNIPER_DISTANCE_RATE_PER_CLASS = 0.005;
 export const IRON_CURRENT_HP_RATE_PER_CLASS = 0.005;
 export const BERSERK_THRESHOLD_RATE_PER_CLASS = 0.01;
+export const SOLITUDE_MAX_HP_RATE_PER_CLASS = 0.0025;
 
 export interface ClassProgressionPreview {
   attackDelta: number;
@@ -52,6 +53,8 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     modifiers.meteorDamage = scaleFlatDamage(source.meteorDamage, multiplier);
     modifiers.lavaDamage = scaleFlatDamage(source.lavaDamage, multiplier);
     modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
+    modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
+    modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
     modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
 
     if (definition.typeId === 'Skull' && source.reviveChance !== undefined) {
@@ -68,6 +71,10 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     if (definition.typeId === 'Berserk' && source.berserkThresholdRate !== undefined) {
       modifiers.berserkThresholdRate = Math.min(0.95, source.berserkThresholdRate + BERSERK_THRESHOLD_RATE_PER_CLASS * classUps);
+    }
+
+    if (definition.typeId === 'Solitude' && source.targetMaxHpBonusRate !== undefined) {
+      modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + SOLITUDE_MAX_HP_RATE_PER_CLASS * classUps;
     }
 
     return { ...skill, modifiers };
@@ -105,6 +112,18 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.activeHeal !== undefined) {
     return `Heals the weakest ally for ${modifiers.activeHeal} HP.`;
   }
+  if (notes.includes('runtime:spearActive') && modifiers.activeDamage !== undefined && modifiers.pierceBehindDamage !== undefined) {
+    return `Sends in a charged spear that deals ${modifiers.activeDamage} damage to its target, then ${modifiers.pierceBehindDamage} damage behind it with extended range.`;
+  }
+  if (notes.includes('runtime:judgmentHammer') && modifiers.hammerDamage !== undefined) {
+    return `On kill, summons a judge hammer on the weakest foe for ${modifiers.hammerDamage} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
+  }
+  if (notes.includes('runtime:solitudePreCombat') && modifiers.targetMaxHpBonusRate !== undefined) {
+    return `At combat start, if isolated from adjacent allies, deals ${formatPercent(modifiers.targetMaxHpBonusRate)} max HP damage to each foe.`;
+  }
+  if (notes.includes('runtime:pierceBehind=1') && modifiers.pierceBehindRange !== undefined) {
+    return `Basic attacks also stab ${modifiers.pierceBehindRange} tile behind the target.`;
+  }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
     return `Deals ${modifiers.activeDamage} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
   }
@@ -115,7 +134,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Throws a striking meteor at a random foe, causing ${modifiers.meteorDamage} damage. Drops a lava pool on the hit tile lasting 3 turns. Foes standing on a lava tile take ${modifiers.lavaDamage} damage at the start of combat.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
-    return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the target row/column for ${modifiers.beamDamage} damage.`;
+    return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${modifiers.beamDamage} damage.`;
   }
   if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
     return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
@@ -154,6 +173,8 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Meteor damage', currentModifiers.meteorDamage, nextModifiers.meteorDamage);
   pushNumericDelta('Lava damage', currentModifiers.lavaDamage, nextModifiers.lavaDamage);
   pushNumericDelta('Beam damage', currentModifiers.beamDamage, nextModifiers.beamDamage);
+  pushNumericDelta('Pierce damage', currentModifiers.pierceBehindDamage, nextModifiers.pierceBehindDamage);
+  pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
 
   if (currentModifiers.damageRange && nextModifiers.damageRange) {
     const minDelta = nextModifiers.damageRange[0] - currentModifiers.damageRange[0];
@@ -167,6 +188,10 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   if (currentModifiers.distanceDamageBonusRatePerTile !== undefined && nextModifiers.distanceDamageBonusRatePerTile !== undefined) {
     const delta = nextModifiers.distanceDamageBonusRatePerTile - currentModifiers.distanceDamageBonusRatePerTile;
     if (delta > 0) skillDeltas.push(`Distance damage +${formatPercent(delta)} / tile`);
+  }
+  if (currentModifiers.targetMaxHpBonusRate !== undefined && nextModifiers.targetMaxHpBonusRate !== undefined) {
+    const delta = nextModifiers.targetMaxHpBonusRate - currentModifiers.targetMaxHpBonusRate;
+    if (delta > 0) skillDeltas.push(`Max HP damage +${formatPercent(delta)}`);
   }
   if (currentModifiers.targetCurrentHpBonusRate !== undefined && nextModifiers.targetCurrentHpBonusRate !== undefined) {
     const delta = nextModifiers.targetCurrentHpBonusRate - currentModifiers.targetCurrentHpBonusRate;

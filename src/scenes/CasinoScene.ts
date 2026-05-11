@@ -5,6 +5,7 @@ import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes'
 import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, setDiceProgress, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
+import { AudioManager } from '../utils/AudioManager';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -438,6 +439,7 @@ export class CasinoScene extends Phaser.Scene {
       ...progress,
       chests: { ...progress.chests, [type]: Math.max(0, progress.chests[type] - openCount) }
     }));
+    AudioManager.playSfx(this, 'chest-open');
     const rewards = this.rollChestOpenRewards(type, openCount);
     const entries = rewards.entries.sort((a, b) => (
       RARITY_RANK[a.rarity] - RARITY_RANK[b.rarity] || a.title.localeCompare(b.title)

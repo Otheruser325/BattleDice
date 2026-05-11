@@ -25,6 +25,7 @@ import { applyClassProgression } from '../systems/ClassProgression';
 import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
+import { AudioManager } from '../utils/AudioManager';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -156,6 +157,7 @@ export class ArenaScene extends Phaser.Scene {
     this.definitions = new Map(getAllDiceDefinitions(this).map((die) => [die.typeId, die]));
     this.skillIndex = buildSkillIndex([...this.definitions.values()]);
 
+    AudioManager.playMusic(this, 'arena-music');
     this.createBackground(layout);
     this.createLobbyUI();
 
@@ -1020,6 +1022,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.gameState = this.beginCombatPhaseWithRolledPips();
 
+    this.applySolitudePreCombatDamage();
     this.applyLavaPoolDamageAtCombatStart();
     this.renderDice();
     this.renderEnemyDice();
@@ -1108,7 +1111,7 @@ export class ArenaScene extends Phaser.Scene {
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
         const wasAlive = !die.isDestroyed;
-        this.gameState = applyDamage(this.gameState, die.instanceId, pool.damage);
+        this.gameState = this.applyDamageWithRevive(die.instanceId, pool.damage);
         const after = this.gameState.dice.find((d) => d.instanceId === die.instanceId);
         if (wasAlive && after?.isDestroyed) this.checkDeathTransformCondition(die);
         this.combatLog.setText(`${die.typeId} takes ${pool.damage} lava damage from the pool!`);
@@ -1202,6 +1205,7 @@ export class ArenaScene extends Phaser.Scene {
             damage = result.damage;
             targetDestroyed = result.targetDestroyed;
           } else {
+            AudioManager.playSfx(this, 'dice-attack');
             const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.getDefinitionsForCombat(attacker, target));
             this.gameState = result.newState;
             damage = result.damage;
@@ -1307,9 +1311,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private getWeakestDamagedAlly(ownerId: DiceInstanceState['ownerId'], excludedInstanceId?: string): DiceInstanceState | undefined {
-    return this.gameState.dice
-      .filter((die) => die.ownerId === ownerId && die.instanceId !== excludedInstanceId && !die.isDestroyed && die.currentHealth < die.maxHealth)
-      .sort((a, b) => (a.currentHealth / a.maxHealth) - (b.currentHealth / b.maxHealth) || a.currentHealth - b.currentHealth)[0];
+    const livingAllies = this.gameState.dice.filter((die) => die.ownerId === ownerId && !die.isDestroyed);
+    const otherDamagedAllies = livingAllies
+      .filter((die) => die.instanceId !== excludedInstanceId && die.currentHealth < die.maxHealth)
+      .sort((a, b) => (a.currentHealth / a.maxHealth) - (b.currentHealth / b.maxHealth) || a.currentHealth - b.currentHealth);
+    if (otherDamagedAllies[0]) return otherDamagedAllies[0];
+    return livingAllies.find((die) => die.instanceId === excludedInstanceId && die.currentHealth < die.maxHealth);
   }
 
   private isBerserkActive(die: DiceInstanceState): boolean {
@@ -1331,6 +1338,75 @@ export class ArenaScene extends Phaser.Scene {
     return this.gameState.dice.find((die) => die.ownerId === 'player' && die.typeId === typeId && die.zone === 'hand' && !die.isDestroyed);
   }
 
+
+  private applyDamageWithRevive(instanceId: string, damage: number): MatchBattleState {
+    const before = this.gameState.dice.find((die) => die.instanceId === instanceId);
+    const beforePosition = before?.gridPosition;
+    const nextState = applyDamage(this.gameState, instanceId, damage);
+    const after = nextState.dice.find((die) => die.instanceId === instanceId);
+    if (!before || !after?.isDestroyed) return nextState;
+    const definition = this.getDefinitionForInstance(before);
+    const reviveChance = definition ? getRuntimeSkillMeta(definition).reviveChance : undefined;
+    if (!reviveChance || Math.random() >= reviveChance) return nextState;
+
+    return {
+      ...nextState,
+      dice: nextState.dice.map((die) => die.instanceId === instanceId
+        ? {
+            ...die,
+            isDestroyed: false,
+            zone: before.zone === 'board' ? 'board' : before.zone,
+            currentHealth: die.maxHealth,
+            attacksRemaining: before.attacksRemaining,
+            hasFinishedAttacking: before.hasFinishedAttacking,
+            gridPosition: beforePosition
+          }
+        : die)
+    };
+  }
+
+  private getPierceBehindTargets(attacker: DiceInstanceState, target: DiceInstanceState, range: number): DiceInstanceState[] {
+    if (!attacker.gridPosition || !target.gridPosition || range <= 0) return [];
+    const rowStep = Math.sign(target.gridPosition.row - attacker.gridPosition.row);
+    const colStep = Math.sign(target.gridPosition.col - attacker.gridPosition.col);
+    if (rowStep === 0 && colStep === 0) return [];
+    const enemies = getBoardDice(this.gameState, target.ownerId);
+    const targets: DiceInstanceState[] = [];
+    for (let i = 1; i <= range; i++) {
+      const row = target.gridPosition.row + rowStep * i;
+      const col = target.gridPosition.col + colStep * i;
+      const hit = enemies.find((die) => die.gridPosition?.row === row && die.gridPosition?.col === col);
+      if (hit) targets.push(hit);
+    }
+    return targets;
+  }
+
+  private applySolitudePreCombatDamage() {
+    const boardDice = this.gameState.dice.filter((die) => die.zone === 'board' && !die.isDestroyed && die.gridPosition);
+    boardDice.forEach((die) => {
+      const definition = this.getDefinitionForInstance(die);
+      if (!definition) return;
+      const meta = getRuntimeSkillMeta(definition);
+      if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined || !die.gridPosition) return;
+      const adjacentAlly = boardDice.some((ally) =>
+        ally.ownerId === die.ownerId &&
+        ally.instanceId !== die.instanceId &&
+        ally.gridPosition &&
+        Math.abs(ally.gridPosition.row - die.gridPosition!.row) <= 1 &&
+        Math.abs(ally.gridPosition.col - die.gridPosition!.col) <= 1
+      );
+      if (adjacentAlly) return;
+      const enemyOwner = die.ownerId === 'player' ? 'enemy' : 'player';
+      getBoardDice(this.gameState, enemyOwner).forEach((foe) => {
+        const damage = Math.max(1, Math.floor(foe.maxHealth * meta.targetMaxHpBonusRate!));
+        this.gameState = this.applyDamageWithRevive(foe.instanceId, damage);
+        this.showDamageText(foe, damage, '#b891ff');
+        if (this.gameState.dice.find((d) => d.instanceId === foe.instanceId)?.isDestroyed) this.checkDeathTransformCondition(foe);
+      });
+      this.combatLog.setText(`${die.typeId} invokes solitude for ${Math.round(meta.targetMaxHpBonusRate * 10000) / 100}% max HP damage!`);
+    });
+  }
+
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !target.gridPosition) return;
@@ -1343,7 +1419,7 @@ export class ArenaScene extends Phaser.Scene {
         Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 1
       );
       splashTargets.forEach((die) => {
-        this.gameState = applyDamage(this.gameState, die.instanceId, meta.splashDamage!);
+        this.gameState = this.applyDamageWithRevive(die.instanceId, meta.splashDamage!);
         this.showDamageText(die, meta.splashDamage!, '#ff9f58');
         if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
         this.animateSkillEffect('fire', attacker, die);
@@ -1357,11 +1433,20 @@ export class ArenaScene extends Phaser.Scene {
         Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 2
       );
       if (chainTarget) {
-        this.gameState = applyDamage(this.gameState, chainTarget.instanceId, meta.chainDamage);
+        this.gameState = this.applyDamageWithRevive(chainTarget.instanceId, meta.chainDamage);
         this.showDamageText(chainTarget, meta.chainDamage, '#fff176');
         if (this.gameState.dice.find((d) => d.instanceId === chainTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(chainTarget);
         this.animateSkillEffect('electric', attacker, chainTarget);
       }
+    }
+
+    if (meta.pierceBehindRange) {
+      this.getPierceBehindTargets(attacker, target, meta.pierceBehindRange).forEach((die) => {
+        const pierceDamage = definition.attack;
+        this.gameState = this.applyDamageWithRevive(die.instanceId, pierceDamage);
+        this.showDamageText(die, pierceDamage, '#c9d6d3');
+        if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
+      });
     }
   }
 
@@ -1382,7 +1467,7 @@ export class ArenaScene extends Phaser.Scene {
           if (freshTarget && !freshTarget.isDestroyed) {
             const meteorDamage = meta.meteorDamage ?? 60;
             const lavaDamage = meta.lavaDamage ?? 25;
-            this.gameState = applyDamage(this.gameState, freshTarget.instanceId, meteorDamage);
+            this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, meteorDamage);
             this.showDamageText(freshTarget, meteorDamage, '#ff9f58');
             if (freshTarget.gridPosition) {
               const lavaKey = `${enemyOwner}:${freshTarget.gridPosition.row},${freshTarget.gridPosition.col}`;
@@ -1406,7 +1491,7 @@ export class ArenaScene extends Phaser.Scene {
       if (currentMana >= instakillMana) {
         const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
         if (freshTarget && !freshTarget.isDestroyed) {
-          this.gameState = applyDamage(this.gameState, freshTarget.instanceId, freshTarget.currentHealth);
+          this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, freshTarget.currentHealth);
           this.combatLog.setText(`☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
           const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
           if (destroyed) {
@@ -1430,6 +1515,23 @@ export class ArenaScene extends Phaser.Scene {
       if (manaNeeded > 0 && !windMultiplierActive) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
       return;
     }
+    if (meta.hasSpearActive) {
+      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
+      if (freshTarget && !freshTarget.isDestroyed) {
+        const primaryDamage = meta.activeDamage ?? 104;
+        this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, primaryDamage);
+        this.showDamageText(freshTarget, primaryDamage, '#dbe7e4');
+        if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
+        this.getPierceBehindTargets(attacker, freshTarget, 2).forEach((die) => {
+          const pierceDamage = meta.pierceBehindDamage ?? 208;
+          this.gameState = this.applyDamageWithRevive(die.instanceId, pierceDamage);
+          this.showDamageText(die, pierceDamage, '#c9d6d3');
+          if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
+        });
+      }
+      this.manaByInstance.set(attacker.instanceId, 0);
+      return;
+    }
     if (meta.activeHeal !== undefined) {
       const healTarget = this.getWeakestDamagedAlly(attacker.ownerId, attacker.instanceId);
       if (healTarget) {
@@ -1448,7 +1550,7 @@ export class ArenaScene extends Phaser.Scene {
     if (attacker.typeId === 'Ice') {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        this.gameState = applyDamage(this.gameState, freshTarget.instanceId, meta.activeDamage ?? 16);
+        this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, meta.activeDamage ?? 16);
         this.showDamageText(freshTarget, meta.activeDamage ?? 16, '#8fd5ff');
         this.gameState = {
           ...this.gameState,
@@ -1903,12 +2005,45 @@ export class ArenaScene extends Phaser.Scene {
   private applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
-    const bonus = getRuntimeSkillMeta(definition).onKillExtraAttacks ?? 0;
-    if (bonus <= 0) return;
-    this.gameState = {
-      ...this.gameState,
-      dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
-    };
+    const meta = getRuntimeSkillMeta(definition);
+    const bonus = meta.onKillExtraAttacks ?? 0;
+    if (bonus > 0) {
+      this.gameState = {
+        ...this.gameState,
+        dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
+      };
+    }
+    if (meta.hasJudgmentHammer) {
+      this.dropJudgmentHammer(attacker, meta.hammerDamage ?? 150, new Set<string>());
+    }
+  }
+
+  private dropJudgmentHammer(attacker: DiceInstanceState, damage: number, chainGuard: Set<string>) {
+    const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+    const weakest = getBoardDice(this.gameState, enemyOwner)
+      .filter((die) => die.gridPosition)
+      .sort((a, b) => a.currentHealth - b.currentHealth || a.maxHealth - b.maxHealth)[0];
+    if (!weakest?.gridPosition || chainGuard.has(weakest.instanceId)) return;
+    chainGuard.add(weakest.instanceId);
+    const center = weakest.gridPosition;
+    const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
+      die.gridPosition &&
+      Math.abs(die.gridPosition.row - center.row) <= 1 &&
+      Math.abs(die.gridPosition.col - center.col) <= 1
+    );
+    const defeatedByHammer: DiceInstanceState[] = [];
+    victims.forEach((die) => {
+      this.gameState = this.applyDamageWithRevive(die.instanceId, damage);
+      this.showDamageText(die, damage, '#ffd36f');
+      const destroyed = this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed ?? false;
+      if (destroyed) {
+        defeatedByHammer.push(die);
+        this.checkDeathTransformCondition(die);
+      }
+    });
+    if (defeatedByHammer.length > 0 && chainGuard.size < 10) {
+      this.dropJudgmentHammer(attacker, damage, chainGuard);
+    }
   }
 
   private applyOnDeathSkillEffects(defeated: DiceInstanceState, _attacker: DiceInstanceState) {
@@ -1935,14 +2070,17 @@ export class ArenaScene extends Phaser.Scene {
     const damage = meta.beamDamage ?? 300;
     const targetPos = target.gridPosition;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+    const rowDelta = targetPos.row - attacker.gridPosition.row;
+    const colDelta = targetPos.col - attacker.gridPosition.col;
+    const verticalSight = Math.abs(rowDelta) >= Math.abs(colDelta);
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
       die.gridPosition &&
-      (die.instanceId === target.instanceId || die.gridPosition.row === targetPos.row || die.gridPosition.col === targetPos.col)
+      (die.instanceId === target.instanceId || (verticalSight ? die.gridPosition.row === targetPos.row : die.gridPosition.col === targetPos.col))
     );
 
     let primaryDestroyed = false;
     victims.forEach((die) => {
-      this.gameState = applyDamage(this.gameState, die.instanceId, damage);
+      this.gameState = this.applyDamageWithRevive(die.instanceId, damage);
       this.showDamageText(die, damage, '#9ff8ff');
       const destroyed = this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed ?? false;
       if (destroyed) this.checkDeathTransformCondition(die);
