@@ -8,8 +8,9 @@ yarn.lock
 
 # Environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 
 # Config files with sensitive data
 config/serviceAccountKey.json
@@ -35,6 +36,12 @@ pids/
 
 # Build output
 dist/
+
+# Generated Phaser Launcher playtest files
+/main.js
+/main.js.map
+/assets/
+/gamedata/
 
 # IDE files
 .vscode/

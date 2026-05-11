@@ -1,3 +1,6 @@
+import { BUILD_ENV } from './BuildEnv';
+import { ENABLE_DEBUG_LOGS } from './BuildFlags';
+
 type DebugLevel = 'log' | 'warn' | 'error';
 
 interface DebugRecord {
@@ -23,13 +26,8 @@ const STORAGE_KEY = 'battle-dice-autoroller:debug';
 const MAX_HISTORY = 250;
 
 export class DebugManager {
-  private static getMetaEnv(): { DEV?: boolean; MODE?: string } | undefined {
-    const meta = import.meta as unknown as { env?: { DEV?: boolean; MODE?: string } };
-    return meta?.env;
-  }
-
   private static enabled =
-    !!this.getMetaEnv()?.DEV ||
+    ENABLE_DEBUG_LOGS ||
     (typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY) === '1');
 
   private static readonly history: DebugRecord[] = [];
@@ -59,7 +57,7 @@ export class DebugManager {
 
     this.log('Debug', 'Global debug hooks installed.', {
       enabled: this.enabled,
-      mode: this.getMetaEnv()?.MODE
+      mode: BUILD_ENV.MODE
     });
   }
 
