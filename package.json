@@ -4,18 +4,22 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "bundle:playtest": "esbuild src/main.ts --bundle --format=esm --platform=browser --outfile=main.js --sourcemap && npm run copy:playtest-assets",
-    "dev": "npm run bundle:playtest && vite",
-    "build": "tsc --noEmit && npm run bundle:playtest && vite build && npm run clean:playtest-assets",
+    "dev": "vite",
+    "dev:launcher": "npm run launcher:prepare && vite",
+    "build": "tsc --noEmit && npm run launcher:prepare && vite build && npm run launcher:clean",
     "preview": "vite preview",
-    "copy:playtest-assets": "node -e \"const fs=require('fs');function reset(src,dst){fs.rmSync(dst,{recursive:true,force:true});fs.cpSync(src,dst,{recursive:true,force:true})}reset('public/gamedata','gamedata');reset('public/assets','assets')\"",
-    "clean:playtest-assets": "node -e \"const fs=require('fs');for(const target of ['main.js','main.js.map','gamedata','assets'])fs.rmSync(target,{recursive:true,force:true})\"",
-    "dev:clean": "npm run clean:playtest-assets"
+    "launcher:prepare": "npm run bundle:playtest && npm run copy:playtest-assets",
+    "launcher:clean": "node scripts/clean-playtest-assets.mjs",
+    "bundle:playtest": "node scripts/build-playtest-bundle.mjs",
+    "copy:playtest-assets": "node scripts/sync-playtest-assets.mjs",
+    "clean:playtest-assets": "npm run launcher:clean",
+    "dev:clean": "npm run launcher:clean"
   },
   "dependencies": {
     "phaser": "3.88.2"
   },
   "devDependencies": {
+    "esbuild": "^0.27.7",
     "typescript": "^5.9.3",
     "vite": "^7.1.12"
   }
