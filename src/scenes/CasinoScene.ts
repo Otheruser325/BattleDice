@@ -505,7 +505,7 @@ export class CasinoScene extends Phaser.Scene {
       fontSize: '28px',
       color: PALETTE.accent
     }).setOrigin(0.5);
-    const tokenSummary = this.add.text(width / 2, height / 2 - 214, `+${diceTokens} Dice Tokens`, {
+    const tokenSummary = this.add.text(width / 2, height / 2 - 214, `Dice Tokens: +${diceTokens.toLocaleString()} (now ${getDiceTokens(this).toLocaleString()})`, {
       fontFamily: 'Orbitron',
       fontSize: '16px',
       color: PALETTE.accentSoft
@@ -518,8 +518,10 @@ export class CasinoScene extends Phaser.Scene {
       padding: { left: 10, right: 10, top: 5, bottom: 5 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    const container = this.add.container(width / 2 - 430, height / 2 - 220);
-    const mask = this.add.rectangle(width / 2 - 430, height / 2 - 220, 860, 460, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
+    const rewardsTop = height / 2 - 178;
+    const rewardsHeight = 408;
+    const container = this.add.container(width / 2 - 430, rewardsTop);
+    const mask = this.add.rectangle(width / 2 - 430, rewardsTop, 860, rewardsHeight, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
     container.setMask(mask.createGeometryMask());
 
     entries.forEach((entry, i) => {
@@ -537,13 +539,13 @@ export class CasinoScene extends Phaser.Scene {
       container.add([card, txt]);
     });
 
-    const maxScroll = Math.max(0, Math.ceil(entries.length / 3) * 92 - 460);
+    const maxScroll = Math.max(0, Math.ceil(entries.length / 3) * 92 - rewardsHeight);
     let offset = 0;
-    const scrollBounds = new Phaser.Geom.Rectangle(width / 2 - 430, height / 2 - 220, 860, 460);
+    const scrollBounds = new Phaser.Geom.Rectangle(width / 2 - 430, rewardsTop, 860, rewardsHeight);
     const wheelHandler = (pointer: Phaser.Input.Pointer, _go: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       if (!overlay.active || !Phaser.Geom.Rectangle.Contains(scrollBounds, pointer.x, pointer.y)) return;
       offset = Phaser.Math.Clamp(offset - dy * 0.8, -maxScroll, 0);
-      container.y = (height / 2 - 220) + offset;
+      container.y = rewardsTop + offset;
     };
     this.input.on('wheel', wheelHandler);
 

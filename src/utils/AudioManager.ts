@@ -13,6 +13,8 @@ export const AUDIO_KEYS = {
 const MUSIC_KEYS = new Set<string>([AUDIO_KEYS.menuMusic, AUDIO_KEYS.arenaMusic]);
 
 export class AudioManager {
+  private static currentMusicKey: string | null = null;
+
   static preload(scene: Phaser.Scene) {
     scene.load.audio(AUDIO_KEYS.menuMusic, '/assets/music/dice_league.mp3');
     scene.load.audio(AUDIO_KEYS.arenaMusic, '/assets/music/basilisk_theme.mp3');
@@ -28,13 +30,29 @@ export class AudioManager {
   }
 
   static playMusic(scene: Phaser.Scene, key: string) {
-    if (!SettingsStore.get(scene).music || !scene.cache.audio.exists(key)) return;
-    MUSIC_KEYS.forEach((musicKey) => {
-      const sound = scene.sound.get(musicKey);
-      if (musicKey !== key && sound?.isPlaying) sound.stop();
-    });
-    const existing = scene.sound.get(key);
-    if (existing?.isPlaying) return;
+    this.currentMusicKey = key;
+    if (!SettingsStore.get(scene).music || !scene.cache.audio.exists(key)) {
+      this.stopAllMusic(scene);
+      return;
+    }
+    this.stopAllMusic(scene, key);
+    const existing = scene.sound.getAll(key).find((sound) => sound.isPlaying);
+    if (existing) return;
     scene.sound.play(key, { volume: 0.28, loop: true });
+  }
+
+  static stopAllMusic(scene: Phaser.Scene, exceptKey?: string) {
+    MUSIC_KEYS.forEach((musicKey) => {
+      if (musicKey === exceptKey) return;
+      scene.sound.getAll(musicKey).forEach((sound) => sound.stop());
+    });
+  }
+
+  static refreshMusicForSettings(scene: Phaser.Scene, preferredKey = this.currentMusicKey ?? AUDIO_KEYS.menuMusic) {
+    if (!SettingsStore.get(scene).music) {
+      this.stopAllMusic(scene);
+      return;
+    }
+    this.playMusic(scene, preferredKey);
   }
 }
