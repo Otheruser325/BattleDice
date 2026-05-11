@@ -20,7 +20,7 @@ export const PALETTE = {
 const BASE_MENU_TABS = [
   { label: 'Shop', sceneKey: SCENE_KEYS.Shop, status: 'Offers' },
   { label: 'Dice', sceneKey: SCENE_KEYS.Dice, status: 'Loadout' },
-  { label: 'Singleplayer', sceneKey: SCENE_KEYS.Arena, status: 'Modes' },
+  { label: 'Arena', sceneKey: SCENE_KEYS.Arena, status: 'Modes' },
   { label: 'Casino', sceneKey: SCENE_KEYS.Casino, status: 'Ready' },
   { label: 'Achievements', sceneKey: SCENE_KEYS.Achievements, status: 'WIP' },
   { label: 'Dev', sceneKey: SCENE_KEYS.Dev, status: 'Debug' }

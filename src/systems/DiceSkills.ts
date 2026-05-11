@@ -134,7 +134,7 @@ export function resolveDamage(
     const { min, max } = meta.randomDamage;
     damage = Math.floor(Math.random() * (max - min + 1)) + min;
   }
-  if (meta.targetMaxHpBonusRate) {
+  if (meta.targetMaxHpBonusRate && !meta.hasSolitudePreCombat) {
     damage += Math.floor(target.maxHealth * meta.targetMaxHpBonusRate);
   }
   if (meta.targetCurrentHpBonusRate) {

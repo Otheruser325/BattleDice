@@ -153,7 +153,7 @@ export class MenuScene extends Phaser.Scene {
       color: PALETTE.textMuted
     }).setOrigin(0.5);
 
-    const versus = this.createSingleplayerOption(panelX - 190, panelY + 4, 'Versus Bot', 'Same bot setup as before.', 0x2271b3, () => {
+    const versus = this.createSingleplayerOption(panelX - 190, panelY + 4, 'Versus Bot', 'Setup and play against a realtime computer opponent.', 0x2271b3, () => {
       this.launchArenaTab(tab);
     });
     const random = this.createSingleplayerOption(panelX, panelY + 4, 'Random Mode', 'WIP: derive a random mode before Turn 1.', 0x6f5bb5, () => {
