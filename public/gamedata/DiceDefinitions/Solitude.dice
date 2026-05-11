@@ -1,0 +1,23 @@
+{
+  "typeId": "Solitude",
+  "title": "Solitude Dice",
+  "attack": 22,
+  "health": 920,
+  "range": 3,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Lonely Dominion",
+      "description": "At combat start, if no allies occupy adjacent tiles, deals 8% of each foe's max HP as damage (+0.25% per Class UP).",
+      "modifiers": {
+        "notes": [
+          "runtime:solitudePreCombat"
+        ],
+        "targetMaxHpBonusRate": 0.08
+      }
+    }
+  ],
+  "accent": "#b891ff",
+  "targetingMode": "Furthest"
+}

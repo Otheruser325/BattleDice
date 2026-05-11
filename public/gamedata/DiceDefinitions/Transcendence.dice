@@ -8,7 +8,7 @@
     {
       "type": "Passive",
       "title": "Perpendicular Beam",
-      "description": "If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the target row/column for 600 damage.",
+      "description": "If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for 600 damage.",
       "modifiers": {
         "notes": [
           "runtime:beamOnSix=600",

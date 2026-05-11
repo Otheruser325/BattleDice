@@ -15,6 +15,7 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { applyClassProgression, getClassProgressionPreview } from '../systems/ClassProgression';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
+import { AudioManager } from '../utils/AudioManager';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
 
 function formatSkillType(type: string | undefined): string {
@@ -121,6 +122,7 @@ export class DiceScene extends Phaser.Scene {
     refreshSlots();
 
     const cardsContainer = this.add.container(0, 0).setDepth(6);
+    const refreshCardStats: Array<() => void> = [];
     const cardsTopY = panel.y + 160;
     const cardPitch = 250;
 
@@ -176,6 +178,17 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         wordWrap: { width: 280 }
       });
 
+      const refreshCardStatLine = () => {
+        const nextCls = getDiceProgress(this, die.typeId).classLevel;
+        const nextDisplayedDie = applyClassProgression(die, nextCls);
+        classTag.setText(this.isDiceLocked(die.typeId) ? 'LOCKED' : `C${nextCls}`);
+        statLine.setText(`${die.rarity.toUpperCase()}  |  ATK ${nextDisplayedDie.attack}  |  HP ${nextDisplayedDie.health}
+RANGE ${die.range} (${getRangeLabel(die.range)})`);
+        skillTypeLine.setText(nextDisplayedDie.skills.length === 1 ? formatSkillType(nextDisplayedDie.skills[0]?.type).toUpperCase() : `${nextDisplayedDie.skills.length} SKILLS`);
+        skillDesc.setText(formatSkillInfo(nextDisplayedDie, this.isDiceLocked(die.typeId)));
+      };
+      refreshCardStats.push(refreshCardStatLine);
+
       const computedCardHeight = Math.max(baseCardHeight, Math.ceil((skillDesc.y + skillDesc.height) - cardTopY + 18));
       const card = this.add.rectangle(x + 160, cardTopY + computedCardHeight / 2, cardWidth, computedCardHeight, cardFill, 0.92).setInteractive({ useHandCursor: !locked })
         .setStrokeStyle(2, locked ? 0x2a3a47 : accent);
@@ -188,6 +201,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
             refreshSlots();
             tokens = getDiceTokens(this);
             tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
+            refreshCardStats.forEach((refresh) => refresh());
           }, selectedSlot);
         });
         card.on('pointerover', () => card.setFillStyle(0x1f3e56, 1));
@@ -280,7 +294,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         skills: [{
           type: 'Passive' as const,
           title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
-          description: `Rolled 6 form: beam attacks consume all remaining attacks and fire a wide cyan beam through the target row and column for ${meta.beamDamage ?? 600} damage.`,
+          description: `Rolled 6 form: beam attacks consume all remaining attacks and fire a wide cyan beam through the perpendicular line through the target for ${meta.beamDamage ?? 600} damage.`,
           modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
         }]
       };
@@ -391,6 +405,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
       upBtn.on('pointerout', hideUpgradeTooltip);
       upTxt.on('pointerout', hideUpgradeTooltip);
       upBtn.on('pointerdown', () => {
+        AudioManager.playSfx(this, 'class-up');
         setDiceTokens(this, getDiceTokens(this) - tokenCost);
         setDiceProgress(this, typeId, { classLevel: cls + 1, copies: progress.copies - copyCost });
         tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click cards to assign selected slot`);

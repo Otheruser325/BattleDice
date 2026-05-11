@@ -4,6 +4,7 @@ import { SettingsStore } from '../systems/SettingsStore';
 import { AlertManager } from '../utils/AlertManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { DebugManager } from '../utils/DebugManager';
+import { AudioManager } from '../utils/AudioManager';
 import { SCENE_KEYS } from './sceneKeys';
 
 const MENU_BACKGROUND_PATH = '/assets/images/bg/Background-floor.png';
@@ -62,6 +63,7 @@ export class BootScene extends Phaser.Scene {
 
     this.load.image('menu-bg', MENU_BACKGROUND_PATH);
     this.load.image('settings-icon', SETTINGS_ICON_PATH);
+    AudioManager.preload(this);
     for (let face = 1; face <= 6; face++) {
       const names = ['one', 'two', 'three', 'four', 'five', 'six'];
       this.load.image(`dice-face-${face}`, `/assets/images/dice/dice-six-faces-${names[face - 1]}.png`);
