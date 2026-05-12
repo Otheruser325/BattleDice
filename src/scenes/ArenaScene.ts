@@ -88,6 +88,7 @@ export class ArenaScene extends Phaser.Scene {
   private enemyDicePips: Map<string, number> = new Map();
   private enemyClassLevels: Map<string, number> = new Map();
   private manaByInstance: Map<string, number> = new Map();
+  private attackCapacityByInstance: Map<string, number> = new Map();
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
@@ -676,8 +677,8 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyGridContainer = this.createGrid(enemyX, gridY, 'ENEMY GRID', false);
     this.playerGridContainer.setScale(boardScale);
     this.enemyGridContainer.setScale(boardScale);
-    this.playerStatusPanel = this.add.container(24, 120);
-    this.enemyStatusPanel = this.add.container(width - 220, 120);
+    this.playerStatusPanel = this.add.container(Math.max(12, playerX - 110), gridY + 8);
+    this.enemyStatusPanel = this.add.container(Math.min(width - 210, enemyX + scaledBoardWidth + 26), gridY + 8);
 
     this.gameContainer.add([this.turnText, this.playerGridContainer, this.enemyGridContainer, this.backButton, this.playerStatusPanel, this.enemyStatusPanel]);
   }
@@ -1120,6 +1121,7 @@ export class ArenaScene extends Phaser.Scene {
     this.placeEnemyDiceForTurn();
 
     this.enemyDicePips.clear();
+    this.attackCapacityByInstance.clear();
     this.transcendenceTransformed.clear();
     this.invisiRollForEnemies();
 
@@ -1215,6 +1217,9 @@ export class ArenaScene extends Phaser.Scene {
     if (this.configRandomMode && this.activeRandomModifier === 'Combanity') {
       nextState = this.applyCombanityBonuses(nextState);
     }
+    nextState.dice.forEach((die) => {
+      if (die.zone === 'board' && !die.isDestroyed) this.attackCapacityByInstance.set(die.instanceId, Math.max(1, die.attacksRemaining));
+    });
     return nextState;
   }
 
@@ -1791,9 +1796,16 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if (attacker.typeId === 'Poison') {
-      const poisonDamage = meta.poisonDamage ?? 10;
-      const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 2);
-      this.poisonByInstance.set(target.instanceId, { damage: poisonDamage, turns: poisonTurns });
+      const poisonDamage = Math.max(1, meta.poisonDamage ?? 0);
+      const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 0);
+      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
+      if (freshTarget && !freshTarget.isDestroyed) {
+        const activePoisonDamage = Math.max(1, meta.activeDamage ?? poisonDamage);
+        this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, activePoisonDamage);
+        this.showDamageText(freshTarget, activePoisonDamage, '#89f57a');
+      }
+      const existing = this.poisonByInstance.get(target.instanceId);
+      this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns });
       this.animateSkillEffect('poison', attacker, target);
     }
     if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
@@ -2505,7 +2517,10 @@ export class ArenaScene extends Phaser.Scene {
     this.renderStatusEffects(container, x, y, die);
     this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
-    const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking' ? Math.max(die.attacksRemaining, pips) : this.getPipCount(die.typeId));
+    const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking'
+      ? Math.max(this.attackCapacityByInstance.get(die.instanceId) ?? 1, die.attacksRemaining)
+      : this.getPipCount(die.typeId));
+    this.attackCapacityByInstance.set(die.instanceId, maxAmmo);
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
     this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);
     const manaSkills = definition.skills.filter((skill) => (skill.manaNeeded ?? 0) > 0);
@@ -2525,7 +2540,9 @@ export class ArenaScene extends Phaser.Scene {
       fontSize: '13px',
       color: PALETTE.text
     }).setOrigin(0.5);
-    const desc = this.add.text(width / 2, 84, definition.skills.map((skill) => `${skill.title}: ${skill.description}`).join(' | '), {
+    const mana = this.manaByInstance.get(die.instanceId) ?? 0;
+    const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
+    const desc = this.add.text(width / 2, 84, `${definition.skills.map((skill) => `${skill.title} (${skill.type}): ${skill.description}`).join(' | ')}${manaNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
