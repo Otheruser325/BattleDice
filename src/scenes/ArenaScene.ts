@@ -110,6 +110,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private modalContainer: Phaser.GameObjects.Container | null = null;
   private modalEscHandler: (() => void) | null = null;
+  private dieInfoPopup: Phaser.GameObjects.Container | null = null;
   private configDifficulty: BotDifficulty = 'Medium';
   private configUseLevelling: boolean = true;
   private configRandomMode: boolean = false;
@@ -1353,7 +1354,7 @@ export class ArenaScene extends Phaser.Scene {
         const deathFires = (attackerMeta?.hasDeathInstakill ?? false) && this.deathDiceTransformed.has(attacker.instanceId) && currMana >= (attackerMeta?.deathInstakillMana ?? 12);
         const regularActiveFires = (attackerMeta?.activeManaNeeded ?? 0) > 0 && currMana >= (attackerMeta?.activeManaNeeded ?? 0) && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill;
         const anyActiveFires = meteorFires || deathFires || regularActiveFires;
-        const BASIC_WITH_ACTIVE = new Set(['Ice', 'Poison']);
+        const BASIC_WITH_ACTIVE = new Set(['Poison']);
         const skipBasicAttack = anyActiveFires && !BASIC_WITH_ACTIVE.has(attacker.typeId);
 
         let damage = 0;
@@ -2467,6 +2468,7 @@ export class ArenaScene extends Phaser.Scene {
     dieRect.on('pointerdown', () => {
       this.showRangeHighlights(die);
       this.combatLog.setText(this.getRangeCoverageText(die));
+      this.showDieInfoPopup(die);
     });
     container.add(dieRect);
 
@@ -2504,11 +2506,40 @@ export class ArenaScene extends Phaser.Scene {
     this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
     const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking' ? Math.max(die.attacksRemaining, pips) : this.getPipCount(die.typeId));
-    const definitionSkill = this.getDefinitionForInstance(die)?.skills.find((skill) => skill.manaNeeded !== undefined);
-    const manaNeeded = definitionSkill?.manaNeeded ?? maxAmmo;
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
     this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);
-    this.renderManaBar(container, x, y + 34, mana, Math.max(1, manaNeeded));
+    const manaSkills = definition.skills.filter((skill) => (skill.manaNeeded ?? 0) > 0);
+    manaSkills.forEach((skill, index) => {
+      this.renderManaBar(container, x, y + 34 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1));
+    });
+  }
+
+  private showDieInfoPopup(die: DiceInstanceState) {
+    const definition = this.getDefinitionForInstance(die);
+    if (!definition) return;
+    this.dieInfoPopup?.destroy(true);
+    const { width } = this.scale;
+    const panel = this.add.rectangle(width / 2, 76, 560, 102, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
+    const stats = this.add.text(width / 2, 52, `${definition.title} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${definition.attack} • RNG ${definition.range}`, {
+      fontFamily: 'Orbitron',
+      fontSize: '13px',
+      color: PALETTE.text
+    }).setOrigin(0.5);
+    const desc = this.add.text(width / 2, 84, definition.skills.map((skill) => `${skill.title}: ${skill.description}`).join(' | '), {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.textMuted,
+      wordWrap: { width: 530 }
+    }).setOrigin(0.5);
+    this.dieInfoPopup = this.add.container(0, 0, [panel, stats, desc]).setDepth(330).setScale(0.96).setAlpha(0);
+    this.tweens.add({ targets: this.dieInfoPopup, alpha: 1, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.Out' });
+    this.time.delayedCall(2200, () => {
+      if (!this.dieInfoPopup) return;
+      this.tweens.add({ targets: this.dieInfoPopup, alpha: 0, scaleX: 0.98, scaleY: 0.98, duration: 140, ease: 'Sine.In', onComplete: () => {
+        this.dieInfoPopup?.destroy(true);
+        this.dieInfoPopup = null;
+      } });
+    });
   }
 
   private renderStatusEffects(container: Phaser.GameObjects.Container, x: number, y: number, die: DiceInstanceState) {
@@ -2694,7 +2725,7 @@ export class ArenaScene extends Phaser.Scene {
     g.name = 'ammo-bar';
     g.fillStyle(0x1f2f3d, 0.95);
     g.fillRoundedRect(x - 18, y - 3, 36, 5, 2);
-    g.fillStyle(0x6fa8ff, 1);
+    g.fillStyle(0xf1c40f, 1);
     g.fillRoundedRect(x - 18 + (36 * (1 - ratio)), y - 3, 36 * ratio, 5, 2);
     container.add(g);
   }
