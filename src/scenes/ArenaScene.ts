@@ -962,6 +962,12 @@ export class ArenaScene extends Phaser.Scene {
     });
     this.debug.log('Enemy invisiroll complete', { count: enemyDice.length });
   }
+  
+  private getPipCount(typeId: DiceTypeId): number {
+    switch (typeId) {
+      default: return 1;
+    }
+  }
 
   private setupGridDropZones() {
     for (let row = 0; row < GRID_SIZE; row++) {
