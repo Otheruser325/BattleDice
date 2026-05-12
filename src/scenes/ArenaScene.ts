@@ -32,6 +32,7 @@ type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
 type MatchResultStage = 'victory' | 'defeat' | 'draw';
 type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy';
 type ChallengeKey = 'daily' | 'deucifer' | null;
+type ChallengeStatus = 'not-started' | 'started' | 'completed' | 'failed';
 
 interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | MatchResultStage;
@@ -49,6 +50,7 @@ const BOT_FIRST_WIN_REWARDS: Record<BotDifficulty, { tokens: number; chips: numb
   Nightmare: { tokens: 10_000, chips: 100 }
 };
 const BOT_FIRST_WIN_KEY = 'arena:claimedBotFirstWins';
+const CHALLENGE_STATUS_KEY = 'arena:challengeStatus';
 
 const BOT_DIFFICULTY_CLASSES: Record<BotDifficulty, [number, number]> = {
   Baby: [1, 1],
@@ -124,6 +126,7 @@ export class ArenaScene extends Phaser.Scene {
   private dailyHard = false;
   private turnLimit: number = -1;
   private activeRandomModifier: RandomModeModifier | null = null;
+  private activeDailyKey = '';
 
   constructor() {
     super(ArenaScene.KEY);
@@ -426,7 +429,10 @@ export class ArenaScene extends Phaser.Scene {
     const cx = width / 2;
     const cy = height / 2;
     const dateKey = new Date().toISOString().slice(0, 10);
+    this.activeDailyKey = dateKey;
     this.dailyHard = Number(dateKey.split('-')[2]) % 4 === 0;
+    const dailyStatus = this.getChallengeStatus('daily');
+    const deuciferStatus = this.getChallengeStatus('deucifer');
     const makeBtn = (x: number, y: number, label: string, sub: string, onClick: () => void) => {
       const r = this.add.rectangle(x, y, 280, 120, 0x173247, 0.96).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
       const t = this.add.text(x, y - 28, label, { fontFamily: 'Orbitron', fontSize: '16px', color: PALETTE.accent }).setOrigin(0.5);
@@ -434,8 +440,9 @@ export class ArenaScene extends Phaser.Scene {
       r.on('pointerdown', onClick);
       return [r, t, d];
     };
-    const daily = makeBtn(cx - 170, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: NOT READY\nRandom mode mashup • Reward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
+    const daily = makeBtn(cx - 170, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup • Reward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
       this.activeChallenge = 'daily';
+      this.setChallengeStatus('daily', 'started');
       this.configRandomMode = true;
       this.configRandomizeLoadoutAndClassUps = true;
       this.configUseLevelling = true;
@@ -444,8 +451,9 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, 'Nightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips', () => {
+    const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
+      this.setChallengeStatus('deucifer', 'started');
       this.configRandomMode = false;
       this.configDifficulty = 'Nightmare';
       this.configUseLevelling = true;
@@ -462,6 +470,42 @@ export class ArenaScene extends Phaser.Scene {
       ...daily, ...deuc, back
     ]).setDepth(250);
     this.setModalEsc(() => this.openSingleplayerModal());
+  }
+
+
+  private getDailySeededModifier(): RandomModeModifier {
+    const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy'];
+    const key = this.activeDailyKey || new Date().toISOString().slice(0, 10);
+    const seed = [...key].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    return modifiers[seed % modifiers.length] ?? 'Classic';
+  }
+
+  private getChallengeStatusStore(): Record<string, ChallengeStatus> {
+    try {
+      return JSON.parse(localStorage.getItem(CHALLENGE_STATUS_KEY) ?? '{}') as Record<string, ChallengeStatus>;
+    } catch {
+      return {};
+    }
+  }
+
+  private getChallengeStatus(challenge: Exclude<ChallengeKey, null>): ChallengeStatus {
+    const store = this.getChallengeStatusStore();
+    if (challenge === 'daily') return store[`daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}`] ?? 'not-started';
+    return store[challenge] ?? 'not-started';
+  }
+
+  private setChallengeStatus(challenge: Exclude<ChallengeKey, null>, status: ChallengeStatus) {
+    const store = this.getChallengeStatusStore();
+    const key = challenge === 'daily' ? `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}` : challenge;
+    store[key] = status;
+    localStorage.setItem(CHALLENGE_STATUS_KEY, JSON.stringify(store));
+  }
+
+  private getChallengeStatusLabel(status: ChallengeStatus): string {
+    if (status === 'started') return 'STARTED';
+    if (status === 'completed') return 'COMPLETED';
+    if (status === 'failed') return 'FAILED';
+    return 'NOT STARTED';
   }
 
   private openSingleplayerConfigModal() {
@@ -792,7 +836,7 @@ export class ArenaScene extends Phaser.Scene {
       });
 
     const enemyRawDefs = this.activeChallenge === 'deucifer'
-      ? ['Skull', 'Death', 'Judgment', 'Skull', 'Death']
+      ? ['Poison', 'Solitude', 'Judgment', 'Skull', 'Death']
         .map((typeId) => allDefinitions.find((d) => d.typeId === typeId))
         .filter((d): d is DiceDefinition => Boolean(d))
       : this.pickRandomEnemyLoadout(allDefinitions);
@@ -809,7 +853,9 @@ export class ArenaScene extends Phaser.Scene {
     this.gameState = createMatchBattleState(playerDefs, enemyDefs);
     if (this.configRandomMode) {
       const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy'];
-      this.activeRandomModifier = modifiers[Phaser.Math.Between(0, modifiers.length - 1)] ?? 'Classic';
+      this.activeRandomModifier = this.activeChallenge === 'daily'
+        ? this.getDailySeededModifier()
+        : (modifiers[Phaser.Math.Between(0, modifiers.length - 1)] ?? 'Classic');
       if (this.activeRandomModifier === 'Duality') {
         this.gameState = {
           ...this.gameState,
@@ -1729,6 +1775,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyActiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
+    const applyDirectDamage = (victim: DiceInstanceState, baseDamage: number): number => {
+      const multiplier = this.getCombanityDamageMultiplier(attacker, victim);
+      const adjustedDamage = Math.max(1, Math.floor(baseDamage * multiplier));
+      this.gameState = this.applyDamageWithRevive(victim.instanceId, adjustedDamage);
+      return adjustedDamage;
+    };
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
     const meta = getRuntimeSkillMeta(definition);
@@ -1745,8 +1797,8 @@ export class ArenaScene extends Phaser.Scene {
           if (freshTarget && !freshTarget.isDestroyed) {
             const meteorDamage = meta.meteorDamage ?? 60;
             const lavaDamage = meta.lavaDamage ?? 25;
-            this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, meteorDamage);
-            this.showDamageText(freshTarget, meteorDamage, '#ff9f58');
+            const dealt = applyDirectDamage(freshTarget, meteorDamage);
+            this.showDamageText(freshTarget, dealt, '#ff9f58');
             if (freshTarget.gridPosition) {
               const lavaKey = `${enemyOwner}:${freshTarget.gridPosition.row},${freshTarget.gridPosition.col}`;
               this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: 3 });
@@ -1798,13 +1850,13 @@ export class ArenaScene extends Phaser.Scene {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         const primaryDamage = meta.activeDamage ?? 104;
-        this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, primaryDamage);
-        this.showDamageText(freshTarget, primaryDamage, '#dbe7e4');
+        const dealt = applyDirectDamage(freshTarget, primaryDamage);
+        this.showDamageText(freshTarget, dealt, '#dbe7e4');
         if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
         this.getPierceBehindTargets(attacker, freshTarget, 2).forEach((die) => {
           const pierceDamage = meta.pierceBehindDamage ?? 208;
-          this.gameState = this.applyDamageWithRevive(die.instanceId, pierceDamage);
-          this.showDamageText(die, pierceDamage, '#c9d6d3');
+          const dealt = applyDirectDamage(die, pierceDamage);
+          this.showDamageText(die, dealt, '#c9d6d3');
           if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
         });
       }
@@ -1829,8 +1881,8 @@ export class ArenaScene extends Phaser.Scene {
     if (attacker.typeId === 'Ice') {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, meta.activeDamage ?? 16);
-        this.showDamageText(freshTarget, meta.activeDamage ?? 16, '#8fd5ff');
+        const dealt = applyDirectDamage(freshTarget, meta.activeDamage ?? 16);
+        this.showDamageText(freshTarget, dealt, '#8fd5ff');
         this.gameState = {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => {
@@ -1849,8 +1901,8 @@ export class ArenaScene extends Phaser.Scene {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         const activePoisonDamage = Math.max(1, meta.activeDamage ?? poisonDamage);
-        this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, activePoisonDamage);
-        this.showDamageText(freshTarget, activePoisonDamage, '#89f57a');
+        const dealt = applyDirectDamage(freshTarget, activePoisonDamage);
+        this.showDamageText(freshTarget, dealt, '#89f57a');
       }
       const existing = this.poisonByInstance.get(target.instanceId);
       this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns });
@@ -2723,13 +2775,17 @@ export class ArenaScene extends Phaser.Scene {
       this.markBotFirstWinClaimed(this.configDifficulty);
     }
     if (stage === 'victory' && this.activeChallenge === 'daily') {
+      this.setChallengeStatus('daily', 'completed');
       tokenReward += this.dailyHard ? 1600 : 800;
       chipReward += this.dailyHard ? 20 : 10;
     }
     if (stage === 'victory' && this.activeChallenge === 'deucifer') {
+      this.setChallengeStatus('deucifer', 'completed');
       tokenReward += 7500;
       chipReward += 50;
     }
+    if (stage !== 'victory' && this.activeChallenge === 'daily') this.setChallengeStatus('daily', 'failed');
+    if (stage !== 'victory' && this.activeChallenge === 'deucifer') this.setChallengeStatus('deucifer', 'failed');
     setDiceTokens(this, getDiceTokens(this) + tokenReward);
     if (chipReward > 0) {
       CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + chipReward }));

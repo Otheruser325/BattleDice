@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Lonely Dominion",
-      "description": "Basic attacks deal bonus damage equal to 8% of the target's max HP (+0.25% per Class UP).",
+      "description": "Basic attacks deal bonus damage equal to 8% of the target's max HP.",
       "modifiers": {
         "notes": [
           "runtime:targetMaxHpBonusRate=0.08"
