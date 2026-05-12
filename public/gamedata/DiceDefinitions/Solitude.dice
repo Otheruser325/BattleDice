@@ -9,10 +9,10 @@
     {
       "type": "Passive",
       "title": "Lonely Dominion",
-      "description": "At combat start, if no allies occupy adjacent tiles, deals 8% of each foe's max HP as damage (+0.25% per Class UP).",
+      "description": "Basic attacks deal bonus damage equal to 8% of the target's max HP (+0.25% per Class UP).",
       "modifiers": {
         "notes": [
-          "runtime:solitudePreCombat"
+          "runtime:targetMaxHpBonusRate=0.08"
         ],
         "targetMaxHpBonusRate": 0.08
       }

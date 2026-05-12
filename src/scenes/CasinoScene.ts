@@ -3,7 +3,7 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgressStore';
 import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
-import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, setDiceProgress, setDiceTokens } from '../data/dice';
+import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 
@@ -492,7 +492,7 @@ export class CasinoScene extends Phaser.Scene {
 
     const progress = getDiceProgress(this, die.typeId);
     const isNew = progress.copies <= 0;
-    setDiceProgress(this, die.typeId, { classLevel: progress.classLevel, copies: progress.copies + copies });
+    grantDiceCopies(this, die.typeId, copies);
     return { typeId: die.typeId, title: die.title, rarity: die.rarity, copies, isNew };
   }
 

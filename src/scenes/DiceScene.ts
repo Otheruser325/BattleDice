@@ -83,7 +83,7 @@ export class DiceScene extends Phaser.Scene {
   private isDiceLocked(typeId: string): boolean {
     if (DEFAULT_LOADOUT_IDS.has(typeId)) return false;
     const progress = getDiceProgress(this, typeId);
-    return progress.copies === 0;
+    return !progress.unlocked;
   }
 
   create() {
@@ -326,7 +326,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const atk = displayDie.attack;
     const isMaxed = cls >= 15;
     const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: displayDie.accent }).setOrigin(0.5);
-    const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})\nRARITY ${displayDie.rarity}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})\nRARITY ${displayDie.rarity}  |  TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;

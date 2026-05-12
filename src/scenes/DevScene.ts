@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, setDiceProgress, setDiceTokens, setDiamonds } from '../data/dice';
+import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { AlertManager } from '../utils/AlertManager';
@@ -115,11 +115,7 @@ export class DevScene extends Phaser.Scene {
   private grantDiceCards(copies: number) {
     const definition = this.getSelectedDefinition();
     if (!definition) return;
-    const progress = getDiceProgress(this, definition.typeId);
-    setDiceProgress(this, definition.typeId, {
-      classLevel: progress.classLevel,
-      copies: progress.copies + copies
-    });
+    grantDiceCopies(this, definition.typeId, copies);
     AlertManager.toast(this, { type: 'success', message: `Granted ${copies} ${definition.title} card${copies === 1 ? '' : 's'}.` });
     this.refresh();
   }
