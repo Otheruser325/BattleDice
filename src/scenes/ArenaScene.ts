@@ -51,6 +51,7 @@ const BOT_FIRST_WIN_REWARDS: Record<BotDifficulty, { tokens: number; chips: numb
 };
 const BOT_FIRST_WIN_KEY = 'arena:claimedBotFirstWins';
 const CHALLENGE_STATUS_KEY = 'arena:challengeStatus';
+const CHALLENGE_REWARD_CLAIMS_KEY = 'arena:challengeRewardClaims';
 
 const BOT_DIFFICULTY_CLASSES: Record<BotDifficulty, [number, number]> = {
   Baby: [1, 1],
@@ -837,7 +838,9 @@ export class ArenaScene extends Phaser.Scene {
     const playerDefs = playerLoadoutDefinitions
       .map((definition) => {
         const classLevel = shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
-          ? Phaser.Math.Between(1, 15)
+          ? (this.activeChallenge === 'daily'
+            ? this.getDailySeededIndex(`player-class-${definition.typeId}-${playerClassLevels.size}`, 15) + 1
+            : Phaser.Math.Between(1, 15))
           : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
         playerClassLevels.set(definition.typeId, classLevel);
         return this.applyClassProgress(definition, classLevel);
@@ -852,7 +855,9 @@ export class ArenaScene extends Phaser.Scene {
       const classLevel = this.activeChallenge === 'deucifer'
         ? 11
         : shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
-        ? Phaser.Math.Between(1, 15)
+        ? (this.activeChallenge === 'daily'
+          ? this.getDailySeededIndex(`enemy-class-${definition.typeId}-${this.enemyClassLevels.size}`, 15) + 1
+          : Phaser.Math.Between(1, 15))
         : effectiveLevel(this.rollEnemyClassLevel());
       this.enemyClassLevels.set(definition.typeId, classLevel);
       return this.applyClassProgress(definition, classLevel);
@@ -2438,12 +2443,9 @@ export class ArenaScene extends Phaser.Scene {
     const damage = meta.beamDamage ?? 300;
     const targetPos = target.gridPosition;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const rowDelta = targetPos.row - attacker.gridPosition.row;
-    const colDelta = targetPos.col - attacker.gridPosition.col;
-    const verticalSight = Math.abs(rowDelta) >= Math.abs(colDelta);
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
       die.gridPosition &&
-      (die.instanceId === target.instanceId || (verticalSight ? die.gridPosition.row === targetPos.row : die.gridPosition.col === targetPos.col))
+      (die.instanceId === target.instanceId || die.gridPosition.row === targetPos.row)
     );
 
     let primaryDestroyed = false;
@@ -2789,6 +2791,30 @@ export class ArenaScene extends Phaser.Scene {
     localStorage.setItem(BOT_FIRST_WIN_KEY, JSON.stringify(next));
   }
 
+
+
+  private getChallengeRewardClaims(): string[] {
+    const stored = this.registry.get(CHALLENGE_REWARD_CLAIMS_KEY) as string[] | undefined;
+    if (stored) return stored;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(CHALLENGE_REWARD_CLAIMS_KEY) ?? '[]') as string[];
+      this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, parsed);
+      return parsed;
+    } catch {
+      return [];
+    }
+  }
+
+  private hasChallengeRewardClaimed(claimKey: string): boolean {
+    return this.getChallengeRewardClaims().includes(claimKey);
+  }
+
+  private markChallengeRewardClaimed(claimKey: string) {
+    const next = [...new Set([...this.getChallengeRewardClaims(), claimKey])];
+    this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, next);
+    localStorage.setItem(CHALLENGE_REWARD_CLAIMS_KEY, JSON.stringify(next));
+  }
+
   private endGame(stage: MatchResultStage, message: string) {
     if (this.gamePhase.stage === 'victory' || this.gamePhase.stage === 'defeat' || this.gamePhase.stage === 'draw') return;
     this.gamePhase = { stage };
@@ -2804,13 +2830,21 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (stage === 'victory' && this.activeChallenge === 'daily') {
       this.setChallengeStatus('daily', 'completed');
-      tokenReward += this.dailyHard ? 1600 : 800;
-      chipReward += this.dailyHard ? 20 : 10;
+      const dailyClaimKey = `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}`;
+      if (!this.hasChallengeRewardClaimed(dailyClaimKey)) {
+        tokenReward += this.dailyHard ? 1600 : 800;
+        chipReward += this.dailyHard ? 20 : 10;
+        this.markChallengeRewardClaimed(dailyClaimKey);
+      }
     }
     if (stage === 'victory' && this.activeChallenge === 'deucifer') {
       this.setChallengeStatus('deucifer', 'completed');
-      tokenReward += 7500;
-      chipReward += 50;
+      const deuciferClaimKey = 'deucifer';
+      if (!this.hasChallengeRewardClaimed(deuciferClaimKey)) {
+        tokenReward += 7500;
+        chipReward += 50;
+        this.markChallengeRewardClaimed(deuciferClaimKey);
+      }
     }
     if (stage !== 'victory' && this.activeChallenge === 'daily') this.setChallengeStatus('daily', 'failed');
     if (stage !== 'victory' && this.activeChallenge === 'deucifer') this.setChallengeStatus('deucifer', 'failed');
