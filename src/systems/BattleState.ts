@@ -239,7 +239,8 @@ export function executeAttack(
   state: MatchBattleState,
   attackerId: string,
   targetId: string,
-  definitions: Map<string, DiceDefinition>
+  definitions: Map<string, DiceDefinition>,
+  definitionOverrides?: { attacker?: DiceDefinition; target?: DiceDefinition }
 ): { newState: MatchBattleState; damage: number; targetDestroyed: boolean } {
   const attacker = state.dice.find((die) => die.instanceId === attackerId);
   const target = state.dice.find((die) => die.instanceId === targetId);
@@ -248,14 +249,19 @@ export function executeAttack(
     return { newState: state, damage: 0, targetDestroyed: false };
   }
 
-  const damage = resolveDamage(attacker, target, definitions);
+  const damage = resolveDamage(
+    attacker,
+    target,
+    definitions,
+    definitionOverrides?.attacker
+  );
   const targetPosition = target.gridPosition;
 
   let newState = spendAttack(state, attackerId);
   newState = applyDamage(newState, targetId, damage);
 
   let updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
-  const targetDefinition = definitions.get(target.typeId);
+  const targetDefinition = definitionOverrides?.target ?? definitions.get(target.typeId);
   const runtimeMeta = targetDefinition ? getRuntimeSkillMeta(targetDefinition) : undefined;
   if (updatedTarget?.isDestroyed && runtimeMeta?.reviveChance && Math.random() < runtimeMeta.reviveChance) {
     newState = {

@@ -124,9 +124,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
 export function resolveDamage(
   attacker: DiceInstanceState,
   target: DiceInstanceState,
-  definitions: Map<string, DiceDefinition>
+  definitions: Map<string, DiceDefinition>,
+  attackerDefinitionOverride?: DiceDefinition
 ): number {
-  const definition = definitions.get(attacker.typeId);
+  const definition = attackerDefinitionOverride ?? definitions.get(attacker.typeId);
   if (!definition) return 10;
   let damage = definition.attack;
   const meta = getRuntimeSkillMeta(definition);
