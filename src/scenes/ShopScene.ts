@@ -9,7 +9,7 @@ import {
   getDiceTokens,
   setDiceTokens,
   getDiceProgress,
-  setDiceProgress,
+  grantDiceCopies,
   generateOrGetShopOffers,
   setShopState,
   getShopState,
@@ -118,9 +118,7 @@ export class ShopScene extends Phaser.Scene {
           setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
         } else {
           const progress = getDiceProgress(this, offer.typeId);
-          if (progress.classLevel < 15) {
-            setDiceProgress(this, offer.typeId, { classLevel: progress.classLevel, copies: progress.copies + offer.copies });
-          }
+          if (progress.classLevel < 15) grantDiceCopies(this, offer.typeId, offer.copies);
         }
 
         if (!offer.isFreebie) {

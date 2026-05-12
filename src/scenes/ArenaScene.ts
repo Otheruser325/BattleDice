@@ -30,6 +30,7 @@ import { AudioManager } from '../utils/AudioManager';
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
 type MatchResultStage = 'victory' | 'defeat' | 'draw';
+type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy';
 
 interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | MatchResultStage;
@@ -113,8 +114,10 @@ export class ArenaScene extends Phaser.Scene {
   private modalEscHandler: (() => void) | null = null;
   private configDifficulty: BotDifficulty = 'Medium';
   private configUseLevelling: boolean = true;
+  private configRandomMode: boolean = false;
   private configTurnCount: number = -1;
   private turnLimit: number = -1;
+  private activeRandomModifier: RandomModeModifier | null = null;
 
   constructor() {
     super(ArenaScene.KEY);
@@ -137,6 +140,7 @@ export class ArenaScene extends Phaser.Scene {
     this.poisonByInstance.clear();
     this.diceRolled = false;
     this.currentHandOrder = [];
+    this.activeRandomModifier = null;
     this.transcendenceTransformed.clear();
     this.lavaPoolsByTile.clear();
     this.deathDiceTransformed.clear();
@@ -394,8 +398,8 @@ export class ArenaScene extends Phaser.Scene {
     createOption(cx - 220, cy + 2, 'Versus Bot', 'Setup and play against a realtime computer opponent.', 0x2271b3, () => {
       this.openSingleplayerConfigModal();
     });
-    createOption(cx, cy + 2, 'Random Mode', 'WIP: derive a random mode before Turn 1.', 0x6f5bb5, () => {
-      AlertManager.toast(this, { type: 'warning', message: 'Random Mode is a WIP feature and is not implemented yet.' });
+    createOption(cx, cy + 2, 'Bossfight', 'WIP: bossfight content and rulesets are coming soon.', 0x6f5bb5, () => {
+      AlertManager.toast(this, { type: 'warning', message: 'Bossfight is a WIP feature and is not implemented yet.' });
     });
     createOption(cx + 220, cy + 2, 'Challenges', 'Coming soon...', 0x5d6770, () => {
       AlertManager.toast(this, { type: 'warning', message: 'Challenges are coming soon.' });
@@ -433,6 +437,9 @@ export class ArenaScene extends Phaser.Scene {
       }).setOrigin(0, 0.5),
       this.add.text(cx - 265, cy + 0, 'Turn Count', {
         fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5),
+      this.add.text(cx - 265, cy + 60, 'Random Mode', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
       }).setOrigin(0, 0.5)
     );
 
@@ -453,6 +460,11 @@ export class ArenaScene extends Phaser.Scene {
       [{ label: '3', value: 3 }, { label: '5', value: 5 }, { label: '7', value: 7 }, { label: '10', value: 10 }, { label: '∞', value: -1 }],
       () => this.configTurnCount, (v) => { this.configTurnCount = v; },
       cx + 84, cy + 0, rowContainer
+    );
+    this.makeSelectRow(
+      [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
+      () => this.configRandomMode, (v) => { this.configRandomMode = v; },
+      cx - 12, cy + 60, rowContainer
     );
 
     const noteText = this.add.text(cx, cy + 56, 'Difficulty changes bot loadout, class range, and placement style.\nFirst win on each difficulty grants bonus Tokens + Chips.', {
@@ -696,15 +708,17 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private initializeBattle() {
-    const playerLoadoutDefinitions = getDiceDefinitions(this);
     const allDefinitions = getAllDiceDefinitions(this);
+    const playerLoadoutDefinitions = this.configRandomMode ? this.pickRandomEnemyLoadout(allDefinitions) : getDiceDefinitions(this);
 
     const effectiveLevel = (raw: number) => this.configUseLevelling ? raw : 1;
 
     const playerClassLevels = new Map<DiceTypeId, number>();
     const playerDefs = playerLoadoutDefinitions
       .map((definition) => {
-        const classLevel = effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
+        const classLevel = this.configRandomMode && this.configUseLevelling
+          ? Phaser.Math.Between(1, 15)
+          : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
         playerClassLevels.set(definition.typeId, classLevel);
         return this.applyClassProgress(definition, classLevel);
       });
@@ -717,6 +731,20 @@ export class ArenaScene extends Phaser.Scene {
     });
 
     this.gameState = createMatchBattleState(playerDefs, enemyDefs);
+    if (this.configRandomMode) {
+      const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy'];
+      this.activeRandomModifier = modifiers[Phaser.Math.Between(0, modifiers.length - 1)] ?? 'Classic';
+      if (this.activeRandomModifier === 'Duality') {
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.flatMap((die) => {
+            if (die.ownerId !== 'player' && die.ownerId !== 'enemy') return [die];
+            const copy = { ...die, instanceId: `${die.instanceId}:dual`, zone: 'hand' as const, gridPosition: undefined };
+            return [die, copy];
+          })
+        };
+      }
+    }
 
     // Store per-instance class-scaled definitions so both stats and skills resolve at the die's class.
     this.instanceDefinitionOverrides.clear();
@@ -743,6 +771,7 @@ export class ArenaScene extends Phaser.Scene {
     this.updateCombatButtonState();
 
     this.debug.log('Battle initialized', { turn: this.gameState.turn, playerCount: playerDefs.length, enemyCount: enemyDefs.length });
+    if (this.configRandomMode) this.combatLog.setText(`Random Mode: ${this.activeRandomModifier ?? 'Classic'} selected.`);
   }
 
   private getDefinitionForInstance(die: DiceInstanceState): DiceDefinition | undefined {
@@ -1131,7 +1160,7 @@ export class ArenaScene extends Phaser.Scene {
     const sumMatchingDelta = (auras: Array<{ sourceId: string; pips: number; allyDelta: number; foeDelta: number }>, die: DiceInstanceState, side: 'ally' | 'foe') =>
       auras.reduce((total, aura) => total + (aura.sourceId !== die.instanceId && aura.pips === rolledPipsFor(die) ? (side === 'ally' ? aura.allyDelta : aura.foeDelta) : 0), 0);
 
-    return {
+    let nextState: MatchBattleState = {
       ...this.gameState,
       combatPhase: 'attacking',
       dice: this.gameState.dice.map((die) => {
@@ -1155,6 +1184,47 @@ export class ArenaScene extends Phaser.Scene {
           hasFinishedAttacking: false,
           attacksRemaining: Math.max(1, withPermanent)
         };
+      })
+    };
+    if (this.configRandomMode && this.activeRandomModifier === 'Combanity') {
+      nextState = this.applyCombanityBonuses(nextState);
+    }
+    return nextState;
+  }
+
+  private getRollComboBonus(ownerId: 'player' | 'enemy'): { multiplier: number; reduction: number; label: string } {
+    const values = (ownerId === 'player'
+      ? this.currentHandOrder.map((typeId) => this.dicePips.get(typeId) ?? 1)
+      : getAvailableHandDice(this.gameState, 'enemy').map((die) => this.enemyDicePips.get(die.instanceId) ?? 1))
+      .sort((a, b) => a - b);
+    const counts = new Map<number, number>();
+    values.forEach((v) => counts.set(v, (counts.get(v) ?? 0) + 1));
+    const groups = [...counts.values()].sort((a, b) => b - a);
+    const isSmallStraight = values.join(',').includes('1,2,3,4') || values.join(',').includes('2,3,4,5') || values.join(',').includes('3,4,5,6');
+    const isLargeStraight = values.join(',') === '1,2,3,4,5' || values.join(',') === '2,3,4,5,6';
+    if (groups[0] === 5) return { multiplier: 10, reduction: 1, label: 'Five-of-a-kind' };
+    if (groups[0] === 4) return { multiplier: 5, reduction: 0.5, label: 'Four-of-a-kind' };
+    if (groups[0] === 3 && groups[1] === 2) return { multiplier: 4, reduction: 0.35, label: 'Full House' };
+    if (isLargeStraight) return { multiplier: 2.5, reduction: 0.25, label: 'Large Straight' };
+    if (isSmallStraight) return { multiplier: 2, reduction: 0.2, label: 'Small Straight' };
+    if (groups[0] === 3) return { multiplier: 3, reduction: 0, label: 'Three-of-a-kind' };
+    if (groups[0] === 2 && groups[1] === 2) return { multiplier: 2, reduction: 0, label: 'Two Pair' };
+    if (groups[0] === 2) return { multiplier: 1.5, reduction: 0, label: 'Pair' };
+    return { multiplier: 1, reduction: 0, label: 'Classic' };
+  }
+
+  private applyCombanityBonuses(state: MatchBattleState): MatchBattleState {
+    const player = this.getRollComboBonus('player');
+    const enemy = this.getRollComboBonus('enemy');
+    this.combatLog.setText(`Combanity: You rolled ${player.label} (${player.multiplier}x), Bot rolled ${enemy.label} (${enemy.multiplier}x).`);
+    return {
+      ...state,
+      dice: state.dice.map((die) => {
+        if (die.zone !== 'board' || die.isDestroyed) return die;
+        const bonus = die.ownerId === 'player' ? player : enemy;
+        this.attackMultiplierTurnsByInstance.set(die.instanceId, { multiplier: bonus.multiplier, turns: 1 });
+        if (bonus.reduction <= 0) return die;
+        return { ...die, currentHealth: die.currentHealth + Math.max(0, Math.floor(die.maxHealth * (bonus.reduction * 0.2))), maxHealth: die.maxHealth };
       })
     };
   }
@@ -1321,6 +1391,9 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     this.gameState = endTurn(this.gameState);
+    if (this.configRandomMode && this.activeRandomModifier === 'Necromancy' && this.gameState.turn > 1) {
+      this.applyNecromancyTurnEffect();
+    }
     this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.playTurnBanner(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
@@ -1331,6 +1404,52 @@ export class ArenaScene extends Phaser.Scene {
     this.renderEnemyDice();
     this.renderLavaPools();
     this.updateCombatButtonState();
+  }
+
+  private applyNecromancyTurnEffect() {
+    (['player', 'enemy'] as const).forEach((ownerId) => {
+      const destroyed = this.gameState.dice.filter((d) => d.ownerId === ownerId && d.isDestroyed);
+      if (destroyed.length > 0) {
+        const chosen = destroyed[Phaser.Math.Between(0, destroyed.length - 1)];
+        if (!chosen) return;
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.map((d) => d.instanceId === chosen.instanceId
+            ? { ...d, isDestroyed: false, currentHealth: Math.max(1, Math.floor(d.maxHealth * 0.5)), zone: 'hand', gridPosition: undefined }
+            : d)
+        };
+        return;
+      }
+      const pool = this.ownerLoadoutPool(ownerId);
+      const def = pool[Phaser.Math.Between(0, pool.length - 1)];
+      if (!def) return;
+      const newId = `${ownerId}-${def.typeId}-necro-${Date.now()}-${Phaser.Math.Between(1, 9999)}`;
+      this.gameState = {
+        ...this.gameState,
+        dice: [...this.gameState.dice, {
+          instanceId: newId,
+          ownerId,
+          typeId: def.typeId,
+          maxHealth: def.health,
+          currentHealth: def.health,
+          attacksRemaining: 1,
+          zone: 'hand',
+          gridPosition: undefined,
+          isDestroyed: false,
+          hasFinishedAttacking: false
+        }]
+      };
+      this.instanceDefinitionOverrides.set(newId, def);
+      this.instanceClassLevels.set(newId, 1);
+    });
+    this.combatLog.setText('Necromancy: a die has been revived or conjured for both sides.');
+  }
+
+  private ownerLoadoutPool(ownerId: 'player' | 'enemy'): DiceDefinition[] {
+    return this.gameState.dice
+      .filter((d) => d.ownerId === ownerId)
+      .map((d) => this.getDefinitionForInstance(d))
+      .filter((d): d is DiceDefinition => Boolean(d));
   }
 
   private refreshHandAfterPoisonEffects() {

@@ -79,6 +79,7 @@ export function setSelectedLoadout(scene: Phaser.Scene, loadout: DiceTypeId[]) {
 export interface DiceProgressState {
   classLevel: number;
   copies: number;
+  unlocked?: boolean;
 }
 
 export function getDiceTokens(scene: Phaser.Scene): number {
@@ -103,17 +104,39 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
     scene.registry.set(DICE_PROGRESS_KEY, store);
   }
   const defaultCopies = DEFAULT_LOADOUT_IDS.has(typeId) ? 200 : 0;
-  return store[typeId] ?? { classLevel: 1, copies: defaultCopies };
+  const progress = store[typeId];
+  if (!progress) return { classLevel: 1, copies: defaultCopies, unlocked: DEFAULT_LOADOUT_IDS.has(typeId) };
+  return {
+    classLevel: progress.classLevel,
+    copies: progress.copies,
+    unlocked: progress.unlocked ?? (DEFAULT_LOADOUT_IDS.has(typeId) ? true : progress.copies > 0)
+  };
 }
 
 export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: DiceProgressState) {
   const store = (scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined) ?? {};
   const updated = {
     ...store,
-    [typeId]: { classLevel: Math.max(1, Math.min(15, next.classLevel)), copies: Math.max(0, next.copies) }
+    [typeId]: {
+      classLevel: Math.max(1, Math.min(15, next.classLevel)),
+      copies: Math.max(0, next.copies),
+      unlocked: next.unlocked ?? (DEFAULT_LOADOUT_IDS.has(typeId) ? true : next.copies > 0)
+    }
   };
   scene.registry.set(DICE_PROGRESS_KEY, updated);
   writeStored(DICE_PROGRESS_KEY, updated);
+}
+
+export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies: number) {
+  if (copies <= 0) return;
+  const progress = getDiceProgress(scene, typeId);
+  if (DEFAULT_LOADOUT_IDS.has(typeId) || progress.unlocked) {
+    setDiceProgress(scene, typeId, { ...progress, copies: progress.copies + copies });
+    return;
+  }
+  const spendForUnlock = 1;
+  const remainder = Math.max(0, copies - spendForUnlock);
+  setDiceProgress(scene, typeId, { classLevel: progress.classLevel, copies: progress.copies + remainder, unlocked: true });
 }
 
 export function getRangeLabel(range: number): string {
