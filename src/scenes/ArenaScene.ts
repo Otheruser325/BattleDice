@@ -115,6 +115,7 @@ export class ArenaScene extends Phaser.Scene {
   private configDifficulty: BotDifficulty = 'Medium';
   private configUseLevelling: boolean = true;
   private configRandomMode: boolean = false;
+  private configRandomizeLoadoutAndClassUps: boolean = false;
   private configTurnCount: number = -1;
   private turnLimit: number = -1;
   private activeRandomModifier: RandomModeModifier | null = null;
@@ -423,6 +424,11 @@ export class ArenaScene extends Phaser.Scene {
     const cy = height / 2;
     const elements: Phaser.GameObjects.GameObject[] = [];
 
+    const randomizeClassLabel = this.add.text(cx - 265, cy + 120, 'Randomize Loadout/Class UP', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+    }).setOrigin(0, 0.5);
+    randomizeClassLabel.setVisible(this.configRandomMode);
+
     elements.push(
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
       this.add.rectangle(cx, cy, 640, 420, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
@@ -440,7 +446,8 @@ export class ArenaScene extends Phaser.Scene {
       }).setOrigin(0, 0.5),
       this.add.text(cx - 265, cy + 60, 'Random Mode', {
         fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
-      }).setOrigin(0, 0.5)
+      }).setOrigin(0, 0.5),
+      randomizeClassLabel
     );
 
     const rowContainer = this.add.container(0, 0);
@@ -463,9 +470,19 @@ export class ArenaScene extends Phaser.Scene {
     );
     this.makeSelectRow(
       [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
-      () => this.configRandomMode, (v) => { this.configRandomMode = v; },
+      () => this.configRandomMode, (v) => {
+        this.configRandomMode = v;
+        randomizeClassLabel.setVisible(v);
+        randomizeToggle.setVisible(v);
+      },
       cx - 12, cy + 60, rowContainer
     );
+    const randomizeToggle = this.makeSelectRow(
+      [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
+      () => this.configRandomizeLoadoutAndClassUps, (v) => { this.configRandomizeLoadoutAndClassUps = v; },
+      cx + 96, cy + 120, rowContainer
+    );
+    randomizeToggle.setVisible(this.configRandomMode);
 
     const noteText = this.add.text(cx, cy + 56, 'Difficulty changes bot loadout, class range, and placement style.\nFirst win on each difficulty grants bonus Tokens + Chips.', {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
@@ -561,7 +578,9 @@ export class ArenaScene extends Phaser.Scene {
     cx: number,
     cy: number,
     container: Phaser.GameObjects.Container
-  ): void {
+  ): Phaser.GameObjects.Container {
+    const rowGroup = this.add.container(0, 0);
+    container.add(rowGroup);
     const btnW = options.length > 4 ? 88 : 72;
     const gap = 8;
     const totalW = options.length * btnW + (options.length - 1) * gap;
@@ -590,10 +609,11 @@ export class ArenaScene extends Phaser.Scene {
       rect.on('pointerover', () => { if (getter() !== opt.value) rect.setFillStyle(0x233d52, 0.9); });
       rect.on('pointerout', () => refresh());
       buttons.push({ rect, text, value: opt.value });
-      container.add([rect, text]);
+      rowGroup.add([rect, text]);
     });
 
     refresh();
+    return rowGroup;
   }
 
   // ── GAME START ───────────────────────────────────────────────────────────────
@@ -709,14 +729,15 @@ export class ArenaScene extends Phaser.Scene {
 
   private initializeBattle() {
     const allDefinitions = getAllDiceDefinitions(this);
-    const playerLoadoutDefinitions = this.configRandomMode ? this.pickRandomEnemyLoadout(allDefinitions) : getDiceDefinitions(this);
+    const shouldRandomizeLoadoutAndClassUps = this.configRandomMode && this.configRandomizeLoadoutAndClassUps;
+    const playerLoadoutDefinitions = shouldRandomizeLoadoutAndClassUps ? this.pickRandomEnemyLoadout(allDefinitions) : getDiceDefinitions(this);
 
     const effectiveLevel = (raw: number) => this.configUseLevelling ? raw : 1;
 
     const playerClassLevels = new Map<DiceTypeId, number>();
     const playerDefs = playerLoadoutDefinitions
       .map((definition) => {
-        const classLevel = this.configRandomMode && this.configUseLevelling
+        const classLevel = shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
           ? Phaser.Math.Between(1, 15)
           : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
         playerClassLevels.set(definition.typeId, classLevel);
@@ -1440,14 +1461,22 @@ export class ArenaScene extends Phaser.Scene {
         }]
       };
       this.instanceDefinitionOverrides.set(newId, def);
-      this.instanceClassLevels.set(newId, 1);
+      const inheritedClass = ownerId === 'player'
+        ? (this.instanceClassLevels.get(this.gameState.dice.find((d) => d.ownerId === ownerId && d.typeId === def.typeId)?.instanceId ?? '') ?? 1)
+        : (this.enemyClassLevels.get(def.typeId) ?? 1);
+      this.instanceClassLevels.set(newId, inheritedClass);
     });
     this.combatLog.setText('Necromancy: a die has been revived or conjured for both sides.');
   }
 
   private ownerLoadoutPool(ownerId: 'player' | 'enemy'): DiceDefinition[] {
+    const legalTypeIds = new Set(
+      this.gameState.dice
+        .filter((d) => d.ownerId === ownerId && d.instanceId.includes('-') && !d.instanceId.includes('-necro-'))
+        .map((d) => d.typeId)
+    );
     return this.gameState.dice
-      .filter((d) => d.ownerId === ownerId)
+      .filter((d) => d.ownerId === ownerId && legalTypeIds.has(d.typeId))
       .map((d) => this.getDefinitionForInstance(d))
       .filter((d): d is DiceDefinition => Boolean(d));
   }
@@ -2114,7 +2143,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     });
     const livingPlayerDice = this.gameState.dice.filter((die) => die.ownerId === 'player' && !die.isDestroyed);
-    const statusDice = this.gameState.combatPhase === 'attacking' && playerDice.length > 0
+    const statusDice = this.gameState.turn <= 1 && this.gameState.combatPhase !== 'attacking'
       ? playerDice
       : livingPlayerDice;
     this.renderDiceStatusPanel(this.playerStatusPanel, statusDice, 'YOUR DICE');
