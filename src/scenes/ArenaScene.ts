@@ -1367,7 +1367,10 @@ export class ArenaScene extends Phaser.Scene {
           } else {
             AudioManager.playSfx(this, 'dice-attack');
             const defs = this.getDefinitionsForCombat(attacker, target);
-            const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs);
+            const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs, {
+              attacker: this.getDefinitionForInstance(attacker),
+              target: this.getDefinitionForInstance(target)
+            });
             const multiplier = this.getCombanityDamageMultiplier(attacker, target);
             const adjustedDamage = Math.max(1, Math.floor(rawResult.damage * multiplier));
             if (adjustedDamage === rawResult.damage) {
