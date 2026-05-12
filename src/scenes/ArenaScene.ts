@@ -457,8 +457,10 @@ export class ArenaScene extends Phaser.Scene {
     });
     const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
+      this.activeDailyKey = '';
       this.setChallengeStatus('deucifer', 'started');
       this.configRandomMode = false;
+      this.configRandomizeLoadoutAndClassUps = false;
       this.configDifficulty = 'Nightmare';
       this.configUseLevelling = true;
       this.turnLimit = 10;
@@ -606,6 +608,8 @@ export class ArenaScene extends Phaser.Scene {
       backgroundColor: '#2ecc71', padding: { left: 16, right: 16, top: 7, bottom: 7 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     startBtn.on('pointerdown', () => {
+      this.activeChallenge = null;
+      this.activeDailyKey = '';
       this.turnLimit = this.configTurnCount;
       this.clearModeModal();
       this.startGame();
@@ -724,9 +728,25 @@ export class ArenaScene extends Phaser.Scene {
   // ── GAME START ───────────────────────────────────────────────────────────────
 
   private startGame() {
-    const selectedTurnLimit = this.configTurnCount;
+    const selectedTurnLimit = this.turnLimit;
+    const selectedChallenge = this.activeChallenge;
+    const selectedDailyKey = this.activeDailyKey;
+    const selectedDailyHard = this.dailyHard;
+    const selectedRandomMode = this.configRandomMode;
+    const selectedRandomizeLoadoutAndClassUps = this.configRandomizeLoadoutAndClassUps;
+    const selectedDifficulty = this.configDifficulty;
+    const selectedUseLevelling = this.configUseLevelling;
+
     this.resetRuntimeState();
-    this.turnLimit = selectedTurnLimit;
+
+    this.turnLimit = selectedTurnLimit === -1 ? this.configTurnCount : selectedTurnLimit;
+    this.activeChallenge = selectedChallenge;
+    this.activeDailyKey = selectedDailyKey;
+    this.dailyHard = selectedDailyHard;
+    this.configRandomMode = selectedRandomMode;
+    this.configRandomizeLoadoutAndClassUps = selectedRandomizeLoadoutAndClassUps;
+    this.configDifficulty = selectedDifficulty;
+    this.configUseLevelling = selectedUseLevelling;
     this.gamePhase = { stage: 'placement' };
     const loading = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x050d14, 0.95).setDepth(500);
     const loadingLabel = this.add.text(this.scale.width / 2, this.scale.height / 2, 'BATTLE DICE\nCaching arena...', { fontFamily: 'Orbitron', fontSize: '24px', color: PALETTE.text, align: 'center' }).setOrigin(0.5).setDepth(501);

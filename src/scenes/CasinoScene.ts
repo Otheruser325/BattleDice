@@ -49,21 +49,24 @@ const CHEST_DROP_RATES: Record<ChestType, ChestDropRateEntry[]> = {
     { rarity: 'Rare', rate: 10, copies: [1, 5] }
   ],
   Gold: [
-    { rarity: 'Common', rate: 20, copies: [5, 25] },
+    { rarity: 'Common', rate: 20, copies: [10, 40] },
     { rarity: 'Uncommon', rate: 35, copies: [5, 25] },
     { rarity: 'Rare', rate: 42, copies: [3, 10] },
     { rarity: 'Epic', rate: 3, copies: [1, 5] }
   ],
   Diamond: [
-    { rarity: 'Uncommon', rate: 11, copies: [15, 75] },
-    { rarity: 'Rare', rate: 33, copies: [10, 50] },
-    { rarity: 'Epic', rate: 55, copies: [3, 10] },
+    { rarity: 'Common', rate: 10, copies: [40, 160] },
+    { rarity: 'Uncommon', rate: 15, copies: [20, 80] },
+    { rarity: 'Rare', rate: 30, copies: [10, 40] },
+    { rarity: 'Epic', rate: 45, copies: [3, 6] },
     { rarity: 'Legendary', rate: 1, copies: [1, 3] }
   ],
   Master: [
-    { rarity: 'Rare', rate: 20, copies: [100, 250] },
-    { rarity: 'Epic', rate: 50, copies: [8, 40] },
-    { rarity: 'Legendary', rate: 30, copies: [1, 5] }
+    { rarity: 'Common', rate: 5, copies: [250, 750] },
+    { rarity: 'Uncommon', rate: 8, copies: [150, 450] },
+    { rarity: 'Rare', rate: 22, copies: [50, 200] },
+    { rarity: 'Epic', rate: 40, copies: [6, 30] },
+    { rarity: 'Legendary', rate: 25, copies: [1, 5] }
   ]
 };
 
@@ -80,6 +83,7 @@ export class CasinoScene extends Phaser.Scene {
   private locks: boolean[] = [false, false, false, false, false];
   private rollsLeft = 3;
   private tableActive = false;
+  private crapsTableActive = false;
 
   private diceImages: Phaser.GameObjects.Image[] = [];
   private lockTexts: Phaser.GameObjects.Text[] = [];
@@ -144,10 +148,12 @@ export class CasinoScene extends Phaser.Scene {
     this.locks = [...hand.locks];
     this.rollsLeft = hand.rollsLeft;
     this.tableActive = hand.tableActive;
+    this.crapsTableActive = false;
   }
 
   private clearFivesHandRuntime() {
     this.tableActive = false;
+    this.crapsTableActive = false;
     this.rollsLeft = 3;
     this.locks = [false, false, false, false, false];
     this.dice = [1, 1, 1, 1, 1];
@@ -258,6 +264,7 @@ export class CasinoScene extends Phaser.Scene {
     this.locks = [false, false, false, false, false];
     this.rollsLeft = 3;
     this.tableActive = true;
+    this.crapsTableActive = false;
     CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - 10 }));
     this.rollDice();
     this.render();
@@ -280,6 +287,7 @@ export class CasinoScene extends Phaser.Scene {
     }));
     this.clearFivesHandRuntime();
     this.clearSavedFivesHand();
+    this.crapsTableActive = false;
     this.render();
   }
 
@@ -289,6 +297,7 @@ export class CasinoScene extends Phaser.Scene {
     if (progress.chips < 2) return AlertManager.toast(this, { type: 'warning', message: 'Need 2 chips for Craps.' });
 
     const outcome = this.resolveCrapsRound();
+    this.crapsTableActive = true;
     this.dice = [outcome.finalRoll[0], outcome.finalRoll[1], 1, 1, 1];
     this.locks = [true, true, false, false, false];
 
@@ -566,21 +575,37 @@ export class CasinoScene extends Phaser.Scene {
 
   private render(crapsSummary?: string, crapsChestText?: string) {
     if (!this.scene.isActive(CasinoScene.KEY)) return;
+    const showFivesDice = this.tableActive;
+    const showCrapsDice = !this.tableActive && this.crapsTableActive;
+
     this.diceImages.forEach((image, i) => {
-      if (image?.scene) image.setTexture(this.getDiceTextureKey(this.dice[i] ?? 1));
+      if (!image?.scene) return;
+      image.setTexture(this.getDiceTextureKey(this.dice[i] ?? 1));
+      image.setVisible(showFivesDice || (showCrapsDice && i < 2));
     });
     this.lockTexts.forEach((text, i) => {
       if (!text?.scene) return;
-      const isCrapsDie = !this.tableActive && this.locks[i] && i < 2;
-      text.setText(isCrapsDie ? 'CRAPS' : (this.locks[i] ? 'LOCKED' : 'UNLOCK'));
+      text.setVisible(showFivesDice || (showCrapsDice && i < 2));
+      if (showCrapsDice && i < 2) {
+        text.setText('CRAPS');
+        text.setColor(PALETTE.accentSoft);
+        return;
+      }
+      text.setText(this.locks[i] ? 'LOCKED' : 'UNLOCK');
       text.setColor(this.locks[i] ? PALETTE.accentSoft : PALETTE.textMuted);
     });
     const progress = CasinoProgressStore.get(this);
     this.chipText.setText(`CHIPS: ${progress.chips}`);
-    const currentCombo = evaluateFivesCombo(this.dice);
-    this.comboText.setText(
-      `Current Fives: ${currentCombo.combo} — ${currentCombo.layout} • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
-    );
+    if (this.tableActive) {
+      const currentCombo = evaluateFivesCombo(this.dice);
+      this.comboText.setText(
+        `Current Fives: ${currentCombo.combo} — ${currentCombo.layout} • ${currentCombo.chestType} x${currentCombo.chestCount} (sum ${currentCombo.pipSum})`
+      );
+    } else if (this.crapsTableActive) {
+      this.comboText.setText('Craps table resolved. Start Fives to view combo payout previews.');
+    } else {
+      this.comboText.setText('Start Fives or Craps to roll dice.');
+    }
     this.statusText.setText(crapsSummary
       ? `Craps: ${crapsSummary} • ${crapsChestText}`
       : (this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
