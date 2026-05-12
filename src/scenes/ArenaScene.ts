@@ -36,8 +36,6 @@ interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | MatchResultStage;
 }
 
-const DEFAULT_PLAYER_LOADOUT: DiceTypeId[] = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'];
-
 const GRID_SIZE = 5;
 const TILE_SIZE = 64;
 const TILE_GAP = 8;
@@ -98,7 +96,7 @@ export class ArenaScene extends Phaser.Scene {
   private rollAllButton!: Phaser.GameObjects.Rectangle;
   private rollAllButtonLabel!: Phaser.GameObjects.Text;
   private diceRolled = false;
-  private currentHandOrder: DiceTypeId[] = [];
+  private currentHandOrder: string[] = [];
 
   private lavaPoolsByTile: Map<string, { damage: number; turns: number }> = new Map();
   private deathDiceTransformed: Set<string> = new Set();
@@ -814,9 +812,9 @@ export class ArenaScene extends Phaser.Scene {
 
   private createHandArea() {
     const { width, height } = this.scale;
-    this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.typeId);
+    this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.instanceId);
     if (this.currentHandOrder.length === 0) {
-      this.currentHandOrder = [...DEFAULT_PLAYER_LOADOUT];
+      this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.instanceId);
     }
 
     const handY = height - 110;
@@ -832,13 +830,15 @@ export class ArenaScene extends Phaser.Scene {
 
     this.createRollAllButton(width / 2, handY - 58);
 
-    this.currentHandOrder.forEach((typeId, index) => {
-      const definition = this.definitions.get(typeId);
+    this.currentHandOrder.forEach((instanceId, index) => {
+      const handDie = this.gameState.dice.find((d) => d.instanceId === instanceId);
+      if (!handDie) return;
+      const definition = this.getDefinitionForInstance(handDie);
       if (!definition) return;
 
       const x = startX + index * 100;
-      const dieContainer = this.createDraggableDie(typeId, definition, x, handY, true);
-      this.handDice.set(typeId, dieContainer);
+      const dieContainer = this.createDraggableDie(instanceId, handDie.typeId, definition, x, handY, true);
+      this.handDice.set(instanceId, dieContainer);
       this.handContainer.add(dieContainer);
     });
   }
@@ -861,12 +861,14 @@ export class ArenaScene extends Phaser.Scene {
     if (this.diceRolled) return;
 
     let rollResults: string[] = [];
-    this.currentHandOrder.forEach((typeId) => {
+    this.currentHandOrder.forEach((instanceId) => {
+      const handDie = this.gameState.dice.find((d) => d.instanceId === instanceId);
+      if (!handDie) return;
       const rolledPips = Math.floor(Math.random() * 6) + 1;
-      this.dicePips.set(typeId, rolledPips);
-      rollResults.push(`${typeId}:${rolledPips}`);
+      this.dicePips.set(instanceId, rolledPips);
+      rollResults.push(`${handDie.typeId}:${rolledPips}`);
 
-      const container = this.handDice.get(typeId);
+      const container = this.handDice.get(instanceId);
       if (container) {
         const pipText = container.list.find((obj) => obj.name === 'pipText') as Phaser.GameObjects.Text;
         if (pipText) {
@@ -885,7 +887,7 @@ export class ArenaScene extends Phaser.Scene {
     this.debug.log('All dice rolled', { results: rollResults });
   }
 
-  private createDraggableDie(typeId: DiceTypeId, definition: DiceDefinition, x: number, y: number, draggable: boolean): Phaser.GameObjects.Container {
+  private createDraggableDie(instanceId: string, typeId: DiceTypeId, definition: DiceDefinition, x: number, y: number, draggable: boolean): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
     container.setSize(60, 70);
 
@@ -909,7 +911,7 @@ export class ArenaScene extends Phaser.Scene {
     (pipText as Phaser.GameObjects.Text).setName('pipText');
 
     container.add([bg, label, pipText]);
-    const handDie = this.getPlayerHandDie(typeId);
+    const handDie = this.getPlayerHandDie(instanceId);
     if (handDie) this.renderStatusEffects(container, 0, 0, handDie);
 
     if (draggable) {
@@ -933,13 +935,13 @@ export class ArenaScene extends Phaser.Scene {
 
       container.on('dragend', () => {
         if (!this.diceRolled) {
-          this.returnDieToHand(container, typeId);
+          this.returnDieToHand(container, instanceId);
           return;
         }
         container.setScale(1);
         container.setDepth(0);
         this.highlightValidDropZones(false);
-        this.tryPlaceDie(container, typeId);
+        this.tryPlaceDie(container, instanceId);
       });
     }
 
@@ -988,7 +990,7 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  private tryPlaceDie(container: Phaser.GameObjects.Container, typeId: DiceTypeId) {
+  private tryPlaceDie(container: Phaser.GameObjects.Container, instanceId: string) {
     const droppedZone = this.gridDropZones.find((zone) => {
       const bounds = zone.getBounds();
       return Phaser.Geom.Intersects.RectangleToRectangle(
@@ -998,7 +1000,7 @@ export class ArenaScene extends Phaser.Scene {
     });
 
     if (!droppedZone) {
-      this.returnDieToHand(container, typeId);
+      this.returnDieToHand(container, instanceId);
       return;
     }
 
@@ -1012,36 +1014,36 @@ export class ArenaScene extends Phaser.Scene {
     );
 
     if (existingDie) {
-      this.returnDieToHand(container, typeId);
+      this.returnDieToHand(container, instanceId);
       return;
     }
 
     const existingDieInHand = this.gameState.dice.find((die) =>
       die.ownerId === 'player' &&
-      die.typeId === typeId &&
+      die.instanceId === instanceId &&
       die.zone === 'hand' &&
       !die.isDestroyed
     );
-
-    const instanceId = existingDieInHand?.instanceId ?? `player-${typeId}-${Date.now()}`;
     if (!existingDieInHand) {
-      this.debug.log('Creating new die instance', { typeId, instanceId });
+      this.returnDieToHand(container, instanceId);
+      return;
     }
+
     this.gameState = placeDieOnBoard(this.gameState, instanceId, gridPos.row, gridPos.col);
     this.clearRangeHighlights();
 
     container.destroy();
-    this.handDice.delete(typeId);
+    this.handDice.delete(instanceId);
 
     this.placedDiceCount++;
     this.renderDice();
     this.updateCombatButtonState();
 
-    this.combatLog.setText(`Placed ${typeId} at [${gridPos.row}, ${gridPos.col}] (${this.placedDiceCount}/5)`);
+    this.combatLog.setText(`Placed ${existingDieInHand.typeId} at [${gridPos.row}, ${gridPos.col}] (${this.placedDiceCount}/5)`);
   }
 
-  private returnDieToHand(container: Phaser.GameObjects.Container, typeId: DiceTypeId) {
-    const index = this.currentHandOrder.indexOf(typeId);
+  private returnDieToHand(container: Phaser.GameObjects.Container, instanceId: string) {
+    const index = this.currentHandOrder.indexOf(instanceId);
     const { width } = this.scale;
     const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
     const handY = this.scale.height - 110;
@@ -1163,7 +1165,7 @@ export class ArenaScene extends Phaser.Scene {
       return sum + (getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0);
     }, 0);
     const rolledPipsFor = (die: DiceInstanceState) => die.ownerId === 'player'
-      ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
+      ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
       : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
     const collectPipAttackAuras = (dice: DiceInstanceState[]) => dice
       .map((die) => {
@@ -1215,7 +1217,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private getRollComboBonus(ownerId: 'player' | 'enemy'): { multiplier: number; reduction: number; label: string } {
     const values = (ownerId === 'player'
-      ? this.currentHandOrder.map((typeId) => this.dicePips.get(typeId) ?? 1)
+      ? this.currentHandOrder.map((instanceId) => this.dicePips.get(instanceId) ?? 1)
       : getAvailableHandDice(this.gameState, 'enemy').map((die) => this.enemyDicePips.get(die.instanceId) ?? 1))
       .sort((a, b) => a - b);
     const counts = new Map<number, number>();
@@ -1470,24 +1472,24 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private ownerLoadoutPool(ownerId: 'player' | 'enemy'): DiceDefinition[] {
-    const legalTypeIds = new Set(
+    const typeIds = new Set(
       this.gameState.dice
-        .filter((d) => d.ownerId === ownerId && d.instanceId.includes('-') && !d.instanceId.includes('-necro-'))
+        .filter((d) => d.ownerId === ownerId)
         .map((d) => d.typeId)
     );
-    return this.gameState.dice
-      .filter((d) => d.ownerId === ownerId && legalTypeIds.has(d.typeId))
-      .map((d) => this.getDefinitionForInstance(d))
+    return [...typeIds]
+      .map((typeId) => this.gameState.dice.find((d) => d.ownerId === ownerId && d.typeId === typeId))
+      .map((die) => (die ? this.getDefinitionForInstance(die) : undefined))
       .filter((d): d is DiceDefinition => Boolean(d));
   }
 
   private refreshHandAfterPoisonEffects() {
     const deadInHand: string[] = [];
-    this.currentHandOrder.forEach((typeId) => {
+    this.currentHandOrder.forEach((instanceId) => {
       const isDestroyed = this.gameState.dice.some(
-        (d) => d.ownerId === 'player' && d.typeId === typeId && d.isDestroyed
+        (d) => d.ownerId === 'player' && d.instanceId === instanceId && d.isDestroyed
       );
-      if (isDestroyed) deadInHand.push(typeId);
+      if (isDestroyed) deadInHand.push(instanceId);
     });
     if (deadInHand.length === 0) return;
 
@@ -1497,7 +1499,7 @@ export class ArenaScene extends Phaser.Scene {
     });
     this.currentHandOrder = this.currentHandOrder.filter((t) => !deadInHand.includes(t));
     this.combatLog.setText(
-      `${deadInHand.join(', ')} perished from poison between turns. ${this.currentHandOrder.length} dice remain.`
+      `Some hand dice perished from poison between turns. ${this.currentHandOrder.length} dice remain.`
     );
     this.updateCombatButtonState();
   }
@@ -1538,8 +1540,8 @@ export class ArenaScene extends Phaser.Scene {
     return effects;
   }
 
-  private getPlayerHandDie(typeId: DiceTypeId): DiceInstanceState | undefined {
-    return this.gameState.dice.find((die) => die.ownerId === 'player' && die.typeId === typeId && die.zone === 'hand' && !die.isDestroyed);
+  private getPlayerHandDie(instanceId: string): DiceInstanceState | undefined {
+    return this.gameState.dice.find((die) => die.ownerId === 'player' && die.instanceId === instanceId && die.zone === 'hand' && !die.isDestroyed);
   }
 
 
@@ -1591,21 +1593,26 @@ export class ArenaScene extends Phaser.Scene {
       if (!definition) return;
       const meta = getRuntimeSkillMeta(definition);
       if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined || !die.gridPosition) return;
-      const adjacentAlly = boardDice.some((ally) =>
-        ally.ownerId === die.ownerId &&
-        ally.instanceId !== die.instanceId &&
-        ally.gridPosition &&
-        Math.abs(ally.gridPosition.row - die.gridPosition!.row) <= 1 &&
-        Math.abs(ally.gridPosition.col - die.gridPosition!.col) <= 1
+      const adjacentDie = boardDice.some((other) =>
+        other.instanceId !== die.instanceId &&
+        other.gridPosition &&
+        Math.abs(other.gridPosition.row - die.gridPosition!.row) <= 1 &&
+        Math.abs(other.gridPosition.col - die.gridPosition!.col) <= 1
       );
-      if (adjacentAlly) return;
+      if (adjacentDie) return;
       const enemyOwner = die.ownerId === 'player' ? 'enemy' : 'player';
-      getBoardDice(this.gameState, enemyOwner).forEach((foe) => {
-        const damage = Math.max(1, Math.floor(foe.maxHealth * meta.targetMaxHpBonusRate!));
-        this.gameState = this.applyDamageWithRevive(foe.instanceId, damage);
-        this.showDamageText(foe, damage, '#b891ff');
-        if (this.gameState.dice.find((d) => d.instanceId === foe.instanceId)?.isDestroyed) this.checkDeathTransformCondition(foe);
-      });
+      const foes = getBoardDice(this.gameState, enemyOwner).filter((foe) => foe.gridPosition);
+      const nearest = foes
+        .sort((a, b) => {
+          const da = Math.abs(a.gridPosition!.row - die.gridPosition!.row) + Math.abs(a.gridPosition!.col - die.gridPosition!.col);
+          const db = Math.abs(b.gridPosition!.row - die.gridPosition!.row) + Math.abs(b.gridPosition!.col - die.gridPosition!.col);
+          return da - db;
+        })[0];
+      if (!nearest) return;
+      const damage = Math.max(1, Math.floor(nearest.maxHealth * meta.targetMaxHpBonusRate!));
+      this.gameState = this.applyDamageWithRevive(nearest.instanceId, damage);
+      this.showDamageText(nearest, damage, '#b891ff');
+      if (this.gameState.dice.find((d) => d.instanceId === nearest.instanceId)?.isDestroyed) this.checkDeathTransformCondition(nearest);
       this.combatLog.setText(`${die.typeId} invokes solitude for ${Math.round(meta.targetMaxHpBonusRate * 10000) / 100}% max HP damage!`);
     });
   }
@@ -1713,7 +1720,8 @@ export class ArenaScene extends Phaser.Scene {
     const manaNeeded = meta.activeManaNeeded ?? 0;
     const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
-    const windMultiplierActive = attacker.typeId === 'Wind' && this.attackMultiplierTurnsByInstance.has(attacker.instanceId);
+    const windMultiplier = this.attackMultiplierTurnsByInstance.get(attacker.instanceId)?.multiplier ?? 1;
+    const windMultiplierActive = attacker.typeId === 'Wind' && windMultiplier > 1.5;
     if (!canCastActive) {
       if (manaNeeded > 0 && !windMultiplierActive) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
       return;
@@ -1937,16 +1945,18 @@ export class ArenaScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
     const handY = height - 110;
-    this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.typeId);
+    this.currentHandOrder = getAvailableHandDice(this.gameState, 'player').map((die) => die.instanceId);
     const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
 
-    this.currentHandOrder.forEach((typeId, index) => {
-      const definition = this.definitions.get(typeId);
+    this.currentHandOrder.forEach((instanceId, index) => {
+      const handDie = this.gameState.dice.find((d) => d.instanceId === instanceId);
+      if (!handDie) return;
+      const definition = this.getDefinitionForInstance(handDie);
       if (!definition) return;
 
       const x = startX + index * 100;
-      const dieContainer = this.createDraggableDie(typeId, definition, x, handY, true);
-      this.handDice.set(typeId, dieContainer);
+      const dieContainer = this.createDraggableDie(instanceId, handDie.typeId, definition, x, handY, true);
+      this.handDice.set(instanceId, dieContainer);
       this.handContainer.add(dieContainer);
     });
 
@@ -2310,7 +2320,7 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return undefined;
     const meta = getRuntimeSkillMeta(definition);
-    const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.typeId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
+    const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
     if (!meta.hasTranscendence || basePips !== 6 || !this.transcendenceTransformed.has(attacker.instanceId) || !attacker.gridPosition || attacker.attacksRemaining <= 0) return undefined;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const targets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition);
@@ -2359,7 +2369,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private showHealText(target: DiceInstanceState, amount: number) {
-    const fallbackHand = target.ownerId === 'player' ? this.handDice.get(target.typeId) : undefined;
+    const fallbackHand = target.ownerId === 'player' ? this.handDice.get(target.instanceId) : undefined;
     if (!target.gridPosition && !fallbackHand) return;
     const x = target.gridPosition
       ? (target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer).x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
@@ -2458,7 +2468,7 @@ export class ArenaScene extends Phaser.Scene {
     const pips = this.gameState.combatPhase === 'attacking'
       ? Math.max(0, die.attacksRemaining)
       : (isPlayer
-        ? (this.dicePips.get(die.typeId) ?? this.getPipCount(die.typeId))
+        ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
         : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId)));
     const pipLabel = this.add.text(x, y + 2, `${pips}♦`, {
       fontFamily: 'Orbitron',
