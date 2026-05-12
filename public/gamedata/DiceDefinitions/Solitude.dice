@@ -19,5 +19,5 @@
     }
   ],
   "accent": "#b891ff",
-  "targetingMode": "Furthest"
+  "targetingMode": "Nearest"
 }
