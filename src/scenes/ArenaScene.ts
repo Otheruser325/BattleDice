@@ -161,6 +161,7 @@ export class ArenaScene extends Phaser.Scene {
     this.instanceClassLevels.clear();
     this.clearModeModal();
     this.turnLimit = -1;
+    this.activeChallenge = null;
     this.enemyLoadoutRevealed = false;
     this.clearRangeHighlights();
   }
@@ -372,6 +373,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private openSingleplayerModal() {
+    this.activeChallenge = null;
     this.clearModeModal();
     const { width, height } = this.scale;
     const cx = width / 2;
@@ -518,6 +520,9 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private openSingleplayerConfigModal() {
+    this.activeChallenge = null;
+    this.turnLimit = this.configTurnCount;
+    this.configRandomizeLoadoutAndClassUps = false;
     this.clearModeModal();
     const { width, height } = this.scale;
     const cx = width / 2;
