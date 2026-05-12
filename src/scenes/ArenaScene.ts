@@ -677,8 +677,8 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyGridContainer = this.createGrid(enemyX, gridY, 'ENEMY GRID', false);
     this.playerGridContainer.setScale(boardScale);
     this.enemyGridContainer.setScale(boardScale);
-    this.playerStatusPanel = this.add.container(Math.max(12, playerX - 110), gridY + 8);
-    this.enemyStatusPanel = this.add.container(Math.min(width - 210, enemyX + scaledBoardWidth + 26), gridY + 8);
+    this.playerStatusPanel = this.add.container(Math.max(80, playerX * 0.5), gridY + 8);
+    this.enemyStatusPanel = this.add.container(Math.min(width - 80, enemyX + ((width - enemyX) * 0.5)), gridY + 8);
 
     this.gameContainer.add([this.turnText, this.playerGridContainer, this.enemyGridContainer, this.backButton, this.playerStatusPanel, this.enemyStatusPanel]);
   }
@@ -2188,12 +2188,12 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderDiceStatusPanel(panel: Phaser.GameObjects.Container, dice: DiceInstanceState[], title: string) {
     panel.removeAll(true);
-    panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }));
+    panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }).setOrigin(0.5, 0));
     dice.forEach((diceUnit, index) => {
       const visual = this.getTransformedVisual(diceUnit);
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
       const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${visual ? ` ${visual.symbol}` : ''}`;
-      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }));
+      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(0.5, 0));
     });
   }
 
@@ -2743,7 +2743,7 @@ export class ArenaScene extends Phaser.Scene {
     g.fillStyle(0x1f2f3d, 0.95);
     g.fillRoundedRect(x - 18, y - 3, 36, 5, 2);
     g.fillStyle(0xf1c40f, 1);
-    g.fillRoundedRect(x - 18 + (36 * (1 - ratio)), y - 3, 36 * ratio, 5, 2);
+    g.fillRoundedRect(x - 18, y - 3, 36 * ratio, 5, 2);
     container.add(g);
   }
 
