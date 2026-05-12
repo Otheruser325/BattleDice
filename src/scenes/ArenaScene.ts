@@ -31,6 +31,7 @@ import { AudioManager } from '../utils/AudioManager';
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
 type MatchResultStage = 'victory' | 'defeat' | 'draw';
 type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy';
+type ChallengeKey = 'daily' | 'deucifer' | null;
 
 interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | MatchResultStage;
@@ -119,6 +120,8 @@ export class ArenaScene extends Phaser.Scene {
   private configRandomMode: boolean = false;
   private configRandomizeLoadoutAndClassUps: boolean = false;
   private configTurnCount: number = -1;
+  private activeChallenge: ChallengeKey = null;
+  private dailyHard = false;
   private turnLimit: number = -1;
   private activeRandomModifier: RandomModeModifier | null = null;
 
@@ -404,9 +407,7 @@ export class ArenaScene extends Phaser.Scene {
     createOption(cx, cy + 2, 'Bossfight', 'WIP: bossfight content and rulesets are coming soon.', 0x6f5bb5, () => {
       AlertManager.toast(this, { type: 'warning', message: 'Bossfight is a WIP feature and is not implemented yet.' });
     });
-    createOption(cx + 220, cy + 2, 'Challenges', 'Coming soon...', 0x5d6770, () => {
-      AlertManager.toast(this, { type: 'warning', message: 'Challenges are coming soon.' });
-    });
+    createOption(cx + 220, cy + 2, 'Challenges', 'Daily PvE + Deucifer boss challenge.', 0x5d6770, () => this.openChallengesModal());
 
     const backBtn = this.add.text(cx, cy + 126, '← BACK', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
@@ -417,6 +418,50 @@ export class ArenaScene extends Phaser.Scene {
 
     this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
     this.setModalEsc(() => this.openModeSelectModal());
+  }
+
+  private openChallengesModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const dateKey = new Date().toISOString().slice(0, 10);
+    this.dailyHard = Number(dateKey.split('-')[2]) % 4 === 0;
+    const makeBtn = (x: number, y: number, label: string, sub: string, onClick: () => void) => {
+      const r = this.add.rectangle(x, y, 280, 120, 0x173247, 0.96).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
+      const t = this.add.text(x, y - 28, label, { fontFamily: 'Orbitron', fontSize: '16px', color: PALETTE.accent }).setOrigin(0.5);
+      const d = this.add.text(x, y + 2, sub, { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 250 } }).setOrigin(0.5, 0);
+      r.on('pointerdown', onClick);
+      return [r, t, d];
+    };
+    const daily = makeBtn(cx - 170, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: NOT READY\nRandom mode mashup • Reward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
+      this.activeChallenge = 'daily';
+      this.configRandomMode = true;
+      this.configRandomizeLoadoutAndClassUps = true;
+      this.configUseLevelling = true;
+      this.configDifficulty = this.dailyHard ? 'Nightmare' : 'Medium';
+      this.turnLimit = 10;
+      this.clearModeModal();
+      this.startGame();
+    });
+    const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, 'Nightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips', () => {
+      this.activeChallenge = 'deucifer';
+      this.configRandomMode = false;
+      this.configDifficulty = 'Nightmare';
+      this.configUseLevelling = true;
+      this.turnLimit = 10;
+      this.clearModeModal();
+      this.startGame();
+    });
+    const back = this.add.text(cx, cy + 136, '← BACK', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    back.on('pointerdown', () => this.openSingleplayerModal());
+    this.modalContainer = this.add.container(0, 0, [
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 760, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 145, 'CHALLENGES', { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent }).setOrigin(0.5),
+      ...daily, ...deuc, back
+    ]).setDepth(250);
+    this.setModalEsc(() => this.openSingleplayerModal());
   }
 
   private openSingleplayerConfigModal() {
@@ -486,7 +531,7 @@ export class ArenaScene extends Phaser.Scene {
     );
     randomizeToggle.setVisible(this.configRandomMode);
 
-    const noteText = this.add.text(cx, cy + 56, 'Difficulty changes bot loadout, class range, and placement style.\nFirst win on each difficulty grants bonus Tokens + Chips.', {
+    const noteText = this.add.text(cx, cy + 84, 'Difficulty changes bot loadout, class range, and placement style.\nFirst win on each difficulty grants bonus Tokens + Chips.', {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
     }).setOrigin(0.5);
     elements.push(noteText);
@@ -746,9 +791,15 @@ export class ArenaScene extends Phaser.Scene {
         return this.applyClassProgress(definition, classLevel);
       });
 
-    const enemyRawDefs = this.pickRandomEnemyLoadout(allDefinitions);
+    const enemyRawDefs = this.activeChallenge === 'deucifer'
+      ? ['Skull', 'Death', 'Judgment', 'Skull', 'Death']
+        .map((typeId) => allDefinitions.find((d) => d.typeId === typeId))
+        .filter((d): d is DiceDefinition => Boolean(d))
+      : this.pickRandomEnemyLoadout(allDefinitions);
     const enemyDefs = enemyRawDefs.map((definition) => {
-      const classLevel = shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
+      const classLevel = this.activeChallenge === 'deucifer'
+        ? 11
+        : shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
         ? Phaser.Math.Between(1, 15)
         : effectiveLevel(this.rollEnemyClassLevel());
       this.enemyClassLevels.set(definition.typeId, classLevel);
@@ -2670,6 +2721,14 @@ export class ArenaScene extends Phaser.Scene {
       tokenReward += firstWinReward.tokens;
       chipReward += firstWinReward.chips;
       this.markBotFirstWinClaimed(this.configDifficulty);
+    }
+    if (stage === 'victory' && this.activeChallenge === 'daily') {
+      tokenReward += this.dailyHard ? 1600 : 800;
+      chipReward += this.dailyHard ? 20 : 10;
+    }
+    if (stage === 'victory' && this.activeChallenge === 'deucifer') {
+      tokenReward += 7500;
+      chipReward += 50;
     }
     setDiceTokens(this, getDiceTokens(this) + tokenReward);
     if (chipReward > 0) {
