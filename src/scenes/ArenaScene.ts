@@ -99,6 +99,7 @@ export class ArenaScene extends Phaser.Scene {
   private transcendenceTransformed: Set<string> = new Set();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
   private rollAllButtonLabel!: Phaser.GameObjects.Text;
+  private rollHelperText!: Phaser.GameObjects.Text;
   private diceRolled = false;
   private currentHandOrder: string[] = [];
 
@@ -476,8 +477,15 @@ export class ArenaScene extends Phaser.Scene {
   private getDailySeededModifier(): RandomModeModifier {
     const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy'];
     const key = this.activeDailyKey || new Date().toISOString().slice(0, 10);
-    const seed = [...key].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    const seed = [...`${key}:modifier:v2`].reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) >>> 0, 2166136261);
     return modifiers[seed % modifiers.length] ?? 'Classic';
+  }
+
+  private getDailySeededIndex(label: string, length: number): number {
+    if (length <= 0) return 0;
+    const key = this.activeDailyKey || new Date().toISOString().slice(0, 10);
+    const seed = [...`${key}:${label}:v2`].reduce((acc, ch) => ((acc * 33) ^ ch.charCodeAt(0)) >>> 0, 5381);
+    return seed % length;
   }
 
   private getChallengeStatusStore(): Record<string, ChallengeStatus> {
@@ -925,7 +933,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.handContainer = this.add.container(0, 0);
 
-    this.add.text(width / 2, handY - 95, 'CLICK ROLL ALL, THEN DRAG DICE TO YOUR GRID', {
+    this.rollHelperText = this.add.text(width / 2, handY - 84, 'CLICK ROLL ALL, THEN DRAG DICE TO YOUR GRID', {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: PALETTE.accent
@@ -1137,27 +1145,27 @@ export class ArenaScene extends Phaser.Scene {
     this.renderDice();
     this.updateCombatButtonState();
 
-    this.combatLog.setText(`Placed ${existingDieInHand.typeId} at [${gridPos.row}, ${gridPos.col}] (${this.placedDiceCount}/5)`);
+    this.combatLog.setText(`Placed ${existingDieInHand.typeId} at [${gridPos.row}, ${gridPos.col}] (${this.placedDiceCount}/${Math.min(25, this.currentHandOrder.length)})`);
+    this.reflowHandPositions();
   }
 
   private returnDieToHand(container: Phaser.GameObjects.Container, instanceId: string) {
-    const index = this.currentHandOrder.indexOf(instanceId);
-    const { width } = this.scale;
-    const startX = (width - (this.currentHandOrder.length * 100)) / 2 + 50;
-    const handY = this.scale.height - 110;
-    const targetX = startX + index * 100;
+    this.reflowHandPositions(instanceId, container);
+  }
 
-    this.tweens.add({
-      targets: container,
-      x: targetX,
-      y: handY,
-      duration: 200,
-      ease: 'Power2'
+  private reflowHandPositions(activeInstanceId?: string, activeContainer?: Phaser.GameObjects.Container) {
+    const handY = this.scale.height - 110;
+    const remaining = this.currentHandOrder.filter((id) => this.handDice.has(id) || id === activeInstanceId);
+    const startX = (this.scale.width - (remaining.length * 100)) / 2 + 50;
+    remaining.forEach((id, idx) => {
+      const dieContainer = id === activeInstanceId ? activeContainer : this.handDice.get(id);
+      if (!dieContainer) return;
+      this.tweens.add({ targets: dieContainer, x: startX + idx * 100, y: handY, duration: 180, ease: 'Power2' });
     });
   }
 
   private updateCombatButtonState() {
-    const requiredDice = this.currentHandOrder.length;
+    const requiredDice = Math.min(25, this.currentHandOrder.length);
     const boardPlaced = getBoardDice(this.gameState, 'player').length;
     this.placedDiceCount = boardPlaced;
     const canStart = this.placedDiceCount >= requiredDice && this.diceRolled;
@@ -1200,7 +1208,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private async startCombat() {
-    const requiredDice = this.currentHandOrder.length;
+    const requiredDice = Math.min(25, this.currentHandOrder.length);
     const boardPlaced = getBoardDice(this.gameState, 'player').length;
     if (!this.diceRolled || boardPlaced < requiredDice) {
       this.combatLog.setText(`Place all ${requiredDice} rolled dice before combat.`);
@@ -1209,6 +1217,9 @@ export class ArenaScene extends Phaser.Scene {
     }
     this.startCombatButton.disableInteractive();
     this.startCombatButton.setFillStyle(0x7f8c8d, 0.5);
+    this.rollAllButton.setVisible(false);
+    this.rollAllButtonLabel.setVisible(false);
+    this.rollHelperText.setVisible(false);
 
     this.gamePhase = { stage: 'combat' };
     this.clearRangeHighlights();
@@ -2090,6 +2101,9 @@ export class ArenaScene extends Phaser.Scene {
     this.rollAllButton.setInteractive({ useHandCursor: true });
     this.rollAllButton.setFillStyle(0xf4b860, 0.9);
     this.rollAllButtonLabel.setText('ROLL ALL!');
+    this.rollAllButton.setVisible(true);
+    this.rollAllButtonLabel.setVisible(true);
+    this.rollHelperText.setVisible(true);
 
     this.debug.log('Dice returned to hand', { turn: this.gameState.turn });
     await this.delay(300);
@@ -2298,6 +2312,20 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private pickRandomEnemyLoadout(pool: DiceDefinition[]): DiceDefinition[] {
+    if (this.activeChallenge === 'daily') {
+      const weighted = this.buildDifficultyWeightedPool(pool);
+      const byId = new Map(weighted.map((d) => [d.typeId, d]));
+      const unique = [...new Set(weighted.map((d) => d.typeId))].sort();
+      const selected: DiceDefinition[] = [];
+      for (let i = 0; i < 5 && unique.length > 0; i++) {
+        const idx = this.getDailySeededIndex(`loadout-${i}`, unique.length);
+        const typeId = unique.splice(idx, 1)[0];
+        const def = byId.get(typeId);
+        if (def) selected.push(def);
+      }
+      return selected.slice(0, 5);
+    }
+
     const weightedPool = this.buildDifficultyWeightedPool(pool);
     const arr = [...weightedPool];
     for (let i = arr.length - 1; i > 0; i--) {
@@ -2846,6 +2874,8 @@ export class ArenaScene extends Phaser.Scene {
     overlay.on('pointerdown', () => this.closeExitPrompt());
     cancel.on('pointerdown', () => this.closeExitPrompt());
     quit.on('pointerdown', () => {
+      if (this.activeChallenge === 'daily') this.setChallengeStatus('daily', 'failed');
+      if (this.activeChallenge === 'deucifer') this.setChallengeStatus('deucifer', 'failed');
       this.scene.wake(SCENE_KEYS.Menu);
       this.scene.start(SCENE_KEYS.Menu);
     });

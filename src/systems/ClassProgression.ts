@@ -139,6 +139,11 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
     return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
   }
+
+  if (modifiers.targetMaxHpBonusRate !== undefined) {
+    return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
+  }
+
   if (modifiers.targetCurrentHpBonusRate !== undefined) {
     return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP.`;
   }
