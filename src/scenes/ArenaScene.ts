@@ -1013,15 +1013,10 @@ export class ArenaScene extends Phaser.Scene {
     });
     this.debug.log('Enemy invisiroll complete', { count: enemyDice.length });
   }
-
+  
   private getPipCount(typeId: DiceTypeId): number {
     switch (typeId) {
-      case 'Fire': return 3;
-      case 'Electric': return 3;
-      case 'Ice': return 2;
-      case 'Poison': return 1;
-      case 'Wind': return 1;
-      default: return 2;
+      default: return 1;
     }
   }
 
@@ -1466,7 +1461,7 @@ export class ArenaScene extends Phaser.Scene {
         this.renderDice();
         this.renderEnemyDice();
 
-        await this.delay(800);
+        await this.delay(500);
 
         if (this.checkWinConditions()) {
           return;
