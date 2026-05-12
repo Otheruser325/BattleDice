@@ -484,8 +484,6 @@ export class ArenaScene extends Phaser.Scene {
     return modifiers[seed % modifiers.length] ?? 'Classic';
   }
 
-
-
   private getDailySeededIndex(label: string, length: number): number {
     if (length <= 0) return 0;
     const key = this.activeDailyKey || new Date().toISOString().slice(0, 10);

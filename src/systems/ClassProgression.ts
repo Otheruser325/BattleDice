@@ -194,7 +194,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
     const delta = nextModifiers.distanceDamageBonusRatePerTile - currentModifiers.distanceDamageBonusRatePerTile;
     if (delta > 0) skillDeltas.push(`Distance damage +${formatPercent(delta)} / tile`);
   }
-  if (currentModifiers.targetMaxHpBonusRate !== undefined && nextModifiers.targetMaxHpBonusRate !== undefined) {
+  if (definition.typeId !== 'Solitude' && currentModifiers.targetMaxHpBonusRate !== undefined && nextModifiers.targetMaxHpBonusRate !== undefined) {
     const delta = nextModifiers.targetMaxHpBonusRate - currentModifiers.targetMaxHpBonusRate;
     if (delta > 0) skillDeltas.push(`Max HP damage +${formatPercent(delta)}`);
   }
