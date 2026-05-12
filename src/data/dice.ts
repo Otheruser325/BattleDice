@@ -115,12 +115,13 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
 
 export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: DiceProgressState) {
   const store = (scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined) ?? {};
+  const existing = store[typeId];
   const updated = {
     ...store,
     [typeId]: {
       classLevel: Math.max(1, Math.min(15, next.classLevel)),
       copies: Math.max(0, next.copies),
-      unlocked: next.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || next.copies > 0
+      unlocked: next.unlocked === true || existing?.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || next.copies > 0
     }
   };
   scene.registry.set(DICE_PROGRESS_KEY, updated);

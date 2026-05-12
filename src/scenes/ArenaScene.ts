@@ -112,6 +112,8 @@ export class ArenaScene extends Phaser.Scene {
   private modalContainer: Phaser.GameObjects.Container | null = null;
   private modalEscHandler: (() => void) | null = null;
   private dieInfoPopup: Phaser.GameObjects.Container | null = null;
+  private dieInfoPopupTimer: Phaser.Time.TimerEvent | null = null;
+  private dieInfoPopupInstanceId: string | null = null;
   private configDifficulty: BotDifficulty = 'Medium';
   private configUseLevelling: boolean = true;
   private configRandomMode: boolean = false;
@@ -678,7 +680,7 @@ export class ArenaScene extends Phaser.Scene {
     this.playerGridContainer.setScale(boardScale);
     this.enemyGridContainer.setScale(boardScale);
     this.playerStatusPanel = this.add.container(Math.max(80, playerX * 0.5), gridY + 8);
-    this.enemyStatusPanel = this.add.container(Math.min(width - 80, enemyX + ((width - enemyX) * 0.5)), gridY + 8);
+    this.enemyStatusPanel = this.add.container(width - 220, gridY + 8);
 
     this.gameContainer.add([this.turnText, this.playerGridContainer, this.enemyGridContainer, this.backButton, this.playerStatusPanel, this.enemyStatusPanel]);
   }
@@ -959,17 +961,6 @@ export class ArenaScene extends Phaser.Scene {
       this.enemyDicePips.set(die.instanceId, rolled);
     });
     this.debug.log('Enemy invisiroll complete', { count: enemyDice.length });
-  }
-
-  private getPipCount(typeId: DiceTypeId): number {
-    switch (typeId) {
-      case 'Fire': return 3;
-      case 'Electric': return 3;
-      case 'Ice': return 2;
-      case 'Poison': return 1;
-      case 'Wind': return 1;
-      default: return 2;
-    }
   }
 
   private setupGridDropZones() {
@@ -1413,7 +1404,7 @@ export class ArenaScene extends Phaser.Scene {
         this.renderDice();
         this.renderEnemyDice();
 
-        await this.delay(800);
+        await this.delay(500);
 
         if (this.checkWinConditions()) {
           return;
@@ -2114,7 +2105,7 @@ export class ArenaScene extends Phaser.Scene {
     const statusDice = enemyDice.length > 0 || !this.enemyLoadoutRevealed
       ? enemyDice
       : this.gameState.dice.filter((die) => die.ownerId === 'enemy' && !die.isDestroyed);
-    this.renderDiceStatusPanel(this.enemyStatusPanel, statusDice, "OPPONENT'S DICE");
+    this.renderDiceStatusPanel(this.enemyStatusPanel, statusDice, "OPPONENT'S DICE", false);
   }
 
   private generateEnemyPositions() {
@@ -2183,17 +2174,17 @@ export class ArenaScene extends Phaser.Scene {
     const statusDice = this.gameState.turn <= 1 && this.gameState.combatPhase !== 'attacking'
       ? playerDice
       : livingPlayerDice;
-    this.renderDiceStatusPanel(this.playerStatusPanel, statusDice, 'YOUR DICE');
+    this.renderDiceStatusPanel(this.playerStatusPanel, statusDice, 'YOUR DICE', true);
   }
 
-  private renderDiceStatusPanel(panel: Phaser.GameObjects.Container, dice: DiceInstanceState[], title: string) {
+  private renderDiceStatusPanel(panel: Phaser.GameObjects.Container, dice: DiceInstanceState[], title: string, centered: boolean) {
     panel.removeAll(true);
-    panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }).setOrigin(0.5, 0));
+    panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }).setOrigin(centered ? 0.5 : 0, 0));
     dice.forEach((diceUnit, index) => {
       const visual = this.getTransformedVisual(diceUnit);
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
       const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${visual ? ` ${visual.symbol}` : ''}`;
-      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(0.5, 0));
+      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
     });
   }
 
@@ -2532,6 +2523,14 @@ export class ArenaScene extends Phaser.Scene {
   private showDieInfoPopup(die: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(die);
     if (!definition) return;
+    if (this.dieInfoPopupInstanceId === die.instanceId && this.dieInfoPopup) {
+      this.dieInfoPopupTimer?.remove(false);
+      this.dieInfoPopup.destroy(true);
+      this.dieInfoPopup = null;
+      this.dieInfoPopupInstanceId = null;
+      return;
+    }
+    this.dieInfoPopupTimer?.remove(false);
     this.dieInfoPopup?.destroy(true);
     const { width } = this.scale;
     const panel = this.add.rectangle(width / 2, 76, 560, 102, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
@@ -2542,19 +2541,22 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5);
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
-    const desc = this.add.text(width / 2, 84, `${definition.skills.map((skill) => `${skill.title} (${skill.type}): ${skill.description}`).join(' | ')}${manaNote}`, {
+    const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
+    const desc = this.add.text(width / 2, 84, `${definition.skills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${skill.description}`).join(' | ')}${manaNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
       wordWrap: { width: 530 }
     }).setOrigin(0.5);
     this.dieInfoPopup = this.add.container(0, 0, [panel, stats, desc]).setDepth(330).setScale(0.96).setAlpha(0);
+    this.dieInfoPopupInstanceId = die.instanceId;
     this.tweens.add({ targets: this.dieInfoPopup, alpha: 1, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.Out' });
-    this.time.delayedCall(2200, () => {
+    this.dieInfoPopupTimer = this.time.delayedCall(2200, () => {
       if (!this.dieInfoPopup) return;
       this.tweens.add({ targets: this.dieInfoPopup, alpha: 0, scaleX: 0.98, scaleY: 0.98, duration: 140, ease: 'Sine.In', onComplete: () => {
         this.dieInfoPopup?.destroy(true);
         this.dieInfoPopup = null;
+        this.dieInfoPopupInstanceId = null;
       } });
     });
   }
