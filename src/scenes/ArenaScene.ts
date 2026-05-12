@@ -365,6 +365,62 @@ export class ArenaScene extends Phaser.Scene {
 
     elements.push(
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 700, 320, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 128, 'SINGLEPLAYER', {
+        fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
+      }).setOrigin(0.5),
+      this.add.text(cx, cy - 98, 'Choose a solo battle surface.', {
+        fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
+      }).setOrigin(0.5)
+    );
+
+    const createOption = (x: number, y: number, title: string, subtitle: string, color: number, onClick: () => void) => {
+      const card = this.add.rectangle(x, y, 190, 114, color, 0.9)
+        .setStrokeStyle(1, 0x8fd5ff)
+        .setInteractive({ useHandCursor: true });
+      const titleText = this.add.text(x, y - 34, title.toUpperCase(), {
+        fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff'
+      }).setOrigin(0.5);
+      const descText = this.add.text(x, y - 10, subtitle, {
+        fontFamily: 'Orbitron', fontSize: '10px', color: '#e6f4ff',
+        align: 'center', wordWrap: { width: 160 }
+      }).setOrigin(0.5, 0);
+      card.on('pointerover', () => card.setAlpha(1));
+      card.on('pointerout', () => card.setAlpha(0.9));
+      card.on('pointerdown', onClick);
+      elements.push(card, titleText, descText);
+    };
+
+    createOption(cx - 220, cy + 2, 'Versus Bot', 'Setup and play against a realtime computer opponent.', 0x2271b3, () => {
+      this.openSingleplayerConfigModal();
+    });
+    createOption(cx, cy + 2, 'Random Mode', 'WIP: derive a random mode before Turn 1.', 0x6f5bb5, () => {
+      AlertManager.toast(this, { type: 'warning', message: 'Random Mode is a WIP feature and is not implemented yet.' });
+    });
+    createOption(cx + 220, cy + 2, 'Challenges', 'Coming soon...', 0x5d6770, () => {
+      AlertManager.toast(this, { type: 'warning', message: 'Challenges are coming soon.' });
+    });
+
+    const backBtn = this.add.text(cx, cy + 126, '← BACK', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
+      backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => this.openModeSelectModal());
+    elements.push(backBtn);
+
+    this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
+    this.setModalEsc(() => this.openModeSelectModal());
+  }
+
+  private openSingleplayerConfigModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const elements: Phaser.GameObjects.GameObject[] = [];
+
+    elements.push(
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
       this.add.rectangle(cx, cy, 640, 420, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 180, 'SINGLEPLAYER', {
         fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
@@ -408,7 +464,7 @@ export class ArenaScene extends Phaser.Scene {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
       backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    backBtn.on('pointerdown', () => this.openModeSelectModal());
+    backBtn.on('pointerdown', () => this.openSingleplayerModal());
     elements.push(backBtn);
 
     const startBtn = this.add.text(cx + 90, cy + 168, 'START →', {
@@ -423,7 +479,7 @@ export class ArenaScene extends Phaser.Scene {
     elements.push(startBtn);
 
     this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
-    this.setModalEsc(() => this.openModeSelectModal());
+    this.setModalEsc(() => this.openSingleplayerModal());
   }
 
   private openMultiplayerModal() {

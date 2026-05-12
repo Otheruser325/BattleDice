@@ -13,7 +13,6 @@ export class MenuScene extends Phaser.Scene {
 
   private activeSceneKey: SceneKey = SCENE_KEYS.Shop;
   private tabButtons: Array<{ tab: MenuTab; container: Phaser.GameObjects.Container; label: Phaser.GameObjects.Text; chip: Phaser.GameObjects.Text; }> = [];
-  private singleplayerPanel: Phaser.GameObjects.Container | null = null;
   private readonly debug = DebugManager.attachScene(MenuScene.KEY);
 
   constructor() {
@@ -103,11 +102,6 @@ export class MenuScene extends Phaser.Scene {
 
   private openTab(tab: MenuTab) {
     AudioManager.playSfx(this, 'ui-click');
-    if (tab.sceneKey === SCENE_KEYS.Arena) {
-      this.openSingleplayerPanel(tab);
-      return;
-    }
-    this.closeSingleplayerPanel();
     if (this.scene.isActive(this.activeSceneKey)) {
       this.scene.stop(this.activeSceneKey);
     }
@@ -126,95 +120,6 @@ export class MenuScene extends Phaser.Scene {
         message: `${tab.label} is a work-in-progress surface.`
       });
     }
-  }
-
-  private openSingleplayerPanel(tab: MenuTab) {
-    if (this.singleplayerPanel) {
-      this.closeSingleplayerPanel();
-      return;
-    }
-
-    this.singleplayerPanel = this.add.container(0, 0).setDepth(30);
-    const { width, dockY } = getLayout(this);
-    const panelWidth = 620;
-    const panelHeight = 220;
-    const panelX = width / 2;
-    const panelY = dockY - 176;
-    const panel = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x102434, 0.98)
-      .setStrokeStyle(2, 0x496a84);
-    const title = this.add.text(panelX, panelY - 88, 'SINGLEPLAYER', {
-      fontFamily: 'Orbitron',
-      fontSize: '22px',
-      color: PALETTE.text
-    }).setOrigin(0.5);
-    const subtitle = this.add.text(panelX, panelY - 62, 'Choose a solo battle surface.', {
-      fontFamily: 'Orbitron',
-      fontSize: '11px',
-      color: PALETTE.textMuted
-    }).setOrigin(0.5);
-
-    const versus = this.createSingleplayerOption(panelX - 190, panelY + 4, 'Versus Bot', 'Setup and play against a realtime computer opponent.', 0x2271b3, () => {
-      this.launchArenaTab(tab);
-    });
-    const random = this.createSingleplayerOption(panelX, panelY + 4, 'Random Mode', 'WIP: derive a random mode before Turn 1.', 0x6f5bb5, () => {
-      AlertManager.toast(this, { type: 'warning', message: 'Random Mode is a WIP feature and is not implemented yet.' });
-    });
-    const challenges = this.createSingleplayerOption(panelX + 190, panelY + 4, 'Challenges', 'Coming soon...', 0x5d6770, () => {
-      AlertManager.toast(this, { type: 'warning', message: 'Challenges are coming soon.' });
-    });
-    const close = this.add.text(panelX, panelY + 86, 'Close', {
-      fontFamily: 'Orbitron',
-      fontSize: '11px',
-      color: PALETTE.textMuted,
-      backgroundColor: '#173247',
-      padding: { left: 10, right: 10, top: 5, bottom: 5 }
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    close.on('pointerdown', () => this.closeSingleplayerPanel());
-
-    this.singleplayerPanel.add([panel, title, subtitle, ...versus, ...random, ...challenges, close]);
-    this.refreshTabs();
-  }
-
-  private createSingleplayerOption(x: number, y: number, title: string, subtitle: string, color: number, onClick: () => void): Phaser.GameObjects.GameObject[] {
-    const bg = this.add.rectangle(x, y, 172, 104, color, 0.9)
-      .setStrokeStyle(1, 0x8fd5ff)
-      .setInteractive({ useHandCursor: true });
-    const titleText = this.add.text(x, y - 30, title.toUpperCase(), {
-      fontFamily: 'Orbitron',
-      fontSize: '13px',
-      color: '#ffffff'
-    }).setOrigin(0.5);
-    const subText = this.add.text(x, y - 6, subtitle, {
-      fontFamily: 'Orbitron',
-      fontSize: '10px',
-      color: '#e6f4ff',
-      align: 'center',
-      wordWrap: { width: 148 }
-    }).setOrigin(0.5, 0);
-    bg.on('pointerover', () => bg.setAlpha(1));
-    bg.on('pointerout', () => bg.setAlpha(0.9));
-    bg.on('pointerdown', onClick);
-    return [bg, titleText, subText];
-  }
-
-  private launchArenaTab(tab: MenuTab) {
-    this.closeSingleplayerPanel();
-    MENU_TABS.forEach((candidate) => {
-      if (candidate.sceneKey !== tab.sceneKey && this.scene.isActive(candidate.sceneKey)) {
-        this.scene.stop(candidate.sceneKey);
-      }
-    });
-    this.activeSceneKey = tab.sceneKey;
-    this.debug.event('Opening singleplayer mode.', { tab: tab.label, sceneKey: tab.sceneKey, mode: 'Versus Bot' });
-    this.scene.launch(tab.sceneKey);
-    this.scene.bringToTop(MenuScene.KEY);
-    this.scene.bringToTop(SCENE_KEYS.Settings);
-    this.refreshTabs();
-  }
-
-  private closeSingleplayerPanel() {
-    this.singleplayerPanel?.destroy(true);
-    this.singleplayerPanel = null;
   }
 
   private refreshTabs() {
