@@ -109,7 +109,7 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
   return {
     classLevel: progress.classLevel,
     copies: progress.copies,
-    unlocked: progress.unlocked ?? (DEFAULT_LOADOUT_IDS.has(typeId) ? true : progress.copies > 0)
+    unlocked: progress.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || progress.copies > 0
   };
 }
 
@@ -120,7 +120,7 @@ export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: D
     [typeId]: {
       classLevel: Math.max(1, Math.min(15, next.classLevel)),
       copies: Math.max(0, next.copies),
-      unlocked: next.unlocked ?? (DEFAULT_LOADOUT_IDS.has(typeId) ? true : next.copies > 0)
+      unlocked: next.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || next.copies > 0
     }
   };
   scene.registry.set(DICE_PROGRESS_KEY, updated);
