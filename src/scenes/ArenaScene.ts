@@ -744,7 +744,9 @@ export class ArenaScene extends Phaser.Scene {
 
     const enemyRawDefs = this.pickRandomEnemyLoadout(allDefinitions);
     const enemyDefs = enemyRawDefs.map((definition) => {
-      const classLevel = effectiveLevel(this.rollEnemyClassLevel());
+      const classLevel = shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
+        ? Phaser.Math.Between(1, 15)
+        : effectiveLevel(this.rollEnemyClassLevel());
       this.enemyClassLevels.set(definition.typeId, classLevel);
       return this.applyClassProgress(definition, classLevel);
     });
@@ -1216,9 +1218,10 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private getRollComboBonus(ownerId: 'player' | 'enemy'): { multiplier: number; reduction: number; label: string } {
+    const enemyRollSources = this.gameState.dice.filter((die) => die.ownerId === 'enemy' && !die.isDestroyed && (die.zone === 'board' || die.zone === 'hand'));
     const values = (ownerId === 'player'
       ? this.currentHandOrder.map((instanceId) => this.dicePips.get(instanceId) ?? 1)
-      : getAvailableHandDice(this.gameState, 'enemy').map((die) => this.enemyDicePips.get(die.instanceId) ?? 1))
+      : enemyRollSources.map((die) => this.enemyDicePips.get(die.instanceId) ?? 1))
       .sort((a, b) => a - b);
     const counts = new Map<number, number>();
     values.forEach((v) => counts.set(v, (counts.get(v) ?? 0) + 1));
@@ -1250,6 +1253,14 @@ export class ArenaScene extends Phaser.Scene {
         return { ...die, currentHealth: die.currentHealth + Math.max(0, Math.floor(die.maxHealth * (bonus.reduction * 0.2))), maxHealth: die.maxHealth };
       })
     };
+  }
+
+
+  private getCombanityDamageMultiplier(attacker: DiceInstanceState, target: DiceInstanceState): number {
+    if (!this.configRandomMode || this.activeRandomModifier !== 'Combanity') return 1;
+    const attackerBonus = this.getRollComboBonus(attacker.ownerId === 'player' ? 'player' : 'enemy');
+    const defenderBonus = this.getRollComboBonus(target.ownerId === 'player' ? 'player' : 'enemy');
+    return Math.max(0, attackerBonus.multiplier * (1 - defenderBonus.reduction));
   }
 
   private applyLavaPoolDamageAtCombatStart() {
@@ -1355,10 +1366,20 @@ export class ArenaScene extends Phaser.Scene {
             targetDestroyed = result.targetDestroyed;
           } else {
             AudioManager.playSfx(this, 'dice-attack');
-            const result = executeAttack(this.gameState, attacker.instanceId, target.instanceId, this.getDefinitionsForCombat(attacker, target));
-            this.gameState = result.newState;
-            damage = result.damage;
-            targetDestroyed = result.targetDestroyed;
+            const defs = this.getDefinitionsForCombat(attacker, target);
+            const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs);
+            const multiplier = this.getCombanityDamageMultiplier(attacker, target);
+            const adjustedDamage = Math.max(1, Math.floor(rawResult.damage * multiplier));
+            if (adjustedDamage === rawResult.damage) {
+              this.gameState = rawResult.newState;
+              damage = rawResult.damage;
+              targetDestroyed = rawResult.targetDestroyed;
+            } else {
+              this.gameState = spendAttack(this.gameState, attacker.instanceId);
+              this.gameState = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
+              damage = adjustedDamage;
+              targetDestroyed = this.gameState.dice.find((d) => d.instanceId === target.instanceId)?.isDestroyed ?? false;
+            }
             this.showDamageText(target, damage);
             this.applyPassiveSkillEffects(attacker, target);
           }
@@ -1430,6 +1451,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyNecromancyTurnEffect() {
+    const allDefinitions = getAllDiceDefinitions(this);
     (['player', 'enemy'] as const).forEach((ownerId) => {
       const destroyed = this.gameState.dice.filter((d) => d.ownerId === ownerId && d.isDestroyed);
       if (destroyed.length > 0) {
@@ -1438,14 +1460,17 @@ export class ArenaScene extends Phaser.Scene {
         this.gameState = {
           ...this.gameState,
           dice: this.gameState.dice.map((d) => d.instanceId === chosen.instanceId
-            ? { ...d, isDestroyed: false, currentHealth: Math.max(1, Math.floor(d.maxHealth * 0.5)), zone: 'hand', gridPosition: undefined }
+            ? { ...d, isDestroyed: false, currentHealth: d.maxHealth, zone: 'hand', gridPosition: undefined }
             : d)
         };
         return;
       }
-      const pool = this.ownerLoadoutPool(ownerId);
-      const def = pool[Phaser.Math.Between(0, pool.length - 1)];
-      if (!def) return;
+      const bestClass = Math.max(1, ...this.gameState.dice
+        .filter((d) => d.ownerId === ownerId)
+        .map((d) => this.instanceClassLevels.get(d.instanceId) ?? 1));
+      const baseDef = allDefinitions[Phaser.Math.Between(0, allDefinitions.length - 1)];
+      if (!baseDef) return;
+      const def = this.applyClassProgress(baseDef, bestClass);
       const newId = `${ownerId}-${def.typeId}-necro-${Date.now()}-${Phaser.Math.Between(1, 9999)}`;
       this.gameState = {
         ...this.gameState,
@@ -1463,24 +1488,9 @@ export class ArenaScene extends Phaser.Scene {
         }]
       };
       this.instanceDefinitionOverrides.set(newId, def);
-      const inheritedClass = ownerId === 'player'
-        ? (this.instanceClassLevels.get(this.gameState.dice.find((d) => d.ownerId === ownerId && d.typeId === def.typeId)?.instanceId ?? '') ?? 1)
-        : (this.enemyClassLevels.get(def.typeId) ?? 1);
-      this.instanceClassLevels.set(newId, inheritedClass);
+      this.instanceClassLevels.set(newId, bestClass);
     });
     this.combatLog.setText('Necromancy: a die has been revived or conjured for both sides.');
-  }
-
-  private ownerLoadoutPool(ownerId: 'player' | 'enemy'): DiceDefinition[] {
-    const typeIds = new Set(
-      this.gameState.dice
-        .filter((d) => d.ownerId === ownerId)
-        .map((d) => d.typeId)
-    );
-    return [...typeIds]
-      .map((typeId) => this.gameState.dice.find((d) => d.ownerId === ownerId && d.typeId === typeId))
-      .map((die) => (die ? this.getDefinitionForInstance(die) : undefined))
-      .filter((d): d is DiceDefinition => Boolean(d));
   }
 
   private refreshHandAfterPoisonEffects() {
@@ -1594,6 +1604,7 @@ export class ArenaScene extends Phaser.Scene {
       const meta = getRuntimeSkillMeta(definition);
       if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined || !die.gridPosition) return;
       const adjacentDie = boardDice.some((other) =>
+        other.ownerId === die.ownerId &&
         other.instanceId !== die.instanceId &&
         other.gridPosition &&
         Math.abs(other.gridPosition.row - die.gridPosition!.row) <= 1 &&
@@ -1720,8 +1731,8 @@ export class ArenaScene extends Phaser.Scene {
     const manaNeeded = meta.activeManaNeeded ?? 0;
     const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
-    const windMultiplier = this.attackMultiplierTurnsByInstance.get(attacker.instanceId)?.multiplier ?? 1;
-    const windMultiplierActive = attacker.typeId === 'Wind' && windMultiplier > 1.5;
+    const windBuffTurns = this.attackMultiplierTurnsByInstance.get(attacker.instanceId)?.turns ?? 0;
+    const windMultiplierActive = attacker.typeId === 'Wind' && windBuffTurns > 1;
     if (!canCastActive) {
       if (manaNeeded > 0 && !windMultiplierActive) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
       return;
