@@ -10,7 +10,12 @@ export const AUDIO_KEYS = {
   diceAttack: 'dice-attack',
   diceDie: 'dice-die',
   comboRoll: 'combo-roll',
-  skillTrigger: 'skill-trigger'
+  skillTrigger: 'skill-trigger',
+  gameStart: 'game_start',
+  gameCountdown: 'game_countdown',
+  gameTimerTick: 'game_timer',
+  uiRound: 'ui_round',
+  deathInstakill: 'dice_death_instakill'
 } as const;
 
 const MUSIC_KEYS = new Set<string>([AUDIO_KEYS.menuMusic, AUDIO_KEYS.arenaMusic]);
@@ -36,6 +41,10 @@ export class AudioManager {
     scene.load.audio('combo_fourOfAKind', '/assets/audio/combo_fourOfAKind.mp3');
     scene.load.audio('combo_fiveOfAKind', '/assets/audio/combo_fiveOfAKind.mp3');
     scene.load.audio(AUDIO_KEYS.skillTrigger, '/assets/audio/dice/dice_attack_02.ogg');
+    scene.load.audio(AUDIO_KEYS.gameStart, '/assets/audio/game_start.ogg');
+    scene.load.audio(AUDIO_KEYS.gameCountdown, '/assets/audio/game_countdown.ogg');
+    scene.load.audio(AUDIO_KEYS.gameTimerTick, '/assets/audio/game_timer.ogg');
+    scene.load.audio(AUDIO_KEYS.uiRound, '/assets/audio/ui_round.ogg');
     scene.load.audio('dice_solitude_attack', '/assets/audio/dice/dice_solitude_attack.ogg');
     scene.load.audio('dice_transcendence_attack', '/assets/audio/dice/dice_transcendence_attack.ogg');
     scene.load.audio('dice_transcendence_t_attack', '/assets/audio/dice/dice_transcendence_t_attack.ogg');
@@ -54,6 +63,7 @@ export class AudioManager {
     scene.load.audio('dice_judgment_skill', '/assets/audio/dice/dice_judgment_skill.ogg');
     scene.load.audio('dice_spear_skill', '/assets/audio/dice/dice_spear_skill.ogg');
     scene.load.audio('dice_battery_skill', '/assets/audio/dice/dice_battery_skill.ogg');
+    scene.load.audio(AUDIO_KEYS.deathInstakill, '/assets/audio/dice/dice_death_instakill.ogg');
   }
 
   static playSfx(scene: Phaser.Scene, key: string, config: Phaser.Types.Sound.SoundConfig = {}) {

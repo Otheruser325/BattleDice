@@ -129,6 +129,9 @@ export class ArenaScene extends Phaser.Scene {
   private turnLimit: number = -1;
   private activeRandomModifier: RandomModeModifier | null = null;
   private activeDailyKey = '';
+  private combatTimeRemainingMs = 30_000;
+  private combatCountdownTriggered = false;
+  private combatTimerText: Phaser.GameObjects.Text | null = null;
 
   constructor() {
     super(ArenaScene.KEY);
@@ -1265,6 +1268,7 @@ export class ArenaScene extends Phaser.Scene {
     this.renderEnemyDice();
 
     this.playTurnBanner('START!');
+    AudioManager.playSfx(this, AUDIO_KEYS.gameStart);
     this.combatLog.setText('Combat started! Revealing enemy positions...');
     await this.delay(1000);
 
@@ -1504,6 +1508,9 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private async runCombatLoop() {
+    this.combatTimeRemainingMs = 30_000;
+    this.combatCountdownTriggered = false;
+    this.updateCombatTimerUi();
     const owners: ['player', 'enemy'] = ['player', 'enemy'];
 
     for (const owner of owners) {
@@ -1521,7 +1528,7 @@ export class ArenaScene extends Phaser.Scene {
             dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: 0, hasFinishedAttacking: true } : die)
           };
           this.combatLog.setText(`${ownerName} ${attacker.typeId} is out of range and skips!`);
-          await this.delay(500);
+          if (!(await this.delayCombatPaced(500))) break;
           continue;
         }
 
@@ -1590,7 +1597,7 @@ export class ArenaScene extends Phaser.Scene {
         this.renderDice();
         this.renderEnemyDice();
 
-        await this.delay(500);
+        if (!(await this.delayCombatPaced(500))) break;
 
         if (this.checkWinConditions()) {
           return;
@@ -1626,6 +1633,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
     this.playTurnBanner(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
+    AudioManager.playSfx(this, AUDIO_KEYS.uiRound);
     this.combatLog.setText(`Turn ${this.gameState.turn} - Roll and place your dice!`);
 
     await this.returnDiceToHand();
@@ -1836,13 +1844,13 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
     if (meta.splashDamage) {
-      this.playSkillSfxForDie(attacker, meta);
       const splashTargets = getBoardDice(this.gameState, target.ownerId).filter((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
         Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 1
       );
+      if (splashTargets.length > 0) this.playSkillSfxForDie(attacker, meta);
       splashTargets.forEach((die) => {
         this.gameState = this.applyDamageWithRevive(die.instanceId, meta.splashDamage!);
         this.showDamageText(die, meta.splashDamage!, '#ff9f58');
@@ -1851,7 +1859,6 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (meta.chainDamage) {
-      this.playSkillSfxForDie(attacker, meta);
       const chainTarget = getBoardDice(this.gameState, target.ownerId).find((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
@@ -1859,6 +1866,7 @@ export class ArenaScene extends Phaser.Scene {
         Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 2
       );
       if (chainTarget) {
+        this.playSkillSfxForDie(attacker, meta);
         this.gameState = this.applyDamageWithRevive(chainTarget.instanceId, meta.chainDamage);
         this.showDamageText(chainTarget, meta.chainDamage, '#fff176');
         if (this.gameState.dice.find((d) => d.instanceId === chainTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(chainTarget);
@@ -1926,6 +1934,7 @@ export class ArenaScene extends Phaser.Scene {
       if (currentMana >= instakillMana) {
         const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
         if (freshTarget && !freshTarget.isDestroyed) {
+          AudioManager.playSfx(this, AUDIO_KEYS.deathInstakill);
           this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, freshTarget.currentHealth);
           this.combatLog.setText(`☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
           const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
@@ -1972,6 +1981,7 @@ export class ArenaScene extends Phaser.Scene {
     if (meta.activeHeal !== undefined) {
       const healTarget = this.getWeakestDamagedAlly(attacker.ownerId, attacker.instanceId);
       if (healTarget) {
+        AudioManager.playSfx(this, 'dice_heal_skill');
         const healAmount = meta.activeHeal;
         this.gameState = {
           ...this.gameState,
@@ -2163,6 +2173,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     });
     newlyDefeated.forEach((die) => this.checkDeathTransformCondition(die));
+    if (newlyDefeated.length > 0) AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
   }
 
   private async returnDiceToHand() {
@@ -2550,11 +2561,11 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (meta.hasJudgmentHammer) {
       this.playSkillSfxForDie(attacker, meta);
-      this.dropJudgmentHammer(attacker, meta.hammerDamage ?? 150, new Set<string>());
+      void this.dropJudgmentHammer(attacker, meta.hammerDamage ?? 150, new Set<string>());
     }
   }
 
-  private dropJudgmentHammer(attacker: DiceInstanceState, damage: number, chainGuard: Set<string>) {
+  private async dropJudgmentHammer(attacker: DiceInstanceState, damage: number, chainGuard: Set<string>) {
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const weakest = getBoardDice(this.gameState, enemyOwner)
       .filter((die) => die.gridPosition)
@@ -2562,6 +2573,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!weakest?.gridPosition || chainGuard.has(weakest.instanceId)) return;
     chainGuard.add(weakest.instanceId);
     const center = weakest.gridPosition;
+    await this.delay(500);
     this.animateJudgmentHammer(attacker.ownerId, center.row, center.col);
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
       die.gridPosition &&
@@ -2579,7 +2591,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     });
     if (defeatedByHammer.length > 0 && chainGuard.size < 10) {
-      this.dropJudgmentHammer(attacker, damage, chainGuard);
+      await this.dropJudgmentHammer(attacker, damage, chainGuard);
     }
   }
 
@@ -2922,6 +2934,40 @@ export class ArenaScene extends Phaser.Scene {
     this.time.delayedCall(1100, () => {
       this.tweens.add({ targets: banner, y: this.scale.height + 80, alpha: 0, duration: 300, ease: 'Cubic.easeIn', onComplete: () => banner.destroy() });
     });
+  }
+
+  private updateCombatTimerUi() {
+    if (!this.combatTimerText) {
+      this.combatTimerText = this.add.text(this.scale.width / 2, 92, '', {
+        fontFamily: 'Orbitron',
+        fontSize: '18px',
+        color: '#ffcf7a'
+      }).setOrigin(0.5).setDepth(220);
+      this.gameContainer?.add(this.combatTimerText);
+    }
+    const secs = Math.max(0, Math.ceil(this.combatTimeRemainingMs / 1000));
+    this.combatTimerText.setText(`COMBAT ${secs}s`);
+    this.combatTimerText.setVisible(this.gamePhase.stage === 'combat');
+  }
+
+  private async delayCombatPaced(ms: number): Promise<boolean> {
+    const prevMs = this.combatTimeRemainingMs;
+    const pacingMultiplier = prevMs <= 10_000 ? 2 : 1;
+    const actualDelay = Math.max(1, Math.floor(ms / pacingMultiplier));
+    this.combatTimeRemainingMs = Math.max(0, prevMs - ms);
+
+    const prevSeconds = Math.ceil(prevMs / 1000);
+    const nextSeconds = Math.ceil(this.combatTimeRemainingMs / 1000);
+    if (!this.combatCountdownTriggered && prevMs > 10_000 && this.combatTimeRemainingMs <= 10_000) {
+      this.combatCountdownTriggered = true;
+      AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown);
+    }
+    for (let second = prevSeconds - 1; second >= nextSeconds; second--) {
+      if (second <= 10 && second > 0) AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.6 });
+    }
+    this.updateCombatTimerUi();
+    await this.delay(actualDelay);
+    return this.combatTimeRemainingMs > 0;
   }
 
   private checkWinConditions(): boolean {
