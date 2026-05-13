@@ -179,6 +179,12 @@ export class ArenaScene extends Phaser.Scene {
     AudioManager.playMusic(this, 'arena-music');
     this.createBackground(layout);
     this.createLobbyUI();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.tweens.killAll();
+      this.time.removeAllEvents();
+      this.combatTimerText?.destroy();
+      this.combatTimerText = null;
+    });
 
     this.debug.log('Arena scene created', { phase: this.gamePhase.stage, skillCount: this.skillIndex.size });
   }
@@ -925,8 +931,14 @@ export class ArenaScene extends Phaser.Scene {
 
     this.generateEnemyPositions();
 
-    this.turnText.setVisible(true);
+    this.turnText.setVisible(false);
     this.turnText.setText(this.turnLimit === -1 ? `TURN ${this.gameState.turn}` : `TURN ${this.gameState.turn}/${this.turnLimit}`);
+    this.time.delayedCall(1000, () => {
+      if (!this.sys.isActive()) return;
+      this.turnText.setVisible(true);
+      this.playTurnBanner(this.turnText.text);
+      AudioManager.playSfx(this, AUDIO_KEYS.uiRound);
+    });
 
     this.createHandArea();
     this.setupGridDropZones();
@@ -1003,6 +1015,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private rollAllDice() {
     if (this.diceRolled) return;
+    AudioManager.playSfx(this, AUDIO_KEYS.chestOpen);
 
     let rollResults: string[] = [];
     this.currentHandOrder.forEach((instanceId) => {
@@ -2935,6 +2948,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private playTurnBanner(text: string) {
+    if (!this.sys.isActive()) return;
     const { width } = this.scale;
     const banner = this.add.text(width / 2, -80, text, {
       fontFamily: 'Orbitron',
@@ -2943,6 +2957,7 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(300);
     this.tweens.add({ targets: banner, y: this.scale.height / 2, duration: 300, ease: 'Cubic.easeOut' });
     this.time.delayedCall(1100, () => {
+      if (!this.sys.isActive() || !banner.scene) return;
       this.tweens.add({ targets: banner, y: this.scale.height + 80, alpha: 0, duration: 300, ease: 'Cubic.easeIn', onComplete: () => banner.destroy() });
     });
   }
