@@ -99,7 +99,7 @@ export class ShopScene extends Phaser.Scene {
       const accentHex = offer.isDiceTokenOffer ? '#7ec8e3' : (offer.isCasinoChipOffer ? '#f4b860' : (def?.accent ?? '#f4b860'));
       const accent = Phaser.Display.Color.HexStringToColor(accentHex).color;
 
-      const objs = this.buildOfferCard(x, y, offer, accentHex, accent, () => {
+      const handlePurchase = () => {
         const currentDiamonds = getDiamonds(this);
         const canAfford = offer.isFreebie ? true : currentDiamonds >= offer.diamondCost;
         if (!canAfford) return;
@@ -139,19 +139,15 @@ export class ShopScene extends Phaser.Scene {
             : shopState.diceTokenFirstPurchaseIds
         });
 
-        if (this.isInfiniteCurrencyOffer(offer)) {
-          this.scene.restart();
-          return;
-        }
-
-        offer.purchased = true;
+        offer.purchased = !this.isInfiniteCurrencyOffer(offer);
 
         objs.forEach((o) => o.destroy());
-        const refreshedOffer = { ...offer, purchased: true };
-        const newObjs = this.buildOfferCard(x, y, refreshedOffer, accentHex, accent, () => {});
+        const refreshedOffer = { ...offer, purchased: offer.purchased };
+        const newObjs = this.buildOfferCard(x, y, refreshedOffer, accentHex, accent, handlePurchase);
         newObjs.forEach((obj) => scrollContainer.add(obj));
         cardObjects[index] = newObjs;
-      });
+      };
+      const objs = this.buildOfferCard(x, y, offer, accentHex, accent, handlePurchase);
       objs.forEach((obj) => scrollContainer.add(obj));
       cardObjects[index] = objs;
     });

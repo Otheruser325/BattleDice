@@ -25,7 +25,7 @@ import { applyClassProgression } from '../systems/ClassProgression';
 import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
-import { AudioManager } from '../utils/AudioManager';
+import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -1340,6 +1340,7 @@ export class ArenaScene extends Phaser.Scene {
         const allyPipAttackAuras = die.ownerId === 'player' ? playerPipAttackAuras : enemyPipAttackAuras;
         const foePipAttackAuras = die.ownerId === 'player' ? enemyPipAttackAuras : playerPipAttackAuras;
         const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, die, 'ally') + sumMatchingDelta(foePipAttackAuras, die, 'foe');
+        if (pipAuraDelta !== 0) this.animateTimeMark(die, pipAuraDelta > 0 ? 0x8fd5ff : 0xff6b6b);
         const withPermanent = this.computeAttackCount(die.instanceId, pips, pipAuraDelta);
 
         return {
@@ -1384,6 +1385,7 @@ export class ArenaScene extends Phaser.Scene {
     const player = this.getRollComboBonus('player');
     const enemy = this.getRollComboBonus('enemy');
     this.combatLog.setText(`Combanity: You rolled ${player.label} (${player.multiplier}x), Bot rolled ${enemy.label} (${enemy.multiplier}x).`);
+    if (player.multiplier > 1 || enemy.multiplier > 1) AudioManager.playSfx(this, AUDIO_KEYS.comboRoll);
     return {
       ...state,
       dice: state.dice.map((die) => {
@@ -1402,6 +1404,19 @@ export class ArenaScene extends Phaser.Scene {
     const attackerBonus = this.getRollComboBonus(attacker.ownerId === 'player' ? 'player' : 'enemy');
     const defenderBonus = this.getRollComboBonus(target.ownerId === 'player' ? 'player' : 'enemy');
     return Math.max(0, attackerBonus.multiplier * (1 - defenderBonus.reduction));
+  }
+
+
+  private animateTimeMark(die: DiceInstanceState, color: number) {
+    if (!die.gridPosition) return;
+    const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const t = this.add.text(x, y - 20, '⏰', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setDepth(260);
+    const ring = this.add.graphics().setDepth(259);
+    ring.lineStyle(2, color, 0.95);
+    ring.strokeCircle(x, y, 16);
+    this.tweens.add({ targets: [t, ring], alpha: 0, y: y - 30, duration: 450, onComplete: () => { t.destroy(); ring.destroy(); } });
   }
 
   private applyLavaPoolDamageAtCombatStart() {
@@ -1506,7 +1521,7 @@ export class ArenaScene extends Phaser.Scene {
             damage = result.damage;
             targetDestroyed = result.targetDestroyed;
           } else {
-            AudioManager.playSfx(this, 'dice-attack');
+            AudioManager.playSfx(this, AUDIO_KEYS.diceAttack);
             const defs = this.getDefinitionsForCombat(attacker, target);
             const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs, {
               attacker: this.getDefinitionForInstance(attacker),
@@ -1531,6 +1546,10 @@ export class ArenaScene extends Phaser.Scene {
           this.gameState = spendAttack(this.gameState, attacker.instanceId);
         }
 
+        if (anyActiveFires) {
+          const sfxKey = attackerMeta?.skillSfxKey ?? AUDIO_KEYS.skillTrigger;
+          AudioManager.playSfx(this, sfxKey);
+        }
         this.applyActiveSkillEffects(attacker, target);
         if (targetDestroyed) {
           this.applyOnKillSkillEffects(attacker, target);
@@ -1890,6 +1909,7 @@ export class ArenaScene extends Phaser.Scene {
     if (meta.hasSpearActive) {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
+        this.animateSpearActive(attacker, freshTarget);
         const primaryDamage = meta.activeDamage ?? 104;
         const dealt = applyDirectDamage(freshTarget, primaryDamage);
         this.showDamageText(freshTarget, dealt, '#dbe7e4');
@@ -1897,7 +1917,7 @@ export class ArenaScene extends Phaser.Scene {
         this.getPierceBehindTargets(attacker, freshTarget, 2).forEach((die) => {
           const pierceDamage = meta.pierceBehindDamage ?? 208;
           const dealt = applyDirectDamage(die, pierceDamage);
-          this.showDamageText(die, dealt, '#c9d6d3');
+          this.showDamageText(die, dealt, '#b58cff');
           if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
         });
       }
@@ -1993,7 +2013,7 @@ export class ArenaScene extends Phaser.Scene {
         die.isDestroyed
       ).length;
       const previous = this.deathAlliesDefeatedCount.get(deathDie.instanceId) ?? 0;
-      const count = Math.max(previous, defeatedAllies, defeated.instanceId === deathDie.instanceId ? previous : previous + 1);
+      const count = Math.max(previous, defeatedAllies);
       this.deathAlliesDefeatedCount.set(deathDie.instanceId, count);
 
       if (count >= 2) {
@@ -2169,7 +2189,9 @@ export class ArenaScene extends Phaser.Scene {
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ring = this.add.graphics();
     ring.lineStyle(3, 0xc06bdb, 0.95);
-    ring.strokeCircle(x, y, 8);
+    ring.strokeCircle(x, y, 20);
+    ring.lineStyle(2, 0xe7b6ff, 0.95);
+    ring.strokeCircle(x + 20, y, 6);
     this.tweens.add({ targets: ring, alpha: 0, scale: 3, duration: 500, onComplete: () => ring.destroy() });
   }
 
@@ -2219,17 +2241,14 @@ export class ArenaScene extends Phaser.Scene {
     const targetY = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
     const rowY = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const colX = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-
+    
     const graphics = this.add.graphics().setDepth(250);
     graphics.lineStyle(5, 0x6ff6ff, 0.94);
     graphics.strokeLineShape(new Phaser.Geom.Line(attackerX, attackerY, targetX, targetY));
     graphics.lineStyle(8, 0x6ff6ff, 0.55);
     graphics.strokeLineShape(new Phaser.Geom.Line(targetGrid.x, rowY, targetGrid.x + boardWidth, rowY));
-    graphics.strokeLineShape(new Phaser.Geom.Line(colX, targetGrid.y, colX, targetGrid.y + boardWidth));
     graphics.lineStyle(13, 0xcffcff, 0.22);
     graphics.strokeLineShape(new Phaser.Geom.Line(targetGrid.x, rowY, targetGrid.x + boardWidth, rowY));
-    graphics.strokeLineShape(new Phaser.Geom.Line(colX, targetGrid.y, colX, targetGrid.y + boardWidth));
 
     this.tweens.add({
       targets: graphics,
@@ -2238,6 +2257,39 @@ export class ArenaScene extends Phaser.Scene {
       duration: 520,
       onComplete: () => graphics.destroy()
     });
+  }
+
+
+  private animateJudgmentHammer(ownerId: 'player' | 'enemy', row: number, col: number) {
+    const grid = ownerId === 'player' ? this.enemyGridContainer : this.playerGridContainer;
+    const x = grid.x + col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const y = grid.y + row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const g = this.add.graphics().setDepth(260);
+    g.lineStyle(2, 0xff4d4d, 0.95);
+    g.strokeCircle(x, y, TILE_SIZE * 1.4);
+    g.fillStyle(0xff4d4d, 0.16);
+    g.fillCircle(x, y, TILE_SIZE * 1.35);
+    g.fillStyle(0xd8d8d8, 0.95);
+    g.fillRect(x - 7, y - 100, 14, 52);
+    g.fillStyle(0x8c8c8c, 1);
+    g.fillRect(x - 20, y - 56, 40, 26);
+    this.tweens.add({ targets: g, alpha: 0, duration: 420, onComplete: () => g.destroy() });
+  }
+
+  private animateSpearActive(attacker: DiceInstanceState, target: DiceInstanceState) {
+    if (!attacker.gridPosition || !target.gridPosition) return;
+    const attackerGrid = attacker.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const targetGrid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const ax = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const g = this.add.graphics().setDepth(250);
+    g.lineStyle(8, 0x8fd5ff, 0.95);
+    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
+    g.lineStyle(14, 0xc8f0ff, 0.35);
+    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
+    this.tweens.add({ targets: g, alpha: 0, duration: 280, onComplete: () => g.destroy() });
   }
 
   private renderEnemyDice() {
@@ -2424,6 +2476,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!weakest?.gridPosition || chainGuard.has(weakest.instanceId)) return;
     chainGuard.add(weakest.instanceId);
     const center = weakest.gridPosition;
+    this.animateJudgmentHammer(attacker.ownerId, center.row, center.col);
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
       die.gridPosition &&
       Math.abs(die.gridPosition.row - center.row) <= 1 &&

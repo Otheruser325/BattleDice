@@ -25,7 +25,8 @@ function formatSkillType(type: string | undefined): string {
 
 function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number): string {
   const prefix = total > 1 ? `${index + 1}. ` : '';
-  return `${prefix}${skill.title} (${formatSkillType(skill.type)})\n${skill.description}`;
+  const manaLine = (skill.manaNeeded ?? 0) > 0 ? `\nMana needed: ${skill.manaNeeded}` : '';
+  return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${skill.description}`;
 }
 
 function formatSkillInfo(definition: DiceDefinition, locked = false): string {

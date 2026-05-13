@@ -13,7 +13,8 @@
       "manaNeeded": 7,
       "modifiers": {
         "notes": [
-          "runtime:meteorStrike"
+          "runtime:meteorStrike",
+          "runtime:skillSfx=skill-trigger"
         ],
         "meteorDamage": 120,
         "lavaDamage": 50

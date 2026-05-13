@@ -14,10 +14,11 @@
           "runtime:beamOnSix=600",
           "runtime:hasTranscendence",
           "runtime:transformAccent=#6ff6ff",
-          "runtime:transformSymbol=✦",
+          "runtime:transformSymbol=\u2726",
           "runtime:transformTitle=The Transcendence",
           "runtime:alternateButton=View The Transcendence",
-          "runtime:baseButton=View Base Form"
+          "runtime:baseButton=View Base Form",
+          "runtime:skillSfx=skill-trigger"
         ],
         "beamDamage": 600
       }
