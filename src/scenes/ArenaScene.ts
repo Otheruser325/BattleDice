@@ -1533,6 +1533,11 @@ export class ArenaScene extends Phaser.Scene {
       const ownerName = owner === 'player' ? 'Your' : 'Enemy';
 
       while (true) {
+        if (this.combatTimeRemainingMs <= 0) {
+          timedOut = true;
+          break;
+        }
+
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
@@ -1601,6 +1606,10 @@ export class ArenaScene extends Phaser.Scene {
           AudioManager.playSfx(this, sfxKey);
         }
         await this.applyActiveSkillEffects(attacker, target);
+        if (this.combatTimeRemainingMs <= 0) {
+          timedOut = true;
+          break;
+        }
         if (targetDestroyed) {
           await this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
@@ -3010,18 +3019,20 @@ export class ArenaScene extends Phaser.Scene {
   private async delayCombatPaced(ms: number): Promise<boolean> {
     if (!this.sys.isActive()) return false;
     const prevMs = this.combatTimeRemainingMs;
-    const pacingMultiplier = prevMs <= 10_000 ? 2 : 1;
-    const actualDelay = Math.max(1, Math.floor(ms / pacingMultiplier));
+    const actualDelay = Math.max(1, Math.floor(ms));
     this.combatTimeRemainingMs = Math.max(0, prevMs - ms);
 
     const prevSeconds = Math.ceil(prevMs / 1000);
     const nextSeconds = Math.ceil(this.combatTimeRemainingMs / 1000);
     if (!this.combatCountdownTriggered && prevMs > 10_000 && this.combatTimeRemainingMs <= 10_000) {
       this.combatCountdownTriggered = true;
-      AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown);
     }
     for (let second = prevSeconds - 1; second >= nextSeconds; second--) {
-      if (second <= 10 && second > 0) AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.62 });
+      if (second <= 10 && second > 0) {
+        AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown, { volume: 0.62 });
+      } else if (second > 10) {
+        AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.62 });
+      }
     }
     this.updateCombatTimerUi();
     await this.delay(actualDelay);
