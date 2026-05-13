@@ -3028,10 +3028,10 @@ export class ArenaScene extends Phaser.Scene {
       this.combatCountdownTriggered = true;
     }
     for (let second = prevSeconds - 1; second >= nextSeconds; second--) {
-      if (second <= 10 && second > 0) {
-        AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown, { volume: 0.62 });
-      } else if (second > 10) {
+      if (second === 10) {
         AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.62 });
+      } else if (second < 10 && second > 0) {
+        AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown, { volume: 0.62 });
       }
     }
     this.updateCombatTimerUi();
