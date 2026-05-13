@@ -15,7 +15,7 @@
         "durationTurns": 2,
         "activeDamage": 32,
         "notes": [
-          "runtime:skillSfx=skill-trigger"
+          "runtime:skillSfx=dice_ice_skill"
         ]
       }
     }

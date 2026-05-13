@@ -47,6 +47,8 @@ export interface DiceSkillRuntimeMeta {
   alternateButton?: string;
   baseButton?: string;
   skillSfxKey?: string;
+  attackSfxKey?: string;
+  transformedAttackSfxKey?: string;
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
@@ -119,7 +121,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     transformTitle: getNoteValue('runtime:transformTitle='),
     alternateButton: getNoteValue('runtime:alternateButton='),
     baseButton: getNoteValue('runtime:baseButton='),
-    skillSfxKey: getNoteValue('runtime:skillSfx=')
+    skillSfxKey: getNoteValue('runtime:skillSfx='),
+    attackSfxKey: getNoteValue('runtime:attackSfx='),
+    transformedAttackSfxKey: getNoteValue('runtime:attackSfxTransformed=')
   };
 }
 

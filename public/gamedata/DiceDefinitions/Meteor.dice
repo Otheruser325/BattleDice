@@ -14,7 +14,7 @@
       "modifiers": {
         "notes": [
           "runtime:meteorStrike",
-          "runtime:skillSfx=skill-trigger"
+          "runtime:skillSfx=dice_meteor_skill"
         ],
         "meteorDamage": 120,
         "lavaDamage": 50

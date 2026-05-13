@@ -10,7 +10,10 @@
       "title": "Splash Ember",
       "description": "Attacks cause 12 splash damage to adjacent foes.",
       "modifiers": {
-        "splashDamage": 12
+        "splashDamage": 12,
+        "notes": [
+          "runtime:skillSfx=dice_fire_skill"
+        ]
       }
     }
   ],

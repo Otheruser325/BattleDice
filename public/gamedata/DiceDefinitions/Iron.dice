@@ -9,11 +9,10 @@
     {
       "type": "Passive",
       "title": "Crush Armor",
-      "description": "Deals bonus damage equal to 15% of the target's current HP (+0.5% per Class UP).",
+      "description": "Deals bonus damage equal to 15% of the target's current HP.",
       "modifiers": {
         "notes": [
-          "runtime:targetCurrentHpBonusRate=0.15",
-          "runtime:skillSfx=skill-trigger"
+          "runtime:targetCurrentHpBonusRate=0.15"
         ],
         "targetCurrentHpBonusRate": 0.15
       }
