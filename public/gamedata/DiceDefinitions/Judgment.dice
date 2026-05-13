@@ -13,7 +13,7 @@
       "modifiers": {
         "notes": [
           "runtime:judgmentHammer",
-          "runtime:skillSfx=skill-trigger"
+          "runtime:skillSfx=dice_judgment_skill"
         ],
         "hammerDamage": 150
       }

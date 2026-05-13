@@ -13,7 +13,7 @@
       "modifiers": {
         "notes": [
           "runtime:pierceBehind=1",
-          "runtime:skillSfx=skill-trigger"
+          "runtime:skillSfx=dice_spear_skill"
         ],
         "pierceBehindRange": 1
       }
@@ -26,7 +26,7 @@
       "modifiers": {
         "notes": [
           "runtime:spearActive",
-          "runtime:skillSfx=skill-trigger"
+          "runtime:skillSfx=dice_spear_skill"
         ],
         "activeDamage": 104,
         "pierceBehindDamage": 208,

@@ -13,7 +13,7 @@
       "modifiers": {
         "extraAttacks": 1,
         "notes": [
-          "runtime:skillSfx=skill-trigger"
+          "runtime:skillSfx=dice_light_skill"
         ]
       }
     }

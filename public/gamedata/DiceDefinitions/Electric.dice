@@ -10,7 +10,10 @@
       "title": "Chain Spark",
       "description": "Attacks chain onto a nearby target in a 2-tile radius for 16 bonus damage.",
       "modifiers": {
-        "chainDamage": 16
+        "chainDamage": 16,
+        "notes": [
+          "runtime:skillSfx=dice_electric_skill"
+        ]
       }
     }
   ],
