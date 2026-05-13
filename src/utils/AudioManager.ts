@@ -25,6 +25,7 @@ export class AudioManager {
     scene.load.audio(AUDIO_KEYS.classUp, '/assets/audio/combo_pair.mp3');
     scene.load.audio(AUDIO_KEYS.chestOpen, '/assets/audio/dice.mp3');
     scene.load.audio(AUDIO_KEYS.diceAttack, '/assets/audio/dice/dice_attack_01.ogg');
+    scene.load.audio('dice_attack_03', '/assets/audio/dice/dice_attack_03.ogg');
     scene.load.audio(AUDIO_KEYS.diceDie, '/assets/audio/dice/dice_die.ogg');
     scene.load.audio(AUDIO_KEYS.comboRoll, '/assets/audio/combo_pair.mp3');
     scene.load.audio('combo_pair', '/assets/audio/combo_pair.mp3');
@@ -58,6 +59,13 @@ export class AudioManager {
   static playSfx(scene: Phaser.Scene, key: string, config: Phaser.Types.Sound.SoundConfig = {}) {
     if (!SettingsStore.get(scene).sfx || !scene.cache.audio.exists(key)) return;
     scene.sound.play(key, { volume: 0.45, ...config });
+  }
+
+  static playRandomSfx(scene: Phaser.Scene, keys: string[], config: Phaser.Types.Sound.SoundConfig = {}) {
+    const available = keys.filter((key) => scene.cache.audio.exists(key));
+    if (available.length === 0) return;
+    const key = available[Math.floor(Math.random() * available.length)];
+    this.playSfx(scene, key, config);
   }
 
   static playMusic(scene: Phaser.Scene, key: string) {

@@ -1524,14 +1524,15 @@ export class ArenaScene extends Phaser.Scene {
         const deathFires = (attackerMeta?.hasDeathInstakill ?? false) && this.deathDiceTransformed.has(attacker.instanceId) && currMana >= (attackerMeta?.deathInstakillMana ?? 12);
         const regularActiveFires = (attackerMeta?.activeManaNeeded ?? 0) > 0 && currMana >= (attackerMeta?.activeManaNeeded ?? 0) && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill;
         const anyActiveFires = meteorFires || deathFires || regularActiveFires;
-        const BASIC_WITH_ACTIVE = new Set(['Poison']);
-        const skipBasicAttack = anyActiveFires && !BASIC_WITH_ACTIVE.has(attacker.typeId);
+        const skipBasicAttack = anyActiveFires;
 
         let damage = 0;
         let targetDestroyed = false;
 
         if (!skipBasicAttack) {
           if (beamTarget) {
+            const beamAttackSfx = this.transcendenceTransformed.has(attacker.instanceId) ? 'dice_transcendence_t_attack' : 'dice_transcendence_attack';
+            AudioManager.playSfx(this, beamAttackSfx);
             const result = this.executeTranscendenceBeam(attacker, target);
             damage = result.damage;
             targetDestroyed = result.targetDestroyed;
@@ -1542,8 +1543,12 @@ export class ArenaScene extends Phaser.Scene {
                 ? (this.transcendenceTransformed.has(attacker.instanceId) ? 'dice_transcendence_t_attack' : 'dice_transcendence_attack')
                 : attacker.typeId === 'Death' && this.deathDiceTransformed.has(attacker.instanceId)
                   ? 'dice_death_t_attack'
-                  : AUDIO_KEYS.diceAttack;
-            AudioManager.playSfx(this, attackSfxKey);
+                  : null;
+            if (attackSfxKey) {
+              AudioManager.playSfx(this, attackSfxKey);
+            } else {
+              AudioManager.playRandomSfx(this, ['dice-attack', 'skill-trigger', 'dice_attack_03']);
+            }
             const defs = this.getDefinitionsForCombat(attacker, target);
             const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs, {
               attacker: this.getDefinitionForInstance(attacker),
