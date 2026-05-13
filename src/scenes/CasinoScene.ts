@@ -574,7 +574,6 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private render(crapsSummary?: string, crapsChestText?: string) {
-    if (!this.scene.isActive(CasinoScene.KEY)) return;
     const showFivesDice = this.tableActive;
     const showCrapsDice = !this.tableActive && this.crapsTableActive;
 

@@ -25,7 +25,7 @@ import { applyClassProgression } from '../systems/ClassProgression';
 import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
-import { AudioManager } from '../utils/AudioManager';
+import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -1384,6 +1384,7 @@ export class ArenaScene extends Phaser.Scene {
     const player = this.getRollComboBonus('player');
     const enemy = this.getRollComboBonus('enemy');
     this.combatLog.setText(`Combanity: You rolled ${player.label} (${player.multiplier}x), Bot rolled ${enemy.label} (${enemy.multiplier}x).`);
+    if (player.multiplier > 1 || enemy.multiplier > 1) AudioManager.playSfx(this, AUDIO_KEYS.comboRoll);
     return {
       ...state,
       dice: state.dice.map((die) => {
@@ -1506,7 +1507,7 @@ export class ArenaScene extends Phaser.Scene {
             damage = result.damage;
             targetDestroyed = result.targetDestroyed;
           } else {
-            AudioManager.playSfx(this, 'dice-attack');
+            AudioManager.playSfx(this, AUDIO_KEYS.diceAttack);
             const defs = this.getDefinitionsForCombat(attacker, target);
             const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs, {
               attacker: this.getDefinitionForInstance(attacker),
@@ -1531,6 +1532,10 @@ export class ArenaScene extends Phaser.Scene {
           this.gameState = spendAttack(this.gameState, attacker.instanceId);
         }
 
+        if (anyActiveFires) {
+          const sfxKey = attackerMeta?.skillSfxKey ?? AUDIO_KEYS.skillTrigger;
+          AudioManager.playSfx(this, sfxKey);
+        }
         this.applyActiveSkillEffects(attacker, target);
         if (targetDestroyed) {
           this.applyOnKillSkillEffects(attacker, target);

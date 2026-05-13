@@ -12,7 +12,8 @@
       "description": "Deals bonus damage equal to 15% of the target's current HP (+0.5% per Class UP).",
       "modifiers": {
         "notes": [
-          "runtime:targetCurrentHpBonusRate=0.15"
+          "runtime:targetCurrentHpBonusRate=0.15",
+          "runtime:skillSfx=skill-trigger"
         ],
         "targetCurrentHpBonusRate": 0.15
       }

@@ -139,15 +139,10 @@ export class ShopScene extends Phaser.Scene {
             : shopState.diceTokenFirstPurchaseIds
         });
 
-        if (this.isInfiniteCurrencyOffer(offer)) {
-          this.scene.restart();
-          return;
-        }
-
-        offer.purchased = true;
+        offer.purchased = !this.isInfiniteCurrencyOffer(offer);
 
         objs.forEach((o) => o.destroy());
-        const refreshedOffer = { ...offer, purchased: true };
+        const refreshedOffer = { ...offer, purchased: offer.purchased };
         const newObjs = this.buildOfferCard(x, y, refreshedOffer, accentHex, accent, () => {});
         newObjs.forEach((obj) => scrollContainer.add(obj));
         cardObjects[index] = newObjs;
