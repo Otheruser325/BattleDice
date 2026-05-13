@@ -3019,8 +3019,7 @@ export class ArenaScene extends Phaser.Scene {
   private async delayCombatPaced(ms: number): Promise<boolean> {
     if (!this.sys.isActive()) return false;
     const prevMs = this.combatTimeRemainingMs;
-    const pacingMultiplier = prevMs <= 10_000 ? 2 : 1;
-    const actualDelay = Math.max(1, Math.floor(ms / pacingMultiplier));
+    const actualDelay = Math.max(1, Math.floor(ms));
     this.combatTimeRemainingMs = Math.max(0, prevMs - ms);
 
     const prevSeconds = Math.ceil(prevMs / 1000);
