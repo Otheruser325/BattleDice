@@ -13,7 +13,10 @@
       "modifiers": {
         "attackDelta": -1,
         "durationTurns": 2,
-        "activeDamage": 32
+        "activeDamage": 32,
+        "notes": [
+          "runtime:skillSfx=skill-trigger"
+        ]
       }
     }
   ],

@@ -12,7 +12,8 @@
       "description": "Permanently gains +1 attack count for the remainder of the match at the end of each combat phase.",
       "modifiers": {
         "notes": [
-          "runtime:growthPermanent"
+          "runtime:growthPermanent",
+          "runtime:skillSfx=skill-trigger"
         ]
       }
     }

@@ -91,6 +91,7 @@ export class CasinoScene extends Phaser.Scene {
   private chipText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
+  private activeRewardDetailClose: (() => void) | null = null;
 
   create() {
     this.resetRuntimeUiState();
@@ -401,7 +402,13 @@ export class CasinoScene extends Phaser.Scene {
     ratesBtn.on('pointerout', () => { if (!dropInfoPinned) dropInfo.setVisible(false); });
     ratesBtn.on('pointerdown', toggleDropInfo);
 
-    const escHandler = () => close();
+    const escHandler = () => {
+      if (this.activeRewardDetailClose) {
+        this.activeRewardDetailClose();
+        return;
+      }
+      close();
+    };
     this.input.keyboard?.on('keydown-ESC', escHandler);
     const close = () => {
       this.input.keyboard?.off('keydown-ESC', escHandler);
@@ -538,13 +545,16 @@ export class CasinoScene extends Phaser.Scene {
       const row = Math.floor(i / 3);
       const x = col * 280;
       const y = row * 92;
-      const card = this.add.rectangle(x + 132, y + 38, 264, 76, 0x204d6a, 0.95).setStrokeStyle(1, 0x4f7ea1);
+      const card = this.add.rectangle(x + 132, y + 38, 264, 76, 0x204d6a, 0.95)
+        .setStrokeStyle(1, 0x4f7ea1)
+        .setInteractive({ useHandCursor: true });
       const txt = this.add.text(x + 12, y + 10, `${entry.title} [${entry.rarity}]\n+${entry.copies} copies${entry.isNew ? '  NEW' : ''}`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.text,
         lineSpacing: 4
       });
+      card.on('pointerdown', () => this.showRewardDiceDetails(entry.typeId));
       container.add([card, txt]);
     });
 
@@ -558,7 +568,13 @@ export class CasinoScene extends Phaser.Scene {
     };
     this.input.on('wheel', wheelHandler);
 
-    const escHandler = () => close();
+    const escHandler = () => {
+      if (this.activeRewardDetailClose) {
+        this.activeRewardDetailClose();
+        return;
+      }
+      close();
+    };
     this.input.keyboard?.on('keydown-ESC', escHandler);
     const close = () => {
       this.input.off('wheel', wheelHandler);
@@ -566,7 +582,41 @@ export class CasinoScene extends Phaser.Scene {
       [overlay, panel, title, tokenSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
     };
     closeBtn.on('pointerdown', close);
-    overlay.on('pointerdown', close);
+    overlay.on('pointerdown', () => undefined);
+  }
+
+  private showRewardDiceDetails(typeId: string) {
+    const definition = getAllDiceDefinitions(this).find((d) => d.typeId === typeId);
+    if (!definition) return;
+    const progress = getDiceProgress(this, definition.typeId);
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.45).setInteractive();
+    const panel = this.add.rectangle(width / 2, height / 2, 560, 300, 0x173247, 0.98).setStrokeStyle(2, 0x4f7ea1);
+    const skills = definition.skills.map((skill) => `${skill.title} (${skill.type})`).join('  •  ') || 'No skill';
+    const text = this.add.text(width / 2, height / 2 - 24, `${definition.title}\nATK ${definition.attack}  HP ${definition.health}  RNG ${definition.range}\nClass ${progress.classLevel}  Copies ${progress.copies}\n${skills}`, {
+      fontFamily: 'Orbitron',
+      fontSize: '13px',
+      color: PALETTE.text,
+      align: 'center',
+      wordWrap: { width: 500 }
+    }).setOrigin(0.5);
+    const closeBtn = this.add.text(width / 2, height / 2 + 112, 'Close', {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.textMuted,
+      backgroundColor: '#173247',
+      padding: { left: 8, right: 8, top: 4, bottom: 4 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const escHandler = () => close();
+    this.input.keyboard?.on('keydown-ESC', escHandler);
+    const close = () => {
+      this.input.keyboard?.off('keydown-ESC', escHandler);
+      [overlay, panel, text, closeBtn].forEach((obj) => obj.destroy());
+      this.activeRewardDetailClose = null;
+    };
+    this.activeRewardDetailClose = close;
+    closeBtn.on('pointerdown', close);
+    overlay.on('pointerdown', () => undefined);
   }
 
   private getDiceTextureKey(pip: number) {
@@ -574,7 +624,6 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private render(crapsSummary?: string, crapsChestText?: string) {
-    if (!this.scene.isActive(CasinoScene.KEY)) return;
     const showFivesDice = this.tableActive;
     const showCrapsDice = !this.tableActive && this.crapsTableActive;
 

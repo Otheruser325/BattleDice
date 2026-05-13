@@ -25,7 +25,8 @@ function formatSkillType(type: string | undefined): string {
 
 function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number): string {
   const prefix = total > 1 ? `${index + 1}. ` : '';
-  return `${prefix}${skill.title} (${formatSkillType(skill.type)})\n${skill.description}`;
+  const manaLine = skill.type === 'Active' && (skill.manaNeeded ?? 0) > 0 ? `\nMana needed: ${skill.manaNeeded}` : '';
+  return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${skill.description}`;
 }
 
 function formatSkillInfo(definition: DiceDefinition, locked = false): string {
@@ -279,7 +280,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
         skills: [{
           type: 'Active' as const,
           title: "Reaper's Touch",
-          description: 'At 12 mana, instantly kills the target. Death transforms into this form after 2 allies are defeated.',
+          description: 'Instantly kills the target. Death transforms into this form after 2 allies are defeated.',
           manaNeeded: meta.deathInstakillMana ?? 12,
           modifiers: { notes: ['runtime:deathInstakill'] }
         }]

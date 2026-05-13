@@ -12,7 +12,8 @@
       "description": "Basic attacks also stab the tile directly behind the target.",
       "modifiers": {
         "notes": [
-          "runtime:pierceBehind=1"
+          "runtime:pierceBehind=1",
+          "runtime:skillSfx=skill-trigger"
         ],
         "pierceBehindRange": 1
       }
@@ -24,7 +25,8 @@
       "manaNeeded": 8,
       "modifiers": {
         "notes": [
-          "runtime:spearActive"
+          "runtime:spearActive",
+          "runtime:skillSfx=skill-trigger"
         ],
         "activeDamage": 104,
         "pierceBehindDamage": 208,

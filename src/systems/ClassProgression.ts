@@ -128,7 +128,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deals ${modifiers.activeDamage} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
   }
   if (modifiers.poisonDamage !== undefined) {
-    return `The targeted foe takes ${modifiers.poisonDamage} poison damage per turn for ${modifiers.durationTurns ?? 2} turns.`;
+    return `Deals direct toxic damage, then applies ${modifiers.poisonDamage} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
   if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
     return `Throws a striking meteor at a random foe, causing ${modifiers.meteorDamage} damage. Drops a lava pool on the hit tile lasting 3 turns. Foes standing on a lava tile take ${modifiers.lavaDamage} damage at the start of combat.`;
@@ -194,7 +194,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
     const delta = nextModifiers.distanceDamageBonusRatePerTile - currentModifiers.distanceDamageBonusRatePerTile;
     if (delta > 0) skillDeltas.push(`Distance damage +${formatPercent(delta)} / tile`);
   }
-  if (definition.typeId !== 'Solitude' && currentModifiers.targetMaxHpBonusRate !== undefined && nextModifiers.targetMaxHpBonusRate !== undefined) {
+  if (currentModifiers.targetMaxHpBonusRate !== undefined && nextModifiers.targetMaxHpBonusRate !== undefined) {
     const delta = nextModifiers.targetMaxHpBonusRate - currentModifiers.targetMaxHpBonusRate;
     if (delta > 0) skillDeltas.push(`Max HP damage +${formatPercent(delta)}`);
   }
