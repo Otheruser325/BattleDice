@@ -12,7 +12,8 @@
       "description": "Basic attacks deal bonus damage equal to 8% of the target's max HP.",
       "modifiers": {
         "notes": [
-          "runtime:targetMaxHpBonusRate=0.08"
+          "runtime:targetMaxHpBonusRate=0.08",
+          "runtime:skillSfx=skill-trigger"
         ],
         "targetMaxHpBonusRate": 0.08
       }

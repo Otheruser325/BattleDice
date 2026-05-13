@@ -13,7 +13,8 @@
       "modifiers": {
         "durationTurns": 2,
         "notes": [
-          "Applies 20 poison damage per turn."
+          "Applies 20 poison damage per turn.",
+          "runtime:skillSfx=skill-trigger"
         ],
         "poisonDamage": 20
       }

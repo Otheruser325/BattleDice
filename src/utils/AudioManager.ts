@@ -7,7 +7,9 @@ export const AUDIO_KEYS = {
   uiClick: 'ui-click',
   classUp: 'class-up',
   chestOpen: 'chest-open',
-  diceAttack: 'dice-attack'
+  diceAttack: 'dice-attack',
+  comboRoll: 'combo-roll',
+  skillTrigger: 'skill-trigger'
 } as const;
 
 const MUSIC_KEYS = new Set<string>([AUDIO_KEYS.menuMusic, AUDIO_KEYS.arenaMusic]);
@@ -22,6 +24,8 @@ export class AudioManager {
     scene.load.audio(AUDIO_KEYS.classUp, '/assets/audio/combo_pair.mp3');
     scene.load.audio(AUDIO_KEYS.chestOpen, '/assets/audio/dice.mp3');
     scene.load.audio(AUDIO_KEYS.diceAttack, '/assets/audio/dice.mp3');
+    scene.load.audio(AUDIO_KEYS.comboRoll, '/assets/audio/combo_pair.mp3');
+    scene.load.audio(AUDIO_KEYS.skillTrigger, '/assets/audio/dice.mp3');
   }
 
   static playSfx(scene: Phaser.Scene, key: string, config: Phaser.Types.Sound.SoundConfig = {}) {

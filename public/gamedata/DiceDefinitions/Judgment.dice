@@ -12,7 +12,8 @@
       "description": "On kill, summons a judge hammer on the weakest foe, dealing 150 damage in a 3x3 radius. Hammer kills can retrigger this effect.",
       "modifiers": {
         "notes": [
-          "runtime:judgmentHammer"
+          "runtime:judgmentHammer",
+          "runtime:skillSfx=skill-trigger"
         ],
         "hammerDamage": 150
       }
