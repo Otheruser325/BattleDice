@@ -1,7 +1,7 @@
 {
   "typeId": "Berserk",
   "title": "Berserk Dice",
-  "attack": 25,
+  "attack": 30,
   "health": 800,
   "range": 4,
   "rarity": "Epic",
@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Blood Frenzy",
-      "description": "Below 30% HP, deals 150% more damage (+1% HP threshold per Class UP).",
+      "description": "Below 30% HP, deals 150% more damage.",
       "modifiers": {
         "berserkThresholdRate": 0.3,
         "berserkDamageMultiplier": 2.5

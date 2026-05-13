@@ -2,7 +2,7 @@
   "typeId": "Electric",
   "title": "Electric Dice",
   "attack": 24,
-  "health": 640,
+  "health": 720,
   "range": 4,
   "skills": [
     {

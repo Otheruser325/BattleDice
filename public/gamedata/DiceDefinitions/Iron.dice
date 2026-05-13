@@ -1,7 +1,7 @@
 {
   "typeId": "Iron",
   "title": "Iron Dice",
-  "attack": 28,
+  "attack": 26,
   "health": 800,
   "range": 4,
   "rarity": "Uncommon",
