@@ -12,7 +12,10 @@
       "description": "Below 30% HP, deals 150% more damage.",
       "modifiers": {
         "berserkThresholdRate": 0.3,
-        "berserkDamageMultiplier": 2.5
+        "berserkDamageMultiplier": 2.5,
+        "notes": [
+          "runtime:skillSfx=dice_berserk_skill"
+        ]
       }
     }
   ],

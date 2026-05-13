@@ -273,9 +273,13 @@ export class CasinoScene extends Phaser.Scene {
 
   private rollDice() {
     if (!this.tableActive || this.rollsLeft <= 0) return;
+    AudioManager.playSfx(this, 'chest-open');
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
     this.saveFivesHand();
+    const combo = evaluateFivesCombo(this.dice);
+    const comboSfxKey = this.getComboSfxKey(combo.combo);
+    if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);
     this.render();
   }
 
@@ -297,6 +301,7 @@ export class CasinoScene extends Phaser.Scene {
     if (this.tableActive) return AlertManager.toast(this, { type: 'warning', message: 'Finish current table first.' });
     if (progress.chips < 2) return AlertManager.toast(this, { type: 'warning', message: 'Need 2 chips for Craps.' });
 
+    AudioManager.playSfx(this, 'chest-open');
     const outcome = this.resolveCrapsRound();
     this.crapsTableActive = true;
     this.dice = [outcome.finalRoll[0], outcome.finalRoll[1], 1, 1, 1];
@@ -313,6 +318,20 @@ export class CasinoScene extends Phaser.Scene {
     const chestText = outcome.chestType ? `${outcome.chestType} x${outcome.chestCount}` : 'no chest';
     this.statusText.setText(`Craps: ${outcome.summary} • ${chestText}`);
     this.render(outcome.summary, chestText);
+  }
+
+  private getComboSfxKey(combo: string): string | null {
+    switch (combo) {
+      case 'Pair': return 'combo_pair';
+      case 'Two Pair': return 'combo_twoPair';
+      case 'Three-of-a-kind': return 'combo_triple';
+      case 'Small Straight':
+      case 'Large Straight': return 'combo_straight';
+      case 'Full House': return 'combo_fullHouse';
+      case 'Four-of-a-kind': return 'combo_fourOfAKind';
+      case 'Five-of-a-kind': return 'combo_fiveOfAKind';
+      default: return null;
+    }
   }
 
   private rollCrapsDice(): [number, number] {

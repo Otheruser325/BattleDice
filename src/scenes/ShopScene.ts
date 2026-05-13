@@ -88,69 +88,52 @@ export class ShopScene extends Phaser.Scene {
     });
 
     const cardObjects: Phaser.GameObjects.GameObject[][] = [];
+    const renderOfferCards = () => {
+      state.offers.forEach((offer, index) => {
+        cardObjects[index]?.forEach((o) => o.destroy());
+        const col = index % COL_COUNT;
+        const row = Math.floor(index / COL_COUNT);
+        const x = gridStartX + col * (CARD_W + colGap);
+        const y = row * (CARD_H + CARD_GAP);
+        const def = allDefs.find((d) => d.typeId === offer.typeId);
+        const accentHex = offer.isDiceTokenOffer ? '#7ec8e3' : (offer.isCasinoChipOffer ? '#f4b860' : (def?.accent ?? '#f4b860'));
+        const accent = Phaser.Display.Color.HexStringToColor(accentHex).color;
+        const handlePurchase = () => {
+          const currentDiamonds = getDiamonds(this);
+          const canAfford = offer.isFreebie ? true : currentDiamonds >= offer.diamondCost;
+          if (!canAfford) return;
 
-    state.offers.forEach((offer, index) => {
-      const col = index % COL_COUNT;
-      const row = Math.floor(index / COL_COUNT);
-      const x = gridStartX + col * (CARD_W + colGap);
-      const y = row * (CARD_H + CARD_GAP);
+          const shopState = getShopState(this);
+          const offerIdx = shopState.offers.findIndex((o) => o.id === offer.id);
+          if (offerIdx < 0) return;
+          const targetOffer = shopState.offers[offerIdx];
+          if (targetOffer.purchased && !this.isInfiniteCurrencyOffer(offer)) return;
+          if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
 
-      const def = allDefs.find((d) => d.typeId === offer.typeId);
-      const accentHex = offer.isDiceTokenOffer ? '#7ec8e3' : (offer.isCasinoChipOffer ? '#f4b860' : (def?.accent ?? '#f4b860'));
-      const accent = Phaser.Display.Color.HexStringToColor(accentHex).color;
+          const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
+          if (offer.isCasinoChipOffer) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount }));
+          else if (offer.isCoinOffer) setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
+          else {
+            const progress = getDiceProgress(this, offer.typeId);
+            if (progress.classLevel < 15) grantDiceCopies(this, offer.typeId, offer.copies);
+          }
+          if (!offer.isFreebie) {
+            setDiamonds(this, currentDiamonds - offer.diamondCost);
+            diamonds = getDiamonds(this);
+            diamondText.setText(`◆ ${diamonds}`);
+          }
+          const updatedOffers = shopState.offers.map((o, i) => i === offerIdx ? { ...o, purchased: this.isInfiniteCurrencyOffer(offer) ? false : true } : o);
+          setShopState(this, { ...shopState, offers: updatedOffers, freebieClaimedThisSession: offer.isFreebie ? true : shopState.freebieClaimedThisSession, diceTokenFirstPurchaseIds: firstTokenPurchase ? [...shopState.diceTokenFirstPurchaseIds, offer.id] : shopState.diceTokenFirstPurchaseIds });
+          offer.purchased = !this.isInfiniteCurrencyOffer(offer);
+          renderOfferCards();
+        };
+        const objs = this.buildOfferCard(x, y, offer, accentHex, accent, handlePurchase);
+        objs.forEach((obj) => scrollContainer.add(obj));
+        cardObjects[index] = objs;
+      });
+    };
 
-      const handlePurchase = () => {
-        const currentDiamonds = getDiamonds(this);
-        const canAfford = offer.isFreebie ? true : currentDiamonds >= offer.diamondCost;
-        if (!canAfford) return;
-
-        const shopState = getShopState(this);
-        const offerIdx = shopState.offers.findIndex((o) => o.id === offer.id);
-        if (offerIdx < 0) return;
-        const targetOffer = shopState.offers[offerIdx];
-        if (targetOffer.purchased && !this.isInfiniteCurrencyOffer(offer)) return;
-        if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
-
-        const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
-        if (offer.isCasinoChipOffer) {
-          CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount }));
-        } else if (offer.isCoinOffer) {
-          setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
-        } else {
-          const progress = getDiceProgress(this, offer.typeId);
-          if (progress.classLevel < 15) grantDiceCopies(this, offer.typeId, offer.copies);
-        }
-
-        if (!offer.isFreebie) {
-          setDiamonds(this, currentDiamonds - offer.diamondCost);
-          diamonds = getDiamonds(this);
-          diamondText.setText(`◆ ${diamonds}`);
-        }
-
-        const updatedOffers = shopState.offers.map((o, i) =>
-          i === offerIdx ? { ...o, purchased: this.isInfiniteCurrencyOffer(offer) ? false : true } : o
-        );
-        setShopState(this, {
-          ...shopState,
-          offers: updatedOffers,
-          freebieClaimedThisSession: offer.isFreebie ? true : shopState.freebieClaimedThisSession,
-          diceTokenFirstPurchaseIds: firstTokenPurchase
-            ? [...shopState.diceTokenFirstPurchaseIds, offer.id]
-            : shopState.diceTokenFirstPurchaseIds
-        });
-
-        offer.purchased = !this.isInfiniteCurrencyOffer(offer);
-
-        objs.forEach((o) => o.destroy());
-        const refreshedOffer = { ...offer, purchased: offer.purchased };
-        const newObjs = this.buildOfferCard(x, y, refreshedOffer, accentHex, accent, handlePurchase);
-        newObjs.forEach((obj) => scrollContainer.add(obj));
-        cardObjects[index] = newObjs;
-      };
-      const objs = this.buildOfferCard(x, y, offer, accentHex, accent, handlePurchase);
-      objs.forEach((obj) => scrollContainer.add(obj));
-      cardObjects[index] = objs;
-    });
+    renderOfferCards();
     updateScroll(0);
 
     this.add.text(panel.centerX, panel.bottom - 30, 'Offers refresh daily  •  Gem dice offers can roll 1×-10× copies/cost  •  Currency bundles are infinitely purchasable', {

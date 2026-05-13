@@ -12,7 +12,10 @@
       "manaNeeded": 10,
       "modifiers": {
         "extraAttacks": 2,
-        "durationTurns": 2
+        "durationTurns": 2,
+        "notes": [
+          "runtime:skillSfx=dice_wind_skill"
+        ]
       }
     }
   ],
