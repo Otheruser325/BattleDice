@@ -13,7 +13,8 @@
       "modifiers": {
         "notes": [
           "runtime:targetMaxHpBonusRate=0.08",
-          "runtime:skillSfx=dice_solitude_skill"
+          "runtime:skillSfx=dice_solitude_skill",
+          "runtime:attackSfx=dice_solitude_attack"
         ],
         "targetMaxHpBonusRate": 0.08
       }

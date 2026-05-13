@@ -20,7 +20,8 @@
           "runtime:transformTitle=Death Dice \u2014 Instakill Form",
           "runtime:alternateButton=View Instakill Form",
           "runtime:baseButton=View Death Dice",
-          "runtime:skillSfx=dice_death_skill_01"
+          "runtime:skillSfx=dice_death_skill_01",
+          "runtime:attackSfxTransformed=dice_death_t_attack"
         ]
       }
     }

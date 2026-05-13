@@ -1356,6 +1356,14 @@ export class ArenaScene extends Phaser.Scene {
     nextState.dice.forEach((die) => {
       if (die.zone === 'board' && !die.isDestroyed) this.attackCapacityByInstance.set(die.instanceId, Math.max(1, die.attacksRemaining));
     });
+    [...playerBoardDice, ...enemyBoardDice].forEach((die) => {
+      const definition = this.getDefinitionForInstance(die);
+      if (!definition) return;
+      const meta = getRuntimeSkillMeta(definition);
+      const hasCombatStart = (meta.combatStartExtraAttacks ?? 0) > 0;
+      const hasPassivePipAura = (meta.pipMatchAllyAttackDelta ?? 0) !== 0 || (meta.pipMatchFoeAttackDelta ?? 0) !== 0;
+      if (hasCombatStart || hasPassivePipAura) this.playSkillSfxForDie(die);
+    });
     return nextState;
   }
 
@@ -1531,24 +1539,12 @@ export class ArenaScene extends Phaser.Scene {
 
         if (!skipBasicAttack) {
           if (beamTarget) {
-            const beamAttackSfx = this.transcendenceTransformed.has(attacker.instanceId) ? 'dice_transcendence_t_attack' : 'dice_transcendence_attack';
-            AudioManager.playSfx(this, beamAttackSfx);
+            this.playAttackSfx(attacker, attackerMeta);
             const result = this.executeTranscendenceBeam(attacker, target);
             damage = result.damage;
             targetDestroyed = result.targetDestroyed;
           } else {
-            const attackSfxKey = attacker.typeId === 'Solitude'
-              ? 'dice_solitude_attack'
-              : attacker.typeId === 'Transcendence'
-                ? (this.transcendenceTransformed.has(attacker.instanceId) ? 'dice_transcendence_t_attack' : 'dice_transcendence_attack')
-                : attacker.typeId === 'Death' && this.deathDiceTransformed.has(attacker.instanceId)
-                  ? 'dice_death_t_attack'
-                  : null;
-            if (attackSfxKey) {
-              AudioManager.playSfx(this, attackSfxKey);
-            } else {
-              AudioManager.playRandomSfx(this, ['dice-attack', 'skill-trigger', 'dice_attack_03']);
-            }
+            this.playAttackSfx(attacker, attackerMeta);
             const defs = this.getDefinitionsForCombat(attacker, target);
             const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs, {
               attacker: this.getDefinitionForInstance(attacker),
@@ -1638,6 +1634,21 @@ export class ArenaScene extends Phaser.Scene {
     this.renderEnemyDice();
     this.renderLavaPools();
     this.updateCombatButtonState();
+  }
+
+  private playAttackSfx(attacker: DiceInstanceState, meta?: ReturnType<typeof getRuntimeSkillMeta>) {
+    const transformed = this.transcendenceTransformed.has(attacker.instanceId) || this.deathDiceTransformed.has(attacker.instanceId);
+    const transformedKey = meta?.transformedAttackSfxKey;
+    const baseKey = meta?.attackSfxKey;
+    if (transformed && transformedKey) {
+      AudioManager.playSfx(this, transformedKey);
+      return;
+    }
+    if (baseKey) {
+      AudioManager.playSfx(this, baseKey);
+      return;
+    }
+    AudioManager.playRandomSfx(this, [AUDIO_KEYS.diceAttack, AUDIO_KEYS.skillTrigger, 'dice_attack_03']);
   }
 
   private applyNecromancyTurnEffect() {
@@ -1825,6 +1836,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
     if (meta.splashDamage) {
+      this.playSkillSfxForDie(attacker, meta);
       const splashTargets = getBoardDice(this.gameState, target.ownerId).filter((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
@@ -1839,6 +1851,7 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (meta.chainDamage) {
+      this.playSkillSfxForDie(attacker, meta);
       const chainTarget = getBoardDice(this.gameState, target.ownerId).find((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
@@ -1854,6 +1867,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     if (meta.pierceBehindRange) {
+      this.playSkillSfxForDie(attacker, meta);
       this.getPierceBehindTargets(attacker, target, meta.pierceBehindRange).forEach((die) => {
         const pierceDamage = definition.attack;
         this.gameState = this.applyDamageWithRevive(die.instanceId, pierceDamage);
@@ -2528,12 +2542,14 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition);
     const bonus = meta.onKillExtraAttacks ?? 0;
     if (bonus > 0) {
+      this.playSkillSfxForDie(attacker, meta);
       this.gameState = {
         ...this.gameState,
         dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
       };
     }
     if (meta.hasJudgmentHammer) {
+      this.playSkillSfxForDie(attacker, meta);
       this.dropJudgmentHammer(attacker, meta.hammerDamage ?? 150, new Set<string>());
     }
   }
@@ -2572,6 +2588,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition) return;
     const bonus = getRuntimeSkillMeta(definition).onDeathExtraAttacks ?? 0;
     if (bonus <= 0) return;
+    this.playSkillSfxForDie(defeated);
     const allyOwner = defeated.ownerId;
     const ally = getBoardDice(this.gameState, allyOwner).find((die) => die.instanceId !== defeated.instanceId);
     if (!ally) return;
@@ -2579,6 +2596,13 @@ export class ArenaScene extends Phaser.Scene {
       ...this.gameState,
       dice: this.gameState.dice.map((die) => die.instanceId === ally.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
     };
+  }
+
+  private playSkillSfxForDie(die: DiceInstanceState, providedMeta?: ReturnType<typeof getRuntimeSkillMeta>) {
+    const definition = this.getDefinitionForInstance(die);
+    if (!definition) return;
+    const meta = providedMeta ?? getRuntimeSkillMeta(definition);
+    AudioManager.playSfx(this, meta.skillSfxKey ?? AUDIO_KEYS.skillTrigger);
   }
 
   private executeTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState): { damage: number; targetDestroyed: boolean } {

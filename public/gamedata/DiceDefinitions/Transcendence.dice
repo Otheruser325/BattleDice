@@ -18,7 +18,9 @@
           "runtime:transformTitle=The Transcendence",
           "runtime:alternateButton=View The Transcendence",
           "runtime:baseButton=View Base Form",
-          "runtime:skillSfx=dice_transcendence_attack"
+          "runtime:skillSfx=dice_transcendence_attack",
+          "runtime:attackSfx=dice_transcendence_attack",
+          "runtime:attackSfxTransformed=dice_transcendence_t_attack"
         ],
         "beamDamage": 600
       }
