@@ -1563,6 +1563,7 @@ export class ArenaScene extends Phaser.Scene {
               this.gameState = rawResult.newState;
               damage = rawResult.damage;
               targetDestroyed = rawResult.targetDestroyed;
+              if (targetDestroyed) AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
             } else {
               this.gameState = spendAttack(this.gameState, attacker.instanceId);
               this.gameState = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
@@ -1582,7 +1583,7 @@ export class ArenaScene extends Phaser.Scene {
         }
         await this.applyActiveSkillEffects(attacker, target);
         if (targetDestroyed) {
-          this.applyOnKillSkillEffects(attacker, target);
+          await this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
           this.checkDeathTransformCondition(target);
         }
@@ -1939,7 +1940,7 @@ export class ArenaScene extends Phaser.Scene {
           this.combatLog.setText(`☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
           const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
           if (destroyed) {
-            this.applyOnKillSkillEffects(attacker, freshTarget);
+            await this.applyOnKillSkillEffects(attacker, freshTarget);
             this.applyOnDeathSkillEffects(freshTarget, attacker);
             this.checkDeathTransformCondition(freshTarget);
           }
@@ -1981,7 +1982,7 @@ export class ArenaScene extends Phaser.Scene {
     if (meta.activeHeal !== undefined) {
       const healTarget = this.getWeakestDamagedAlly(attacker.ownerId, attacker.instanceId);
       if (healTarget) {
-        AudioManager.playSfx(this, 'dice_heal_skill');
+        this.playSkillSfxForDie(attacker, meta);
         const healAmount = meta.activeHeal;
         this.gameState = {
           ...this.gameState,
@@ -2177,6 +2178,9 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private async returnDiceToHand() {
+    this.combatTimeRemainingMs = 30_000;
+    this.combatCountdownTriggered = false;
+    this.updateCombatTimerUi();
     this.placedDiceCount = 0;
     this.diceRolled = false;
     this.dicePips.clear();
@@ -2216,7 +2220,13 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => this.time.delayedCall(ms, resolve));
+    return new Promise((resolve) => {
+      if (!this.sys.isActive()) {
+        resolve();
+        return;
+      }
+      this.time.delayedCall(ms, () => resolve());
+    });
   }
 
 
@@ -2547,7 +2557,7 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  private applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
+  private async applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
     const meta = getRuntimeSkillMeta(definition);
@@ -2561,7 +2571,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (meta.hasJudgmentHammer) {
       this.playSkillSfxForDie(attacker, meta);
-      void this.dropJudgmentHammer(attacker, meta.hammerDamage ?? 150, new Set<string>());
+      await this.dropJudgmentHammer(attacker, meta.hammerDamage ?? 150, new Set<string>());
     }
   }
 
@@ -2574,6 +2584,7 @@ export class ArenaScene extends Phaser.Scene {
     chainGuard.add(weakest.instanceId);
     const center = weakest.gridPosition;
     await this.delay(500);
+    if (!this.sys.isActive()) return;
     this.animateJudgmentHammer(attacker.ownerId, center.row, center.col);
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
       die.gridPosition &&
@@ -2937,6 +2948,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private updateCombatTimerUi() {
+    if (!this.sys.isActive()) return;
     if (!this.combatTimerText) {
       this.combatTimerText = this.add.text(this.scale.width / 2, 92, '', {
         fontFamily: 'Orbitron',
@@ -2951,6 +2963,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private async delayCombatPaced(ms: number): Promise<boolean> {
+    if (!this.sys.isActive()) return false;
     const prevMs = this.combatTimeRemainingMs;
     const pacingMultiplier = prevMs <= 10_000 ? 2 : 1;
     const actualDelay = Math.max(1, Math.floor(ms / pacingMultiplier));
@@ -2967,7 +2980,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     this.updateCombatTimerUi();
     await this.delay(actualDelay);
-    return this.combatTimeRemainingMs > 0;
+    return this.combatTimeRemainingMs > 0 && this.sys.isActive();
   }
 
   private checkWinConditions(): boolean {
