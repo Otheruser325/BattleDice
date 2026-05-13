@@ -91,6 +91,7 @@ export class CasinoScene extends Phaser.Scene {
   private chipText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
+  private activeRewardDetailClose: (() => void) | null = null;
 
   create() {
     this.resetRuntimeUiState();
@@ -401,7 +402,13 @@ export class CasinoScene extends Phaser.Scene {
     ratesBtn.on('pointerout', () => { if (!dropInfoPinned) dropInfo.setVisible(false); });
     ratesBtn.on('pointerdown', toggleDropInfo);
 
-    const escHandler = () => close();
+    const escHandler = () => {
+      if (this.activeRewardDetailClose) {
+        this.activeRewardDetailClose();
+        return;
+      }
+      close();
+    };
     this.input.keyboard?.on('keydown-ESC', escHandler);
     const close = () => {
       this.input.keyboard?.off('keydown-ESC', escHandler);
@@ -561,7 +568,13 @@ export class CasinoScene extends Phaser.Scene {
     };
     this.input.on('wheel', wheelHandler);
 
-    const escHandler = () => close();
+    const escHandler = () => {
+      if (this.activeRewardDetailClose) {
+        this.activeRewardDetailClose();
+        return;
+      }
+      close();
+    };
     this.input.keyboard?.on('keydown-ESC', escHandler);
     const close = () => {
       this.input.off('wheel', wheelHandler);
@@ -599,7 +612,9 @@ export class CasinoScene extends Phaser.Scene {
     const close = () => {
       this.input.keyboard?.off('keydown-ESC', escHandler);
       [overlay, panel, text, closeBtn].forEach((obj) => obj.destroy());
+      this.activeRewardDetailClose = null;
     };
+    this.activeRewardDetailClose = close;
     closeBtn.on('pointerdown', close);
     overlay.on('pointerdown', () => undefined);
   }

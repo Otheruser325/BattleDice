@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Death Incarnate",
-      "description": "Transforms into Instakill Form when 2 allies are defeated, doubling max HP and healing to full. In Instakill Form: accumulates mana and instantly kills a target at 12 mana.",
+      "description": "Transforms into Instakill Form when 2 allies are defeated, doubling max HP and healing to full. In Instakill Form: accumulates mana and instantly kills a target.",
       "manaNeeded": 12,
       "modifiers": {
         "notes": [
