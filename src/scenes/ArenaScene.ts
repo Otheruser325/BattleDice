@@ -132,6 +132,7 @@ export class ArenaScene extends Phaser.Scene {
   private combatTimeRemainingMs = 30_000;
   private combatCountdownTriggered = false;
   private combatTimerText: Phaser.GameObjects.Text | null = null;
+  private berserkTriggeredInstances: Set<string> = new Set();
 
   constructor() {
     super(ArenaScene.KEY);
@@ -167,6 +168,7 @@ export class ArenaScene extends Phaser.Scene {
     this.activeChallenge = null;
     this.enemyLoadoutRevealed = false;
     this.clearRangeHighlights();
+    this.berserkTriggeredInstances.clear();
   }
 
   create() {
@@ -1526,6 +1528,7 @@ export class ArenaScene extends Phaser.Scene {
     this.updateCombatTimerUi();
     const owners: ['player', 'enemy'] = ['player', 'enemy'];
 
+    let timedOut = false;
     for (const owner of owners) {
       const ownerName = owner === 'player' ? 'Your' : 'Enemy';
 
@@ -1541,7 +1544,10 @@ export class ArenaScene extends Phaser.Scene {
             dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: 0, hasFinishedAttacking: true } : die)
           };
           this.combatLog.setText(`${ownerName} ${attacker.typeId} is out of range and skips!`);
-          if (!(await this.delayCombatPaced(500))) break;
+          if (!(await this.delayCombatPaced(500))) {
+            timedOut = true;
+            break;
+          }
           continue;
         }
 
@@ -1610,14 +1616,20 @@ export class ArenaScene extends Phaser.Scene {
         if (!beamTarget && !skipBasicAttack) this.animateAttack(attacker, target);
         this.renderDice();
         this.renderEnemyDice();
+        this.syncBerserkSfxState();
 
-        if (!(await this.delayCombatPaced(500))) break;
+        if (!(await this.delayCombatPaced(500))) {
+          timedOut = true;
+          break;
+        }
 
         if (this.checkWinConditions()) {
           return;
         }
       }
+      if (timedOut) break;
     }
+    if (timedOut) this.combatLog.setText('⏱️ Time is up! Advancing to next turn...');
 
     this.combatLog.setText('Combat phase complete!');
     this.clearRangeHighlights();
@@ -1763,6 +1775,23 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition || die.isDestroyed || die.maxHealth <= 0) return false;
     const meta = getRuntimeSkillMeta(definition);
     return meta.berserkThresholdRate !== undefined && die.currentHealth / die.maxHealth < meta.berserkThresholdRate;
+  }
+
+  private syncBerserkSfxState() {
+    this.gameState.dice.forEach((die) => {
+      if (die.zone !== 'board' || die.isDestroyed) {
+        this.berserkTriggeredInstances.delete(die.instanceId);
+        return;
+      }
+      const isActive = this.isBerserkActive(die);
+      const wasActive = this.berserkTriggeredInstances.has(die.instanceId);
+      if (isActive && !wasActive) {
+        this.playSkillSfxForDie(die);
+        this.berserkTriggeredInstances.add(die.instanceId);
+      } else if (!isActive && wasActive) {
+        this.berserkTriggeredInstances.delete(die.instanceId);
+      }
+    });
   }
 
   private getStatusEffects(die: DiceInstanceState): Array<'slow' | 'poison' | 'berserk'> {
@@ -2203,6 +2232,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.renderDice();
     this.renderEnemyDice();
+    this.syncBerserkSfxState();
 
     const { width, height } = this.scale;
     const handY = height - 110;
@@ -2991,7 +3021,7 @@ export class ArenaScene extends Phaser.Scene {
       AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown);
     }
     for (let second = prevSeconds - 1; second >= nextSeconds; second--) {
-      if (second <= 10 && second > 0) AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.6 });
+      if (second <= 10 && second > 0) AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.62 });
     }
     this.updateCombatTimerUi();
     await this.delay(actualDelay);
