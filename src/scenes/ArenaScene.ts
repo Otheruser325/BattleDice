@@ -1705,7 +1705,7 @@ export class ArenaScene extends Phaser.Scene {
       AudioManager.playSfx(this, baseKey);
       return;
     }
-    AudioManager.playRandomSfx(this, [AUDIO_KEYS.diceAttack, AUDIO_KEYS.skillTrigger, 'dice_attack_03']);
+    AudioManager.playRandomSfx(this, [AUDIO_KEYS.diceAttack01, AUDIO_KEYS.diceAttack02, AUDIO_KEYS.diceAttack03]);
   }
 
   private applyNecromancyTurnEffect() {
@@ -2868,7 +2868,7 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5);
     pipLabel.setName('die-info');
     container.add(pipLabel);
-
+	
     this.renderStatusEffects(container, x, y, die);
     this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
