@@ -7,9 +7,18 @@ export const AUDIO_KEYS = {
   uiClick: 'ui-click',
   classUp: 'class-up',
   chestOpen: 'chest-open',
-  diceAttack: 'dice-attack',
+  diceAttack01: 'dice-attack-01',
+  diceAttack02: 'dice-attack-02',
+  diceAttack03: 'dice-attack-03',
   diceDie: 'dice-die',
   comboRoll: 'combo-roll',
+  comboPair: 'combo_pair',
+  comboTwoPair: 'combo_twoPair',
+  comboTriple: 'combo_triple',
+  comboStraight: 'combo_straight',
+  comboFullHouse: 'combo_fullHouse',
+  comboFourOfAKind: 'combo_fourOfAKind',
+  comboFiveOfAKind: 'combo_fiveOfAKind',
   skillTrigger: 'skill-trigger',
   gameStart: 'game_start',
   gameCountdown: 'game_countdown',
@@ -29,17 +38,18 @@ export class AudioManager {
     scene.load.audio(AUDIO_KEYS.uiClick, '/assets/audio/button.mp3');
     scene.load.audio(AUDIO_KEYS.classUp, '/assets/audio/combo_pair.mp3');
     scene.load.audio(AUDIO_KEYS.chestOpen, '/assets/audio/dice.mp3');
-    scene.load.audio(AUDIO_KEYS.diceAttack, '/assets/audio/dice/dice_attack_01.ogg');
-    scene.load.audio('dice_attack_03', '/assets/audio/dice/dice_attack_03.ogg');
+    scene.load.audio(AUDIO_KEYS.diceAttack01, '/assets/audio/dice/dice_attack_01.ogg');
+	scene.load.audio(AUDIO_KEYS.diceAttack02, '/assets/audio/dice/dice_attack_02.ogg');
+    scene.load.audio(AUDIO_KEYS.diceAttack03, '/assets/audio/dice/dice_attack_03.ogg');
     scene.load.audio(AUDIO_KEYS.diceDie, '/assets/audio/dice/dice_die.ogg');
     scene.load.audio(AUDIO_KEYS.comboRoll, '/assets/audio/combo_pair.mp3');
-    scene.load.audio('combo_pair', '/assets/audio/combo_pair.mp3');
-    scene.load.audio('combo_twoPair', '/assets/audio/combo_pair.mp3');
-    scene.load.audio('combo_triple', '/assets/audio/combo_triple.mp3');
-    scene.load.audio('combo_straight', '/assets/audio/combo_straight.mp3');
-    scene.load.audio('combo_fullHouse', '/assets/audio/combo_fullHouse.mp3');
-    scene.load.audio('combo_fourOfAKind', '/assets/audio/combo_fourOfAKind.mp3');
-    scene.load.audio('combo_fiveOfAKind', '/assets/audio/combo_fiveOfAKind.mp3');
+    scene.load.audio(AUDIO_KEYS.comboPair, '/assets/audio/combo_pair.mp3');
+    scene.load.audio(AUDIO_KEYS.comboTwoPair, '/assets/audio/combo_pair.mp3');
+    scene.load.audio(AUDIO_KEYS.comboTriple, '/assets/audio/combo_triple.mp3');
+    scene.load.audio(AUDIO_KEYS.comboStraight, '/assets/audio/combo_straight.mp3');
+    scene.load.audio(AUDIO_KEYS.comboFullHouse, '/assets/audio/combo_fullHouse.mp3');
+    scene.load.audio(AUDIO_KEYS.comboFourOfAKind, '/assets/audio/combo_fourOfAKind.mp3');
+    scene.load.audio(AUDIO_KEYS.comboFiveOfAKind, '/assets/audio/combo_fiveOfAKind.mp3');
     scene.load.audio(AUDIO_KEYS.skillTrigger, '/assets/audio/dice/dice_attack_02.ogg');
     scene.load.audio(AUDIO_KEYS.gameStart, '/assets/audio/game_start.ogg');
     scene.load.audio(AUDIO_KEYS.gameCountdown, '/assets/audio/game_countdown.ogg');
