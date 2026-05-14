@@ -1,0 +1,29 @@
+{
+  "typeId": "Assassin",
+  "title": "Assassin Dice",
+  "attack": 30,
+  "health": 480,
+  "range": 2,
+  "rarity": "Uncommon",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Backline Breach",
+      "description": "Teleports to the nearest free tile by the furthest enemy and strikes first while hidden.",
+      "modifiers": {
+        "notes": ["runtime:assassinBacklineTeleport", "runtime:assassinInvisibleOnStart"]
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Execution Rhythm",
+      "description": "The next 2 basic attacks deal 100% more damage.",
+      "modifiers": {
+        "numAttacksBoosted": 2,
+        "numAttacksDamageMult": 2
+      }
+    }
+  ],
+  "accent": "#c57cff",
+  "targetingMode": "Nearest"
+}

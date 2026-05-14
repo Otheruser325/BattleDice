@@ -1278,6 +1278,12 @@ export class ArenaScene extends Phaser.Scene {
     this.attackCapacityByInstance.clear();
     this.transcendenceTransformed.clear();
     this.invisiRollForEnemies();
+    if (this.configRandomMode && this.activeRandomModifier === 'Combanity') {
+      const player = this.getRollComboBonus('player');
+      const enemy = this.getRollComboBonus('enemy');
+      const comboSfxKey = this.getComboSfxKey(player.multiplier >= enemy.multiplier ? player.label : enemy.label);
+      if (comboSfxKey) this.time.delayedCall(500, () => AudioManager.playSfx(this, comboSfxKey));
+    }
 
     this.enemyFogOverlay.setVisible(false);
     this.enemyFogText.setVisible(false);
@@ -1415,8 +1421,6 @@ export class ArenaScene extends Phaser.Scene {
     const player = this.getRollComboBonus('player');
     const enemy = this.getRollComboBonus('enemy');
     this.combatLog.setText(`Combanity: You rolled ${player.label} (${player.multiplier}x), Bot rolled ${enemy.label} (${enemy.multiplier}x).`);
-    const comboSfxKey = this.getComboSfxKey(player.multiplier >= enemy.multiplier ? player.label : enemy.label);
-    if (comboSfxKey) this.time.delayedCall(500, () => AudioManager.playSfx(this, comboSfxKey));
     return {
       ...state,
       dice: state.dice.map((die) => {
