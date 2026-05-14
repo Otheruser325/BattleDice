@@ -1975,7 +1975,7 @@ export class ArenaScene extends Phaser.Scene {
             const meteorDamage = meta.meteorDamage ?? 60;
             const lavaDamage = meta.lavaDamage ?? 25;
             this.animateMeteorStrike(freshTarget);
-            await this.delay(1000);
+            await this.delayCombatVisualPaced(1000);
             const dealt = applyDirectDamage(freshTarget, meteorDamage);
             this.showDamageText(freshTarget, dealt, '#ff9f58');
             if (freshTarget.gridPosition) {
@@ -3030,10 +3030,20 @@ export class ArenaScene extends Phaser.Scene {
     this.combatTimerText.setVisible(this.gamePhase.stage === 'combat');
   }
 
+  private getCombatPacingMultiplier() {
+    return this.gamePhase.stage === 'combat' && this.combatTimeRemainingMs <= 10_000 ? 2 : 1;
+  }
+
+  private async delayCombatVisualPaced(ms: number): Promise<void> {
+    const pacingMultiplier = this.getCombatPacingMultiplier();
+    await this.delay(Math.max(1, Math.floor(ms / pacingMultiplier)));
+  }
+
   private async delayCombatPaced(ms: number): Promise<boolean> {
     if (!this.sys.isActive()) return false;
     const prevMs = this.combatTimeRemainingMs;
-    const actualDelay = Math.max(1, Math.floor(ms));
+    const pacingMultiplier = this.getCombatPacingMultiplier();
+    const actualDelay = Math.max(1, Math.floor(ms / pacingMultiplier));
     this.combatTimeRemainingMs = Math.max(0, prevMs - ms);
 
     const prevSeconds = Math.ceil(prevMs / 1000);
