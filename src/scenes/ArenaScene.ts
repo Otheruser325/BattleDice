@@ -1522,6 +1522,17 @@ export class ArenaScene extends Phaser.Scene {
     void boardWidth;
   }
 
+  private forceCombatResolutionState() {
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => (
+        die.zone === 'board' && !die.isDestroyed
+          ? { ...die, hasFinishedAttacking: true, attacksRemaining: 0 }
+          : die
+      ))
+    };
+  }
+
   private async runCombatLoop() {
     this.combatTimeRemainingMs = 30_000;
     this.combatCountdownTriggered = false;
@@ -1533,6 +1544,11 @@ export class ArenaScene extends Phaser.Scene {
       const ownerName = owner === 'player' ? 'Your' : 'Enemy';
 
       while (true) {
+        if (this.combatTimeRemainingMs <= 0) {
+          timedOut = true;
+          break;
+        }
+
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
@@ -1601,6 +1617,10 @@ export class ArenaScene extends Phaser.Scene {
           AudioManager.playSfx(this, sfxKey);
         }
         await this.applyActiveSkillEffects(attacker, target);
+        if (this.combatTimeRemainingMs <= 0) {
+          timedOut = true;
+          break;
+        }
         if (targetDestroyed) {
           await this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
@@ -1629,9 +1649,12 @@ export class ArenaScene extends Phaser.Scene {
       }
       if (timedOut) break;
     }
-    if (timedOut) this.combatLog.setText('⏱️ Time is up! Advancing to next turn...');
-
-    this.combatLog.setText('Combat phase complete!');
+    if (timedOut) {
+      this.forceCombatResolutionState();
+      this.combatLog.setText('⏱️ Time is up! Advancing to next turn...');
+    } else {
+      this.combatLog.setText('Combat phase complete!');
+    }
     this.clearRangeHighlights();
     this.enemyLoadoutRevealed = true;
     await this.delay(1000);
@@ -3018,10 +3041,13 @@ export class ArenaScene extends Phaser.Scene {
     const nextSeconds = Math.ceil(this.combatTimeRemainingMs / 1000);
     if (!this.combatCountdownTriggered && prevMs > 10_000 && this.combatTimeRemainingMs <= 10_000) {
       this.combatCountdownTriggered = true;
-      AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown);
     }
     for (let second = prevSeconds - 1; second >= nextSeconds; second--) {
-      if (second <= 10 && second > 0) AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.62 });
+      if (second === 10) {
+        AudioManager.playSfx(this, AUDIO_KEYS.gameTimerTick, { volume: 0.62 });
+      } else if (second < 10 && second > 0) {
+        AudioManager.playSfx(this, AUDIO_KEYS.gameCountdown, { volume: 0.62 });
+      }
     }
     this.updateCombatTimerUi();
     await this.delay(actualDelay);
