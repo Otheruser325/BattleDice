@@ -6,7 +6,7 @@ import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
-import { animateDiceRoll } from '../utils/DiceAnimations';
+import { animateDiceRoll } from '../utils/DiceAnimation';
 
 interface ChestRewardEntry {
   typeId: string;
