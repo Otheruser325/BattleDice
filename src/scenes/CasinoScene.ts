@@ -184,7 +184,7 @@ export class CasinoScene extends Phaser.Scene {
       const x = cx - 160 + i * 80;
       this.add.rectangle(x, y, 62, 62, 0x183447, 1).setStrokeStyle(1, 0x3a6688);
       const die = this.add.image(x, y - 6, this.getDiceTextureKey(this.dice[i]))
-        .setDisplaySize(42, 42);
+        .setDisplaySize(54, 54);
       const lock = this.add.text(x, y + 22, 'UNLOCK', {
         fontFamily: 'Orbitron',
         fontSize: '9px',
@@ -280,7 +280,7 @@ export class CasinoScene extends Phaser.Scene {
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
     this.saveFivesHand();
-    await animateDiceRoll(this, this.dice);
+    await animateDiceRoll(this, this.dice, { locked: this.locks });
     const combo = evaluateFivesCombo(this.dice);
     const comboSfxKey = this.getComboSfxKey(combo.combo);
     if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);

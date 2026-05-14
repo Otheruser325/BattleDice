@@ -7,13 +7,16 @@ type DiceSprite = Phaser.GameObjects.Image & {
 
 export async function animateDiceRoll(
   scene: Phaser.Scene & { diceSprites?: DiceSprite[] },
-  finalFaces: number[]
+  finalFaces: number[],
+  options: { locked?: boolean[]; textureKeyPrefix?: string } = {}
 ) {
   const duration = 700;
   const jitter = 12;
   const interval = 40;
 
   const dice = scene.diceSprites ?? [];
+  const locked = options.locked ?? [];
+  const textureKeyPrefix = options.textureKeyPrefix ?? 'dice-face-';
   dice.forEach((die) => {
     die.originalX = die.x;
     die.originalY = die.y;
@@ -29,9 +32,9 @@ export async function animateDiceRoll(
       callback: () => {
         elapsed += interval;
 
-        dice.forEach((die) => {
+        dice.forEach((die, i) => {
           const temp = Phaser.Math.Between(1, 6);
-          die.setTexture(`dice-face-${temp}`);
+          if (!locked[i]) die.setTexture(`${textureKeyPrefix}${temp}`);
 
           const ox = Phaser.Math.Between(-jitter, jitter);
           const oy = Phaser.Math.Between(-jitter, jitter);
@@ -52,7 +55,7 @@ export async function animateDiceRoll(
 
           dice.forEach((die, i) => {
             const face = finalFaces[i] ?? Phaser.Math.Between(1, 6);
-            die.setTexture(`dice-face-${face}`);
+            die.setTexture(`${textureKeyPrefix}${face}`);
 
             scene.tweens.add({
               targets: die,
