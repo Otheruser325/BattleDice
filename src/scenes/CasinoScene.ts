@@ -6,6 +6,7 @@ import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
+import { animateDiceRoll } from '../utils/DiceAnimations';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -86,6 +87,7 @@ export class CasinoScene extends Phaser.Scene {
   private crapsTableActive = false;
 
   private diceImages: Phaser.GameObjects.Image[] = [];
+  public diceSprites: Phaser.GameObjects.Image[] = [];
   private lockTexts: Phaser.GameObjects.Text[] = [];
   private chestTexts = new Map<ChestType, Phaser.GameObjects.Text>();
   private chipText!: Phaser.GameObjects.Text;
@@ -132,6 +134,7 @@ export class CasinoScene extends Phaser.Scene {
 
   private resetRuntimeUiState() {
     this.diceImages = [];
+    this.diceSprites = this.diceImages;
     this.lockTexts = [];
     this.chestTexts.clear();
 
@@ -271,12 +274,13 @@ export class CasinoScene extends Phaser.Scene {
     this.render();
   }
 
-  private rollDice() {
+  private async rollDice() {
     if (!this.tableActive || this.rollsLeft <= 0) return;
     AudioManager.playSfx(this, 'chest-open');
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
     this.saveFivesHand();
+    await animateDiceRoll(this, this.dice);
     const combo = evaluateFivesCombo(this.dice);
     const comboSfxKey = this.getComboSfxKey(combo.combo);
     if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);

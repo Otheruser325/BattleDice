@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "version": "v0.5.0-beta",
+      "date": "2026-05-14",
+      "notes": [
+        "Settings now include a Changelog button with an in-game modal popup.",
+        "Settings button is now only available from the main menu (hidden during arena matches).",
+        "Combat 2x acceleration threshold moved from 10s to 15s.",
+        "Combat pacing now accelerates asynchronous gameplay actions consistently.",
+        "Fixed combat timer self-acceleration; only gameplay pacing is accelerated.",
+        "Arena dice animation flow has been tidied into DiceAnimations.ts.",
+        "Casino dice now use a jitter-based rolling animation before final faces settle."
+      ]
+    }
+  ]
+}

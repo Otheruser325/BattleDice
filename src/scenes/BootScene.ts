@@ -9,6 +9,7 @@ import { SCENE_KEYS } from './sceneKeys';
 
 const MENU_BACKGROUND_PATH = '/assets/images/bg/Background-floor.png';
 const SETTINGS_ICON_PATH = '/assets/images/ui/settings.png';
+const CHANGELOG_ICON_PATH = '/assets/images/ui/changelog.png';
 
 export class BootScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Boot;
@@ -63,6 +64,7 @@ export class BootScene extends Phaser.Scene {
 
     this.load.image('menu-bg', MENU_BACKGROUND_PATH);
     this.load.image('settings-icon', SETTINGS_ICON_PATH);
+    this.load.image('changelog-icon', CHANGELOG_ICON_PATH);
     AudioManager.preload(this);
     for (let face = 1; face <= 6; face++) {
       const names = ['one', 'two', 'three', 'four', 'five', 'six'];
