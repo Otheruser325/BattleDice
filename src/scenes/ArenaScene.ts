@@ -1522,6 +1522,17 @@ export class ArenaScene extends Phaser.Scene {
     void boardWidth;
   }
 
+  private forceCombatResolutionState() {
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => (
+        die.zone === 'board' && !die.isDestroyed
+          ? { ...die, hasFinishedAttacking: true, attacksRemaining: 0 }
+          : die
+      ))
+    };
+  }
+
   private async runCombatLoop() {
     this.combatTimeRemainingMs = 30_000;
     this.combatCountdownTriggered = false;
@@ -1638,9 +1649,12 @@ export class ArenaScene extends Phaser.Scene {
       }
       if (timedOut) break;
     }
-    if (timedOut) this.combatLog.setText('⏱️ Time is up! Advancing to next turn...');
-
-    this.combatLog.setText('Combat phase complete!');
+    if (timedOut) {
+      this.forceCombatResolutionState();
+      this.combatLog.setText('⏱️ Time is up! Advancing to next turn...');
+    } else {
+      this.combatLog.setText('Combat phase complete!');
+    }
     this.clearRangeHighlights();
     this.enemyLoadoutRevealed = true;
     await this.delay(1000);
