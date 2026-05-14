@@ -55,6 +55,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
     modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
     modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
+    modifiers.shield = scaleFlatDamage(source.shield, multiplier);
     modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
 
     if (definition.typeId === 'Skull' && source.reviveChance !== undefined) {
@@ -75,6 +76,10 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     if (definition.typeId === 'Solitude' && source.targetMaxHpBonusRate !== undefined) {
       modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + SOLITUDE_MAX_HP_RATE_PER_CLASS * classUps;
+    }
+
+    if (definition.typeId === 'Assassin' && source.numAttacksBoosted !== undefined) {
+      modifiers.numAttacksBoosted = source.numAttacksBoosted + Math.floor(classUps / 4);
     }
 
     return { ...skill, modifiers };
@@ -119,7 +124,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `On kill, summons a judge hammer on the weakest foe for ${modifiers.hammerDamage} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
   }
   if (notes.includes('runtime:solitudePreCombat') && modifiers.targetMaxHpBonusRate !== undefined) {
-    return `At combat start, if isolated from adjacent allies, deals ${formatPercent(modifiers.targetMaxHpBonusRate)} max HP damage to each foe.`;
+    return `When isolated from adjacent allies, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
   }
   if (notes.includes('runtime:pierceBehind=1') && modifiers.pierceBehindRange !== undefined) {
     return `Basic attacks also stab ${modifiers.pierceBehindRange} tile behind the target.`;
@@ -138,6 +143,14 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   }
   if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
     return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
+  }
+
+  if (modifiers.shield !== undefined) {
+    return `Gain +${modifiers.shield} shield for ${modifiers.durationTurns ?? 1} turn.`;
+  }
+
+  if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {
+    return `The next ${modifiers.numAttacksBoosted} basic attacks deal ${formatPercent(modifiers.numAttacksDamageMult - 1)} more damage.`;
   }
 
   if (modifiers.targetMaxHpBonusRate !== undefined) {
@@ -180,6 +193,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Beam damage', currentModifiers.beamDamage, nextModifiers.beamDamage);
   pushNumericDelta('Pierce damage', currentModifiers.pierceBehindDamage, nextModifiers.pierceBehindDamage);
   pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
+  pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
 
   if (currentModifiers.damageRange && nextModifiers.damageRange) {
     const minDelta = nextModifiers.damageRange[0] - currentModifiers.damageRange[0];
@@ -202,6 +216,12 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
     const delta = nextModifiers.targetCurrentHpBonusRate - currentModifiers.targetCurrentHpBonusRate;
     if (delta > 0) skillDeltas.push(`Current HP damage +${formatPercent(delta)}`);
   }
+
+  if (currentModifiers.numAttacksBoosted !== undefined && nextModifiers.numAttacksBoosted !== undefined) {
+    const delta = nextModifiers.numAttacksBoosted - currentModifiers.numAttacksBoosted;
+    if (delta > 0) skillDeltas.push(`Boosted attacks +${delta}`);
+  }
+
   if (currentModifiers.berserkThresholdRate !== undefined && nextModifiers.berserkThresholdRate !== undefined) {
     const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;
     if (delta > 0) skillDeltas.push(`Berserk threshold +${formatPercent(delta)}`);
