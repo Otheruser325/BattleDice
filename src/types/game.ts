@@ -31,7 +31,11 @@ export interface DiceSkillModifier {
   distanceDamageBonusPerTile?: number;
   distanceDamageBonusRatePerTile?: number;
   notes?: string[];
+  canConjureSouls?: boolean;
+  conjureType?: 'ally' | 'enemy';
+  maxSouls?: number;
 }
+
 
 export interface DiceSkillDefinition {
   type: DiceSkillType;
@@ -51,7 +55,9 @@ export interface DiceDefinition {
   rarity: DiceRarity;
   skills: DiceSkillDefinition[];
   accent: string;
+  transformDescriptions?: string[];
 }
+
 
 export interface DiceFlags {
   fetchableTypeIds: DiceTypeId[];

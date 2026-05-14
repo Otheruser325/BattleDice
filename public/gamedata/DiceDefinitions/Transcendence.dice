@@ -28,5 +28,6 @@
   ],
   "accent": "#b18cff",
   "rarity": "Legendary",
+  "transformDescriptions": ["The Transcendence"],
   "targetingMode": "Nearest"
 }
