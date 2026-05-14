@@ -32,6 +32,7 @@ export interface DiceSkillRuntimeMeta {
   pierceBehindRange?: number;
   pierceBehindDamage?: number;
   hammerDamage?: number;
+  shield?: number;
   hasSpearActive?: boolean;
   hasSolitudePreCombat?: boolean;
   hasJudgmentHammer?: boolean;
@@ -111,6 +112,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange ?? (activeModifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
     pierceBehindDamage: (activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage ?? (modifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage,
     hammerDamage: (modifiers as { hammerDamage?: number } | undefined)?.hammerDamage,
+    shield: (activeModifiers as { shield?: number } | undefined)?.shield ?? (modifiers as { shield?: number } | undefined)?.shield,
     hasSpearActive: notes.includes('runtime:spearActive') || (activeModifiers?.notes ?? []).includes('runtime:spearActive'),
     hasSolitudePreCombat: notes.includes('runtime:solitudePreCombat'),
     hasJudgmentHammer: notes.includes('runtime:judgmentHammer'),

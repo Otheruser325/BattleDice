@@ -37,6 +37,7 @@ export interface DiceSkillModifier {
   shield?: number;
   tauntDuration?: number;
   tauntRange?: number;
+  jumpRange?: number;
   numAttacksBoosted?: number;
   numAttacksDamageMult?: number;
   manaGain?: number;
