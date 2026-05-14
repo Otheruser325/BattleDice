@@ -6,7 +6,7 @@ import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
-import { animateDiceRoll } from '../utils/DiceAnimations';
+import { animateDiceRoll } from '../utils/DiceAnimation';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -280,7 +280,7 @@ export class CasinoScene extends Phaser.Scene {
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
     this.saveFivesHand();
-    await animateDiceRoll(this, this.dice);
+    await animateDiceRoll(this, this.dice, { locked: this.locks, finalScale: 1.14 });
     const combo = evaluateFivesCombo(this.dice);
     const comboSfxKey = this.getComboSfxKey(combo.combo);
     if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);

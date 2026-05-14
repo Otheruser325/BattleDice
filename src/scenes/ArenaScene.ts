@@ -26,7 +26,7 @@ import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } f
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
-import { animateDeathTransform, animateElementalSkill, animateJudgmentHammer, animateSkullRevive, animateTimeActive, animateHealingPulse, animateSpearStrike, animateTranscendenceBeamFx } from '../utils/DiceAnimations';
+import { animateDeathTransform, animateElementalSkill, animateHealingPulse, animateJudgmentHammer, animateMeteorImpact, animateSkullRevive, animateSpearStrike, animateTimeActive, animateTranscendenceBeamFx } from '../utils/DiceAnimation';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -2316,7 +2316,11 @@ export class ArenaScene extends Phaser.Scene {
     if (kind === 'fire') { g.fillStyle(0xff8a3d, 0.25); g.fillTriangle(tx, ty - 18, tx - 14, ty + 16, tx + 14, ty + 16); }
     if (kind === 'poison') { g.fillStyle(0x74d66f, 0.28); g.fillCircle(tx, ty, 14); g.fillCircle(tx + 12, ty - 8, 7); }
     if (kind === 'electric') { g.lineStyle(2, 0xffef7a, 0.95); g.beginPath(); g.moveTo(ax, ay); g.lineTo((ax+tx)/2 - 8, (ay+ty)/2 + 6); g.lineTo((ax+tx)/2 + 6, (ay+ty)/2 - 5); g.lineTo(tx, ty); g.strokePath(); }
-    if (kind === 'heal') { g.lineStyle(3, 0x7dff9f, 0.95); g.strokeCircle(tx, ty, 18); g.lineBetween(tx - 10, ty, tx + 10, ty); g.lineBetween(tx, ty - 10, tx, ty + 10); }
+    if (kind === 'heal') {
+      g.destroy();
+      animateHealingPulse(this, tx, ty);
+      return;
+    }
     this.tweens.add({ targets: g, alpha: 0, duration: 420, onComplete: () => g.destroy() });
   }
 
@@ -2325,26 +2329,7 @@ export class ArenaScene extends Phaser.Scene {
     const targetGrid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const meteor = this.add.circle(tx - 110, ty - 140, 8, 0xff8f4d, 0.95).setDepth(2000);
-    const trail = this.add.graphics().setDepth(1999);
-    this.tweens.add({
-      targets: meteor,
-      x: tx,
-      y: ty,
-      duration: 900,
-      ease: 'Cubic.In',
-      onUpdate: () => {
-        trail.clear();
-        trail.lineStyle(3, 0xffd08a, 0.65);
-        trail.strokeLineShape(new Phaser.Geom.Line(meteor.x - 32, meteor.y - 26, meteor.x, meteor.y));
-      },
-      onComplete: () => {
-        trail.destroy();
-        meteor.destroy();
-        const burst = this.add.circle(tx, ty, 10, 0xffb366, 0.65).setDepth(2001);
-        this.tweens.add({ targets: burst, scale: 3.2, alpha: 0, duration: 220, onComplete: () => burst.destroy() });
-      }
-    });
+    animateMeteorImpact(this, tx, ty);
   }
 
   private animateSkullRevive(die: DiceInstanceState) {
@@ -2410,21 +2395,7 @@ export class ArenaScene extends Phaser.Scene {
     const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
     const rowY = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     
-    const graphics = this.add.graphics().setDepth(250);
-    graphics.lineStyle(5, 0x6ff6ff, 0.94);
-    graphics.strokeLineShape(new Phaser.Geom.Line(attackerX, attackerY, targetX, targetY));
-    graphics.lineStyle(8, 0x6ff6ff, 0.55);
-    graphics.strokeLineShape(new Phaser.Geom.Line(targetGrid.x, rowY, targetGrid.x + boardWidth, rowY));
-    graphics.lineStyle(13, 0xcffcff, 0.22);
-    graphics.strokeLineShape(new Phaser.Geom.Line(targetGrid.x, rowY, targetGrid.x + boardWidth, rowY));
-
-    this.tweens.add({
-      targets: graphics,
-      alpha: 0,
-      scale: 1.04,
-      duration: 520,
-      onComplete: () => graphics.destroy()
-    });
+    animateTranscendenceBeamFx(this, attackerX, attackerY, targetGrid.x, rowY, targetX, targetY, boardWidth);
   }
 
 
@@ -2443,12 +2414,7 @@ export class ArenaScene extends Phaser.Scene {
     const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const g = this.add.graphics().setDepth(250);
-    g.lineStyle(8, 0x8fd5ff, 0.95);
-    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
-    g.lineStyle(14, 0xc8f0ff, 0.35);
-    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
-    this.tweens.add({ targets: g, alpha: 0, duration: 280, onComplete: () => g.destroy() });
+    animateSpearStrike(this, ax, ay, tx, ty);
   }
 
   private renderEnemyDice() {
