@@ -84,7 +84,7 @@ export class SettingsScene extends Phaser.Scene {
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     changelogBtn.on('pointerdown', () => this.openChangelogModal());
 
-    const close = this.add.text(width - 214, 258, 'Close', {
+    const close = this.add.text(width - 154, 258, 'Close', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     close.on('pointerdown', () => this.closeModal());

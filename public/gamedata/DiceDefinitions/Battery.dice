@@ -1,0 +1,21 @@
+{
+  "typeId": "Battery",
+  "title": "Battery Dice",
+  "attack": 22,
+  "health": 600,
+  "range": 3,
+  "rarity": "Rare",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Quick Charge",
+      "description": "All friendly charging active skills gain +1 mana.",
+      "modifiers": {
+        "manaGain": 1,
+        "notes": ["runtime:skillSfx=dice_battery_skill"]
+      }
+    }
+  ],
+  "accent": "#8edc74",
+  "targetingMode": "Nearest"
+}

@@ -1,0 +1,32 @@
+{
+  "typeId": "Shield",
+  "title": "Shield Dice",
+  "attack": 18,
+  "health": 960,
+  "range": 2,
+  "rarity": "Common",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Provoke Frontline",
+      "description": "Taunts nearby enemies in a 2-tile radius.",
+      "modifiers": {
+        "tauntRange": 2,
+        "tauntDuration": 99,
+        "notes": ["runtime:skillSfx=dice_shield_skill"]
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Bulwark",
+      "description": "Gain +300 shield for this turn. Class UP increases this shield by 10%.",
+      "manaNeeded": 8,
+      "modifiers": {
+        "shield": 300,
+        "durationTurns": 1
+      }
+    }
+  ],
+  "accent": "#7db8d9",
+  "targetingMode": "Nearest"
+}

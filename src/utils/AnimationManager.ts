@@ -51,10 +51,10 @@ export class AnimationManager {
     scene: Phaser.Scene,
     finalFaces: number[],
     diceSprites: Phaser.GameObjects.Image[],
-    options: { locked?: boolean[]; textureKeyPrefix?: string } = {}
+    options: { locked?: boolean[]; textureKeyPrefix?: string; jitter?: number } = {}
   ): Promise<void> {
     const duration = 700;
-    const jitter = 12;
+    const jitter = options.jitter ?? 12;
     const interval = 40;
     const locked = options.locked ?? [];
     const textureKeyPrefix = options.textureKeyPrefix ?? 'dice-face-';
@@ -80,11 +80,13 @@ export class AnimationManager {
             const originalY = Number(die.getData('originalY'));
             const tempFace = Phaser.Math.Between(1, 6);
 
-            if (!locked[index]) die.setTexture(`${textureKeyPrefix}${tempFace}`);
-            die.setPosition(
-              originalX + Phaser.Math.Between(-jitter, jitter),
-              originalY + Phaser.Math.Between(-jitter, jitter)
-            );
+            if (!locked[index]) {
+              die.setTexture(`${textureKeyPrefix}${tempFace}`);
+              die.setPosition(
+                originalX + Phaser.Math.Between(-jitter, jitter),
+                originalY + Phaser.Math.Between(-jitter, jitter)
+              );
+            }
 
             scene.tweens.add({
               targets: die,

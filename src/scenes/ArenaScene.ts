@@ -1278,6 +1278,12 @@ export class ArenaScene extends Phaser.Scene {
     this.attackCapacityByInstance.clear();
     this.transcendenceTransformed.clear();
     this.invisiRollForEnemies();
+    if (this.configRandomMode && this.activeRandomModifier === 'Combanity') {
+      const player = this.getRollComboBonus('player');
+      const enemy = this.getRollComboBonus('enemy');
+      const comboSfxKey = this.getComboSfxKey(player.multiplier >= enemy.multiplier ? player.label : enemy.label);
+      if (comboSfxKey) this.time.delayedCall(500, () => AudioManager.playSfx(this, comboSfxKey));
+    }
 
     this.enemyFogOverlay.setVisible(false);
     this.enemyFogText.setVisible(false);
@@ -1290,7 +1296,6 @@ export class ArenaScene extends Phaser.Scene {
 
     this.gameState = this.beginCombatPhaseWithRolledPips();
 
-    this.applySolitudePreCombatDamage();
     this.applyLavaPoolDamageAtCombatStart();
     this.renderDice();
     this.renderEnemyDice();
@@ -1415,8 +1420,6 @@ export class ArenaScene extends Phaser.Scene {
     const player = this.getRollComboBonus('player');
     const enemy = this.getRollComboBonus('enemy');
     this.combatLog.setText(`Combanity: You rolled ${player.label} (${player.multiplier}x), Bot rolled ${enemy.label} (${enemy.multiplier}x).`);
-    const comboSfxKey = this.getComboSfxKey(player.multiplier >= enemy.multiplier ? player.label : enemy.label);
-    if (comboSfxKey) this.time.delayedCall(500, () => AudioManager.playSfx(this, comboSfxKey));
     return {
       ...state,
       dice: state.dice.map((die) => {
@@ -1593,7 +1596,8 @@ export class ArenaScene extends Phaser.Scene {
               target: this.getDefinitionForInstance(target)
             });
             const multiplier = this.getCombanityDamageMultiplier(attacker, target);
-            const adjustedDamage = Math.max(1, Math.floor(rawResult.damage * multiplier));
+            const solitudeBonus = this.getSolitudeBasicAttackBonus(attacker, target);
+            const adjustedDamage = Math.max(1, Math.floor((rawResult.damage + solitudeBonus) * multiplier));
             if (adjustedDamage === rawResult.damage) {
               this.gameState = rawResult.newState;
               damage = rawResult.damage;
@@ -1873,36 +1877,28 @@ export class ArenaScene extends Phaser.Scene {
     return targets;
   }
 
-  private applySolitudePreCombatDamage() {
-    const boardDice = this.gameState.dice.filter((die) => die.zone === 'board' && !die.isDestroyed && die.gridPosition);
-    boardDice.forEach((die) => {
-      const definition = this.getDefinitionForInstance(die);
-      if (!definition) return;
-      const meta = getRuntimeSkillMeta(definition);
-      if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined || !die.gridPosition) return;
-      const adjacentDie = boardDice.some((other) =>
-        other.ownerId === die.ownerId &&
-        other.instanceId !== die.instanceId &&
-        other.gridPosition &&
-        Math.abs(other.gridPosition.row - die.gridPosition!.row) <= 1 &&
-        Math.abs(other.gridPosition.col - die.gridPosition!.col) <= 1
-      );
-      if (adjacentDie) return;
-      const enemyOwner = die.ownerId === 'player' ? 'enemy' : 'player';
-      const foes = getBoardDice(this.gameState, enemyOwner).filter((foe) => foe.gridPosition);
-      const nearest = foes
-        .sort((a, b) => {
-          const da = Math.abs(a.gridPosition!.row - die.gridPosition!.row) + Math.abs(a.gridPosition!.col - die.gridPosition!.col);
-          const db = Math.abs(b.gridPosition!.row - die.gridPosition!.row) + Math.abs(b.gridPosition!.col - die.gridPosition!.col);
-          return da - db;
-        })[0];
-      if (!nearest) return;
-      const damage = Math.max(1, Math.floor(nearest.maxHealth * meta.targetMaxHpBonusRate!));
-      this.gameState = this.applyDamageWithRevive(nearest.instanceId, damage);
-      this.showDamageText(nearest, damage, '#b891ff');
-      if (this.gameState.dice.find((d) => d.instanceId === nearest.instanceId)?.isDestroyed) this.checkDeathTransformCondition(nearest);
-      this.combatLog.setText(`${die.typeId} invokes solitude for ${Math.round(meta.targetMaxHpBonusRate * 10000) / 100}% max HP damage!`);
-    });
+  private isSolitudeIsolated(die: DiceInstanceState): boolean {
+    if (!die.gridPosition) return false;
+    const allies = this.gameState.dice.filter((other) =>
+      other.zone === 'board' &&
+      !other.isDestroyed &&
+      other.ownerId === die.ownerId &&
+      other.instanceId !== die.instanceId &&
+      other.gridPosition
+    );
+    return !allies.some((other) =>
+      Math.abs(other.gridPosition!.row - die.gridPosition!.row) <= 1 &&
+      Math.abs(other.gridPosition!.col - die.gridPosition!.col) <= 1
+    );
+  }
+
+  private getSolitudeBasicAttackBonus(attacker: DiceInstanceState, target: DiceInstanceState): number {
+    const definition = this.getDefinitionForInstance(attacker);
+    if (!definition || !attacker.gridPosition) return 0;
+    const meta = getRuntimeSkillMeta(definition);
+    if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined) return 0;
+    if (!this.isSolitudeIsolated(attacker)) return 0;
+    return Math.max(1, Math.floor(target.maxHealth * meta.targetMaxHpBonusRate));
   }
 
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
