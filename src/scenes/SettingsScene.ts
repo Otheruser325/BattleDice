@@ -33,27 +33,16 @@ export class SettingsScene extends Phaser.Scene {
 
     [buttonBg, buttonIcon].forEach((target) => {
       target.setDepth(40);
-      target.on('pointerdown', () => {
-        if (this.modalOpen) {
-          this.closeModal();
-        } else {
-          this.openModal();
-        }
-      });
+      target.on('pointerdown', () => (this.modalOpen ? this.closeModal() : this.openModal()));
     });
 
     this.input.keyboard?.on('keydown-ESC', () => {
-      if (this.modalOpen) {
-        this.closeModal();
-      }
+      if (this.modalOpen) this.closeModal();
     });
   }
 
   private openModal() {
-    if (this.modalOpen) {
-      return;
-    }
-
+    if (this.modalOpen) return;
     this.modalOpen = true;
     this.debug.event('Opening settings modal.');
     const settings = SettingsStore.get(this);
@@ -62,22 +51,17 @@ export class SettingsScene extends Phaser.Scene {
     const overlay = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x041018, 0.45)
       .setInteractive()
       .setDepth(41);
-    overlay.on('pointerdown', () => this.closeModal());
 
-    const panel = this.add.rectangle(width - 196, 184, 288, 260, 0x102434, 0.97)
+    const panel = this.add.rectangle(width - 196, 196, 288, 292, 0x102434, 0.97)
       .setStrokeStyle(1, 0x496a84)
       .setDepth(42);
 
     const title = this.add.text(width - 314, 76, 'SETTINGS', {
-      fontFamily: 'Orbitron',
-      fontSize: '20px',
-      color: PALETTE.text
+      fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text
     }).setDepth(43);
 
-    const subtitle = this.add.text(width - 314, 102, 'Global menu overlay', {
-      fontFamily: 'Orbitron',
-      fontSize: '11px',
-      color: PALETTE.textMuted
+    const subtitle = this.add.text(width - 314, 102, 'Main menu overlay', {
+      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
     }).setDepth(43);
 
     const toggles: Array<[SettingKey, string]> = [
@@ -95,34 +79,44 @@ export class SettingsScene extends Phaser.Scene {
       this.modalElements.push(...row);
     });
 
-    const close = this.add.text(width - 314, 252, 'Close', {
-      fontFamily: 'Orbitron',
-      fontSize: '13px',
-      color: PALETTE.accentSoft,
-      backgroundColor: '#173247',
-      padding: { left: 10, right: 10, top: 6, bottom: 6 }
+    const changelogBtn = this.add.text(width - 314, 258, 'Changelog', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#f4b860', padding: { left: 10, right: 10, top: 6, bottom: 6 }
+    }).setInteractive({ useHandCursor: true }).setDepth(43);
+    changelogBtn.on('pointerdown', () => this.openChangelogModal());
+
+    const close = this.add.text(width - 214, 258, 'Close', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     close.on('pointerdown', () => this.closeModal());
-    this.modalElements.push(close);
+    this.modalElements.push(changelogBtn, close);
+  }
+
+  private async openChangelogModal() {
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
+    const panel = this.add.rectangle(width / 2, height / 2, 720, 520, 0x102434, 0.98).setStrokeStyle(2, 0x496a84).setDepth(71);
+    const title = this.add.text(width / 2, height / 2 - 228, 'CHANGELOG (v0.5 beta mock)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
+    const body = this.add.text(width / 2, height / 2 - 6, 'Loading changelog...', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted, wordWrap: { width: 650 } }).setOrigin(0.5).setDepth(72);
+    const closeBtn = this.add.text(width / 2, height / 2 + 220, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
+
+    const close = () => [overlay, panel, title, body, closeBtn].forEach((e) => e.destroy());
+    this.input.keyboard?.once('keydown-ESC', close);
+    closeBtn.on('pointerdown', close);
+
+    try {
+      const response = await fetch('/config/changelog.json');
+      const payload = await response.json();
+      const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => `• ${entry.version} (${entry.date})\n${entry.notes.map((n) => `  - ${n}`).join('\n')}`);
+      body.setText(lines.join('\n\n') || 'No entries found.');
+    } catch {
+      body.setText('Could not fetch /config/changelog.json');
+    }
   }
 
   private createToggleRow(x: number, y: number, label: string, key: SettingKey, enabled: boolean) {
-    const labelText = this.add.text(x, y, label, {
-      fontFamily: 'Orbitron',
-      fontSize: '12px',
-      color: PALETTE.text
-    }).setDepth(43);
-
-    const pill = this.add.rectangle(x + 212, y + 10, 70, 26, enabled ? 0xf4b860 : 0x183447, 1)
-      .setStrokeStyle(1, enabled ? 0xffdfa4 : 0x4b6e89)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(43);
-    const value = this.add.text(x + 212, y + 10, enabled ? 'ON' : 'OFF', {
-      fontFamily: 'Orbitron',
-      fontSize: '11px',
-      color: enabled ? '#071018' : PALETTE.textMuted
-    }).setOrigin(0.5).setDepth(44);
-
+    const labelText = this.add.text(x, y, label, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text }).setDepth(43);
+    const pill = this.add.rectangle(x + 212, y + 10, 70, 26, enabled ? 0xf4b860 : 0x183447, 1).setStrokeStyle(1, enabled ? 0xffdfa4 : 0x4b6e89).setInteractive({ useHandCursor: true }).setDepth(43);
+    const value = this.add.text(x + 212, y + 10, enabled ? 'ON' : 'OFF', { fontFamily: 'Orbitron', fontSize: '11px', color: enabled ? '#071018' : PALETTE.textMuted }).setOrigin(0.5).setDepth(44);
     const flip = () => {
       const next = SettingsStore.toggle(this, key);
       const on = next[key];
@@ -136,10 +130,8 @@ export class SettingsScene extends Phaser.Scene {
         AudioManager.refreshMusicForSettings(this, preferredMusic);
       }
     };
-
     pill.on('pointerdown', flip);
     value.setInteractive({ useHandCursor: true }).on('pointerdown', flip);
-
     return [labelText, pill, value];
   }
 

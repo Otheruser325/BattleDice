@@ -6,6 +6,7 @@ import { AlertManager } from '../utils/AlertManager';
 import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
+import { animateDiceRoll } from '../utils/DiceAnimations';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -86,6 +87,7 @@ export class CasinoScene extends Phaser.Scene {
   private crapsTableActive = false;
 
   private diceImages: Phaser.GameObjects.Image[] = [];
+  public diceSprites: Phaser.GameObjects.Image[] = [];
   private lockTexts: Phaser.GameObjects.Text[] = [];
   private chestTexts = new Map<ChestType, Phaser.GameObjects.Text>();
   private chipText!: Phaser.GameObjects.Text;
@@ -132,6 +134,7 @@ export class CasinoScene extends Phaser.Scene {
 
   private resetRuntimeUiState() {
     this.diceImages = [];
+    this.diceSprites = this.diceImages;
     this.lockTexts = [];
     this.chestTexts.clear();
 
@@ -271,12 +274,13 @@ export class CasinoScene extends Phaser.Scene {
     this.render();
   }
 
-  private rollDice() {
+  private async rollDice() {
     if (!this.tableActive || this.rollsLeft <= 0) return;
     AudioManager.playSfx(this, 'chest-open');
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
     this.saveFivesHand();
+    await animateDiceRoll(this, this.dice);
     const combo = evaluateFivesCombo(this.dice);
     const comboSfxKey = this.getComboSfxKey(combo.combo);
     if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);
@@ -612,7 +616,7 @@ export class CasinoScene extends Phaser.Scene {
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.45).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 560, 300, 0x173247, 0.98).setStrokeStyle(2, 0x4f7ea1);
     const skills = definition.skills.map((skill) => `${skill.title} (${skill.type})`).join('  •  ') || 'No skill';
-    const text = this.add.text(width / 2, height / 2 - 24, `${definition.title}\nATK ${definition.attack}  HP ${definition.health}  RNG ${definition.range}\nClass ${progress.classLevel}  Copies ${progress.copies}\n${skills}`, {
+    const text = this.add.text(width / 2, height / 2 - 24, `${definition.title}\nATK ${definition.attack}  HP ${definition.health}  RNG ${definition.range}\nTarget ${definition.targetingMode.toUpperCase()}  Class ${progress.classLevel}  Copies ${progress.copies}\n${skills}`, {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: PALETTE.text,
