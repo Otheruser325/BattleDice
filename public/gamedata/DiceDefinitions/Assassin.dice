@@ -17,7 +17,7 @@
     {
       "type": "Passive",
       "title": "Execution Rhythm",
-      "description": "The next 2 basic attacks deal 100% more damage. Class UP grants +1 boosted attack every 4 class levels.",
+      "description": "The next 2 basic attacks deal 100% more damage.",
       "modifiers": {
         "numAttacksBoosted": 2,
         "numAttacksDamageMult": 2
