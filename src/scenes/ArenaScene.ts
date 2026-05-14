@@ -26,7 +26,7 @@ import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } f
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
-import { animateDeathTransform, animateElementalSkill, animateJudgmentHammer, animateSkullRevive, animateTimeActive } from '../utils/DiceAnimations';
+import { animateDeathTransform, animateElementalSkill, animateJudgmentHammer, animateSkullRevive, animateTimeActive, animateHealingPulse, animateSpearStrike, animateTranscendenceBeamFx } from '../utils/DiceAnimations';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
