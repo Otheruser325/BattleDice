@@ -13,7 +13,10 @@
       "modifiers": {
         "tauntRange": 2,
         "tauntDuration": 99,
-        "notes": ["runtime:skillSfx=dice_shield_skill"]
+        "notes": [
+          "runtime:skillSfx=dice_shield_skill",
+          "runtime:shieldTaunt"
+        ]
       }
     },
     {

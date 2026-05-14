@@ -12,7 +12,10 @@
       "description": "All friendly charging active skills gain +1 mana.",
       "modifiers": {
         "manaGain": 1,
-        "notes": ["runtime:skillSfx=dice_battery_skill"]
+        "notes": [
+          "runtime:skillSfx=dice_battery_skill",
+          "runtime:batteryManaAura"
+        ]
       }
     }
   ],
