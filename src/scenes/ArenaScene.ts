@@ -26,7 +26,7 @@ import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } f
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
-import { animateDeathTransform, animateElementalSkill, animateJudgmentHammer, animateSkullRevive, animateTimeActive } from '../utils/DiceAnimation';
+import { AnimationManager } from '../utils/AnimationManager';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -1458,7 +1458,7 @@ export class ArenaScene extends Phaser.Scene {
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     void color;
-    animateTimeActive(this, x, y);
+    AnimationManager.animateTimeActive(this, x, y);
   }
 
   private applyLavaPoolDamageAtCombatStart() {
@@ -1705,7 +1705,7 @@ export class ArenaScene extends Phaser.Scene {
       AudioManager.playSfx(this, baseKey);
       return;
     }
-    AudioManager.playRandomSfx(this, [AUDIO_KEYS.diceAttack, AUDIO_KEYS.skillTrigger, 'dice_attack_03']);
+    AudioManager.playRandomSfx(this, [AUDIO_KEYS.diceAttack01, AUDIO_KEYS.diceAttack02, AUDIO_KEYS.diceAttack03]);
   }
 
   private applyNecromancyTurnEffect() {
@@ -2096,7 +2096,7 @@ export class ArenaScene extends Phaser.Scene {
           const g = attacker.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
           const x = g.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = g.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-          animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
+          AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
         }
         this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: meta.activeDurationTurns! });
         const freshAttacker = this.gameState.dice.find(d => d.instanceId === attacker.instanceId);
@@ -2353,7 +2353,7 @@ export class ArenaScene extends Phaser.Scene {
     const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    animateSkullRevive(this, x, y);
+    AnimationManager.animateSkullRevive(this, x, y);
   }
 
   private animateTransformEffect(die: DiceInstanceState) {
@@ -2361,7 +2361,7 @@ export class ArenaScene extends Phaser.Scene {
     const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    animateDeathTransform(this, x, y);
+    AnimationManager.animateDeathTransform(this, x, y);
   }
 
   private animateAttack(attacker: DiceInstanceState, target: DiceInstanceState) {
@@ -2411,21 +2411,7 @@ export class ArenaScene extends Phaser.Scene {
     const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
     const rowY = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     
-    const graphics = this.add.graphics().setDepth(250);
-    graphics.lineStyle(5, 0x6ff6ff, 0.94);
-    graphics.strokeLineShape(new Phaser.Geom.Line(attackerX, attackerY, targetX, targetY));
-    graphics.lineStyle(8, 0x6ff6ff, 0.55);
-    graphics.strokeLineShape(new Phaser.Geom.Line(targetGrid.x, rowY, targetGrid.x + boardWidth, rowY));
-    graphics.lineStyle(13, 0xcffcff, 0.22);
-    graphics.strokeLineShape(new Phaser.Geom.Line(targetGrid.x, rowY, targetGrid.x + boardWidth, rowY));
-
-    this.tweens.add({
-      targets: graphics,
-      alpha: 0,
-      scale: 1.04,
-      duration: 520,
-      onComplete: () => graphics.destroy()
-    });
+    AnimationManager.animateTranscendenceBeamFx(this, attackerX, attackerY, targetGrid.x, rowY, targetX, targetY, boardWidth);
   }
 
 
@@ -2433,7 +2419,7 @@ export class ArenaScene extends Phaser.Scene {
     const grid = ownerId === 'player' ? this.enemyGridContainer : this.playerGridContainer;
     const x = grid.x + col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    animateJudgmentHammer(this, x, y, 420);
+    AnimationManager.animateJudgmentHammer(this, x, y, 420);
   }
 
   private animateSpearActive(attacker: DiceInstanceState, target: DiceInstanceState) {
@@ -2444,12 +2430,7 @@ export class ArenaScene extends Phaser.Scene {
     const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const g = this.add.graphics().setDepth(250);
-    g.lineStyle(8, 0x8fd5ff, 0.95);
-    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
-    g.lineStyle(14, 0xc8f0ff, 0.35);
-    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
-    this.tweens.add({ targets: g, alpha: 0, duration: 280, onComplete: () => g.destroy() });
+    AnimationManager.animateSpearStrike(this, ax, ay, tx, ty);
   }
 
   private renderEnemyDice() {
@@ -2887,15 +2868,7 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5);
     pipLabel.setName('die-info');
     container.add(pipLabel);
-
-    const hpText = `${die.currentHealth}/${die.maxHealth}`;
-    const hpLabel = this.add.text(x, y + 24, `HP ${hpText}`, {
-      fontFamily: 'Orbitron',
-      fontSize: '8px',
-      color: PALETTE.text
-    }).setOrigin(0.5);
-    hpLabel.setName('die-info');
-    container.add(hpLabel);
+	
     this.renderStatusEffects(container, x, y, die);
     this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
@@ -2907,9 +2880,13 @@ export class ArenaScene extends Phaser.Scene {
     this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);
     const meta = getRuntimeSkillMeta(definition);
     const manaSkills = definition.skills.filter((skill) => (skill.manaNeeded ?? 0) > 0);
+    if (meta.canConjureSouls && !this.deathDiceTransformed.has(die.instanceId)) {
+      const souls = this.deathAlliesDefeatedCount.get(die.instanceId) ?? 0;
+      const soulCap = Math.max(1, meta.maxSouls ?? 2);
+      this.renderManaBar(container, x, y + 34, souls, soulCap, 0xc06bdb);
+    }
     manaSkills.forEach((skill, index) => {
-      const manaColor = meta.canConjureSouls ? 0xc06bdb : 0x6fa8ff;
-      this.renderManaBar(container, x, y + 34 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1), manaColor);
+      this.renderManaBar(container, x, y + 40 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1), 0x6fa8ff);
     });
   }
 
@@ -2927,7 +2904,7 @@ export class ArenaScene extends Phaser.Scene {
     this.dieInfoPopup?.destroy(true);
     const { width } = this.scale;
     const panel = this.add.rectangle(width / 2, 76, 560, 102, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
-    const stats = this.add.text(width / 2, 52, `${definition.title} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${definition.attack} • RNG ${definition.range}`, {
+    const stats = this.add.text(width / 2, 52, `${definition.title} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${definition.attack} • RNG ${definition.range} • TARGET ${definition.targetingMode.toUpperCase()}`, {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: PALETTE.text
