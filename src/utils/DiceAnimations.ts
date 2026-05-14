@@ -107,3 +107,7 @@ export function animateMeteorImpact(scene: Phaser.Scene, x: number, y: number) {
   g.lineStyle(4, 0xffc27a, 0.9); g.strokeLineShape(new Phaser.Geom.Line(x-5, y-65, x, y-42));
   scene.tweens.add({targets:g, y:'+=42', alpha:0, duration:260, onComplete:()=>g.destroy()});
 }
+
+export function animateSkullRevive(scene: Phaser.Scene, x:number, y:number){ const g=scene.add.graphics().setDepth(260); g.lineStyle(3,0xd8e4e8,0.9); g.strokeLineShape(new Phaser.Geom.Line(x-14,y+14,x+14,y-14)); g.strokeLineShape(new Phaser.Geom.Line(x-14,y-14,x+14,y+14)); scene.tweens.add({targets:g,y:y-8,alpha:0,duration:500,onComplete:()=>g.destroy()}); }
+export function animateDeathTransform(scene: Phaser.Scene, x:number, y:number){ const g=scene.add.graphics().setDepth(260); g.lineStyle(3,0xc06bdb,0.95); g.strokeCircle(x,y,20); g.lineStyle(2,0xe7b6ff,0.95); g.strokeCircle(x+20,y,6); scene.tweens.add({targets:g,alpha:0,scale:3,duration:500,onComplete:()=>g.destroy()}); }
+export function animateTimeActive(scene: Phaser.Scene, x:number, y:number){ const t=scene.add.text(x,y-20,'⏰',{fontSize:'16px',color:'#ffffff'}).setOrigin(0.5).setDepth(260); const r=scene.add.graphics().setDepth(259); r.lineStyle(2,0x8fd5ff,0.95); r.strokeCircle(x,y,16); scene.tweens.add({targets:[t,r],alpha:0,y:y-30,duration:450,onComplete:()=>{t.destroy();r.destroy();}}); }

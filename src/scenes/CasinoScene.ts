@@ -616,7 +616,7 @@ export class CasinoScene extends Phaser.Scene {
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.45).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 560, 300, 0x173247, 0.98).setStrokeStyle(2, 0x4f7ea1);
     const skills = definition.skills.map((skill) => `${skill.title} (${skill.type})`).join('  •  ') || 'No skill';
-    const text = this.add.text(width / 2, height / 2 - 24, `${definition.title}\nATK ${definition.attack}  HP ${definition.health}  RNG ${definition.range}\nClass ${progress.classLevel}  Copies ${progress.copies}\n${skills}`, {
+    const text = this.add.text(width / 2, height / 2 - 24, `${definition.title}\nATK ${definition.attack}  HP ${definition.health}  RNG ${definition.range}\nTarget ${definition.targetingMode.toUpperCase()}  Class ${progress.classLevel}  Copies ${progress.copies}\n${skills}`, {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: PALETTE.text,

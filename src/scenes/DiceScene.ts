@@ -99,6 +99,7 @@ export class DiceScene extends Phaser.Scene {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft
     });
     const slotText = this.add.text(panel.x + 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text });
+    const ownedCountText = this.add.text(panel.right - 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(1,0);
     const slotBoxes: Phaser.GameObjects.Rectangle[] = [];
     const slotLabels: Phaser.GameObjects.Text[] = [];
     let selectedSlot = 0;
@@ -117,6 +118,8 @@ export class DiceScene extends Phaser.Scene {
 
     const refreshSlots = () => {
       slotText.setText(`LOADOUT VIEW (top-mid): ${loadout.join(' | ')}  •  Active slot: ${selectedSlot + 1}`);
+      const owned = definitions.filter((d)=>!this.isDiceLocked(d.typeId)).length;
+      ownedCountText.setText(`OWNED ${owned}/${definitions.length}`);
       slotBoxes.forEach((box, i) => box.setStrokeStyle(2, i === selectedSlot ? 0xf4b860 : 0x406987));
       slotLabels.forEach((lbl, i) => lbl.setText(loadout[i]?.slice(0, 4).toUpperCase() ?? '-'));
     };

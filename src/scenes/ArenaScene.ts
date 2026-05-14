@@ -26,7 +26,7 @@ import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } f
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
-import { animateElementalSkill, animateJudgmentHammer } from '../utils/DiceAnimations';
+import { animateDeathTransform, animateElementalSkill, animateJudgmentHammer, animateSkullRevive, animateTimeActive } from '../utils/DiceAnimations';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -1457,11 +1457,8 @@ export class ArenaScene extends Phaser.Scene {
     const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const t = this.add.text(x, y - 20, '⏰', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setDepth(260);
-    const ring = this.add.graphics().setDepth(259);
-    ring.lineStyle(2, color, 0.95);
-    ring.strokeCircle(x, y, 16);
-    this.tweens.add({ targets: [t, ring], alpha: 0, y: y - 30, duration: 450, onComplete: () => { t.destroy(); ring.destroy(); } });
+    void color;
+    animateTimeActive(this, x, y);
   }
 
   private applyLavaPoolDamageAtCombatStart() {
@@ -2355,11 +2352,7 @@ export class ArenaScene extends Phaser.Scene {
     const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const bones = this.add.graphics();
-    bones.lineStyle(3, 0xd8e4e8, 0.9);
-    bones.strokeLineShape(new Phaser.Geom.Line(x - 14, y + 14, x + 14, y - 14));
-    bones.strokeLineShape(new Phaser.Geom.Line(x - 14, y - 14, x + 14, y + 14));
-    this.tweens.add({ targets: bones, y: y - 8, alpha: 0, duration: 500, onComplete: () => bones.destroy() });
+    animateSkullRevive(this, x, y);
   }
 
   private animateTransformEffect(die: DiceInstanceState) {
@@ -2367,12 +2360,7 @@ export class ArenaScene extends Phaser.Scene {
     const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const ring = this.add.graphics();
-    ring.lineStyle(3, 0xc06bdb, 0.95);
-    ring.strokeCircle(x, y, 20);
-    ring.lineStyle(2, 0xe7b6ff, 0.95);
-    ring.strokeCircle(x + 20, y, 6);
-    this.tweens.add({ targets: ring, alpha: 0, scale: 3, duration: 500, onComplete: () => ring.destroy() });
+    animateDeathTransform(this, x, y);
   }
 
   private animateAttack(attacker: DiceInstanceState, target: DiceInstanceState) {
@@ -3046,7 +3034,7 @@ export class ArenaScene extends Phaser.Scene {
     const prevMs = this.combatTimeRemainingMs;
     const pacingMultiplier = this.getCombatPacingMultiplier();
     const actualDelay = Math.max(1, Math.floor(ms / pacingMultiplier));
-    this.combatTimeRemainingMs = Math.max(0, prevMs - ms);
+    this.combatTimeRemainingMs = Math.max(0, prevMs - actualDelay);
 
     const prevSeconds = Math.ceil(prevMs / 1000);
     const nextSeconds = Math.ceil(this.combatTimeRemainingMs / 1000);
