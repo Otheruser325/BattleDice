@@ -93,6 +93,7 @@ export class ArenaScene extends Phaser.Scene {
   private enemyDicePips: Map<string, number> = new Map();
   private enemyClassLevels: Map<string, number> = new Map();
   private manaByInstance: Map<string, number> = new Map();
+  private shieldHpByInstance: Map<string, number> = new Map();
   private tauntedByInstance: Map<string, { sourceId: string; turns: number }> = new Map();
   private attackCapacityByInstance: Map<string, number> = new Map();
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
@@ -151,6 +152,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyDicePips.clear();
     this.enemyClassLevels.clear();
     this.manaByInstance.clear();
+    this.shieldHpByInstance.clear();
     this.tauntedByInstance.clear();
     this.attackDeltaByInstance.clear();
     this.extraAttackTurnsByInstance.clear();
@@ -1506,9 +1508,8 @@ export class ArenaScene extends Phaser.Scene {
       const range = skill?.modifiers?.tauntRange ?? 0;
       const turns = skill?.modifiers?.tauntDuration ?? 1;
       if (range <= 0) return;
-      const shieldPos = shield.gridPosition!;
       boardDice.filter((foe) => foe.ownerId !== shield.ownerId).forEach((foe) => {
-        const dist = Math.abs(foe.gridPosition!.row - shieldPos.row) + Math.abs(foe.gridPosition!.col - shieldPos.col);
+        const dist = getCombatDistance(shield, foe);
         if (dist <= range) this.tauntedByInstance.set(foe.instanceId, { sourceId: shield.instanceId, turns });
       });
     });
@@ -1524,11 +1525,17 @@ export class ArenaScene extends Phaser.Scene {
       const foes = boardDice.filter((d) => d.ownerId !== assassin.ownerId && d.gridPosition);
       if (foes.length === 0) return;
       const furthest = [...foes].sort((a,b)=> (assassin.ownerId==='player' ? b.gridPosition!.col-a.gridPosition!.col : a.gridPosition!.col-b.gridPosition!.col))[0];
-      const targetCol = furthest.gridPosition!.col;
+      const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
+      const jumpRange = skill?.modifiers?.jumpRange ?? (this.getDefinitionForInstance(assassin)?.range ?? 0);
+      const targetCol = jumpRange < 0
+        ? furthest.gridPosition!.col
+        : (assassin.ownerId === 'player'
+          ? Math.max(0, furthest.gridPosition!.col - jumpRange)
+          : Math.min(GRID_SIZE - 1, furthest.gridPosition!.col + jumpRange));
       const targetRow = furthest.gridPosition!.row;
       const occupied = new Set(boardDice.filter((d)=>d.ownerId===assassin.ownerId && d.instanceId!==assassin.instanceId).map((d)=>`${d.gridPosition!.row},${d.gridPosition!.col}`));
       let newRow = targetRow;
-      for (const r of [targetRow, targetRow-1, targetRow+1, 0,1,2,3,4]) {
+      for (const r of [targetRow, targetRow - 1, targetRow + 1, targetRow - 2, targetRow + 2, 0, 1, 2, 3, 4]) {
         if (r>=0 && r<5 && !occupied.has(`${r},${targetCol}`)) { newRow = r; break; }
       }
       this.gameState = { ...this.gameState, dice: this.gameState.dice.map((d)=> d.instanceId===assassin.instanceId ? { ...d, gridPosition: { row:newRow, col: targetCol }, attacksRemaining: d.attacksRemaining + 1 } : d ) };
@@ -1540,8 +1547,11 @@ export class ArenaScene extends Phaser.Scene {
     if (!taunt) return undefined;
     const shield = this.gameState.dice.find((d) => d.instanceId === taunt.sourceId && d.zone === 'board' && !d.isDestroyed && d.gridPosition);
     if (!shield || !shield.gridPosition || !attacker.gridPosition) return undefined;
-    const distance = Math.abs(attacker.gridPosition.row - shield.gridPosition.row) + Math.abs(attacker.gridPosition.col - shield.gridPosition.col);
-    return distance <= 2 ? shield : undefined;
+    const distance = getCombatDistance(attacker, shield);
+    const shieldDef = this.getDefinitionForInstance(shield);
+    const tauntSkill = shieldDef?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:shieldTaunt'));
+    const tauntRange = tauntSkill?.modifiers?.tauntRange ?? 2;
+    return distance <= tauntRange ? shield : undefined;
   }
 
   private applyLavaPoolDamageAtCombatStart() {
@@ -1679,17 +1689,10 @@ export class ArenaScene extends Phaser.Scene {
             const multiplier = this.getCombanityDamageMultiplier(attacker, target);
             const solitudeBonus = this.getSolitudeBasicAttackBonus(attacker, target);
             const adjustedDamage = Math.max(1, Math.floor((rawResult.damage + solitudeBonus) * multiplier));
-            if (adjustedDamage === rawResult.damage) {
-              this.gameState = rawResult.newState;
-              damage = rawResult.damage;
-              targetDestroyed = rawResult.targetDestroyed;
-              if (targetDestroyed) AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
-            } else {
-              this.gameState = spendAttack(this.gameState, attacker.instanceId);
-              this.gameState = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
-              damage = adjustedDamage;
-              targetDestroyed = this.gameState.dice.find((d) => d.instanceId === target.instanceId)?.isDestroyed ?? false;
-            }
+            this.gameState = spendAttack(this.gameState, attacker.instanceId);
+            this.gameState = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
+            damage = adjustedDamage;
+            targetDestroyed = this.gameState.dice.find((d) => d.instanceId === target.instanceId)?.isDestroyed ?? false;
             this.showDamageText(target, damage);
             this.applyPassiveSkillEffects(attacker, target);
           }
@@ -1916,6 +1919,16 @@ export class ArenaScene extends Phaser.Scene {
 
 
   private applyDamageWithRevive(instanceId: string, damage: number): MatchBattleState {
+    const shieldHp = this.shieldHpByInstance.get(instanceId) ?? 0;
+    if (shieldHp > 0) {
+      const absorbed = Math.min(shieldHp, Math.max(0, damage));
+      const remaining = Math.max(0, damage - absorbed);
+      const nextShield = shieldHp - absorbed;
+      if (nextShield > 0) this.shieldHpByInstance.set(instanceId, nextShield);
+      else this.shieldHpByInstance.delete(instanceId);
+      if (remaining <= 0) return this.gameState;
+      damage = remaining;
+    }
     const before = this.gameState.dice.find((die) => die.instanceId === instanceId);
     const beforePosition = before?.gridPosition;
     const nextState = applyDamage(this.gameState, instanceId, damage);
@@ -1995,8 +2008,9 @@ export class ArenaScene extends Phaser.Scene {
       );
       if (splashTargets.length > 0) this.playSkillSfxForDie(attacker, meta);
       splashTargets.forEach((die) => {
-        this.gameState = this.applyDamageWithRevive(die.instanceId, meta.splashDamage!);
-        this.showDamageText(die, meta.splashDamage!, '#ff9f58');
+        const dealt = Math.max(1, Math.floor(meta.splashDamage! * this.getCombanityDamageMultiplier(attacker, die)));
+        this.gameState = this.applyDamageWithRevive(die.instanceId, dealt);
+        this.showDamageText(die, dealt, '#ff9f58');
         if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
         this.animateSkillEffect('fire', attacker, die);
       });
@@ -2010,8 +2024,9 @@ export class ArenaScene extends Phaser.Scene {
       );
       if (chainTarget) {
         this.playSkillSfxForDie(attacker, meta);
-        this.gameState = this.applyDamageWithRevive(chainTarget.instanceId, meta.chainDamage);
-        this.showDamageText(chainTarget, meta.chainDamage, '#fff176');
+        const dealt = Math.max(1, Math.floor(meta.chainDamage * this.getCombanityDamageMultiplier(attacker, chainTarget)));
+        this.gameState = this.applyDamageWithRevive(chainTarget.instanceId, dealt);
+        this.showDamageText(chainTarget, dealt, '#fff176');
         if (this.gameState.dice.find((d) => d.instanceId === chainTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(chainTarget);
         this.animateSkillEffect('electric', attacker, chainTarget);
       }
@@ -2020,7 +2035,7 @@ export class ArenaScene extends Phaser.Scene {
     if (meta.pierceBehindRange) {
       this.playSkillSfxForDie(attacker, meta);
       this.getPierceBehindTargets(attacker, target, meta.pierceBehindRange).forEach((die) => {
-        const pierceDamage = definition.attack;
+        const pierceDamage = Math.max(1, Math.floor(definition.attack * this.getCombanityDamageMultiplier(attacker, die)));
         this.gameState = this.applyDamageWithRevive(die.instanceId, pierceDamage);
         this.showDamageText(die, pierceDamage, '#c9d6d3');
         if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
@@ -2079,6 +2094,7 @@ export class ArenaScene extends Phaser.Scene {
         if (freshTarget && !freshTarget.isDestroyed) {
           AudioManager.playSfx(this, AUDIO_KEYS.deathInstakill);
           this.gameState = this.applyDamageWithRevive(freshTarget.instanceId, freshTarget.currentHealth);
+          this.showDamageText(freshTarget, freshTarget.currentHealth, '#c57cff');
           this.combatLog.setText(`☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
           const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
           if (destroyed) {
@@ -2125,7 +2141,7 @@ export class ArenaScene extends Phaser.Scene {
       const healTarget = this.getWeakestDamagedAlly(attacker.ownerId, attacker.instanceId);
       if (healTarget) {
         this.playSkillSfxForDie(attacker, meta);
-        const healAmount = meta.activeHeal;
+        const healAmount = Math.max(1, Math.floor(meta.activeHeal * this.getCombanityDamageMultiplier(attacker, healTarget)));
         this.gameState = {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => {
@@ -2136,6 +2152,12 @@ export class ArenaScene extends Phaser.Scene {
         this.showHealText(healTarget, healAmount);
         this.animateSkillEffect('heal', attacker, healTarget);
       }
+    }
+    if ((meta.shield ?? 0) > 0) {
+      this.playSkillSfxForDie(attacker, meta);
+      const shieldGain = Math.max(1, Math.floor((meta.shield ?? 0) * this.getCombanityDamageMultiplier(attacker, attacker)));
+      this.shieldHpByInstance.set(attacker.instanceId, (this.shieldHpByInstance.get(attacker.instanceId) ?? 0) + shieldGain);
+      this.showHealText(attacker, shieldGain);
     }
     if (attacker.typeId === 'Ice') {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
@@ -2520,7 +2542,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyGridContainer.each((child: Phaser.GameObjects.GameObject) => {
       if (child instanceof Phaser.GameObjects.Rectangle && child.getData('isDie')) childrenToRemove.push(child);
       if (child instanceof Phaser.GameObjects.Text && (child.name === 'die-info' || child.name === 'status-effect')) childrenToRemove.push(child);
-      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar' || child.name === 'status-effect')) childrenToRemove.push(child);
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar' || child.name === 'status-effect' || child.name === 'shield-bubble')) childrenToRemove.push(child);
     });
     childrenToRemove.forEach((child) => child.destroy());
 
@@ -2586,7 +2608,7 @@ export class ArenaScene extends Phaser.Scene {
       if (child instanceof Phaser.GameObjects.Text && child.name !== '') {
         childrenToRemove.push(child);
       }
-      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar' || child.name === 'status-effect')) {
+      if (child instanceof Phaser.GameObjects.Graphics && (child.name === 'hp-bar' || child.name === 'ammo-bar' || child.name === 'mana-bar' || child.name === 'status-effect' || child.name === 'shield-bubble')) {
         childrenToRemove.push(child);
       }
     });
@@ -2917,6 +2939,17 @@ export class ArenaScene extends Phaser.Scene {
     const color = Phaser.Display.Color.HexStringToColor(accentHex).color;
     const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+
+    const shieldHp = this.shieldHpByInstance.get(die.instanceId) ?? 0;
+    if (shieldHp > 0) {
+      const shieldBubble = this.add.graphics();
+      shieldBubble.name = 'shield-bubble';
+      shieldBubble.lineStyle(2, 0x3a8dde, 0.95);
+      shieldBubble.fillStyle(0x1c4f8f, 0.22);
+      shieldBubble.fillCircle(x, y, 28);
+      shieldBubble.strokeCircle(x, y, 28);
+      container.add(shieldBubble);
+    }
 
     const dieRect = this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, visual ? 0.55 : 0.28)
       .setStrokeStyle(2, color)
