@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Lonely Dominion",
-      "description": "At combat start, if no ally occupies any adjacent tile in its 3x3 boundary, it deals 8% of the nearest foe's max HP as bonus damage.",
+      "description": "When no ally occupies any adjacent tile in its 3x3 boundary, basic attacks deal bonus damage equal to 8% of the target's max HP.",
       "modifiers": {
         "notes": [
           "runtime:targetMaxHpBonusRate=0.08",

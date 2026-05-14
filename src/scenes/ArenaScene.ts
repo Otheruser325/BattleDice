@@ -93,6 +93,7 @@ export class ArenaScene extends Phaser.Scene {
   private enemyDicePips: Map<string, number> = new Map();
   private enemyClassLevels: Map<string, number> = new Map();
   private manaByInstance: Map<string, number> = new Map();
+  private tauntedByInstance: Map<string, { sourceId: string; turns: number }> = new Map();
   private attackCapacityByInstance: Map<string, number> = new Map();
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
@@ -150,6 +151,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyDicePips.clear();
     this.enemyClassLevels.clear();
     this.manaByInstance.clear();
+    this.tauntedByInstance.clear();
     this.attackDeltaByInstance.clear();
     this.extraAttackTurnsByInstance.clear();
     this.attackMultiplierTurnsByInstance.clear();
@@ -1278,6 +1280,12 @@ export class ArenaScene extends Phaser.Scene {
     this.attackCapacityByInstance.clear();
     this.transcendenceTransformed.clear();
     this.invisiRollForEnemies();
+    if (this.configRandomMode && this.activeRandomModifier === 'Combanity') {
+      const player = this.getRollComboBonus('player');
+      const enemy = this.getRollComboBonus('enemy');
+      const comboSfxKey = this.getComboSfxKey(player.multiplier >= enemy.multiplier ? player.label : enemy.label);
+      if (comboSfxKey) this.time.delayedCall(500, () => AudioManager.playSfx(this, comboSfxKey));
+    }
 
     this.enemyFogOverlay.setVisible(false);
     this.enemyFogText.setVisible(false);
@@ -1289,8 +1297,10 @@ export class ArenaScene extends Phaser.Scene {
     await this.delay(1000);
 
     this.gameState = this.beginCombatPhaseWithRolledPips();
+    this.applyAssassinCombatStart();
+    this.applyShieldTauntsAtCombatStart();
+    this.applyBatteryManaAtCombatStart();
 
-    this.applySolitudePreCombatDamage();
     this.applyLavaPoolDamageAtCombatStart();
     this.renderDice();
     this.renderEnemyDice();
@@ -1415,8 +1425,6 @@ export class ArenaScene extends Phaser.Scene {
     const player = this.getRollComboBonus('player');
     const enemy = this.getRollComboBonus('enemy');
     this.combatLog.setText(`Combanity: You rolled ${player.label} (${player.multiplier}x), Bot rolled ${enemy.label} (${enemy.multiplier}x).`);
-    const comboSfxKey = this.getComboSfxKey(player.multiplier >= enemy.multiplier ? player.label : enemy.label);
-    if (comboSfxKey) this.time.delayedCall(500, () => AudioManager.playSfx(this, comboSfxKey));
     return {
       ...state,
       dice: state.dice.map((die) => {
@@ -1459,6 +1467,81 @@ export class ArenaScene extends Phaser.Scene {
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     void color;
     AnimationManager.animateTimeActive(this, x, y);
+  }
+
+
+  private applyBatteryManaAtCombatStart() {
+    const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed);
+    const batteries = boardDice.filter((d) => {
+      const def = this.getDefinitionForInstance(d);
+      const notes = def?.skills[0]?.modifiers?.notes ?? [];
+      return notes.includes('runtime:batteryManaAura');
+    });
+    batteries.forEach((battery) => {
+      const def = this.getDefinitionForInstance(battery);
+      const gain = def?.skills[0]?.modifiers?.manaGain ?? 0;
+      if (gain <= 0) return;
+      boardDice.filter((ally) => ally.ownerId === battery.ownerId).forEach((ally) => {
+        const allyDef = this.getDefinitionForInstance(ally);
+        if (!allyDef) return;
+        const meta = getRuntimeSkillMeta(allyDef);
+        const cap = meta.activeManaNeeded ?? 0;
+        if (cap <= 0) return;
+        const current = this.manaByInstance.get(ally.instanceId) ?? 0;
+        this.manaByInstance.set(ally.instanceId, Math.min(cap, current + gain));
+      });
+    });
+  }
+
+  private applyShieldTauntsAtCombatStart() {
+    this.tauntedByInstance.clear();
+    const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
+    const shields = boardDice.filter((d) => {
+      const def = this.getDefinitionForInstance(d);
+      return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:shieldTaunt')) ?? false;
+    });
+    shields.forEach((shield) => {
+      const def = this.getDefinitionForInstance(shield);
+      const skill = def?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:shieldTaunt'));
+      const range = skill?.modifiers?.tauntRange ?? 0;
+      const turns = skill?.modifiers?.tauntDuration ?? 1;
+      if (range <= 0) return;
+      const shieldPos = shield.gridPosition!;
+      boardDice.filter((foe) => foe.ownerId !== shield.ownerId).forEach((foe) => {
+        const dist = Math.abs(foe.gridPosition!.row - shieldPos.row) + Math.abs(foe.gridPosition!.col - shieldPos.col);
+        if (dist <= range) this.tauntedByInstance.set(foe.instanceId, { sourceId: shield.instanceId, turns });
+      });
+    });
+  }
+
+  private applyAssassinCombatStart() {
+    const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
+    const assassins = boardDice.filter((d) => {
+      const def = this.getDefinitionForInstance(d);
+      return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
+    });
+    assassins.forEach((assassin) => {
+      const foes = boardDice.filter((d) => d.ownerId !== assassin.ownerId && d.gridPosition);
+      if (foes.length === 0) return;
+      const furthest = [...foes].sort((a,b)=> (assassin.ownerId==='player' ? b.gridPosition!.col-a.gridPosition!.col : a.gridPosition!.col-b.gridPosition!.col))[0];
+      const targetCol = furthest.gridPosition!.col;
+      const targetRow = furthest.gridPosition!.row;
+      const occupied = new Set(boardDice.filter((d)=>d.ownerId===assassin.ownerId && d.instanceId!==assassin.instanceId).map((d)=>`${d.gridPosition!.row},${d.gridPosition!.col}`));
+      let newRow = targetRow;
+      for (const r of [targetRow, targetRow-1, targetRow+1, 0,1,2,3,4]) {
+        if (r>=0 && r<5 && !occupied.has(`${r},${targetCol}`)) { newRow = r; break; }
+      }
+      this.gameState = { ...this.gameState, dice: this.gameState.dice.map((d)=> d.instanceId===assassin.instanceId ? { ...d, gridPosition: { row:newRow, col: targetCol }, attacksRemaining: d.attacksRemaining + 1 } : d ) };
+    });
+  }
+
+  private resolveTauntForcedTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
+    const taunt = this.tauntedByInstance.get(attacker.instanceId);
+    if (!taunt) return undefined;
+    const shield = this.gameState.dice.find((d) => d.instanceId === taunt.sourceId && d.zone === 'board' && !d.isDestroyed && d.gridPosition);
+    if (!shield || !shield.gridPosition || !attacker.gridPosition) return undefined;
+    const distance = Math.abs(attacker.gridPosition.row - shield.gridPosition.row) + Math.abs(attacker.gridPosition.col - shield.gridPosition.col);
+    return distance <= 2 ? shield : undefined;
   }
 
   private applyLavaPoolDamageAtCombatStart() {
@@ -1553,7 +1636,8 @@ export class ArenaScene extends Phaser.Scene {
         if (!attacker) break;
 
         const beamTarget = this.findTranscendenceBeamTarget(attacker);
-        const target = beamTarget ?? findAttackTarget(this.gameState, attacker, this.getDefinitionsForCombat(attacker));
+        const forcedTarget = this.resolveTauntForcedTarget(attacker);
+        const target = forcedTarget ?? beamTarget ?? findAttackTarget(this.gameState, attacker, this.getDefinitionsForCombat(attacker));
         if (!target) {
           this.gameState = {
             ...this.gameState,
@@ -1593,7 +1677,8 @@ export class ArenaScene extends Phaser.Scene {
               target: this.getDefinitionForInstance(target)
             });
             const multiplier = this.getCombanityDamageMultiplier(attacker, target);
-            const adjustedDamage = Math.max(1, Math.floor(rawResult.damage * multiplier));
+            const solitudeBonus = this.getSolitudeBasicAttackBonus(attacker, target);
+            const adjustedDamage = Math.max(1, Math.floor((rawResult.damage + solitudeBonus) * multiplier));
             if (adjustedDamage === rawResult.damage) {
               this.gameState = rawResult.newState;
               damage = rawResult.damage;
@@ -1873,36 +1958,28 @@ export class ArenaScene extends Phaser.Scene {
     return targets;
   }
 
-  private applySolitudePreCombatDamage() {
-    const boardDice = this.gameState.dice.filter((die) => die.zone === 'board' && !die.isDestroyed && die.gridPosition);
-    boardDice.forEach((die) => {
-      const definition = this.getDefinitionForInstance(die);
-      if (!definition) return;
-      const meta = getRuntimeSkillMeta(definition);
-      if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined || !die.gridPosition) return;
-      const adjacentDie = boardDice.some((other) =>
-        other.ownerId === die.ownerId &&
-        other.instanceId !== die.instanceId &&
-        other.gridPosition &&
-        Math.abs(other.gridPosition.row - die.gridPosition!.row) <= 1 &&
-        Math.abs(other.gridPosition.col - die.gridPosition!.col) <= 1
-      );
-      if (adjacentDie) return;
-      const enemyOwner = die.ownerId === 'player' ? 'enemy' : 'player';
-      const foes = getBoardDice(this.gameState, enemyOwner).filter((foe) => foe.gridPosition);
-      const nearest = foes
-        .sort((a, b) => {
-          const da = Math.abs(a.gridPosition!.row - die.gridPosition!.row) + Math.abs(a.gridPosition!.col - die.gridPosition!.col);
-          const db = Math.abs(b.gridPosition!.row - die.gridPosition!.row) + Math.abs(b.gridPosition!.col - die.gridPosition!.col);
-          return da - db;
-        })[0];
-      if (!nearest) return;
-      const damage = Math.max(1, Math.floor(nearest.maxHealth * meta.targetMaxHpBonusRate!));
-      this.gameState = this.applyDamageWithRevive(nearest.instanceId, damage);
-      this.showDamageText(nearest, damage, '#b891ff');
-      if (this.gameState.dice.find((d) => d.instanceId === nearest.instanceId)?.isDestroyed) this.checkDeathTransformCondition(nearest);
-      this.combatLog.setText(`${die.typeId} invokes solitude for ${Math.round(meta.targetMaxHpBonusRate * 10000) / 100}% max HP damage!`);
-    });
+  private isSolitudeIsolated(die: DiceInstanceState): boolean {
+    if (!die.gridPosition) return false;
+    const allies = this.gameState.dice.filter((other) =>
+      other.zone === 'board' &&
+      !other.isDestroyed &&
+      other.ownerId === die.ownerId &&
+      other.instanceId !== die.instanceId &&
+      other.gridPosition
+    );
+    return !allies.some((other) =>
+      Math.abs(other.gridPosition!.row - die.gridPosition!.row) <= 1 &&
+      Math.abs(other.gridPosition!.col - die.gridPosition!.col) <= 1
+    );
+  }
+
+  private getSolitudeBasicAttackBonus(attacker: DiceInstanceState, target: DiceInstanceState): number {
+    const definition = this.getDefinitionForInstance(attacker);
+    if (!definition || !attacker.gridPosition) return 0;
+    const meta = getRuntimeSkillMeta(definition);
+    if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined) return 0;
+    if (!this.isSolitudeIsolated(attacker)) return 0;
+    return Math.max(1, Math.floor(target.maxHealth * meta.targetMaxHpBonusRate));
   }
 
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
@@ -2182,6 +2259,11 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyTimedSkillDecay() {
+    this.tauntedByInstance.forEach((value, key) => {
+      const turns = value.turns - 1;
+      if (turns <= 0) this.tauntedByInstance.delete(key);
+      else this.tauntedByInstance.set(key, { ...value, turns });
+    });
     this.attackDeltaByInstance.forEach((value, key) => {
       const nextTurns = value.turns - 1;
       if (nextTurns <= 0) {
