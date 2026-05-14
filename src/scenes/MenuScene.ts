@@ -34,23 +34,18 @@ export class MenuScene extends Phaser.Scene {
     this.add.circle(width * 0.18, height * 0.24, 180, 0x1c4f71, 0.12);
     this.add.circle(width * 0.82, height * 0.18, 120, 0xf4b860, 0.08);
 
-    this.add.text(40, 28, 'BATTLE DICE', {
+    this.add.text(40, 28, 'BATTLE DICE: AUTOROLLER', {
       fontFamily: 'Orbitron',
       fontSize: '32px',
       color: PALETTE.text
     });
 
-    this.add.text(42, 62, 'Autoroller menu shell  |  Random Dice-inspired lane battler', {
+    this.add.text(42, 62, 'Random Dice-inspired lane battler', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted
     });
 
-    this.add.text(width - 40, 34, 'ONLINE PROTOTYPE', {
-      fontFamily: 'Orbitron',
-      fontSize: '12px',
-      color: PALETTE.accentSoft
-    }).setOrigin(1, 0);
 
     const dock = this.add.rectangle(width / 2, dockY, width - 72, 66, 0x112638, 0.95)
       .setStrokeStyle(1, 0x3f627c);

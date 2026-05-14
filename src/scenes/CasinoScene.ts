@@ -184,7 +184,7 @@ export class CasinoScene extends Phaser.Scene {
       const x = cx - 160 + i * 80;
       this.add.rectangle(x, y, 62, 62, 0x183447, 1).setStrokeStyle(1, 0x3a6688);
       const die = this.add.image(x, y - 6, this.getDiceTextureKey(this.dice[i]))
-        .setDisplaySize(54, 54);
+        .setDisplaySize(43, 43);
       const lock = this.add.text(x, y + 22, 'UNLOCK', {
         fontFamily: 'Orbitron',
         fontSize: '9px',
@@ -280,7 +280,7 @@ export class CasinoScene extends Phaser.Scene {
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
     this.saveFivesHand();
-    await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: this.locks });
+    await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: this.locks, jitter: 8 });
     const combo = evaluateFivesCombo(this.dice);
     const comboSfxKey = this.getComboSfxKey(combo.combo);
     if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);
@@ -320,6 +320,7 @@ export class CasinoScene extends Phaser.Scene {
     }));
 
     const chestText = outcome.chestType ? `${outcome.chestType} x${outcome.chestCount}` : 'no chest';
+    void AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: [false, false, true, true, true], jitter: 8 });
     this.statusText.setText(`Craps: ${outcome.summary} • ${chestText}`);
     this.render(outcome.summary, chestText);
   }
