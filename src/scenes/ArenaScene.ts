@@ -2140,7 +2140,8 @@ export class ArenaScene extends Phaser.Scene {
         die.isDestroyed
       ).length;
       const previous = this.deathAlliesDefeatedCount.get(deathDie.instanceId) ?? 0;
-      const count = Math.max(previous, defeatedAllies);
+      const cap = getRuntimeSkillMeta(definition).maxSouls ?? 2;
+      const count = Math.min(cap, Math.max(previous, defeatedAllies));
       this.deathAlliesDefeatedCount.set(deathDie.instanceId, count);
 
       if (count >= 2) {
@@ -2888,7 +2889,7 @@ export class ArenaScene extends Phaser.Scene {
     container.add(pipLabel);
 
     const hpText = `${die.currentHealth}/${die.maxHealth}`;
-    const hpLabel = this.add.text(x, y + 24, hpText, {
+    const hpLabel = this.add.text(x, y + 24, `HP ${hpText}`, {
       fontFamily: 'Orbitron',
       fontSize: '8px',
       color: PALETTE.text
@@ -2904,9 +2905,11 @@ export class ArenaScene extends Phaser.Scene {
     this.attackCapacityByInstance.set(die.instanceId, maxAmmo);
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
     this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);
+    const meta = getRuntimeSkillMeta(definition);
     const manaSkills = definition.skills.filter((skill) => (skill.manaNeeded ?? 0) > 0);
     manaSkills.forEach((skill, index) => {
-      this.renderManaBar(container, x, y + 34 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1));
+      const manaColor = meta.canConjureSouls ? 0xc06bdb : 0x6fa8ff;
+      this.renderManaBar(container, x, y + 34 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1), manaColor);
     });
   }
 
@@ -3235,13 +3238,13 @@ export class ArenaScene extends Phaser.Scene {
     container.add(g);
   }
 
-  private renderManaBar(container: Phaser.GameObjects.Container, x: number, y: number, mana: number, maxMana: number) {
+  private renderManaBar(container: Phaser.GameObjects.Container, x: number, y: number, mana: number, maxMana: number, fillColor = 0x6fa8ff) {
     const ratio = Phaser.Math.Clamp(maxMana > 0 ? mana / maxMana : 0, 0, 1);
     const g = this.add.graphics();
     g.name = 'mana-bar';
     g.fillStyle(0x1f2f3d, 0.95);
     g.fillRoundedRect(x - 18, y - 3, 36, 5, 2);
-    g.fillStyle(0x6fa8ff, 1);
+    g.fillStyle(fillColor, 1);
     g.fillRoundedRect(x - 18, y - 3, 36 * ratio, 5, 2);
     container.add(g);
   }

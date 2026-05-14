@@ -49,7 +49,11 @@ export interface DiceSkillRuntimeMeta {
   skillSfxKey?: string;
   attackSfxKey?: string;
   transformedAttackSfxKey?: string;
+  canConjureSouls?: boolean;
+  conjureType?: 'ally' | 'enemy';
+  maxSouls?: number;
 }
+
 
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
   const primary = definition.skills[0];
@@ -123,7 +127,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     baseButton: getNoteValue('runtime:baseButton='),
     skillSfxKey: getNoteValue('runtime:skillSfx='),
     attackSfxKey: getNoteValue('runtime:attackSfx='),
-    transformedAttackSfxKey: getNoteValue('runtime:attackSfxTransformed=')
+    transformedAttackSfxKey: getNoteValue('runtime:attackSfxTransformed='),
+    canConjureSouls: Boolean((modifiers as { canConjureSouls?: boolean } | undefined)?.canConjureSouls),
+    conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' } | undefined)?.conjureType),
+    maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls
   };
 }
 

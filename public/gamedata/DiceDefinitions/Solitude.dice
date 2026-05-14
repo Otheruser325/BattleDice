@@ -9,10 +9,11 @@
     {
       "type": "Passive",
       "title": "Lonely Dominion",
-      "description": "Basic attacks deal bonus damage equal to 8% of the target's max HP.",
+      "description": "At combat start, if no ally occupies any adjacent tile in its 3x3 boundary, it deals 8% of the nearest foe's max HP as bonus damage.",
       "modifiers": {
         "notes": [
           "runtime:targetMaxHpBonusRate=0.08",
+          "runtime:solitudePreCombat",
           "runtime:skillSfx=dice_solitude_skill",
           "runtime:attackSfx=dice_solitude_attack"
         ],
