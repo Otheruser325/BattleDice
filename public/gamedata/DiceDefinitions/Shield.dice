@@ -19,7 +19,7 @@
     {
       "type": "Active",
       "title": "Bulwark",
-      "description": "Gain +300 shield for this turn. Class UP increases this shield by 10%.",
+      "description": "Gain +300 shield for this turn.",
       "manaNeeded": 8,
       "modifiers": {
         "shield": 300,
