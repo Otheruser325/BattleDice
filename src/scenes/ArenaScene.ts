@@ -27,11 +27,12 @@ import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
+import { canOfferDiceCards, getDiceCardMagnitude, getDiceCardRarityRoll, rollDiceCards, type DiceCard } from '../systems/DiceCards';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
 type MatchResultStage = 'victory' | 'defeat' | 'draw';
-type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy';
+type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy' | 'DiceCard';
 type ChallengeKey = 'daily' | 'deucifer' | null;
 type ChallengeStatus = 'not-started' | 'started' | 'completed' | 'failed';
 
@@ -99,6 +100,7 @@ export class ArenaScene extends Phaser.Scene {
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
+  private damageReductionByInstance: Map<string, number> = new Map();
   private poisonByInstance: Map<string, { damage: number; turns: number }> = new Map();
   private transcendenceTransformed: Set<string> = new Set();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
@@ -136,6 +138,12 @@ export class ArenaScene extends Phaser.Scene {
   private combatCountdownTriggered = false;
   private combatTimerText: Phaser.GameObjects.Text | null = null;
   private berserkTriggeredInstances: Set<string> = new Set();
+  private activeDiceCardKeys: Set<string> = new Set();
+  private diceTypeUpgradeBonus: Map<string, number> = new Map();
+  private spotlightByInstance: Map<string, { mult: number; reduction: number }> = new Map();
+  private fountainHealRate = 0;
+  private manaPotionGain = 0;
+  private diceCardPicksUsed = 0;
 
   constructor() {
     super(ArenaScene.KEY);
@@ -157,6 +165,7 @@ export class ArenaScene extends Phaser.Scene {
     this.attackDeltaByInstance.clear();
     this.extraAttackTurnsByInstance.clear();
     this.attackMultiplierTurnsByInstance.clear();
+    this.damageReductionByInstance.clear();
     this.poisonByInstance.clear();
     this.diceRolled = false;
     this.currentHandOrder = [];
@@ -174,6 +183,12 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyLoadoutRevealed = false;
     this.clearRangeHighlights();
     this.berserkTriggeredInstances.clear();
+    this.activeDiceCardKeys.clear();
+    this.diceTypeUpgradeBonus.clear();
+    this.spotlightByInstance.clear();
+    this.fountainHealRate = 0;
+    this.manaPotionGain = 0;
+    this.diceCardPicksUsed = 0;
   }
 
   create() {
@@ -496,7 +511,7 @@ export class ArenaScene extends Phaser.Scene {
 
 
   private getDailySeededModifier(): RandomModeModifier {
-    const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy'];
+    const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy', 'DiceCard'];
     const key = this.activeDailyKey || new Date().toISOString().slice(0, 10);
     const seed = [...`${key}:modifier:v2`].reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) >>> 0, 2166136261);
     return modifiers[seed % modifiers.length] ?? 'Classic';
@@ -906,7 +921,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.gameState = createMatchBattleState(playerDefs, enemyDefs);
     if (this.configRandomMode) {
-      const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy'];
+      const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy', 'DiceCard'];
       this.activeRandomModifier = this.activeChallenge === 'daily'
         ? this.getDailySeededModifier()
         : (modifiers[Phaser.Math.Between(0, modifiers.length - 1)] ?? 'Classic');
@@ -1301,7 +1316,8 @@ export class ArenaScene extends Phaser.Scene {
     this.gameState = this.beginCombatPhaseWithRolledPips();
     this.applyAssassinCombatStart();
     this.applyShieldTauntsAtCombatStart();
-    this.applyBatteryManaAtCombatStart();
+    await this.applyBatteryManaAtCombatStart();
+    this.applyManaPotionAtCombatStart();
 
     this.applyLavaPoolDamageAtCombatStart();
     this.renderDice();
@@ -1395,6 +1411,12 @@ export class ArenaScene extends Phaser.Scene {
       const hasCombatStart = (meta.combatStartExtraAttacks ?? 0) > 0;
       const hasPassivePipAura = (meta.pipMatchAllyAttackDelta ?? 0) !== 0 || (meta.pipMatchFoeAttackDelta ?? 0) !== 0;
       if (hasCombatStart || hasPassivePipAura) this.playSkillSfxForDie(die);
+      if (definition.typeId === 'Light' && hasCombatStart && die.gridPosition) {
+        const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+        const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+        const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+        AnimationManager.animateLightCombatStart(this, x, y, Math.max(1, meta.combatStartExtraAttacks ?? 1));
+      }
     });
     return nextState;
   }
@@ -1433,8 +1455,8 @@ export class ArenaScene extends Phaser.Scene {
         if (die.zone !== 'board' || die.isDestroyed) return die;
         const bonus = die.ownerId === 'player' ? player : enemy;
         this.attackMultiplierTurnsByInstance.set(die.instanceId, { multiplier: bonus.multiplier, turns: 1 });
-        if (bonus.reduction <= 0) return die;
-        return { ...die, currentHealth: die.currentHealth + Math.max(0, Math.floor(die.maxHealth * (bonus.reduction * 0.2))), maxHealth: die.maxHealth };
+        this.damageReductionByInstance.set(die.instanceId, Phaser.Math.Clamp(bonus.reduction, 0, 0.95));
+        return die;
       })
     };
   }
@@ -1472,19 +1494,29 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private applyBatteryManaAtCombatStart() {
+
+
+  private async applyBatteryManaAtCombatStart() {
     const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed);
     const batteries = boardDice.filter((d) => {
       const def = this.getDefinitionForInstance(d);
       const notes = def?.skills[0]?.modifiers?.notes ?? [];
       return notes.includes('runtime:batteryManaAura');
     });
+    let playedChargeVisual = false;
     batteries.forEach((battery) => {
       const def = this.getDefinitionForInstance(battery);
       const gain = def?.skills[0]?.modifiers?.manaGain ?? 0;
       if (gain <= 0) return;
       boardDice.filter((ally) => ally.ownerId === battery.ownerId).forEach((ally) => {
         const allyDef = this.getDefinitionForInstance(ally);
+        if (ally.gridPosition) {
+          const grid = ally.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+          const x = grid.x + ally.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+          const y = grid.y + ally.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+          AnimationManager.animateBatteryCharge(this, x, y, ally.instanceId === battery.instanceId ? 0x95c2ff : 0x3f5573);
+          playedChargeVisual = true;
+        }
         if (!allyDef) return;
         const meta = getRuntimeSkillMeta(allyDef);
         const cap = meta.activeManaNeeded ?? 0;
@@ -1493,6 +1525,73 @@ export class ArenaScene extends Phaser.Scene {
         this.manaByInstance.set(ally.instanceId, Math.min(cap, current + gain));
       });
     });
+    if (playedChargeVisual) await this.delay(500);
+  }
+
+  private applyManaPotionAtCombatStart() {
+    if (this.manaPotionGain <= 0) return;
+    const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed);
+    boardDice.forEach((ally) => {
+      const allyDef = this.getDefinitionForInstance(ally);
+      if (!allyDef) return;
+      const cap = getRuntimeSkillMeta(allyDef).activeManaNeeded ?? 0;
+      if (cap <= 0) return;
+      const current = this.manaByInstance.get(ally.instanceId) ?? 0;
+      this.manaByInstance.set(ally.instanceId, Math.min(cap, current + this.manaPotionGain));
+    });
+  }
+
+  private async maybeRunDiceCardDraft() {
+    if (!this.configRandomMode || this.activeRandomModifier !== 'DiceCard') return;
+    if (!canOfferDiceCards(this.gameState.turn, this.diceCardPicksUsed)) return;
+
+    const rarity = getDiceCardRarityRoll(() => Math.random());
+    const playerCards = rollDiceCards(3, rarity, 'player', this.gameState.dice, this.definitions, this.activeDiceCardKeys, () => Math.random());
+    if (playerCards.length === 0) return;
+    const picked = await this.showDiceCardPicker(playerCards);
+    this.applyDiceCard(picked, 'player');
+
+    const enemyCards = rollDiceCards(3, rarity, 'enemy', this.gameState.dice, this.definitions, this.activeDiceCardKeys, () => Math.random());
+    if (enemyCards.length > 0) this.applyDiceCard(enemyCards[Phaser.Math.Between(0, enemyCards.length - 1)], 'enemy');
+
+    this.diceCardPicksUsed += 1;
+  }
+
+  private async showDiceCardPicker(cards: DiceCard[]): Promise<DiceCard> {
+    return await new Promise<DiceCard>((resolve) => {
+      const c = this.add.container(this.scale.width / 2, this.scale.height / 2).setDepth(500);
+      const bg = this.add.rectangle(0, 0, 560, 250, 0x071018, 0.96).setStrokeStyle(2, 0xc28f4a);
+      const title = this.add.text(0, -95, 'Choose a Dice Card', { fontFamily: 'Orbitron', fontSize: '20px', color: '#ffe8c6' }).setOrigin(0.5);
+      c.add([bg, title]);
+      cards.forEach((card, idx) => {
+        const x = -170 + idx * 170;
+        const btn = this.add.rectangle(x, 10, 150, 130, 0x16344a, 0.95).setStrokeStyle(2, 0xf0c36a).setInteractive({ useHandCursor: true });
+        const tx = this.add.text(x, 2, `${card.rarity}\n${card.title}`, { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', align: 'center', wordWrap: { width: 138 } }).setOrigin(0.5);
+        btn.on('pointerdown', () => { c.destroy(true); resolve(card); });
+        c.add([btn, tx]);
+      });
+    });
+  }
+
+  private applyDiceCard(card: DiceCard, owner: 'player' | 'enemy') {
+    this.activeDiceCardKeys.add(card.key);
+    const mag = getDiceCardMagnitude(card.rarity);
+    if (card.kind === 'Fountain of Love') this.fountainHealRate = Math.max(this.fountainHealRate, [0, 0.1, 0.15, 0.2][mag]);
+    if (card.kind === 'Mana Potion') this.manaPotionGain = Math.max(this.manaPotionGain, mag);
+    if (card.kind === 'Spotlight') {
+      const side = this.gameState.dice.filter((d) => d.ownerId === owner && d.zone === 'board' && !d.isDestroyed);
+      side.forEach((d) => {
+        const pip = d.ownerId === 'player' ? (this.dicePips.get(d.instanceId) ?? 1) : (this.enemyDicePips.get(d.instanceId) ?? 1);
+        if (pip === 3) {
+          const scale = [0, 0.2, 0.3, 0.4][mag];
+          this.spotlightByInstance.set(d.instanceId, { mult: 1 + scale, reduction: scale });
+        }
+      });
+    }
+    if (card.kind === 'Type Upgrade' && card.typeId) {
+      const scale = [0, 1.5, 1.75, 2][mag];
+      this.diceTypeUpgradeBonus.set(`${owner}:${card.typeId}`, scale);
+    }
   }
 
   private applyShieldTauntsAtCombatStart() {
@@ -1526,14 +1625,14 @@ export class ArenaScene extends Phaser.Scene {
       if (foes.length === 0) return;
       const furthest = [...foes].sort((a,b)=> (assassin.ownerId==='player' ? b.gridPosition!.col-a.gridPosition!.col : a.gridPosition!.col-b.gridPosition!.col))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
-      const jumpRange = skill?.modifiers?.jumpRange ?? (this.getDefinitionForInstance(assassin)?.range ?? 0);
+      const jumpRange = skill?.modifiers?.jumpRange ?? -1;
       const targetCol = jumpRange < 0
         ? furthest.gridPosition!.col
         : (assassin.ownerId === 'player'
           ? Math.max(0, furthest.gridPosition!.col - jumpRange)
           : Math.min(GRID_SIZE - 1, furthest.gridPosition!.col + jumpRange));
       const targetRow = furthest.gridPosition!.row;
-      const occupied = new Set(boardDice.filter((d)=>d.ownerId===assassin.ownerId && d.instanceId!==assassin.instanceId).map((d)=>`${d.gridPosition!.row},${d.gridPosition!.col}`));
+      const occupied = new Set(boardDice.filter((d)=>d.instanceId!==assassin.instanceId).map((d)=>`${d.gridPosition!.row},${d.gridPosition!.col}`));
       let newRow = targetRow;
       for (const r of [targetRow, targetRow - 1, targetRow + 1, targetRow - 2, targetRow + 2, 0, 1, 2, 3, 4]) {
         if (r>=0 && r<5 && !occupied.has(`${r},${targetCol}`)) { newRow = r; break; }
@@ -1688,7 +1787,9 @@ export class ArenaScene extends Phaser.Scene {
             });
             const multiplier = this.getCombanityDamageMultiplier(attacker, target);
             const solitudeBonus = this.getSolitudeBasicAttackBonus(attacker, target);
-            const adjustedDamage = Math.max(1, Math.floor((rawResult.damage + solitudeBonus) * multiplier));
+            const typeBoost = this.diceTypeUpgradeBonus.get(`${attacker.ownerId}:${attacker.typeId}`) ?? 1;
+            const spot = this.spotlightByInstance.get(attacker.instanceId)?.mult ?? 1;
+            const adjustedDamage = Math.max(1, Math.floor((rawResult.damage + solitudeBonus) * multiplier * typeBoost * spot));
             this.gameState = spendAttack(this.gameState, attacker.instanceId);
             this.gameState = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
             damage = adjustedDamage;
@@ -1764,6 +1865,7 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
+    await this.maybeRunDiceCardDraft();
     this.gameState = endTurn(this.gameState);
     if (this.configRandomMode && this.activeRandomModifier === 'Necromancy' && this.gameState.turn > 1) {
       this.applyNecromancyTurnEffect();
@@ -1905,11 +2007,12 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  private getStatusEffects(die: DiceInstanceState): Array<'slow' | 'poison' | 'berserk'> {
-    const effects: Array<'slow' | 'poison' | 'berserk'> = [];
+  private getStatusEffects(die: DiceInstanceState): Array<'slow' | 'poison' | 'berserk' | 'taunt'> {
+    const effects: Array<'slow' | 'poison' | 'berserk' | 'taunt'> = [];
     if ((this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0) < 0) effects.push('slow');
     if (this.poisonByInstance.has(die.instanceId)) effects.push('poison');
     if (this.isBerserkActive(die)) effects.push('berserk');
+    if (this.tauntedByInstance.has(die.instanceId)) effects.push('taunt');
     return effects;
   }
 
@@ -1919,6 +2022,10 @@ export class ArenaScene extends Phaser.Scene {
 
 
   private applyDamageWithRevive(instanceId: string, damage: number): MatchBattleState {
+    let reduction = this.damageReductionByInstance.get(instanceId) ?? 0;
+    reduction += this.spotlightByInstance.get(instanceId)?.reduction ?? 0;
+    reduction = Phaser.Math.Clamp(reduction, 0, 0.95);
+    if (reduction > 0) damage = Math.max(0, Math.floor(damage * (1 - reduction)));
     const shieldHp = this.shieldHpByInstance.get(instanceId) ?? 0;
     if (shieldHp > 0) {
       const absorbed = Math.min(shieldHp, Math.max(0, damage));
@@ -1980,10 +2087,11 @@ export class ArenaScene extends Phaser.Scene {
       other.instanceId !== die.instanceId &&
       other.gridPosition
     );
-    return !allies.some((other) =>
-      Math.abs(other.gridPosition!.row - die.gridPosition!.row) <= 1 &&
-      Math.abs(other.gridPosition!.col - die.gridPosition!.col) <= 1
-    );
+    return !allies.some((other) => {
+      const dr = Math.abs(other.gridPosition!.row - die.gridPosition!.row);
+      const dc = Math.abs(other.gridPosition!.col - die.gridPosition!.col);
+      return (dr + dc) === 1;
+    });
   }
 
   private getSolitudeBasicAttackBonus(attacker: DiceInstanceState, target: DiceInstanceState): number {
@@ -2323,6 +2431,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyTurnBasedEffects() {
+    if (this.fountainHealRate > 0) {
+      this.gameState = { ...this.gameState, dice: this.gameState.dice.map((die) => {
+        if (die.zone !== 'board' || die.isDestroyed) return die;
+        return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + Math.max(1, Math.floor(die.maxHealth * this.fountainHealRate))) };
+      }) };
+    }
     const newlyDefeated: DiceInstanceState[] = [];
     this.poisonByInstance.forEach((effect, instanceId) => {
       if (effect.turns <= 0) return;
@@ -2633,7 +2747,9 @@ export class ArenaScene extends Phaser.Scene {
     dice.forEach((diceUnit, index) => {
       const visual = this.getTransformedVisual(diceUnit);
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
-      const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${visual ? ` ${visual.symbol}` : ''}`;
+      const shieldHp = this.shieldHpByInstance.get(diceUnit.instanceId) ?? 0;
+      const shieldTag = shieldHp > 0 ? ` | SH ${shieldHp}` : '';
+      const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${shieldTag}${visual ? ` ${visual.symbol}` : ''}`;
       panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
     });
   }
@@ -3025,9 +3141,11 @@ export class ArenaScene extends Phaser.Scene {
       color: PALETTE.text
     }).setOrigin(0.5);
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
+    const shieldHp = this.shieldHpByInstance.get(die.instanceId) ?? 0;
+    const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const desc = this.add.text(width / 2, 84, `${definition.skills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${skill.description}`).join(' | ')}${manaNote}`, {
+    const desc = this.add.text(width / 2, 84, `${definition.skills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${skill.description}`).join(' | ')}${shieldNote}${manaNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
@@ -3049,10 +3167,11 @@ export class ArenaScene extends Phaser.Scene {
   private renderStatusEffects(container: Phaser.GameObjects.Container, x: number, y: number, die: DiceInstanceState) {
     const effects = this.getStatusEffects(die);
     if (effects.length === 0) return;
-    const palette: Record<'slow' | 'poison' | 'berserk', { color: number; icon: string }> = {
+    const palette: Record<'slow' | 'poison' | 'berserk' | 'taunt', { color: number; icon: string }> = {
       slow: { color: 0x8fd5ff, icon: '❄' },
       poison: { color: 0x74d66f, icon: '☠' },
-      berserk: { color: 0xff4d4d, icon: '!' }
+      berserk: { color: 0xff4d4d, icon: '!' },
+      taunt: { color: 0xffb347, icon: 'T' }
     };
     effects.forEach((effect, index) => {
       const px = x - 22 + index * 16;
