@@ -173,6 +173,36 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, scale: 3, duration: 500, onComplete: () => g.destroy() });
   }
 
+
+  static animateBatteryCharge(scene: Phaser.Scene, x: number, y: number, color: number) {
+    const g = scene.add.graphics().setDepth(320).setAlpha(0);
+    g.fillStyle(color, 0.4);
+    g.fillCircle(x, y, 10);
+    scene.tweens.add({
+      targets: g,
+      alpha: 0.95,
+      scaleX: 2.2,
+      scaleY: 2.2,
+      duration: 250,
+      yoyo: true,
+      onComplete: () => g.destroy()
+    });
+  }
+
+  static animateLightCombatStart(scene: Phaser.Scene, x: number, y: number, upArrows: number) {
+    const sparkle = scene.add.graphics().setDepth(320).setAlpha(0);
+    sparkle.lineStyle(2, 0xffe066, 0.95);
+    sparkle.strokeCircle(x, y, 12);
+    sparkle.lineStyle(1, 0xfff4b0, 0.9);
+    sparkle.strokeCircle(x, y, 20);
+    scene.tweens.add({ targets: sparkle, alpha: 1, scale: 1.3, duration: 750, yoyo: true, onComplete: () => sparkle.destroy() });
+
+    for (let i = 0; i < Math.max(1, upArrows); i += 1) {
+      const t = scene.add.text(x - 10 + i * 8, y + 10, '↑', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffe066' }).setOrigin(0.5).setDepth(321);
+      scene.tweens.add({ targets: t, y: y - 24 - i * 2, alpha: 0, duration: 1500, onComplete: () => t.destroy() });
+    }
+  }
+
   static animateTimeActive(scene: Phaser.Scene, x: number, y: number) {
     const t = scene.add.text(x, y - 20, '⏰', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setDepth(260);
     const r = scene.add.graphics().setDepth(259);
