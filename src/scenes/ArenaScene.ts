@@ -1499,14 +1499,12 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-
   private getCombanityDamageMultiplier(attacker: DiceInstanceState, target: DiceInstanceState): number {
     if (!this.configRandomMode || this.activeRandomModifier !== 'Combanity') return 1;
     const attackerBonus = this.getRollComboBonus(attacker.ownerId === 'player' ? 'player' : 'enemy');
     const defenderBonus = this.getRollComboBonus(target.ownerId === 'player' ? 'player' : 'enemy');
     return Math.max(0, attackerBonus.multiplier * (1 - defenderBonus.reduction));
   }
-
 
   private animateTimeMark(die: DiceInstanceState, color: number) {
     if (!die.gridPosition) return;
@@ -1516,10 +1514,6 @@ export class ArenaScene extends Phaser.Scene {
     void color;
     AnimationManager.animateTimeActive(this, x, y);
   }
-
-
-
-
 
   private getManaCapForDie(die: DiceInstanceState): number {
     const def = this.getDefinitionForInstance(die);
