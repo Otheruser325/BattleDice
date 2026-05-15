@@ -1523,15 +1523,6 @@ export class ArenaScene extends Phaser.Scene {
     return meta.activeManaNeeded ?? 0;
   }
 
-
-  private getManaCapForDie(die: DiceInstanceState): number {
-    const def = this.getDefinitionForInstance(die);
-    if (!def) return 0;
-    const meta = getRuntimeSkillMeta(def);
-    if (meta.hasDeathInstakill && this.deathDiceTransformed.has(die.instanceId)) return meta.deathInstakillMana ?? 12;
-    return meta.activeManaNeeded ?? 0;
-  }
-
   private async applyBatteryManaAtCombatStart() {
     const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed);
     const batteries = boardDice.filter((d) => {
