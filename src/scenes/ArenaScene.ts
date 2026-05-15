@@ -1576,8 +1576,8 @@ export class ArenaScene extends Phaser.Scene {
   private applyDiceCard(card: DiceCard, owner: 'player' | 'enemy') {
     this.activeDiceCardKeys.add(card.key);
     const mag = getDiceCardMagnitude(card.rarity);
-    if (card.kind === 'Fountain of Love') this.fountainHealRate = Math.max(this.fountainHealRate, [0, 0.1, 0.15, 0.2][mag]);
-    if (card.kind === 'Mana Potion') this.manaPotionGain = Math.max(this.manaPotionGain, mag);
+    if (card.kind === 'Fountain of Love') this.fountainHealRate += [0, 0.1, 0.15, 0.2][mag];
+    if (card.kind === 'Mana Potion') this.manaPotionGain += mag;
     if (card.kind === 'Spotlight') {
       const side = this.gameState.dice.filter((d) => d.ownerId === owner && d.zone === 'board' && !d.isDestroyed);
       side.forEach((d) => {
@@ -1589,8 +1589,9 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (card.kind === 'Type Upgrade' && card.typeId) {
-      const scale = [0, 1.5, 1.75, 2][mag];
-      this.diceTypeUpgradeBonus.set(`${owner}:${card.typeId}`, scale);
+      const bonusRate = [0, 0.5, 0.75, 1][mag];
+      const key = `${owner}:${card.typeId}`;
+      this.diceTypeUpgradeBonus.set(key, (this.diceTypeUpgradeBonus.get(key) ?? 0) + bonusRate);
     }
   }
 
@@ -1614,6 +1615,12 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
+
+  private getTypeUpgradeMultiplier(attacker: DiceInstanceState): number {
+    const bonusRate = this.diceTypeUpgradeBonus.get(`${attacker.ownerId}:${attacker.typeId}`) ?? 0;
+    return 1 + Math.max(0, bonusRate);
+  }
+
   private applyAssassinCombatStart() {
     const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
     const assassins = boardDice.filter((d) => {
@@ -1632,12 +1639,17 @@ export class ArenaScene extends Phaser.Scene {
           ? Math.max(0, furthest.gridPosition!.col - jumpRange)
           : Math.min(GRID_SIZE - 1, furthest.gridPosition!.col + jumpRange));
       const targetRow = furthest.gridPosition!.row;
-      const occupied = new Set(boardDice.filter((d)=>d.instanceId!==assassin.instanceId).map((d)=>`${d.gridPosition!.row},${d.gridPosition!.col}`));
-      let newRow = targetRow;
-      for (const r of [targetRow, targetRow - 1, targetRow + 1, targetRow - 2, targetRow + 2, 0, 1, 2, 3, 4]) {
-        if (r>=0 && r<5 && !occupied.has(`${r},${targetCol}`)) { newRow = r; break; }
+      const occupied = new Set(boardDice.filter((d)=>d.ownerId===assassin.ownerId && d.instanceId!==assassin.instanceId).map((d)=>`${d.gridPosition!.row},${d.gridPosition!.col}`));
+      const colCandidates = [targetCol, targetCol - 1, targetCol + 1, targetCol - 2, targetCol + 2].filter((c) => c >= 0 && c < GRID_SIZE);
+      let chosen: { row: number; col: number } | null = null;
+      for (const c of colCandidates) {
+        for (const r of [targetRow, targetRow - 1, targetRow + 1, targetRow - 2, targetRow + 2, 0, 1, 2, 3, 4]) {
+          if (r>=0 && r<5 && !occupied.has(`${r},${c}`)) { chosen = { row: r, col: c }; break; }
+        }
+        if (chosen) break;
       }
-      this.gameState = { ...this.gameState, dice: this.gameState.dice.map((d)=> d.instanceId===assassin.instanceId ? { ...d, gridPosition: { row:newRow, col: targetCol }, attacksRemaining: d.attacksRemaining + 1 } : d ) };
+      if (!chosen) return;
+      this.gameState = { ...this.gameState, dice: this.gameState.dice.map((d)=> d.instanceId===assassin.instanceId ? { ...d, gridPosition: chosen!, attacksRemaining: d.attacksRemaining + 1 } : d ) };
     });
   }
 
@@ -1787,9 +1799,13 @@ export class ArenaScene extends Phaser.Scene {
             });
             const multiplier = this.getCombanityDamageMultiplier(attacker, target);
             const solitudeBonus = this.getSolitudeBasicAttackBonus(attacker, target);
-            const typeBoost = this.diceTypeUpgradeBonus.get(`${attacker.ownerId}:${attacker.typeId}`) ?? 1;
+            const typeBoost = this.getTypeUpgradeMultiplier(attacker);
             const spot = this.spotlightByInstance.get(attacker.instanceId)?.mult ?? 1;
-            const adjustedDamage = Math.max(1, Math.floor((rawResult.damage + solitudeBonus) * multiplier * typeBoost * spot));
+            const ironRate = attackerMeta?.targetCurrentHpBonusRate ?? 0;
+            const proportional = Math.max(0, Math.floor(target.currentHealth * ironRate));
+            const nonProportional = Math.max(1, rawResult.damage - proportional);
+            const scaledNonProportional = Math.floor(nonProportional * multiplier);
+            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus) * typeBoost * spot));
             this.gameState = spendAttack(this.gameState, attacker.instanceId);
             this.gameState = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
             damage = adjustedDamage;
@@ -2090,7 +2106,7 @@ export class ArenaScene extends Phaser.Scene {
     return !allies.some((other) => {
       const dr = Math.abs(other.gridPosition!.row - die.gridPosition!.row);
       const dc = Math.abs(other.gridPosition!.col - die.gridPosition!.col);
-      return (dr + dc) === 1;
+      return dr <= 1 && dc <= 1;
     });
   }
 
@@ -2116,7 +2132,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       if (splashTargets.length > 0) this.playSkillSfxForDie(attacker, meta);
       splashTargets.forEach((die) => {
-        const dealt = Math.max(1, Math.floor(meta.splashDamage! * this.getCombanityDamageMultiplier(attacker, die)));
+        const dealt = Math.max(1, Math.ceil(meta.splashDamage! * this.getCombanityDamageMultiplier(attacker, die) * this.getTypeUpgradeMultiplier(attacker)));
         this.gameState = this.applyDamageWithRevive(die.instanceId, dealt);
         this.showDamageText(die, dealt, '#ff9f58');
         if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
@@ -2132,7 +2148,7 @@ export class ArenaScene extends Phaser.Scene {
       );
       if (chainTarget) {
         this.playSkillSfxForDie(attacker, meta);
-        const dealt = Math.max(1, Math.floor(meta.chainDamage * this.getCombanityDamageMultiplier(attacker, chainTarget)));
+        const dealt = Math.max(1, Math.ceil(meta.chainDamage * this.getCombanityDamageMultiplier(attacker, chainTarget) * this.getTypeUpgradeMultiplier(attacker)));
         this.gameState = this.applyDamageWithRevive(chainTarget.instanceId, dealt);
         this.showDamageText(chainTarget, dealt, '#fff176');
         if (this.gameState.dice.find((d) => d.instanceId === chainTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(chainTarget);
@@ -2231,12 +2247,12 @@ export class ArenaScene extends Phaser.Scene {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         this.animateSpearActive(attacker, freshTarget);
-        const primaryDamage = meta.activeDamage ?? 104;
+        const primaryDamage = Math.max(1, Math.ceil((meta.activeDamage ?? 104) * this.getTypeUpgradeMultiplier(attacker)));
         const dealt = applyDirectDamage(freshTarget, primaryDamage);
         this.showDamageText(freshTarget, dealt, '#dbe7e4');
         if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
         this.getPierceBehindTargets(attacker, freshTarget, 2).forEach((die) => {
-          const pierceDamage = meta.pierceBehindDamage ?? 208;
+          const pierceDamage = Math.max(1, Math.ceil((meta.pierceBehindDamage ?? 208) * this.getTypeUpgradeMultiplier(attacker)));
           const dealt = applyDirectDamage(die, pierceDamage);
           this.showDamageText(die, dealt, '#b58cff');
           if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
@@ -2249,7 +2265,7 @@ export class ArenaScene extends Phaser.Scene {
       const healTarget = this.getWeakestDamagedAlly(attacker.ownerId, attacker.instanceId);
       if (healTarget) {
         this.playSkillSfxForDie(attacker, meta);
-        const healAmount = Math.max(1, Math.floor(meta.activeHeal * this.getCombanityDamageMultiplier(attacker, healTarget)));
+        const healAmount = Math.max(1, Math.ceil(meta.activeHeal * this.getCombanityDamageMultiplier(attacker, healTarget) * this.getTypeUpgradeMultiplier(attacker)));
         this.gameState = {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => {
@@ -2263,14 +2279,14 @@ export class ArenaScene extends Phaser.Scene {
     }
     if ((meta.shield ?? 0) > 0) {
       this.playSkillSfxForDie(attacker, meta);
-      const shieldGain = Math.max(1, Math.floor((meta.shield ?? 0) * this.getCombanityDamageMultiplier(attacker, attacker)));
+      const shieldGain = Math.max(1, Math.ceil((meta.shield ?? 0) * this.getCombanityDamageMultiplier(attacker, attacker) * this.getTypeUpgradeMultiplier(attacker)));
       this.shieldHpByInstance.set(attacker.instanceId, (this.shieldHpByInstance.get(attacker.instanceId) ?? 0) + shieldGain);
       this.showHealText(attacker, shieldGain);
     }
     if (attacker.typeId === 'Ice') {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        const dealt = applyDirectDamage(freshTarget, meta.activeDamage ?? 16);
+        const dealt = applyDirectDamage(freshTarget, Math.max(1, Math.ceil((meta.activeDamage ?? 16) * this.getTypeUpgradeMultiplier(attacker))));
         this.showDamageText(freshTarget, dealt, '#8fd5ff');
         this.gameState = {
           ...this.gameState,
@@ -2285,11 +2301,11 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if (attacker.typeId === 'Poison') {
-      const poisonDamage = Math.max(1, meta.poisonDamage ?? 0);
+      const poisonDamage = Math.max(1, Math.ceil((meta.poisonDamage ?? 0) * this.getTypeUpgradeMultiplier(attacker)));
       const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 0);
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        const activePoisonDamage = Math.max(1, meta.activeDamage ?? poisonDamage);
+        const activePoisonDamage = Math.max(1, Math.ceil((meta.activeDamage ?? poisonDamage) * this.getTypeUpgradeMultiplier(attacker)));
         const dealt = applyDirectDamage(freshTarget, activePoisonDamage);
         this.showDamageText(freshTarget, dealt, '#89f57a');
       }
