@@ -1619,12 +1619,10 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-
   private getTypeUpgradeMultiplier(attacker: DiceInstanceState): number {
     const bonusRate = this.diceTypeUpgradeBonus.get(`${attacker.ownerId}:${attacker.typeId}`) ?? 0;
     return 1 + Math.max(0, bonusRate);
   }
-
 
   private getOffenseMultiplier(attacker: DiceInstanceState): number {
     const typeBoost = this.getTypeUpgradeMultiplier(attacker);
@@ -1896,6 +1894,7 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
+    await this.maybeRunDiceCardDraft();
     this.gameState = endTurn(this.gameState);
     await this.maybeRunDiceCardDraft();
     if (this.configRandomMode && this.activeRandomModifier === 'Necromancy' && this.gameState.turn > 1) {
