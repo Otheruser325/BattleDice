@@ -14,7 +14,7 @@
         "durationTurns": 3,
         "notes": [
           "Applies 20 poison damage per turn.",
-          "runtime:skillSfx=dice_soul_skill_01"
+          "runtime:skillSfx=dice_poison_skill"
         ],
         "poisonDamage": 20
       }
