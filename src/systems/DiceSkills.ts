@@ -33,6 +33,7 @@ export interface DiceSkillRuntimeMeta {
   pierceBehindDamage?: number;
   hammerDamage?: number;
   shield?: number;
+  armorShredRate?: number;
   hasSpearActive?: boolean;
   hasSolitudePreCombat?: boolean;
   hasJudgmentHammer?: boolean;
@@ -113,6 +114,12 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     pierceBehindDamage: (activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage ?? (modifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage,
     hammerDamage: (modifiers as { hammerDamage?: number } | undefined)?.hammerDamage,
     shield: (activeModifiers as { shield?: number } | undefined)?.shield ?? (modifiers as { shield?: number } | undefined)?.shield,
+    armorShredRate: (() => {
+      const activeNotes = activeModifiers?.notes ?? [];
+      const shredNote = [...activeNotes, ...notes].find((note) => note.startsWith('runtime:armorShredRate='));
+      const parsed = shredNote ? Number(shredNote.split('=')[1]) : undefined;
+      return Number.isFinite(parsed) ? parsed : undefined;
+    })(),
     hasSpearActive: notes.includes('runtime:spearActive') || (activeModifiers?.notes ?? []).includes('runtime:spearActive'),
     hasSolitudePreCombat: notes.includes('runtime:solitudePreCombat'),
     hasJudgmentHammer: notes.includes('runtime:judgmentHammer'),

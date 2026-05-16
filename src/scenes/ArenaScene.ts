@@ -102,6 +102,7 @@ export class ArenaScene extends Phaser.Scene {
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
   private poisonByInstance: Map<string, { damage: number; turns: number }> = new Map();
+  private armorShredByInstance: Map<string, { rate: number; turns: number }> = new Map();
   private transcendenceTransformed: Set<string> = new Set();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
   private rollAllButtonLabel!: Phaser.GameObjects.Text;
@@ -171,6 +172,7 @@ export class ArenaScene extends Phaser.Scene {
     this.attackMultiplierTurnsByInstance.clear();
     this.damageReductionByInstance.clear();
     this.poisonByInstance.clear();
+    this.armorShredByInstance.clear();
     this.diceRolled = false;
     this.currentHandOrder = [];
     this.activeRandomModifier = null;
@@ -1691,13 +1693,18 @@ export class ArenaScene extends Phaser.Scene {
       })[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
       const jumpRange = skill?.modifiers?.jumpRange ?? -1;
+      const mirroredFurthestCol = GRID_SIZE - 1 - furthest.gridPosition!.col;
       const targetCol = jumpRange < 0
-        ? furthest.gridPosition!.col
+        ? mirroredFurthestCol
         : (assassin.ownerId === 'player'
           ? Math.min(GRID_SIZE - 1, (assassin.gridPosition?.col ?? 0) + jumpRange)
           : Math.max(0, (assassin.gridPosition?.col ?? 0) - jumpRange));
       const targetRow = furthest.gridPosition!.row;
-      const occupied = new Set(boardDice.filter((d)=>d.ownerId===assassin.ownerId && d.instanceId!==assassin.instanceId).map((d)=>`${d.gridPosition!.row},${d.gridPosition!.col}`));
+      const occupied = new Set(
+        this.gameState.dice
+          .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === assassin.ownerId && d.instanceId !== assassin.instanceId && d.gridPosition)
+          .map((d) => `${d.gridPosition!.row},${d.gridPosition!.col}`)
+      );
       const preferredDir = assassin.ownerId === 'player' ? -1 : 1;
       const colCandidates = [targetCol, targetCol + preferredDir, targetCol - preferredDir, targetCol + preferredDir * 2, targetCol - preferredDir * 2].filter((c) => c >= 0 && c < GRID_SIZE);
       let chosen: { row: number; col: number } | null = null;
@@ -1749,7 +1756,7 @@ export class ArenaScene extends Phaser.Scene {
     const removeOld = (container: Phaser.GameObjects.Container) => {
       const toRemove: Phaser.GameObjects.GameObject[] = [];
       container.each((child: Phaser.GameObjects.GameObject) => {
-        if (child instanceof Phaser.GameObjects.Graphics && child.name === 'lava-pool') {
+        if (child.name === 'lava-pool') {
           toRemove.push(child);
         }
       });
@@ -1778,6 +1785,7 @@ export class ArenaScene extends Phaser.Scene {
       g.lineStyle(2, 0xff6b00, 0.85);
       g.strokeRoundedRect(tileX - TILE_SIZE / 2 + 4, tileY - TILE_SIZE / 2 + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
       container.add(g);
+      this.tweens.add({ targets: g, alpha: 0.35, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
 
       const turnLabel = this.add.text(tileX, tileY + TILE_SIZE / 2 - 10, `${pool.turns}T`, {
         fontFamily: 'Orbitron', fontSize: '9px', color: '#ff8c00'
@@ -1815,7 +1823,10 @@ export class ArenaScene extends Phaser.Scene {
           break;
         }
 
-        const attacker = getNextAttacker(this.gameState, owner);
+        const boostedAssassin = this.gameState.dice
+          .filter((die) => die.ownerId === owner && die.zone === 'board' && !die.isDestroyed && !die.hasFinishedAttacking && die.attacksRemaining > 0)
+          .find((die) => (this.assassinBoostAttacksByInstance.get(die.instanceId) ?? 0) > 0);
+        const attacker = boostedAssassin ?? getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
         const beamTarget = this.findTranscendenceBeamTarget(attacker);
@@ -2089,12 +2100,13 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  private getStatusEffects(die: DiceInstanceState): Array<'slow' | 'poison' | 'berserk' | 'taunt'> {
-    const effects: Array<'slow' | 'poison' | 'berserk' | 'taunt'> = [];
+  private getStatusEffects(die: DiceInstanceState): Array<'slow' | 'poison' | 'berserk' | 'taunt' | 'fracture'> {
+    const effects: Array<'slow' | 'poison' | 'berserk' | 'taunt' | 'fracture'> = [];
     if ((this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0) < 0) effects.push('slow');
     if (this.poisonByInstance.has(die.instanceId)) effects.push('poison');
     if (this.isBerserkActive(die)) effects.push('berserk');
     if (this.tauntedByInstance.has(die.instanceId)) effects.push('taunt');
+    if (this.armorShredByInstance.has(die.instanceId)) effects.push('fracture');
     return effects;
   }
 
@@ -2109,6 +2121,8 @@ export class ArenaScene extends Phaser.Scene {
     if (die) reduction += this.getSpotlightScale(die);
     reduction = Phaser.Math.Clamp(reduction, 0, 0.95);
     if (reduction > 0) damage = Math.max(0, Math.floor(damage * (1 - reduction)));
+    const armorShred = this.armorShredByInstance.get(instanceId);
+    if (armorShred && armorShred.rate > 0) damage = Math.max(1, Math.floor(damage * (1 + armorShred.rate)));
     const shieldHp = this.shieldHpByInstance.get(instanceId) ?? 0;
     if (shieldHp > 0) {
       const absorbed = Math.min(shieldHp, Math.max(0, damage));
@@ -2263,8 +2277,13 @@ export class ArenaScene extends Phaser.Scene {
             const dealt = applyDirectDamage(freshTarget, meteorDamage);
             this.showDamageText(freshTarget, dealt, '#ff9f58');
             if (freshTarget.gridPosition) {
-              const lavaKey = `${enemyOwner}:${freshTarget.gridPosition.row},${freshTarget.gridPosition.col}`;
-              this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: 3 });
+              const origin = freshTarget.gridPosition;
+              const tiles = [origin, { row: origin.row - 1, col: origin.col }, { row: origin.row + 1, col: origin.col }, { row: origin.row, col: origin.col - 1 }, { row: origin.row, col: origin.col + 1 }]
+                .filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE);
+              tiles.forEach((tile) => {
+                const lavaKey = `${enemyOwner}:${tile.row},${tile.col}`;
+                this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: 3 });
+              });
             }
             const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
             if (destroyed) this.checkDeathTransformCondition(freshTarget);
@@ -2381,6 +2400,17 @@ export class ArenaScene extends Phaser.Scene {
       this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns });
       this.animateSkillEffect('poison', attacker, target);
     }
+
+    const shouldApplyGenericActiveDamage = meta.activeDamage !== undefined && !meta.hasSpearActive && !meta.hasMeteorStrike && !(meta.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId)) && attacker.typeId !== 'Ice' && attacker.typeId !== 'Poison';
+    if (shouldApplyGenericActiveDamage) {
+      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
+      if (freshTarget && !freshTarget.isDestroyed) {
+        const dealt = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 1)));
+        this.showDamageText(freshTarget, dealt, '#ffbf80');
+        if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
+      }
+    }
+
     if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
       if (attacker.typeId === 'Wind') {
         if (attacker.gridPosition) {
@@ -2404,6 +2434,11 @@ export class ArenaScene extends Phaser.Scene {
       } else {
         this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
       }
+    }
+    if ((meta.armorShredRate ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
+      this.armorShredByInstance.set(target.instanceId, { rate: meta.armorShredRate!, turns: meta.activeDurationTurns! });
+      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
+      if (freshTarget) this.showDamageText(freshTarget, 0, '#ffbf80', 'FRACTURE');
     }
     if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
       this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
@@ -2546,6 +2581,10 @@ export class ArenaScene extends Phaser.Scene {
       if (effect.turns - 1 <= 0) {
         this.poisonByInstance.delete(instanceId);
       }
+    });
+    this.armorShredByInstance.forEach((effect, instanceId) => {
+      this.armorShredByInstance.set(instanceId, { ...effect, turns: effect.turns - 1 });
+      if (effect.turns - 1 <= 0) this.armorShredByInstance.delete(instanceId);
     });
     newlyDefeated.forEach((die) => this.checkDeathTransformCondition(die));
     if (newlyDefeated.length > 0) AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
@@ -3099,12 +3138,12 @@ export class ArenaScene extends Phaser.Scene {
     return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${definition.range}: ${tintName} coverage hits ${tileCount}/25 enemy tiles (columns ${columnText}, all rows).`;
   }
 
-  private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a') {
-    if (!target.gridPosition || amount <= 0) return;
+  private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a', textOverride?: string) {
+    if (!target.gridPosition || (amount <= 0 && !textOverride)) return;
     const grid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const x = grid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18;
-    const text = this.add.text(x, y, `-${amount}`, {
+    const text = this.add.text(x, y, textOverride ?? `-${amount}`, {
       fontFamily: 'Orbitron',
       fontSize: '16px',
       color,
@@ -3306,11 +3345,12 @@ export class ArenaScene extends Phaser.Scene {
   private renderStatusEffects(container: Phaser.GameObjects.Container, x: number, y: number, die: DiceInstanceState) {
     const effects = this.getStatusEffects(die);
     if (effects.length === 0) return;
-    const palette: Record<'slow' | 'poison' | 'berserk' | 'taunt', { color: number; icon: string }> = {
+    const palette: Record<'slow' | 'poison' | 'berserk' | 'taunt' | 'fracture', { color: number; icon: string }> = {
       slow: { color: 0x8fd5ff, icon: '❄' },
       poison: { color: 0x74d66f, icon: '☠' },
       berserk: { color: 0xff4d4d, icon: '!' },
-      taunt: { color: 0xffb347, icon: 'T' }
+      taunt: { color: 0xffb347, icon: 'T' },
+      fracture: { color: 0xffbf80, icon: '🜂' }
     };
     effects.forEach((effect, index) => {
       const px = x - 22 + index * 16;
