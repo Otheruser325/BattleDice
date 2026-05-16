@@ -36,20 +36,6 @@ function formatSkillInfo(definition: DiceDefinition, locked = false): string {
 }
 
 
-function getMetadataHoverLines(definition: DiceDefinition): string[] {
-  const lines: string[] = [];
-  definition.skills.forEach((skill) => {
-    const m = skill.modifiers;
-    if (!m) return;
-    if (m.shield !== undefined) lines.push(`meta.shield: ${m.shield} (Class UP scales +10%)`);
-    if (m.tauntRange !== undefined) lines.push(`meta.tauntRange: ${m.tauntRange}`);
-    if (m.tauntDuration !== undefined) lines.push(`meta.tauntDuration: ${m.tauntDuration}`);
-    if (m.numAttacksBoosted !== undefined) lines.push(`meta.numAttacksBoosted: ${m.numAttacksBoosted} (+1/4 class levels)`);
-    if (m.numAttacksDamageMult !== undefined) lines.push(`meta.numAttacksDamageMult: x${m.numAttacksDamageMult}`);
-    if (m.manaGain !== undefined) lines.push(`meta.manaGain: +${m.manaGain}`);
-  });
-  return lines;
-}
 export class DiceScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Dice;
   private readonly debug = DebugManager.attachScene(DiceScene.KEY);
@@ -397,8 +383,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upgradePreview = getClassProgressionPreview(die, cls);
-    const metaLines = getMetadataHoverLines(die);
-    const previewLines = [`ATK +${upgradePreview.attackDelta}`, `HP +${upgradePreview.healthDelta}`, ...upgradePreview.skillDeltas, ...metaLines];
+    const previewLines = [`ATK +${upgradePreview.attackDelta}`, `HP +${upgradePreview.healthDelta}`, ...upgradePreview.skillDeltas];
     const upgradeTooltip = this.add.text(width / 2 + 110, height / 2 + 62, previewLines.join('\n'), {
       fontFamily: 'Orbitron',
       fontSize: '11px',
