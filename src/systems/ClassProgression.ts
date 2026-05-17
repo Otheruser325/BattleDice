@@ -247,6 +247,24 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   }
 
 
+
+  const runtimeRateNotes: Array<{ key: string; label: string }> = [
+    { key: 'runtime:armorShredRate=', label: 'Fracture armor reduction' }
+  ];
+  runtimeRateNotes.forEach(({ key, label }) => {
+    const parseRate = (mods: DiceSkillModifier): number | undefined => {
+      const note = (mods.notes ?? []).find((entry) => entry.startsWith(key));
+      if (!note) return undefined;
+      const parsed = Number(note.split('=')[1]);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const currentRate = parseRate(currentModifiers);
+    const nextRate = parseRate(nextModifiers);
+    if (currentRate !== undefined && nextRate !== undefined && nextRate > currentRate) {
+      skillDeltas.push(`${label} +${formatPercent(nextRate - currentRate)}`);
+    }
+  });
+
   if (currentModifiers.berserkThresholdRate !== undefined && nextModifiers.berserkThresholdRate !== undefined) {
     const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;
     if (delta > 0) skillDeltas.push(`Berserk threshold +${formatPercent(delta)}`);
