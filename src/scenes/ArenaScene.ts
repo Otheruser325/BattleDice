@@ -1690,9 +1690,10 @@ export class ArenaScene extends Phaser.Scene {
       const furthest = [...foes].sort((a, b) => getCombatDistance(assassin, b) - getCombatDistance(assassin, a))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
       const jumpRange = skill?.modifiers?.jumpRange ?? -1;
+      const targetOwner = assassin.ownerId === 'player' ? 'enemy' : 'player';
       const occupied = new Set(
         this.gameState.dice
-          .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === assassin.ownerId && d.instanceId !== assassin.instanceId && d.gridPosition)
+          .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === targetOwner && d.instanceId !== assassin.instanceId && d.gridPosition)
           .map((d) => `${d.gridPosition!.row},${d.gridPosition!.col}`)
       );
 
@@ -1701,8 +1702,8 @@ export class ArenaScene extends Phaser.Scene {
       for (let row = 0; row < GRID_SIZE; row++) {
         for (let col = 0; col < GRID_SIZE; col++) {
           if (occupied.has(`${row},${col}`)) continue;
-          if (jumpRange >= 0 && Math.abs(col - assassin.gridPosition.col) > jumpRange) continue;
-          const proxy: DiceInstanceState = { ...assassin, gridPosition: { row, col } };
+          const proxy: DiceInstanceState = { ...assassin, ownerId: targetOwner, gridPosition: { row, col } };
+          if (jumpRange >= 0 && getCombatDistance(assassin, proxy) > jumpRange) continue;
           const distance = getCombatDistance(proxy, furthest);
           if (distance < bestDistance) {
             bestDistance = distance;
@@ -1712,13 +1713,17 @@ export class ArenaScene extends Phaser.Scene {
       }
 
       if (!chosen) return;
-      this.gameState = { ...this.gameState, dice: this.gameState.dice.map((d)=> d.instanceId===assassin.instanceId ? { ...d, gridPosition: chosen!, attacksRemaining: d.attacksRemaining + 1 } : d ) };
+      this.gameState = {
+        ...this.gameState,
+        dice: this.gameState.dice.map((d) => d.instanceId === assassin.instanceId
+          ? { ...d, ownerId: targetOwner, gridPosition: chosen! }
+          : d)
+      };
       const passive = this.getDefinitionForInstance(assassin)?.skills.find((sk)=>sk.type==='Passive');
       const passiveMods = passive?.modifiers as { numAttacksBoosted?: number } | undefined;
       this.assassinBoostAttacksByInstance.set(assassin.instanceId, Math.max(0, passiveMods?.numAttacksBoosted ?? 0));
     });
   }
-
   private resolveTauntForcedTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
     const taunt = this.tauntedByInstance.get(attacker.instanceId);
     if (!taunt) return undefined;
@@ -1940,6 +1945,7 @@ export class ArenaScene extends Phaser.Scene {
     await this.delay(1000);
 
     this.applyCombatEndSkills();
+    this.applyFountainOfLoveCombatEndHealing();
     this.applyTimedSkillDecay();
     this.gameState = resolveCombatPhase(this.gameState);
     this.applyTurnBasedEffects();
@@ -2557,13 +2563,21 @@ export class ArenaScene extends Phaser.Scene {
     expiredLava.forEach(k => this.lavaPoolsByTile.delete(k));
   }
 
+
+  private applyFountainOfLoveCombatEndHealing() {
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => {
+        if (die.isDestroyed) return die;
+        const rate = this.fountainHealRateByOwner[die.ownerId];
+        if (rate <= 0) return die;
+        const healed = Math.max(1, Math.floor(die.maxHealth * rate));
+        return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healed) };
+      })
+    };
+  }
+
   private applyTurnBasedEffects() {
-    this.gameState = { ...this.gameState, dice: this.gameState.dice.map((die) => {
-      if (die.zone !== 'board' || die.isDestroyed) return die;
-      const rate = this.fountainHealRateByOwner[die.ownerId];
-      if (rate <= 0) return die;
-      return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + Math.max(1, Math.floor(die.maxHealth * rate))) };
-    }) };
     const newlyDefeated: DiceInstanceState[] = [];
     this.poisonByInstance.forEach((effect, instanceId) => {
       if (effect.turns <= 0) return;
