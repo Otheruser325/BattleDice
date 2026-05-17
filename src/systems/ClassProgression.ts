@@ -246,8 +246,6 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
     if (delta > 0) skillDeltas.push(`Current HP damage +${formatPercent(delta)}`);
   }
 
-
-
   const runtimeRateNotes: Array<{ key: string; label: string }> = [
     { key: 'runtime:armorShredRate=', label: 'Fracture armor reduction' }
   ];
