@@ -152,6 +152,11 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
     return `Deals ${modifiers.activeDamage} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
   }
+  if (definition.typeId === 'Crack' && modifiers.activeDamage !== undefined) {
+    const shredNote = (modifiers.notes ?? []).find((note) => note.startsWith('runtime:armorShredRate='));
+    const shredRate = shredNote ? Number(shredNote.split('=')[1]) : 0.2;
+    return `Deal ${modifiers.activeDamage} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
+  }
   if (modifiers.poisonDamage !== undefined) {
     return `Deals direct toxic damage, then applies ${modifiers.poisonDamage} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
@@ -182,6 +187,9 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   }
   if (modifiers.distanceDamageBonusRatePerTile !== undefined) {
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
+  }
+  if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
+    return `On Combat Start, all friendly charging active skills gain +${modifiers.manaGain} mana.`;
   }
   if (modifiers.reviveChance !== undefined) {
     return `When defeated, it comes back to life with a ${formatPercent(modifiers.reviveChance)} chance.`;

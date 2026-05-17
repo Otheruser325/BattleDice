@@ -11,6 +11,21 @@ const DICE_TOKENS_KEY = 'dice:tokens';
 const DIAMONDS_KEY = 'shop:diamonds';
 const SHOP_STATE_KEY = 'shop:state';
 
+
+const MAX_STORED_COPIES_BY_RARITY: Record<string, number> = {
+  Common: 29070,
+  Uncommon: 20008,
+  Rare: 12990,
+  Epic: 2505,
+  Legendary: 92
+};
+
+function getMaxStoredCopiesForType(scene: Phaser.Scene, typeId: DiceTypeId): number {
+  const definition = scene.cache.json.get(`dice:${typeId}`) as { rarity?: string } | undefined;
+  if (!definition?.rarity) return Number.POSITIVE_INFINITY;
+  return MAX_STORED_COPIES_BY_RARITY[definition.rarity] ?? Number.POSITIVE_INFINITY;
+}
+
 function readStored<T>(key: string): T | undefined {
   try {
     if (typeof localStorage === 'undefined') return undefined;
@@ -120,7 +135,7 @@ export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: D
     ...store,
     [typeId]: {
       classLevel: Math.max(1, Math.min(15, next.classLevel)),
-      copies: Math.max(0, next.copies),
+      copies: Math.max(0, Math.min(next.copies, getMaxStoredCopiesForType(scene, typeId))),
       unlocked: next.unlocked === true || existing?.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || next.copies > 0
     }
   };
@@ -132,12 +147,12 @@ export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies:
   if (copies <= 0) return;
   const progress = getDiceProgress(scene, typeId);
   if (DEFAULT_LOADOUT_IDS.has(typeId) || progress.unlocked) {
-    setDiceProgress(scene, typeId, { ...progress, copies: progress.copies + copies });
+    setDiceProgress(scene, typeId, { ...progress, copies: Math.min(progress.copies + copies, getMaxStoredCopiesForType(scene, typeId)) });
     return;
   }
   const spendForUnlock = 1;
   const remainder = Math.max(0, copies - spendForUnlock);
-  setDiceProgress(scene, typeId, { classLevel: progress.classLevel, copies: progress.copies + remainder, unlocked: true });
+  setDiceProgress(scene, typeId, { classLevel: progress.classLevel, copies: Math.min(progress.copies + remainder, getMaxStoredCopiesForType(scene, typeId)), unlocked: true });
 }
 
 export function getRangeLabel(range: number): string {

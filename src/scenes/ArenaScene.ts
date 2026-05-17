@@ -189,6 +189,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyLoadoutRevealed = false;
     this.clearRangeHighlights();
     this.berserkTriggeredInstances.clear();
+    this.activeDiceCardKeys.clear();
     this.activeDiceCardKeysByOwner.player.clear();
     this.activeDiceCardKeysByOwner.enemy.clear();
     this.diceTypeUpgradeBonus.clear();
