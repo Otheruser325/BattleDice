@@ -147,6 +147,8 @@ export class ArenaScene extends Phaser.Scene {
   private fountainHealRateByOwner: Record<'player' | 'enemy', number> = { player: 0, enemy: 0 };
   private giantHunterRateByOwner: Record<'player' | 'enemy', number> = { player: 0, enemy: 0 };
   private activeDiceCardKeysByOwner: Record<'player' | 'enemy', Set<string>> = { player: new Set(), enemy: new Set() };
+  private oddInvestmentByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
+  private evenInvestmentByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private assassinBoostAttacksByInstance: Map<string, number> = new Map();
   private diceCardPicksUsed = 0;
 
@@ -192,6 +194,8 @@ export class ArenaScene extends Phaser.Scene {
     this.activeDiceCardKeys.clear();
     this.activeDiceCardKeysByOwner.player.clear();
     this.activeDiceCardKeysByOwner.enemy.clear();
+    this.oddInvestmentByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
+    this.evenInvestmentByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
     this.diceTypeUpgradeBonus.clear();
     this.spotlightByInstance.clear();
     this.giantHunterRateByOwner = { player: 0, enemy: 0 };
@@ -1633,6 +1637,8 @@ export class ArenaScene extends Phaser.Scene {
       };
     }
     if (card.kind === 'Giant Hunter') { this.giantHunterRateByOwner[owner] += [0, 0.01, 0.02, 0.03][mag]; }
+    if (card.kind === 'Odd Investment') this.oddInvestmentByOwner[owner] = { damage: this.oddInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.oddInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
+    if (card.kind === 'Even Investment') this.evenInvestmentByOwner[owner] = { damage: this.evenInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.evenInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
     this.renderDiceCardInfoPanel();
   }
 
@@ -1664,13 +1670,24 @@ export class ArenaScene extends Phaser.Scene {
   private getSpotlightScale(die: DiceInstanceState): number {
     const data = this.spotlightByInstance.get(die.instanceId);
     if (!data) return 0;
-    const pip = die.ownerId === 'player' ? (this.dicePips.get(die.instanceId) ?? 1) : (this.enemyDicePips.get(die.instanceId) ?? 1);
-    return pip === 3 ? data.reduction : 0;
+    return this.getEffectivePipForInvestment(die) === 3 ? data.reduction : 0;
+  }
+
+  
+  private getEffectivePipForInvestment(die: DiceInstanceState): number {
+    const basePip = die.ownerId === 'player' ? (this.dicePips.get(die.instanceId) ?? 1) : (this.enemyDicePips.get(die.instanceId) ?? 1);
+    const extraFromAttackCount = Math.max(0, die.attacksRemaining - 1);
+    return basePip + extraFromAttackCount;
+  }
+
+  private getInvestmentDamageBonus(die: DiceInstanceState): number {
+    const effectivePip = this.getEffectivePipForInvestment(die);
+    return effectivePip % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].damage : this.oddInvestmentByOwner[die.ownerId].damage;
   }
 
   private getOffenseMultiplier(attacker: DiceInstanceState): number {
     const typeBoost = this.getTypeUpgradeMultiplier(attacker);
-    return typeBoost * (1 + this.getSpotlightScale(attacker));
+    return typeBoost * (1 + this.getSpotlightScale(attacker) + this.getInvestmentDamageBonus(attacker));
   }
 
   private getDiceCardSkillDamageMultiplier(attacker: DiceInstanceState): number {
@@ -1816,7 +1833,12 @@ export class ArenaScene extends Phaser.Scene {
     this.combatTimeRemainingMs = 30_000;
     this.combatCountdownTriggered = false;
     this.updateCombatTimerUi();
-    const owners: ['player', 'enemy'] = ['player', 'enemy'];
+    const ownerHasReadyAssassin = (owner: 'player' | 'enemy') => this.gameState.dice.some((die) => {
+      if (die.ownerId !== owner || die.zone !== 'board' || die.isDestroyed || die.hasFinishedAttacking || die.attacksRemaining <= 0) return false;
+      const def = this.getDefinitionForInstance(die);
+      return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
+    });
+    const owners: Array<'player' | 'enemy'> = ownerHasReadyAssassin('enemy') ? ['enemy', 'player'] : ['player', 'enemy'];
 
     let timedOut = false;
     for (const owner of owners) {
@@ -1828,10 +1850,13 @@ export class ArenaScene extends Phaser.Scene {
           break;
         }
 
-        const boostedAssassin = this.gameState.dice
+        const readyAssassin = this.gameState.dice
           .filter((die) => die.ownerId === owner && die.zone === 'board' && !die.isDestroyed && !die.hasFinishedAttacking && die.attacksRemaining > 0)
-          .find((die) => (this.assassinBoostAttacksByInstance.get(die.instanceId) ?? 0) > 0);
-        const attacker = boostedAssassin ?? getNextAttacker(this.gameState, owner);
+          .find((die) => {
+            const def = this.getDefinitionForInstance(die);
+            return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
+          });
+        const attacker = readyAssassin ?? getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
         const beamTarget = this.findTranscendenceBeamTarget(attacker);
@@ -1889,7 +1914,7 @@ export class ArenaScene extends Phaser.Scene {
             this.gameState = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
             damage = adjustedDamage;
             targetDestroyed = this.gameState.dice.find((d) => d.instanceId === target.instanceId)?.isDestroyed ?? false;
-            this.showDamageText(target, damage);
+            this.showDamageText(target, damage, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
             this.applyPassiveSkillEffects(attacker, target);
             const rem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
             if (rem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, rem - 1);
@@ -2125,6 +2150,7 @@ export class ArenaScene extends Phaser.Scene {
     let reduction = this.damageReductionByInstance.get(instanceId) ?? 0;
     const die = this.gameState.dice.find((d) => d.instanceId === instanceId);
     if (die) reduction += this.getSpotlightScale(die);
+    if (die) reduction += this.getEffectivePipForInvestment(die) % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].reduction : this.oddInvestmentByOwner[die.ownerId].reduction;
     reduction = Phaser.Math.Clamp(reduction, 0, 0.95);
     if (reduction > 0) damage = Math.max(0, Math.floor(damage * (1 - reduction)));
     const armorShred = this.armorShredByInstance.get(instanceId);
@@ -2408,7 +2434,8 @@ export class ArenaScene extends Phaser.Scene {
       const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 0);
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        const activePoisonDamage = Math.max(1, Math.ceil((meta.activeDamage ?? (meta.poisonDamage ?? 0)) * poisonMultiplier));
+        const activePoisonBase = Math.max(1, this.getDefinitionForInstance(attacker)?.attack ?? 1);
+        const activePoisonDamage = Math.max(1, Math.ceil(activePoisonBase * poisonMultiplier));
         const dealt = applyDirectDamage(freshTarget, activePoisonDamage);
         this.showDamageText(freshTarget, dealt, '#89f57a');
       }
@@ -2881,6 +2908,16 @@ export class ArenaScene extends Phaser.Scene {
       const pct = [0, 20, 30, 40][mag];
       return { icon: '🔦', title: name, rarity, desc: `Passive: 3-pip dice gain ${pct}% damage reduction and ${pct}% more damage.` };
     }
+    if (name === 'Odd Investment') {
+      const dmg = [0, 20, 30, 40][mag];
+      const red = [0, 10, 15, 20][mag];
+      return { icon: '🌓', title: name, rarity, desc: `Passive: odd effective-pip dice gain +${dmg}% damage and ${red}% damage reduction.` };
+    }
+    if (name === 'Even Investment') {
+      const dmg = [0, 20, 30, 40][mag];
+      const red = [0, 10, 15, 20][mag];
+      return { icon: '🌗', title: name, rarity, desc: `Passive: even effective-pip dice gain +${dmg}% damage and ${red}% damage reduction.` };
+    }
     if (name === 'Giant Hunter') {
       const pct = [0, 1, 2, 3][mag];
       return { icon: '🗡️', title: name, rarity, desc: `Passive: direct damage adds ${pct}% target max HP.` };
@@ -3344,7 +3381,7 @@ export class ArenaScene extends Phaser.Scene {
     const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const dmgNote = typeUpgradeMult > 1 ? ` • Type Upgrade DMG x${typeUpgradeMult.toFixed(2)}` : '';
+    const dmgNote = typeUpgradeMult > 1 ? ` • ${die.typeId} Upgrade DMG x${typeUpgradeMult.toFixed(2)}` : '';
     const desc = this.add.text(width / 2, 86, `${definition.skills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${skill.description}`).join(' | ')}${shieldNote}${manaNote}${dmgNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
