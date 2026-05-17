@@ -1627,8 +1627,8 @@ export class ArenaScene extends Phaser.Scene {
         dice: this.gameState.dice.map((d) => {
           if (d.ownerId !== owner || d.typeId !== card.typeId) return d;
           const boostedMax = Math.max(1, Math.floor(d.maxHealth * (1 + bonusRate)));
-          const healthRate = d.maxHealth > 0 ? d.currentHealth / d.maxHealth : 1;
-          return { ...d, maxHealth: boostedMax, currentHealth: Math.min(boostedMax, Math.max(1, Math.floor(boostedMax * healthRate))) };
+          const maxDelta = Math.max(0, boostedMax - d.maxHealth);
+          return { ...d, maxHealth: boostedMax, currentHealth: Math.min(boostedMax, Math.max(1, d.currentHealth + maxDelta)) };
         })
       };
     }
@@ -1690,7 +1690,7 @@ export class ArenaScene extends Phaser.Scene {
       const furthest = [...foes].sort((a, b) => getCombatDistance(assassin, b) - getCombatDistance(assassin, a))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
       const jumpRange = skill?.modifiers?.jumpRange ?? -1;
-      const targetOwner = assassin.ownerId === 'player' ? 'enemy' : 'player';
+      const targetOwner = assassin.ownerId;
       const occupied = new Set(
         this.gameState.dice
           .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === targetOwner && d.instanceId !== assassin.instanceId && d.gridPosition)
@@ -1745,7 +1745,8 @@ export class ArenaScene extends Phaser.Scene {
       if (pool) {
         const wasAlive = !die.isDestroyed;
         const sourceProxy: DiceInstanceState = { ...die, ownerId: pool.sourceOwnerId ?? die.ownerId, typeId: pool.sourceTypeId ?? die.typeId };
-        const finalDamage = Math.max(1, Math.floor(pool.damage * this.getDiceCardSkillDamageMultiplier(sourceProxy)));
+        const lavaMultiplier = this.getCombanityDamageMultiplier(sourceProxy, die) * this.getDiceCardSkillDamageMultiplier(sourceProxy);
+        const finalDamage = Math.max(1, Math.floor(pool.damage * lavaMultiplier));
         this.gameState = this.applyDamageWithRevive(die.instanceId, finalDamage);
         const after = this.gameState.dice.find((d) => d.instanceId === die.instanceId);
         if (wasAlive && after?.isDestroyed) this.checkDeathTransformCondition(die);
@@ -2402,11 +2403,12 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if (attacker.typeId === 'Poison') {
-      const poisonDamage = Math.max(1, Math.ceil(meta.poisonDamage ?? 0));
+      const poisonMultiplier = this.getCombanityDamageMultiplier(attacker, target) * this.getDiceCardSkillDamageMultiplier(attacker);
+      const poisonDamage = Math.max(1, Math.ceil((meta.poisonDamage ?? 0) * poisonMultiplier));
       const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 0);
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        const activePoisonDamage = Math.max(1, Math.ceil(meta.activeDamage ?? poisonDamage));
+        const activePoisonDamage = Math.max(1, Math.ceil((meta.activeDamage ?? (meta.poisonDamage ?? 0)) * poisonMultiplier));
         const dealt = applyDirectDamage(freshTarget, activePoisonDamage);
         this.showDamageText(freshTarget, dealt, '#89f57a');
       }
@@ -2451,8 +2453,6 @@ export class ArenaScene extends Phaser.Scene {
     }
     if ((meta.armorShredRate ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
       this.armorShredByInstance.set(target.instanceId, { rate: meta.armorShredRate!, turns: meta.activeDurationTurns! });
-      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
-      if (freshTarget) this.showDamageText(freshTarget, 0, '#ffbf80', 'FRACTURE');
     }
     if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
       this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
@@ -3331,8 +3331,10 @@ export class ArenaScene extends Phaser.Scene {
     this.dieInfoPopupTimer?.remove(false);
     this.dieInfoPopup?.destroy(true);
     const { width } = this.scale;
-    const panel = this.add.rectangle(width / 2, 76, 560, 102, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
-    const stats = this.add.text(width / 2, 52, `${definition.title} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${definition.attack} • RNG ${definition.range} • TARGET ${definition.targetingMode.toUpperCase()}`, {
+    const panel = this.add.rectangle(width / 2, 76, 560, 112, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
+    const typeUpgradeMult = this.getTypeUpgradeMultiplier(die);
+    const effectiveAtk = Math.max(1, Math.floor(definition.attack * typeUpgradeMult));
+    const stats = this.add.text(width / 2, 50, `${definition.title} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${effectiveAtk} • RNG ${definition.range} • TARGET ${definition.targetingMode.toUpperCase()}`, {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: PALETTE.text
@@ -3342,7 +3344,8 @@ export class ArenaScene extends Phaser.Scene {
     const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const desc = this.add.text(width / 2, 84, `${definition.skills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${skill.description}`).join(' | ')}${shieldNote}${manaNote}`, {
+    const dmgNote = typeUpgradeMult > 1 ? ` • Type Upgrade DMG x${typeUpgradeMult.toFixed(2)}` : '';
+    const desc = this.add.text(width / 2, 86, `${definition.skills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${skill.description}`).join(' | ')}${shieldNote}${manaNote}${dmgNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
