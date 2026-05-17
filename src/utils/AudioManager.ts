@@ -74,6 +74,8 @@ export class AudioManager {
     scene.load.audio('dice_spear_skill', '/assets/audio/dice/dice_spear_skill.ogg');
     scene.load.audio('dice_battery_skill', '/assets/audio/dice/dice_battery_skill.ogg');
     scene.load.audio(AUDIO_KEYS.deathInstakill, '/assets/audio/dice/dice_death_instakill.ogg');
+	scene.load.audio('dice_poison_skill', '/assets/audio/dice/dice_poison_skill.ogg');
+	scene.load.audio('dice_crack_skill', '/assets/audio/dice/dice_crack_skill.ogg');
   }
 
   static playSfx(scene: Phaser.Scene, key: string, config: Phaser.Types.Sound.SoundConfig = {}) {
