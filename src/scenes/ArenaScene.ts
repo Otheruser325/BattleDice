@@ -101,7 +101,7 @@ export class ArenaScene extends Phaser.Scene {
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
-  private poisonByInstance: Map<string, { damage: number; turns: number }> = new Map();
+  private poisonByInstance: Map<string, { damage: number; turns: number; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> = new Map();
   private armorShredByInstance: Map<string, { rate: number; turns: number }> = new Map();
   private transcendenceTransformed: Set<string> = new Set();
   private rollAllButton!: Phaser.GameObjects.Rectangle;
@@ -110,7 +110,7 @@ export class ArenaScene extends Phaser.Scene {
   private diceRolled = false;
   private currentHandOrder: string[] = [];
 
-  private lavaPoolsByTile: Map<string, { damage: number; turns: number }> = new Map();
+  private lavaPoolsByTile: Map<string, { damage: number; turns: number; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> = new Map();
   private deathDiceTransformed: Set<string> = new Set();
   private deathAlliesDefeatedCount: Map<string, number> = new Map();
   private permanentAttackBonusByInstance: Map<string, number> = new Map();
@@ -1686,35 +1686,31 @@ export class ArenaScene extends Phaser.Scene {
     });
     assassins.forEach((assassin) => {
       const foes = boardDice.filter((d) => d.ownerId !== assassin.ownerId && d.gridPosition);
-      if (foes.length === 0) return;
-      const furthest = [...foes].sort((a, b) => {
-        const da = Math.abs((a.gridPosition?.col ?? 0) - (assassin.gridPosition?.col ?? 0));
-        const db = Math.abs((b.gridPosition?.col ?? 0) - (assassin.gridPosition?.col ?? 0));
-        return db - da;
-      })[0];
+      if (foes.length === 0 || !assassin.gridPosition) return;
+      const furthest = [...foes].sort((a, b) => getCombatDistance(assassin, b) - getCombatDistance(assassin, a))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
       const jumpRange = skill?.modifiers?.jumpRange ?? -1;
-      const mirroredFurthestCol = GRID_SIZE - 1 - furthest.gridPosition!.col;
-      const targetCol = jumpRange < 0
-        ? mirroredFurthestCol
-        : (assassin.ownerId === 'player'
-          ? Math.min(GRID_SIZE - 1, (assassin.gridPosition?.col ?? 0) + jumpRange)
-          : Math.max(0, (assassin.gridPosition?.col ?? 0) - jumpRange));
-      const targetRow = furthest.gridPosition!.row;
       const occupied = new Set(
         this.gameState.dice
           .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === assassin.ownerId && d.instanceId !== assassin.instanceId && d.gridPosition)
           .map((d) => `${d.gridPosition!.row},${d.gridPosition!.col}`)
       );
-      const preferredDir = assassin.ownerId === 'player' ? -1 : 1;
-      const colCandidates = [targetCol, targetCol + preferredDir, targetCol - preferredDir, targetCol + preferredDir * 2, targetCol - preferredDir * 2].filter((c) => c >= 0 && c < GRID_SIZE);
+
       let chosen: { row: number; col: number } | null = null;
-      for (const c of colCandidates) {
-        for (const r of [targetRow, targetRow - 1, targetRow + 1, targetRow - 2, targetRow + 2, 0, 1, 2, 3, 4]) {
-          if (r>=0 && r<5 && !occupied.has(`${r},${c}`)) { chosen = { row: r, col: c }; break; }
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (let row = 0; row < GRID_SIZE; row++) {
+        for (let col = 0; col < GRID_SIZE; col++) {
+          if (occupied.has(`${row},${col}`)) continue;
+          if (jumpRange >= 0 && Math.abs(col - assassin.gridPosition.col) > jumpRange) continue;
+          const proxy: DiceInstanceState = { ...assassin, gridPosition: { row, col } };
+          const distance = getCombatDistance(proxy, furthest);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            chosen = { row, col };
+          }
         }
-        if (chosen) break;
       }
+
       if (!chosen) return;
       this.gameState = { ...this.gameState, dice: this.gameState.dice.map((d)=> d.instanceId===assassin.instanceId ? { ...d, gridPosition: chosen!, attacksRemaining: d.attacksRemaining + 1 } : d ) };
       const passive = this.getDefinitionForInstance(assassin)?.skills.find((sk)=>sk.type==='Passive');
@@ -1743,10 +1739,12 @@ export class ArenaScene extends Phaser.Scene {
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
         const wasAlive = !die.isDestroyed;
-        this.gameState = this.applyDamageWithRevive(die.instanceId, pool.damage);
+        const sourceProxy: DiceInstanceState = { ...die, ownerId: pool.sourceOwnerId ?? die.ownerId, typeId: pool.sourceTypeId ?? die.typeId };
+        const finalDamage = Math.max(1, Math.floor(pool.damage * this.getDiceCardSkillDamageMultiplier(sourceProxy)));
+        this.gameState = this.applyDamageWithRevive(die.instanceId, finalDamage);
         const after = this.gameState.dice.find((d) => d.instanceId === die.instanceId);
         if (wasAlive && after?.isDestroyed) this.checkDeathTransformCondition(die);
-        this.combatLog.setText(`${die.typeId} takes ${pool.damage} lava damage from the pool!`);
+        this.combatLog.setText(`${die.typeId} takes ${finalDamage} lava damage from the pool!`);
       }
     });
   }
@@ -2275,20 +2273,29 @@ export class ArenaScene extends Phaser.Scene {
             const lavaDamage = meta.lavaDamage ?? 25;
             this.animateMeteorStrike(freshTarget);
             await this.delayCombatVisualPaced(1000);
-            const dealt = applyDirectDamage(freshTarget, meteorDamage);
-            this.showDamageText(freshTarget, dealt, '#ff9f58');
             if (freshTarget.gridPosition) {
               const origin = freshTarget.gridPosition;
               const tiles = [origin, { row: origin.row - 1, col: origin.col }, { row: origin.row + 1, col: origin.col }, { row: origin.row, col: origin.col - 1 }, { row: origin.row, col: origin.col + 1 }]
                 .filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE);
               tiles.forEach((tile) => {
                 const lavaKey = `${enemyOwner}:${tile.row},${tile.col}`;
-                this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: 3 });
+                this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: 3, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
               });
             }
-            const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
-            if (destroyed) this.checkDeathTransformCondition(freshTarget);
-            this.combatLog.setText(`☄️ ${attacker.typeId} meteor strikes ${freshTarget.typeId} for ${meteorDamage} damage! Lava pool placed!${destroyed ? ' DESTROYED!' : ''}`);
+            const origin = freshTarget.gridPosition!;
+            const plusTiles = [origin, { row: origin.row - 1, col: origin.col }, { row: origin.row + 1, col: origin.col }, { row: origin.row, col: origin.col - 1 }, { row: origin.row, col: origin.col + 1 }]
+              .filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE);
+            let hits = 0;
+            plusTiles.forEach((tile) => {
+              const victim = this.gameState.dice.find((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col);
+              if (!victim) return;
+              const dealt = applyDirectDamage(victim, meteorDamage);
+              this.showDamageText(victim, dealt, '#ff9f58');
+              if (this.gameState.dice.find(d => d.instanceId === victim.instanceId)?.isDestroyed) this.checkDeathTransformCondition(victim);
+              hits += 1;
+            });
+            this.renderLavaPools();
+            this.combatLog.setText(`☄️ ${attacker.typeId} meteor scorches ${hits} foe${hits === 1 ? '' : 's'} in a + pattern for ${meteorDamage} damage and leaves lava pools!`);
           }
         }
         this.manaByInstance.set(attacker.instanceId, 0);
@@ -2398,7 +2405,7 @@ export class ArenaScene extends Phaser.Scene {
         this.showDamageText(freshTarget, dealt, '#89f57a');
       }
       const existing = this.poisonByInstance.get(target.instanceId);
-      this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns });
+      this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
       this.animateSkillEffect('poison', attacker, target);
     }
 
@@ -2564,7 +2571,9 @@ export class ArenaScene extends Phaser.Scene {
         ...this.gameState,
         dice: this.gameState.dice.map((die) => {
           if (die.instanceId !== instanceId || die.isDestroyed) return die;
-          const currentHealth = Math.max(0, die.currentHealth - effect.damage);
+          const sourceProxy: DiceInstanceState = { ...die, ownerId: effect.sourceOwnerId ?? die.ownerId, typeId: effect.sourceTypeId ?? die.typeId };
+          const tickDamage = Math.max(1, Math.floor(effect.damage * this.getDiceCardSkillDamageMultiplier(sourceProxy)));
+          const currentHealth = Math.max(0, die.currentHealth - tickDamage);
           const isDestroyed = currentHealth <= 0;
           if (isDestroyed && !die.isDestroyed) newlyDefeated.push(die);
           return {
@@ -3191,7 +3200,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.clearRangeHighlights();
     this.highlightedRangeInstanceId = die.instanceId;
-    const targetOwner = die.ownerId === 'player' ? 'enemy' : 'player';
+    const targetOwner = die.ownerId;
     const targetGrid = targetOwner === 'enemy' ? this.enemyGridContainer : this.playerGridContainer;
     const color = die.ownerId === 'player' ? 0x2f8cff : 0xff4d4d;
     const label = die.ownerId === 'player' ? 'BLUE' : 'RED';

@@ -247,6 +247,21 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   }
 
 
+
+  if (definition.typeId === 'Crack') {
+    const getShredRate = (mods: DiceSkillModifier): number | undefined => {
+      const note = (mods.notes ?? []).find((entry) => entry.startsWith('runtime:armorShredRate='));
+      if (!note) return undefined;
+      const parsed = Number(note.split('=')[1]);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const currentRate = getShredRate(currentModifiers);
+    const nextRate = getShredRate(nextModifiers);
+    if (currentRate !== undefined && nextRate !== undefined && nextRate > currentRate) {
+      skillDeltas.push(`Fracture armor reduction +${formatPercent(nextRate - currentRate)}`);
+    }
+  }
+
   if (currentModifiers.berserkThresholdRate !== undefined && nextModifiers.berserkThresholdRate !== undefined) {
     const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;
     if (delta > 0) skillDeltas.push(`Berserk threshold +${formatPercent(delta)}`);
