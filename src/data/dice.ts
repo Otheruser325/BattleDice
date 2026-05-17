@@ -175,6 +175,13 @@ export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: D
   writeStored(DICE_PROGRESS_KEY, updated);
 }
 
+
+export function canReceiveUsefulCopies(scene: Phaser.Scene, typeId: DiceTypeId): boolean {
+  const progress = getDiceProgress(scene, typeId);
+  if (progress.classLevel >= MAX_CLASS_LEVEL) return false;
+  return progress.copies < getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
+}
+
 export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies: number) {
   if (copies <= 0) return;
   const progress = getDiceProgress(scene, typeId);
@@ -309,10 +316,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   }
 
   const allDefs = getAllDiceDefinitions(scene);
-  const eligible = allDefs.filter((d) => {
-    const progress = getDiceProgress(scene, d.typeId);
-    return progress.classLevel < 15;
-  });
+  const eligible = allDefs.filter((d) => canReceiveUsefulCopies(scene, d.typeId));
 
   const seed = currentDay;
   const seededRandom = (() => {

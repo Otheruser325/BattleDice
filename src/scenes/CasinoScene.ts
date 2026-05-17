@@ -3,7 +3,7 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgressStore';
 import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
-import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
+import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
@@ -514,7 +514,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private rollChestReward(type: ChestType): ChestRewardEntry | null {
-    const defs = getAllDiceDefinitions(this);
+    const defs = getAllDiceDefinitions(this).filter((definition) => canReceiveUsefulCopies(this, definition.typeId));
     const byRarity = (rarity: string) => defs.filter((definition) => definition.rarity === rarity);
     const pick = (pool: typeof defs) => (pool.length ? pool[Math.floor(Math.random() * pool.length)] : null);
     const table = CHEST_DROP_RATES[type];

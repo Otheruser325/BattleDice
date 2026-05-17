@@ -1716,7 +1716,7 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState = {
         ...this.gameState,
         dice: this.gameState.dice.map((d) => d.instanceId === assassin.instanceId
-          ? { ...d, ownerId: targetOwner, gridPosition: chosen! }
+          ? { ...d, gridPosition: chosen! }
           : d)
       };
       const passive = this.getDefinitionForInstance(assassin)?.skills.find((sk)=>sk.type==='Passive');
@@ -3214,35 +3214,30 @@ export class ArenaScene extends Phaser.Scene {
 
     this.clearRangeHighlights();
     this.highlightedRangeInstanceId = die.instanceId;
-    const targetOwner = die.ownerId;
-    const targetGrid = targetOwner === 'enemy' ? this.enemyGridContainer : this.playerGridContainer;
     const color = die.ownerId === 'player' ? 0x2f8cff : 0xff4d4d;
     const label = die.ownerId === 'player' ? 'BLUE' : 'RED';
 
-    for (let row = 0; row < GRID_SIZE; row++) {
-      for (let col = 0; col < GRID_SIZE; col++) {
-        const proxyTarget: DiceInstanceState = {
-          ...die,
-          ownerId: targetOwner,
-          gridPosition: { row, col }
-        };
-        if (getCombatDistance(die, proxyTarget) > Math.max(1, definition.range)) continue;
-
-        const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-        const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-        const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, 0.24)
-          .setStrokeStyle(2, color, 0.85);
-        highlight.setName('range-highlight');
-        const text = this.add.text(x, y, label, {
-          fontFamily: 'Orbitron',
-          fontSize: '10px',
-          color: die.ownerId === 'player' ? '#9fd0ff' : '#ffaaaa'
-        }).setOrigin(0.5);
-        text.setName('range-highlight');
-        targetGrid.add([highlight, text]);
-        this.rangeHighlightObjects.push(highlight, text);
+    const renderOnGrid = (targetOwner: 'player' | 'enemy') => {
+      const targetGrid = targetOwner === 'enemy' ? this.enemyGridContainer : this.playerGridContainer;
+      for (let row = 0; row < GRID_SIZE; row++) {
+        for (let col = 0; col < GRID_SIZE; col++) {
+          const proxyTarget: DiceInstanceState = { ...die, ownerId: targetOwner, gridPosition: { row, col } };
+          if (getCombatDistance(die, proxyTarget) > Math.max(1, definition.range)) continue;
+          const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+          const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+          const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, targetOwner === die.ownerId ? 0.16 : 0.24)
+            .setStrokeStyle(2, color, targetOwner === die.ownerId ? 0.6 : 0.85);
+          highlight.setName('range-highlight');
+          const text = this.add.text(x, y, label, { fontFamily: 'Orbitron', fontSize: '10px', color: die.ownerId === 'player' ? '#9fd0ff' : '#ffaaaa' }).setOrigin(0.5);
+          text.setName('range-highlight');
+          targetGrid.add([highlight, text]);
+          this.rangeHighlightObjects.push(highlight, text);
+        }
       }
-    }
+    };
+
+    renderOnGrid(die.ownerId);
+    renderOnGrid(die.ownerId === 'player' ? 'enemy' : 'player');
   }
 
   private renderDie(container: Phaser.GameObjects.Container, die: DiceInstanceState, row: number, col: number, isPlayer: boolean) {
