@@ -7,6 +7,8 @@ export const SNIPER_DISTANCE_RATE_PER_CLASS = 0.005;
 export const IRON_CURRENT_HP_RATE_PER_CLASS = 0.005;
 export const BERSERK_THRESHOLD_RATE_PER_CLASS = 0.01;
 export const SOLITUDE_MAX_HP_RATE_PER_CLASS = 0.0025;
+export const CRACK_ARMOR_SHRED_RATE_PER_CLASS = 0.01;
+export const BATTERY_MANA_GAIN_PER_5_CLASS = 1;
 
 export interface ClassProgressionPreview {
   attackDelta: number;
@@ -33,6 +35,10 @@ function scaleDamageRange(range: [number, number] | undefined, multiplier: numbe
 
 function getModifier(skill: DiceSkillDefinition | undefined): DiceSkillModifier {
   return (skill?.modifiers ?? {}) as DiceSkillModifier;
+}
+
+function getCombinedModifiers(definition: DiceDefinition): DiceSkillModifier {
+  return definition.skills.reduce((acc, skill) => ({ ...acc, ...(skill.modifiers ?? {}) }), {} as DiceSkillModifier);
 }
 
 export function applyClassProgression(definition: DiceDefinition, classLevel: number): DiceDefinition {
@@ -80,6 +86,20 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     if (definition.typeId === 'Assassin' && source.numAttacksBoosted !== undefined) {
       modifiers.numAttacksBoosted = source.numAttacksBoosted + Math.floor(classUps / 4);
+    }
+
+    if (definition.typeId === 'Crack' && source.notes?.some((note) => note.startsWith('runtime:armorShredRate='))) {
+      const base = source.notes.find((note) => note.startsWith('runtime:armorShredRate='));
+      const parsed = base ? Number(base.split('=')[1]) : 0;
+      if (Number.isFinite(parsed)) {
+        const nextRate = Math.min(0.95, parsed + CRACK_ARMOR_SHRED_RATE_PER_CLASS * classUps);
+        modifiers.notes = (source.notes ?? []).filter((note) => !note.startsWith('runtime:armorShredRate='));
+        modifiers.notes.push(`runtime:armorShredRate=${nextRate.toFixed(2)}`);
+      }
+    }
+
+    if (definition.typeId === 'Battery' && source.manaGain !== undefined) {
+      modifiers.manaGain = source.manaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
     }
 
     return { ...skill, modifiers };
@@ -132,6 +152,11 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
     return `Deals ${modifiers.activeDamage} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
   }
+  if (definition.typeId === 'Crack' && modifiers.activeDamage !== undefined) {
+    const shredNote = (modifiers.notes ?? []).find((note) => note.startsWith('runtime:armorShredRate='));
+    const shredRate = shredNote ? Number(shredNote.split('=')[1]) : 0.2;
+    return `Deal ${modifiers.activeDamage} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
+  }
   if (modifiers.poisonDamage !== undefined) {
     return `Deals direct toxic damage, then applies ${modifiers.poisonDamage} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
@@ -163,6 +188,9 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.distanceDamageBonusRatePerTile !== undefined) {
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
   }
+  if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
+    return `On Combat Start, all friendly charging active skills gain +${modifiers.manaGain} mana.`;
+  }
   if (modifiers.reviveChance !== undefined) {
     return `When defeated, it comes back to life with a ${formatPercent(modifiers.reviveChance)} chance.`;
   }
@@ -173,8 +201,8 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
 export function getClassProgressionPreview(definition: DiceDefinition, classLevel: number): ClassProgressionPreview {
   const current = applyClassProgression(definition, classLevel);
   const next = applyClassProgression(definition, Math.min(MAX_CLASS_LEVEL, classLevel + 1));
-  const currentModifiers = getModifier(current.skills[0]);
-  const nextModifiers = getModifier(next.skills[0]);
+  const currentModifiers = getCombinedModifiers(current);
+  const nextModifiers = getCombinedModifiers(next);
   const skillDeltas: string[] = [];
 
   const pushNumericDelta = (label: string, currentValue: number | undefined, nextValue: number | undefined, suffix = '') => {
@@ -194,6 +222,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Pierce damage', currentModifiers.pierceBehindDamage, nextModifiers.pierceBehindDamage);
   pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
   pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
+  pushNumericDelta('Mana gain', currentModifiers.manaGain, nextModifiers.manaGain);
 
   if (currentModifiers.damageRange && nextModifiers.damageRange) {
     const minDelta = nextModifiers.damageRange[0] - currentModifiers.damageRange[0];
@@ -217,10 +246,6 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
     if (delta > 0) skillDeltas.push(`Current HP damage +${formatPercent(delta)}`);
   }
 
-  if (currentModifiers.numAttacksBoosted !== undefined && nextModifiers.numAttacksBoosted !== undefined) {
-    const delta = nextModifiers.numAttacksBoosted - currentModifiers.numAttacksBoosted;
-    if (delta > 0) skillDeltas.push(`Boosted attacks +${delta}`);
-  }
 
   if (currentModifiers.berserkThresholdRate !== undefined && nextModifiers.berserkThresholdRate !== undefined) {
     const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;
