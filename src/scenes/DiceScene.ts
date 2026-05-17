@@ -284,7 +284,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
         skills: [{
           type: 'Active' as const,
           title: "Reaper's Touch",
-          description: 'Instantly kills the target. Death transforms into this form after 2 allies are defeated.',
+          description: `At ${meta.deathInstakillMana ?? 12} soul mana, instantly kills a target. Death transforms into this form after 2 allies are defeated.`,
           manaNeeded: meta.deathInstakillMana ?? 12,
           modifiers: { notes: ['runtime:deathInstakill'] }
         }]
@@ -299,7 +299,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
         skills: [{
           type: 'Passive' as const,
           title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
-          description: `Rolled 6 form: beam attacks consume all remaining attacks and fire a wide cyan beam through the perpendicular line through the target for ${meta.beamDamage ?? 600} damage.`,
+          description: `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${meta.beamDamage ?? 600} damage.`,
           modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
         }]
       };
