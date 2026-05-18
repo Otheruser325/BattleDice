@@ -613,16 +613,18 @@ export class ArenaScene extends Phaser.Scene {
     elements.push(rowContainer);
 
 
-    const rewardHint = this.add.text(cx + 72, cy - 142, [
-      `BABY  +500T / +20C${this.hasClaimedBotFirstWin('Baby') ? ' ✓' : ''}`,
-      `EASY  +1000T / +40C${this.hasClaimedBotFirstWin('Easy') ? ' ✓' : ''}`,
-      `MEDIUM  +2000T / +60C${this.hasClaimedBotFirstWin('Medium') ? ' ✓' : ''}`,
-      `HARD  +5000T / +80C${this.hasClaimedBotFirstWin('Hard') ? ' ✓' : ''}`,
-      `NIGHTMARE  +10000T / +100C${this.hasClaimedBotFirstWin('Nightmare') ? ' ✓' : ''}`
-    ].join('   •   '), {
-      fontFamily: 'Orbitron', fontSize: '10px', color: '#f4cf8a', align: 'center', wordWrap: { width: 520 }
-    }).setOrigin(0.5);
-    elements.push(rewardHint);
+    const pendingRewardLabels: string[] = [];
+    if (!this.hasClaimedBotFirstWin('Baby')) pendingRewardLabels.push('BABY +500T / +20C');
+    if (!this.hasClaimedBotFirstWin('Easy')) pendingRewardLabels.push('EASY +1000T / +40C');
+    if (!this.hasClaimedBotFirstWin('Medium')) pendingRewardLabels.push('MEDIUM +2000T / +60C');
+    if (!this.hasClaimedBotFirstWin('Hard')) pendingRewardLabels.push('HARD +5000T / +80C');
+    if (!this.hasClaimedBotFirstWin('Nightmare')) pendingRewardLabels.push('NIGHTMARE +10000T / +100C');
+    if (pendingRewardLabels.length > 0) {
+      const rewardHint = this.add.text(cx + 72, cy - 142, `First-win rewards: ${pendingRewardLabels.join('   •   ')}`, {
+        fontFamily: 'Orbitron', fontSize: '10px', color: '#f4cf8a', align: 'center', wordWrap: { width: 520 }
+      }).setOrigin(0.5);
+      elements.push(rewardHint);
+    }
 
     this.makeSelectRow(
       [{ label: 'BABY (+500T/+20C)', value: 'Baby' as const }, { label: 'EASY (+1000T/+40C)', value: 'Easy' as const }, { label: 'MEDIUM (+2000T/+60C)', value: 'Medium' as const }, { label: 'HARD (+5000T/+80C)', value: 'Hard' as const }, { label: 'NIGHTMARE (+10000T/+100C)', value: 'Nightmare' as const }],
