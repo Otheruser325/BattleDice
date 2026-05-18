@@ -28,6 +28,7 @@ import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { canOfferDiceCards, getDiceCardMagnitude, getDiceCardRarityRoll, rollDiceCards, type DiceCard, type DiceCardRarity } from '../systems/DiceCards';
+import { ProfileStore } from '../systems/ProfileStore';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -259,6 +260,12 @@ export class ArenaScene extends Phaser.Scene {
       color: PALETTE.accent
     }).setOrigin(0.5);
 
+    const profile = ProfileStore.get(this);
+    const playerHeader = this.add.text(centerX, centerY - 152, `${profile.username || 'Player'}  •  🏆 ${profile.trophies}`, {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text, backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    playerHeader.on('pointerdown', () => AlertManager.toast(this, { type: 'warning', message: 'Trophy Road is heavily WIP.' }));
+
     const subtitle = this.add.text(centerX, centerY - 40, 'PvE Combat Mode', {
       fontFamily: 'Orbitron',
       fontSize: '16px',
@@ -289,7 +296,7 @@ export class ArenaScene extends Phaser.Scene {
       align: 'center'
     }).setOrigin(0.5);
 
-    this.uiContainer.add([wipBadge, title, subtitle, playButton, rules]);
+    this.uiContainer.add([wipBadge, playerHeader, title, subtitle, playButton, rules]);
   }
 
   // ── MATCH MODE MODAL ────────────────────────────────────────────────────────
@@ -505,7 +512,7 @@ export class ArenaScene extends Phaser.Scene {
       this.activeDailyKey = '';
       this.setChallengeStatus('deucifer', 'started');
       this.configRandomMode = false;
-      this.configRandomizeLoadoutAndClassUps = false;
+      // Keep prior toggle value to avoid visual desync when re-opening this config.
       this.configDifficulty = 'Nightmare';
       this.configUseLevelling = true;
       this.turnLimit = 10;
@@ -569,7 +576,7 @@ export class ArenaScene extends Phaser.Scene {
   private openSingleplayerConfigModal() {
     this.activeChallenge = null;
     this.turnLimit = this.configTurnCount;
-    this.configRandomizeLoadoutAndClassUps = false;
+    // Keep prior toggle value to avoid visual desync when re-opening this config.
     this.clearModeModal();
     const { width, height } = this.scale;
     const cx = width / 2;
@@ -606,7 +613,7 @@ export class ArenaScene extends Phaser.Scene {
     elements.push(rowContainer);
 
     this.makeSelectRow(
-      [{ label: 'BABY', value: 'Baby' as const }, { label: 'EASY', value: 'Easy' as const }, { label: 'MEDIUM', value: 'Medium' as const }, { label: 'HARD', value: 'Hard' as const }, { label: 'NIGHTMARE', value: 'Nightmare' as const }],
+      [{ label: 'BABY (+500T/+20C)', value: 'Baby' as const }, { label: 'EASY (+1000T/+40C)', value: 'Easy' as const }, { label: 'MEDIUM (+2000T/+60C)', value: 'Medium' as const }, { label: 'HARD (+5000T/+80C)', value: 'Hard' as const }, { label: 'NIGHTMARE (+10000T/+100C)', value: 'Nightmare' as const }],
       () => this.configDifficulty, (v) => { this.configDifficulty = v; },
       cx + 72, cy - 118, rowContainer
     );
@@ -3585,7 +3592,7 @@ export class ArenaScene extends Phaser.Scene {
     const baseTokenReward = MATCH_TOKEN_REWARDS[stage];
     let tokenReward = baseTokenReward;
     let chipReward = 0;
-    if (stage === 'victory' && !this.hasClaimedBotFirstWin(this.configDifficulty)) {
+    if (stage === 'victory' && this.activeChallenge === null && !this.hasClaimedBotFirstWin(this.configDifficulty)) {
       const firstWinReward = BOT_FIRST_WIN_REWARDS[this.configDifficulty];
       tokenReward += firstWinReward.tokens;
       chipReward += firstWinReward.chips;
