@@ -626,10 +626,19 @@ export class ArenaScene extends Phaser.Scene {
       elements.push(rewardHint);
     }
 
-    this.makeSelectRow(
-      [{ label: 'BABY (+500T/+20C)', value: 'Baby' as const }, { label: 'EASY (+1000T/+40C)', value: 'Easy' as const }, { label: 'MEDIUM (+2000T/+60C)', value: 'Medium' as const }, { label: 'HARD (+5000T/+80C)', value: 'Hard' as const }, { label: 'NIGHTMARE (+10000T/+100C)', value: 'Nightmare' as const }],
-      () => this.configDifficulty, (v) => { this.configDifficulty = v; },
-      cx + 72, cy - 118, rowContainer
+    this.makeStepperRow(
+      [
+        { label: 'BABY', value: 'Baby' as const, hint: '+500T / +20C' },
+        { label: 'EASY', value: 'Easy' as const, hint: '+1000T / +40C' },
+        { label: 'MEDIUM', value: 'Medium' as const, hint: '+2000T / +60C' },
+        { label: 'HARD', value: 'Hard' as const, hint: '+5000T / +80C' },
+        { label: 'NIGHTMARE', value: 'Nightmare' as const, hint: '+10000T / +100C' }
+      ],
+      () => this.configDifficulty,
+      (v) => { this.configDifficulty = v; },
+      cx + 72,
+      cy - 118,
+      rowContainer
     );
     this.makeSelectRow(
       [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
@@ -787,6 +796,60 @@ export class ArenaScene extends Phaser.Scene {
       rowGroup.add([rect, text]);
     });
 
+    refresh();
+    return rowGroup;
+  }
+
+
+  private makeStepperRow<T extends string | number | boolean>(
+    options: { label: string; value: T; hint?: string }[],
+    getter: () => T,
+    setter: (v: T) => void,
+    cx: number,
+    cy: number,
+    container: Phaser.GameObjects.Container
+  ): Phaser.GameObjects.Container {
+    const rowGroup = this.add.container(0, 0);
+    container.add(rowGroup);
+
+    const step = (delta: -1 | 1) => {
+      const currentIndex = options.findIndex((opt) => opt.value === getter());
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextIndex = Phaser.Math.Wrap(safeIndex + delta, 0, options.length);
+      setter(options[nextIndex].value);
+      refresh();
+    };
+
+    const leftBtn = this.add.rectangle(cx - 112, cy, 36, 28, 0x173247, 0.95)
+      .setStrokeStyle(1, 0x3f627c)
+      .setInteractive({ useHandCursor: true });
+    const leftText = this.add.text(cx - 112, cy, '◀', { fontFamily: 'Orbitron', fontSize: '14px', color: '#99b2c3' }).setOrigin(0.5);
+
+    const valueRect = this.add.rectangle(cx + 8, cy, 190, 28, 0x173247, 0.9).setStrokeStyle(1, 0x3f627c);
+    const valueText = this.add.text(cx + 8, cy, '', { fontFamily: 'Orbitron', fontSize: '12px', color: '#f4b860' }).setOrigin(0.5);
+
+    const rightBtn = this.add.rectangle(cx + 128, cy, 36, 28, 0x173247, 0.95)
+      .setStrokeStyle(1, 0x3f627c)
+      .setInteractive({ useHandCursor: true });
+    const rightText = this.add.text(cx + 128, cy, '▶', { fontFamily: 'Orbitron', fontSize: '14px', color: '#99b2c3' }).setOrigin(0.5);
+
+    const hintText = this.add.text(cx + 8, cy + 22, '', { fontFamily: 'Orbitron', fontSize: '10px', color: '#f4cf8a' }).setOrigin(0.5, 0);
+
+    const refresh = () => {
+      const selected = options.find((opt) => opt.value === getter()) ?? options[0];
+      valueText.setText(selected.label);
+      hintText.setText(selected.hint ?? '');
+    };
+
+    leftBtn.on('pointerdown', () => step(-1));
+    rightBtn.on('pointerdown', () => step(1));
+
+    [leftBtn, rightBtn].forEach((btn) => {
+      btn.on('pointerover', () => btn.setFillStyle(0x233d52, 0.95));
+      btn.on('pointerout', () => btn.setFillStyle(0x173247, 0.95));
+    });
+
+    rowGroup.add([leftBtn, leftText, valueRect, valueText, rightBtn, rightText, hintText]);
     refresh();
     return rowGroup;
   }
@@ -3557,16 +3620,24 @@ export class ArenaScene extends Phaser.Scene {
     return false;
   }
 
-  private getClaimedBotFirstWins(): BotDifficulty[] {
-    const stored = this.registry.get(BOT_FIRST_WIN_KEY) as BotDifficulty[] | undefined;
-    if (stored) return stored;
+
+  private readStringArrayFromStorage(key: string): string[] {
     try {
-      const parsed = JSON.parse(localStorage.getItem(BOT_FIRST_WIN_KEY) ?? '[]') as BotDifficulty[];
-      this.registry.set(BOT_FIRST_WIN_KEY, parsed);
-      return parsed;
+      const raw = JSON.parse(localStorage.getItem(key) ?? '[]');
+      if (!Array.isArray(raw)) return [];
+      return raw.filter((value): value is string => typeof value === 'string');
     } catch {
       return [];
     }
+  }
+
+  private getClaimedBotFirstWins(): BotDifficulty[] {
+    const stored = this.registry.get(BOT_FIRST_WIN_KEY) as BotDifficulty[] | undefined;
+    if (stored) return stored;
+    const parsed = this.readStringArrayFromStorage(BOT_FIRST_WIN_KEY)
+      .filter((value): value is BotDifficulty => value in BOT_DIFFICULTY_CLASSES);
+    this.registry.set(BOT_FIRST_WIN_KEY, parsed);
+    return parsed;
   }
 
   private hasClaimedBotFirstWin(difficulty: BotDifficulty): boolean {
@@ -3584,13 +3655,9 @@ export class ArenaScene extends Phaser.Scene {
   private getChallengeRewardClaims(): string[] {
     const stored = this.registry.get(CHALLENGE_REWARD_CLAIMS_KEY) as string[] | undefined;
     if (stored) return stored;
-    try {
-      const parsed = JSON.parse(localStorage.getItem(CHALLENGE_REWARD_CLAIMS_KEY) ?? '[]') as string[];
-      this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, parsed);
-      return parsed;
-    } catch {
-      return [];
-    }
+    const parsed = this.readStringArrayFromStorage(CHALLENGE_REWARD_CLAIMS_KEY);
+    this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, parsed);
+    return parsed;
   }
 
   private hasChallengeRewardClaimed(claimKey: string): boolean {
