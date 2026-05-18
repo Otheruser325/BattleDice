@@ -5,6 +5,7 @@ import { DebugManager } from '../utils/DebugManager';
 import { MENU_TABS, PALETTE, getLayout } from '../ui/theme';
 import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
+import { ProfileStore } from '../systems/ProfileStore';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
@@ -89,6 +90,7 @@ export class MenuScene extends Phaser.Scene {
       this.scene.launch(SCENE_KEYS.Settings);
     }
 
+    this.ensureUsername();
     this.openTab(MENU_TABS.find((tab) => tab.sceneKey === this.activeSceneKey) ?? MENU_TABS[2]);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.tabButtons = [];
@@ -120,6 +122,14 @@ export class MenuScene extends Phaser.Scene {
         message: `${tab.label} is a work-in-progress surface.`
       });
     }
+  }
+
+  private ensureUsername() {
+    const profile = ProfileStore.get(this);
+    if (profile.username.trim()) return;
+    const entry = window.prompt('Create your username (1-18 chars)', 'Player');
+    const username = (entry ?? '').trim().slice(0, 18) || 'Player';
+    ProfileStore.set(this, { username });
   }
 
   private refreshTabs() {
