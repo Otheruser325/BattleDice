@@ -627,7 +627,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     this.makeSelectRow(
-      [{ label: 'BABY', value: 'Baby' as const }, { label: 'EASY', value: 'Easy' as const }, { label: 'MEDIUM', value: 'Medium' as const }, { label: 'HARD', value: 'Hard' as const }, { label: 'NIGHTMARE', value: 'Nightmare' as const }],
+      [{ label: 'BABY (+500T/+20C)', value: 'Baby' as const }, { label: 'EASY (+1000T/+40C)', value: 'Easy' as const }, { label: 'MEDIUM (+2000T/+60C)', value: 'Medium' as const }, { label: 'HARD (+5000T/+80C)', value: 'Hard' as const }, { label: 'NIGHTMARE (+10000T/+100C)', value: 'Nightmare' as const }],
       () => this.configDifficulty, (v) => { this.configDifficulty = v; },
       cx + 72, cy - 118, rowContainer
     );
