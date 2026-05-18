@@ -5,6 +5,9 @@ import type { AppSettings } from '../types/game';
 import { DebugManager } from '../utils/DebugManager';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 import { SCENE_KEYS } from './sceneKeys';
+import { ProfileStore } from '../systems/ProfileStore';
+import { getDiamonds } from '../data/dice';
+import { AlertManager } from '../utils/AlertManager';
 
 type SettingKey = keyof AppSettings;
 
@@ -84,11 +87,16 @@ export class SettingsScene extends Phaser.Scene {
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     changelogBtn.on('pointerdown', () => this.openChangelogModal());
 
-    const close = this.add.text(width - 154, 258, 'Close', {
+    const nameBtn = this.add.text(width - 314, 292, 'Change Name', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#9fe6ff', padding: { left: 10, right: 10, top: 6, bottom: 6 }
+    }).setInteractive({ useHandCursor: true }).setDepth(43);
+    nameBtn.on('pointerdown', () => this.promptForNameChange());
+
+    const close = this.add.text(width - 154, 292, 'Close', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     close.on('pointerdown', () => this.closeModal());
-    this.modalElements.push(changelogBtn, close);
+    this.modalElements.push(changelogBtn, nameBtn, close);
   }
 
   private async openChangelogModal() {
@@ -141,4 +149,22 @@ export class SettingsScene extends Phaser.Scene {
     this.modalElements.forEach((element) => element.destroy());
     this.modalElements = [];
   }
+
+  private promptForNameChange() {
+    const profile = ProfileStore.get(this);
+    const isFirst = profile.nameChangesUsed === 0;
+    const costLabel = isFirst ? 'FREE (first change)' : '50 diamonds';
+    const entry = window.prompt(`Enter new username (1-18 chars). Cost: ${costLabel}`, profile.username || '');
+    if (entry == null) return;
+    const next = entry.trim();
+    if (!next) { AlertManager.toast(this, { type: 'warning', message: 'Name cannot be empty.' }); return; }
+    if (!ProfileStore.canAffordNameChange(this)) {
+      AlertManager.toast(this, { type: 'warning', message: `Not enough diamonds. Need 50, have ${getDiamonds(this)}.` });
+      return;
+    }
+    const result = ProfileStore.applyNameChange(this, next);
+    if (!result.ok) { AlertManager.toast(this, { type: 'warning', message: 'Name change failed.' }); return; }
+    AlertManager.toast(this, { type: 'success', message: `Name changed to ${next}${result.cost > 0 ? ` (-${result.cost} diamonds)` : ' (free)'}.` });
+  }
+
 }
