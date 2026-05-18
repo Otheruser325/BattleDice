@@ -613,24 +613,32 @@ export class ArenaScene extends Phaser.Scene {
     elements.push(rowContainer);
 
 
-    const pendingRewardLabels: string[] = [];
-    if (!this.hasClaimedBotFirstWin('Baby')) pendingRewardLabels.push('BABY +500T / +20C');
-    if (!this.hasClaimedBotFirstWin('Easy')) pendingRewardLabels.push('EASY +1000T / +40C');
-    if (!this.hasClaimedBotFirstWin('Medium')) pendingRewardLabels.push('MEDIUM +2000T / +60C');
-    if (!this.hasClaimedBotFirstWin('Hard')) pendingRewardLabels.push('HARD +5000T / +80C');
-    if (!this.hasClaimedBotFirstWin('Nightmare')) pendingRewardLabels.push('NIGHTMARE +10000T / +100C');
-    if (pendingRewardLabels.length > 0) {
-      const rewardHint = this.add.text(cx + 72, cy - 142, `First-win rewards: ${pendingRewardLabels.join('   •   ')}`, {
-        fontFamily: 'Orbitron', fontSize: '10px', color: '#f4cf8a', align: 'center', wordWrap: { width: 520 }
-      }).setOrigin(0.5);
-      elements.push(rewardHint);
-    }
+    const difficultyMeta: { label: string; value: BotDifficulty; reward: string }[] = [
+      { label: 'BABY', value: 'Baby', reward: '+500T / +20C' },
+      { label: 'EASY', value: 'Easy', reward: '+1000T / +40C' },
+      { label: 'MEDIUM', value: 'Medium', reward: '+2000T / +60C' },
+      { label: 'HARD', value: 'Hard', reward: '+5000T / +80C' },
+      { label: 'NIGHTMARE', value: 'Nightmare', reward: '+10000T / +100C' }
+    ];
+    const rewardHint = this.add.text(cx + 72, cy - 142, '', {
+      fontFamily: 'Orbitron', fontSize: '10px', color: '#f4cf8a', align: 'center', wordWrap: { width: 520 }
+    }).setOrigin(0.5);
+    elements.push(rewardHint);
+    const refreshDifficultyHint = () => {
+      const selected = difficultyMeta.find((item) => item.value === this.configDifficulty) ?? difficultyMeta[0];
+      const claimed = this.hasClaimedBotFirstWin(selected.value);
+      rewardHint.setText(`Selected: ${selected.label}  •  First-win reward ${selected.reward}${claimed ? ' (CLAIMED)' : ' (UNCLAIMED)'}`);
+    };
 
     this.makeSelectRow(
-      [{ label: 'BABY (+500T/+20C)', value: 'Baby' as const }, { label: 'EASY (+1000T/+40C)', value: 'Easy' as const }, { label: 'MEDIUM (+2000T/+60C)', value: 'Medium' as const }, { label: 'HARD (+5000T/+80C)', value: 'Hard' as const }, { label: 'NIGHTMARE (+10000T/+100C)', value: 'Nightmare' as const }],
-      () => this.configDifficulty, (v) => { this.configDifficulty = v; },
+      difficultyMeta.map((item) => ({ label: item.label, value: item.value })),
+      () => this.configDifficulty, (v) => {
+        this.configDifficulty = v;
+        refreshDifficultyHint();
+      },
       cx + 72, cy - 118, rowContainer
     );
+    refreshDifficultyHint();
     this.makeSelectRow(
       [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
       () => this.configUseLevelling, (v) => { this.configUseLevelling = v; },
@@ -657,7 +665,7 @@ export class ArenaScene extends Phaser.Scene {
     );
     randomizeToggle.setVisible(this.configRandomMode);
 
-    const noteText = this.add.text(cx, cy + 84, 'Difficulty changes bot loadout, class range, and placement style.\nFirst win on each difficulty grants bonus Tokens + Chips.', {
+    const noteText = this.add.text(cx, cy + 84, 'Difficulty changes bot loadout, class range, and placement style.\nSingle reward line shows selected difficulty bonus and claim state.', {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
     }).setOrigin(0.5);
     elements.push(noteText);
@@ -756,8 +764,11 @@ export class ArenaScene extends Phaser.Scene {
   ): Phaser.GameObjects.Container {
     const rowGroup = this.add.container(0, 0);
     container.add(rowGroup);
-    const btnW = options.length > 4 ? 88 : 72;
-    const gap = 8;
+    if (options.length === 0) return rowGroup;
+    const availableWidth = Math.max(280, this.scale.width - 120);
+    const gap = options.length > 4 ? 6 : 8;
+    const idealBtnW = options.length > 4 ? 82 : 72;
+    const btnW = Math.max(56, Math.min(idealBtnW, Math.floor((availableWidth - (options.length - 1) * gap) / options.length)));
     const totalW = options.length * btnW + (options.length - 1) * gap;
     const startX = cx - totalW / 2 + btnW / 2;
 
@@ -778,7 +789,7 @@ export class ArenaScene extends Phaser.Scene {
       const rect = this.add.rectangle(x, cy, btnW, 28, 0x173247, 0.85)
         .setStrokeStyle(1, 0x3f627c).setInteractive({ useHandCursor: true });
       const text = this.add.text(x, cy, opt.label, {
-        fontFamily: 'Orbitron', fontSize: '12px', color: '#99b2c3'
+        fontFamily: 'Orbitron', fontSize: btnW <= 60 ? '10px' : '12px', color: '#99b2c3'
       }).setOrigin(0.5);
       rect.on('pointerdown', () => { setter(opt.value); refresh(); });
       rect.on('pointerover', () => { if (getter() !== opt.value) rect.setFillStyle(0x233d52, 0.9); });
@@ -3561,9 +3572,13 @@ export class ArenaScene extends Phaser.Scene {
     const stored = this.registry.get(BOT_FIRST_WIN_KEY) as BotDifficulty[] | undefined;
     if (stored) return stored;
     try {
-      const parsed = JSON.parse(localStorage.getItem(BOT_FIRST_WIN_KEY) ?? '[]') as BotDifficulty[];
-      this.registry.set(BOT_FIRST_WIN_KEY, parsed);
-      return parsed;
+      const parsed = JSON.parse(localStorage.getItem(BOT_FIRST_WIN_KEY) ?? '[]') as unknown;
+      const valid: BotDifficulty[] = Array.isArray(parsed)
+        ? parsed.filter((entry): entry is BotDifficulty =>
+          entry === 'Baby' || entry === 'Easy' || entry === 'Medium' || entry === 'Hard' || entry === 'Nightmare')
+        : [];
+      this.registry.set(BOT_FIRST_WIN_KEY, valid);
+      return valid;
     } catch {
       return [];
     }
@@ -3585,9 +3600,10 @@ export class ArenaScene extends Phaser.Scene {
     const stored = this.registry.get(CHALLENGE_REWARD_CLAIMS_KEY) as string[] | undefined;
     if (stored) return stored;
     try {
-      const parsed = JSON.parse(localStorage.getItem(CHALLENGE_REWARD_CLAIMS_KEY) ?? '[]') as string[];
-      this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, parsed);
-      return parsed;
+      const parsed = JSON.parse(localStorage.getItem(CHALLENGE_REWARD_CLAIMS_KEY) ?? '[]') as unknown;
+      const valid = Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+      this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, valid);
+      return valid;
     } catch {
       return [];
     }
