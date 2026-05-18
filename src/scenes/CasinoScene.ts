@@ -3,7 +3,7 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgressStore';
 import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
-import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, grantDiceCopies, setDiceTokens } from '../data/dice';
+import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
@@ -494,13 +494,15 @@ export class CasinoScene extends Phaser.Scene {
 
   private rollChestOpenRewards(type: ChestType, openCount: number): ChestOpenRewards {
     const merged = new Map<string, ChestRewardEntry>();
+    const pendingCopies = new Map<string, number>();
     const tokenRange = CHEST_TOKEN_REWARDS[type];
     let diceTokens = 0;
 
     for (let i = 0; i < openCount; i++) {
       diceTokens += Phaser.Math.Between(tokenRange[0], tokenRange[1]);
-      const reward = this.rollChestReward(type);
+      const reward = this.rollChestReward(type, pendingCopies);
       if (!reward) continue;
+      pendingCopies.set(reward.typeId, (pendingCopies.get(reward.typeId) ?? 0) + reward.copies);
 
       const current = merged.get(reward.typeId);
       merged.set(reward.typeId, current
@@ -513,8 +515,12 @@ export class CasinoScene extends Phaser.Scene {
     return { entries: [...merged.values()], diceTokens };
   }
 
-  private rollChestReward(type: ChestType): ChestRewardEntry | null {
-    const defs = getAllDiceDefinitions(this).filter((definition) => canReceiveUsefulCopies(this, definition.typeId));
+  private rollChestReward(type: ChestType, pendingCopies: Map<string, number>): ChestRewardEntry | null {
+    const defs = getAllDiceDefinitions(this).filter((definition) => {
+      if (!canReceiveUsefulCopies(this, definition.typeId)) return false;
+      const pending = pendingCopies.get(definition.typeId) ?? 0;
+      return pending < getRemainingUsefulCopies(this, definition.typeId);
+    });
     const byRarity = (rarity: string) => defs.filter((definition) => definition.rarity === rarity);
     const pick = (pool: typeof defs) => (pool.length ? pool[Math.floor(Math.random() * pool.length)] : null);
     const table = CHEST_DROP_RATES[type];
@@ -532,8 +538,12 @@ export class CasinoScene extends Phaser.Scene {
 
     const progress = getDiceProgress(this, die.typeId);
     const isNew = progress.copies <= 0;
+    const beforeCopies = progress.copies;
     grantDiceCopies(this, die.typeId, copies);
-    return { typeId: die.typeId, title: die.title, rarity: die.rarity, copies, isNew };
+    const afterCopies = getDiceProgress(this, die.typeId).copies;
+    const grantedCopies = Math.max(0, afterCopies - beforeCopies);
+    if (grantedCopies <= 0) return null;
+    return { typeId: die.typeId, title: die.title, rarity: die.rarity, copies: grantedCopies, isNew };
   }
 
   private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number) {

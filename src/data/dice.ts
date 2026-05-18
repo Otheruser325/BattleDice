@@ -148,6 +148,7 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
   let store = scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined;
   if (!store) {
     store = readStored<Record<string, DiceProgressState>>(DICE_PROGRESS_KEY) ?? {};
+    store = sanitizeDiceProgressStore(scene, store);
     scene.registry.set(DICE_PROGRESS_KEY, store);
   }
   const defaultCopies = DEFAULT_LOADOUT_IDS.has(typeId) ? 200 : 0;
@@ -158,6 +159,24 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
     copies: progress.copies,
     unlocked: progress.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || progress.copies > 0
   };
+}
+
+function sanitizeDiceProgressStore(scene: Phaser.Scene, store: Record<string, DiceProgressState>): Record<string, DiceProgressState> {
+  let changed = false;
+  const sanitized = { ...store };
+  Object.entries(store).forEach(([key, value]) => {
+    const typeId = key as DiceTypeId;
+    const classLevel = Math.max(1, Math.min(MAX_CLASS_LEVEL, value.classLevel || 1));
+    const maxCopies = Math.min(getMaxStoredCopiesForType(scene, typeId), getMaxUsefulCopiesForType(scene, typeId, classLevel));
+    const copies = Math.max(0, Math.min(value.copies || 0, maxCopies));
+    const unlocked = value.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || copies > 0;
+    if (classLevel !== value.classLevel || copies !== value.copies || unlocked !== value.unlocked) {
+      changed = true;
+      sanitized[key] = { classLevel, copies, unlocked };
+    }
+  });
+  if (changed) writeStored(DICE_PROGRESS_KEY, sanitized);
+  return sanitized;
 }
 
 export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: DiceProgressState) {
@@ -180,6 +199,12 @@ export function canReceiveUsefulCopies(scene: Phaser.Scene, typeId: DiceTypeId):
   const progress = getDiceProgress(scene, typeId);
   if (progress.classLevel >= MAX_CLASS_LEVEL) return false;
   return progress.copies < getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
+}
+
+export function getRemainingUsefulCopies(scene: Phaser.Scene, typeId: DiceTypeId): number {
+  const progress = getDiceProgress(scene, typeId);
+  if (progress.classLevel >= MAX_CLASS_LEVEL) return 0;
+  return Math.max(0, getMaxUsefulCopiesForType(scene, typeId, progress.classLevel) - progress.copies);
 }
 
 export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies: number) {
