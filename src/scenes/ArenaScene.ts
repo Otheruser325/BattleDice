@@ -612,6 +612,18 @@ export class ArenaScene extends Phaser.Scene {
     const rowContainer = this.add.container(0, 0);
     elements.push(rowContainer);
 
+
+    const rewardHint = this.add.text(cx + 72, cy - 142, [
+      `BABY  +500T / +20C${this.hasClaimedBotFirstWin('Baby') ? ' ✓' : ''}`,
+      `EASY  +1000T / +40C${this.hasClaimedBotFirstWin('Easy') ? ' ✓' : ''}`,
+      `MEDIUM  +2000T / +60C${this.hasClaimedBotFirstWin('Medium') ? ' ✓' : ''}`,
+      `HARD  +5000T / +80C${this.hasClaimedBotFirstWin('Hard') ? ' ✓' : ''}`,
+      `NIGHTMARE  +10000T / +100C${this.hasClaimedBotFirstWin('Nightmare') ? ' ✓' : ''}`
+    ].join('   •   '), {
+      fontFamily: 'Orbitron', fontSize: '10px', color: '#f4cf8a', align: 'center', wordWrap: { width: 520 }
+    }).setOrigin(0.5);
+    elements.push(rewardHint);
+
     this.makeSelectRow(
       [{ label: 'BABY (+500T/+20C)', value: 'Baby' as const }, { label: 'EASY (+1000T/+40C)', value: 'Easy' as const }, { label: 'MEDIUM (+2000T/+60C)', value: 'Medium' as const }, { label: 'HARD (+5000T/+80C)', value: 'Hard' as const }, { label: 'NIGHTMARE (+10000T/+100C)', value: 'Nightmare' as const }],
       () => this.configDifficulty, (v) => { this.configDifficulty = v; },
@@ -990,7 +1002,11 @@ export class ArenaScene extends Phaser.Scene {
     this.renderDiceCardInfoPanel();
 
     this.debug.log('Battle initialized', { turn: this.gameState.turn, playerCount: playerDefs.length, enemyCount: enemyDefs.length });
-    if (this.configRandomMode) this.combatLog.setText(`Random Mode: ${this.activeRandomModifier ?? 'Classic'} selected.`);
+    if (this.configRandomMode) this.combatLog.setText(`Random Mode: ${this.getRandomModeDisplayName(this.activeRandomModifier ?? 'Classic')} selected.`);
+  }
+
+  private getRandomModeDisplayName(modifier: RandomModeModifier): string {
+    return modifier === 'DiceCard' ? 'Dice Card' : modifier;
   }
 
   private getDefinitionForInstance(die: DiceInstanceState): DiceDefinition | undefined {
@@ -1844,7 +1860,9 @@ export class ArenaScene extends Phaser.Scene {
       const def = this.getDefinitionForInstance(die);
       return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
     });
-    const owners: Array<'player' | 'enemy'> = ownerHasReadyAssassin('enemy') ? ['enemy', 'player'] : ['player', 'enemy'];
+    const enemyHasAssassin = ownerHasReadyAssassin('enemy');
+    const playerHasAssassin = ownerHasReadyAssassin('player');
+    const owners: Array<'player' | 'enemy'> = enemyHasAssassin && !playerHasAssassin ? ['enemy', 'player'] : ['player', 'enemy'];
 
     let timedOut = false;
     for (const owner of owners) {
@@ -1995,7 +2013,6 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
 
-    await this.maybeRunDiceCardDraft();
     this.gameState = endTurn(this.gameState);
     await this.maybeRunDiceCardDraft();
     if (this.configRandomMode && this.activeRandomModifier === 'Necromancy' && this.gameState.turn > 1) {
@@ -2444,7 +2461,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if (attacker.typeId === 'Poison') {
-      const poisonMultiplier = this.getCombanityDamageMultiplier(attacker, target) * this.getDiceCardSkillDamageMultiplier(attacker);
+      const poisonMultiplier = this.getCombanityDamageMultiplier(attacker, target);
       const poisonDamage = Math.max(1, Math.ceil((meta.poisonDamage ?? 0) * poisonMultiplier));
       const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 0);
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
@@ -2627,8 +2644,7 @@ export class ArenaScene extends Phaser.Scene {
         ...this.gameState,
         dice: this.gameState.dice.map((die) => {
           if (die.instanceId !== instanceId || die.isDestroyed) return die;
-          const sourceProxy: DiceInstanceState = { ...die, ownerId: effect.sourceOwnerId ?? die.ownerId, typeId: effect.sourceTypeId ?? die.typeId };
-          const tickDamage = Math.max(1, Math.floor(effect.damage * this.getDiceCardSkillDamageMultiplier(sourceProxy)));
+          const tickDamage = Math.max(1, Math.floor(effect.damage));
           const currentHealth = Math.max(0, die.currentHealth - tickDamage);
           const isDestroyed = currentHealth <= 0;
           if (isDestroyed && !die.isDestroyed) newlyDefeated.push(die);

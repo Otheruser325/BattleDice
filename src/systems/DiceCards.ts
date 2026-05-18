@@ -30,9 +30,9 @@ export function getDiceCardMagnitude(rarity: DiceCardRarity): number {
 }
 
 export function canOfferDiceCards(turn: number, picksUsed: number): boolean {
-  if (picksUsed >= 5) return false;
-  if (turn > 10) return false;
-  return turn >= 2 && turn % 2 === 0;
+  const offerTurns = [2, 4, 6, 8, 10];
+  if (picksUsed >= offerTurns.length) return false;
+  return turn === offerTurns[picksUsed];
 }
 
 export function getEligibleUpgradeTypes(ownerId: 'player' | 'enemy', dice: DiceInstanceState[], definitions: Map<string, DiceDefinition>): string[] {
