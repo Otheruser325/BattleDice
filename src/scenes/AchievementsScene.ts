@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { SCENE_KEYS } from './sceneKeys';
+import { AchievementStore, type AchievementId } from '../systems/AchievementStore';
 
 export class AchievementsScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Achievements;
@@ -15,19 +16,11 @@ export class AchievementsScene extends Phaser.Scene {
     this.debug.log('Achievements scene rendered.');
     const panel = drawPanel(this, 'ACHIEVEMENTS', 'WIP  |  progression shell');
 
-    const columns = [
-      {
-        title: 'Combat',
-        items: ['First chain lightning hit', 'Splash 3 enemies in one volley', 'Win a lane with a 1-pip die']
-      },
-      {
-        title: 'Collection',
-        items: ['Unlock a full seasonal loadout', 'Evolve every default die once', 'Discover a hidden arena skin']
-      },
-      {
-        title: 'Online',
-        items: ['Play your first live match', 'Hold five columns at once', 'Win three ranked duels in a row']
-      }
+    const unlocked = AchievementStore.get(this).unlocked;
+    const columns: Array<{ title: string; items: Array<{ id: AchievementId; label: string }> }> = [
+      { title: 'Combat', items: [{ id: 'winner', label: 'Winner: Win your first match.' }, { id: 'veteran', label: 'Veteran: Win 10 matches.' }, { id: 'master', label: 'Master: Win 50 matches.' }, { id: 'lotta_damage', label: 'Lotta Damage: Deal over 200 damage to an enemy dice.' }] },
+      { title: 'Time', items: [{ id: 'sweatin_it', label: "Sweatin' It: Play Battle Dice for 1 hour total." }, { id: 'cant_keep_up', label: "Can't Keep Up: Play Battle Dice for 12 hours total." }, { id: 'diceaholic', label: 'Diceaholic: Play Battle Dice for 24 hours total.' }, { id: 'darkest_hour', label: 'In Our Darkest Hour...: Obtain a Legendary Dice.' }] },
+      { title: 'Casino', items: [{ id: 'vegas_boy', label: 'Vegas Boy: First time playing a casino table.' }, { id: 'gambolic', label: 'Gambolic: Play 10 casino tables total.' }, { id: 'risksino', label: 'Risksino: Play 50 casino tables total.' }, { id: 'jackpot', label: 'Jackpot: Roll a Five-of-a-kind in Fives/Combanity.' }] }
     ];
 
     columns.forEach((column, index) => {
@@ -41,10 +34,11 @@ export class AchievementsScene extends Phaser.Scene {
       });
 
       column.items.forEach((item, itemIndex) => {
-        this.add.text(x + 24, panel.y + 146 + itemIndex * 42, `• ${item}`, {
+        const done = Boolean(unlocked[item.id]);
+        this.add.text(x + 24, panel.y + 146 + itemIndex * 52, `${done ? '✓' : '•'} ${item.label}`, {
           fontFamily: 'Orbitron',
-          fontSize: '13px',
-          color: PALETTE.textMuted,
+          fontSize: '12px',
+          color: done ? PALETTE.success : PALETTE.textMuted,
           wordWrap: { width: 250 }
         });
       });

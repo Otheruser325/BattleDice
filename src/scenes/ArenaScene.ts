@@ -29,6 +29,7 @@ import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { canOfferDiceCards, getDiceCardMagnitude, getDiceCardRarityRoll, rollDiceCards, type DiceCard, type DiceCardRarity } from '../systems/DiceCards';
 import { ProfileStore } from '../systems/ProfileStore';
+import { AchievementStore } from '../systems/AchievementStore';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -118,6 +119,7 @@ export class ArenaScene extends Phaser.Scene {
   private instanceDefinitionOverrides: Map<string, DiceDefinition> = new Map();
   private instanceClassLevels: Map<string, number> = new Map();
   private enemyLoadoutRevealed = false;
+  private sessionStartedAtMs = 0;
   private rangeHighlightObjects: Phaser.GameObjects.GameObject[] = [];
   private highlightedRangeInstanceId: string | null = null;
 
@@ -208,6 +210,7 @@ export class ArenaScene extends Phaser.Scene {
 
   create() {
     this.resetRuntimeState();
+    this.sessionStartedAtMs = Date.now();
     const layout = getLayout(this);
 
     this.definitions = new Map(getAllDiceDefinitions(this).map((die) => [die.typeId, die]));
@@ -217,6 +220,11 @@ export class ArenaScene extends Phaser.Scene {
     this.createBackground(layout);
     this.createLobbyUI();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      const elapsed = Math.max(0, Date.now() - this.sessionStartedAtMs);
+      const next = AchievementStore.mutate(this, (state) => ({ ...state, playtimeMs: state.playtimeMs + elapsed }));
+      if (next.playtimeMs >= 3_600_000) AchievementStore.unlock(this, 'sweatin_it');
+      if (next.playtimeMs >= 43_200_000) AchievementStore.unlock(this, 'cant_keep_up');
+      if (next.playtimeMs >= 86_400_000) AchievementStore.unlock(this, 'diceaholic');
       this.tweens.killAll();
       this.time.removeAllEvents();
       this.combatTimerText?.destroy();
@@ -1744,7 +1752,7 @@ export class ArenaScene extends Phaser.Scene {
       const furthest = [...foes].sort((a, b) => getCombatDistance(assassin, b) - getCombatDistance(assassin, a))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
       const jumpRange = skill?.modifiers?.jumpRange ?? -1;
-      const targetOwner = assassin.ownerId;
+      const targetOwner = assassin.ownerId === 'player' ? 'enemy' : 'player';
       const occupied = new Set(
         this.gameState.dice
           .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === targetOwner && d.instanceId !== assassin.instanceId && d.gridPosition)
@@ -1871,14 +1879,7 @@ export class ArenaScene extends Phaser.Scene {
     this.combatTimeRemainingMs = 30_000;
     this.combatCountdownTriggered = false;
     this.updateCombatTimerUi();
-    const ownerHasReadyAssassin = (owner: 'player' | 'enemy') => this.gameState.dice.some((die) => {
-      if (die.ownerId !== owner || die.zone !== 'board' || die.isDestroyed || die.hasFinishedAttacking || die.attacksRemaining <= 0) return false;
-      const def = this.getDefinitionForInstance(die);
-      return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
-    });
-    const enemyHasAssassin = ownerHasReadyAssassin('enemy');
-    const playerHasAssassin = ownerHasReadyAssassin('player');
-    const owners: Array<'player' | 'enemy'> = enemyHasAssassin && !playerHasAssassin ? ['enemy', 'player'] : ['player', 'enemy'];
+    const owners: Array<'player' | 'enemy'> = ['player', 'enemy'];
 
     let timedOut = false;
     for (const owner of owners) {
@@ -1890,13 +1891,7 @@ export class ArenaScene extends Phaser.Scene {
           break;
         }
 
-        const readyAssassin = this.gameState.dice
-          .filter((die) => die.ownerId === owner && die.zone === 'board' && !die.isDestroyed && !die.hasFinishedAttacking && die.attacksRemaining > 0)
-          .find((die) => {
-            const def = this.getDefinitionForInstance(die);
-            return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
-          });
-        const attacker = readyAssassin ?? getNextAttacker(this.gameState, owner);
+        const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
         const beamTarget = this.findTranscendenceBeamTarget(attacker);
@@ -1950,6 +1945,7 @@ export class ArenaScene extends Phaser.Scene {
             const giantHunter = this.giantHunterRateByOwner[attacker.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[attacker.ownerId])) : 0;
             const assassinBoost = (this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0) > 0 ? 2 : 1;
             const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
+            if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
             this.gameState = spendAttack(this.gameState, attacker.instanceId);
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
             this.gameState = hit.state;
@@ -3663,6 +3659,12 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (stage !== 'victory' && this.activeChallenge === 'daily') this.setChallengeStatus('daily', 'failed');
     if (stage !== 'victory' && this.activeChallenge === 'deucifer') this.setChallengeStatus('deucifer', 'failed');
+    if (stage === 'victory') {
+      const next = AchievementStore.mutate(this, (state) => ({ ...state, wins: state.wins + 1 }));
+      AchievementStore.unlock(this, 'winner');
+      if (next.wins >= 10) AchievementStore.unlock(this, 'veteran');
+      if (next.wins >= 50) AchievementStore.unlock(this, 'master');
+    }
     setDiceTokens(this, getDiceTokens(this) + tokenReward);
     if (chipReward > 0) {
       CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + chipReward }));
