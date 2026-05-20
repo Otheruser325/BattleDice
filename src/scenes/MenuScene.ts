@@ -6,6 +6,8 @@ import { MENU_TABS, PALETTE, getLayout } from '../ui/theme';
 import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { ProfileStore } from '../systems/ProfileStore';
+import { getAllDiceDefinitions, getDiamonds, getDiceTokens, grantDiceCopies, setDiamonds, setDiceTokens } from '../data/dice';
+import { AchievementStore } from '../systems/AchievementStore';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
@@ -91,6 +93,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     this.ensureUsername();
+    this.maybeGrantNewUserLoginReward();
     this.openTab(MENU_TABS.find((tab) => tab.sceneKey === this.activeSceneKey) ?? MENU_TABS[2]);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.tabButtons = [];
@@ -144,5 +147,40 @@ export class MenuScene extends Phaser.Scene {
         AnimationManager.pulse(this, label, 1.03, 120);
       }
     });
+  }
+
+  private maybeGrantNewUserLoginReward() {
+    const profile = ProfileStore.get(this);
+    const createdAt = profile.createdAt ? new Date(profile.createdAt) : undefined;
+    const isNewUser = !createdAt || (Date.now() - createdAt.getTime()) <= (7 * 24 * 60 * 60 * 1000);
+    if (!isNewUser) return;
+    const reward = profile.loginReward ?? { startDate: new Date().toISOString().slice(0, 10), claimedDays: [] as number[] };
+    const claimed = new Set(reward.claimedDays);
+    const day = Math.max(1, Math.min(7, claimed.size + 1));
+    if (claimed.has(day)) return;
+
+    let message = '';
+    if (day === 1) { setDiamonds(this, getDiamonds(this) + 50); message = '+50 Diamonds'; }
+    if (day === 2) { setDiceTokens(this, getDiceTokens(this) + 1000); message = '+1,000 Dice Tokens'; }
+    if (day === 3) { message = '+20 Casino Chips'; this.registry.events.emit('casino:grantChips', 20); }
+    if (day === 4) { setDiamonds(this, getDiamonds(this) + 100); message = '+100 Diamonds'; }
+    if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
+    if (day === 6) { message = '+50 Casino Chips'; this.registry.events.emit('casino:grantChips', 50); }
+    if (day === 7) {
+      const legendaries = getAllDiceDefinitions(this).filter((d) => d.rarity === 'Legendary');
+      const pick = legendaries[Math.floor(Math.random() * legendaries.length)];
+      if (pick) grantDiceCopies(this, pick.typeId, 1);
+      AchievementStore.unlock(this, 'darkest_hour');
+      message = 'Free Random Legendary Dice!';
+    }
+    claimed.add(day);
+    ProfileStore.set(this, {
+      loginReward: {
+        ...reward,
+        claimedDays: [...claimed].sort((a, b) => a - b),
+        lastClaimDate: new Date().toISOString().slice(0, 10)
+      }
+    });
+    AlertManager.toast(this, { type: 'success', message: `7-Day Login Reward (Day ${day}): ${message}` });
   }
 }
