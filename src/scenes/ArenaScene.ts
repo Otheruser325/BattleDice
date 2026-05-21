@@ -7,7 +7,6 @@ import {
   getBoardDice,
   getLivingDiceCount,
   getNextAttacker,
-  findAttackTarget,
   executeAttack,
   applyDamage,
   spendAttack,
@@ -1751,7 +1750,7 @@ export class ArenaScene extends Phaser.Scene {
     assassins.forEach((assassin) => {
       const foes = boardDice.filter((d) => d.ownerId !== assassin.ownerId && d.gridPosition);
       if (foes.length === 0 || !assassin.gridPosition) return;
-      const furthest = [...foes].sort((a, b) => getCombatDistance(assassin, b) - getCombatDistance(assassin, a))[0];
+      const furthest = [...foes].sort((a, b) => this.getDistanceWithBoardSides(assassin, b) - this.getDistanceWithBoardSides(assassin, a))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
       const jumpRange = skill?.modifiers?.jumpRange ?? -1;
       const targetOwner = assassin.ownerId === 'player' ? 'enemy' : 'player';
@@ -1768,9 +1767,9 @@ export class ArenaScene extends Phaser.Scene {
         for (let col = 0; col < GRID_SIZE; col++) {
           if (occupied.has(`${row},${col}`)) continue;
           const proxy: DiceInstanceState = { ...assassin, ownerId: targetOwner, gridPosition: { row, col } };
-          const jumpDistance = getCombatDistance(assassin, proxy);
+          const jumpDistance = this.getDistanceWithBoardSides(assassin, proxy);
           if (jumpRange >= 0 && jumpDistance > jumpRange) continue;
-          const distance = getCombatDistance(proxy, furthest);
+          const distance = this.getDistanceWithBoardSides(proxy, furthest);
           const isBetter = distance < bestDistance
             || (distance === bestDistance && Math.abs(col - furthest.gridPosition!.col) < Math.abs((chosen?.col ?? col) - furthest.gridPosition!.col))
             || (distance === bestDistance && col === furthest.gridPosition!.col && Math.abs(row - furthest.gridPosition!.row) < Math.abs((chosen?.row ?? row) - furthest.gridPosition!.row));
@@ -1802,12 +1801,37 @@ export class ArenaScene extends Phaser.Scene {
   private getGridContainerForDie(die: DiceInstanceState): Phaser.GameObjects.Container {
     return this.getBoardSideForDie(die) === 'player' ? this.playerGridContainer : this.enemyGridContainer;
   }
+  private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
+    const attackerProxy: DiceInstanceState = { ...attacker, ownerId: this.getBoardSideForDie(attacker) };
+    const targetProxy: DiceInstanceState = { ...target, ownerId: this.getBoardSideForDie(target) };
+    return getCombatDistance(attackerProxy, targetProxy);
+  }
+
+  private findAttackTargetForArena(attacker: DiceInstanceState): DiceInstanceState | undefined {
+    const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+    const attackerDef = this.getDefinitionForInstance(attacker);
+    if (!attackerDef || !attacker.gridPosition) return undefined;
+    const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
+    const candidates = this.gameState.dice
+      .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
+        die.ownerId === enemyOwner && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition))
+      .map((die) => ({ die, distance: this.getDistanceWithBoardSides(attacker, die) }))
+      .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));
+    if (candidates.length === 0) return undefined;
+    const byNear = [...candidates].sort((a, b) => a.distance - b.distance || a.die.gridPosition.row - b.die.gridPosition.row || a.die.gridPosition.col - b.die.gridPosition.col);
+    const byFar = [...candidates].sort((a, b) => b.distance - a.distance || b.die.gridPosition.row - a.die.gridPosition.row || b.die.gridPosition.col - a.die.gridPosition.col);
+    if (mode === 'Nearest') return byNear[0].die;
+    if (mode === 'Furthest') return byFar[0].die;
+    if (mode === 'Strongest') return [...candidates].sort((a, b) => b.die.currentHealth - a.die.currentHealth || a.distance - b.distance)[0].die;
+    if (mode === 'Weakest') return [...candidates].sort((a, b) => a.die.currentHealth - b.die.currentHealth || a.distance - b.distance)[0].die;
+    return candidates[Math.floor(Math.random() * candidates.length)].die;
+  }
   private resolveTauntForcedTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
     const taunt = this.tauntedByInstance.get(attacker.instanceId);
     if (!taunt) return undefined;
     const shield = this.gameState.dice.find((d) => d.instanceId === taunt.sourceId && d.zone === 'board' && !d.isDestroyed && d.gridPosition);
     if (!shield || !shield.gridPosition || !attacker.gridPosition) return undefined;
-    const distance = getCombatDistance(attacker, shield);
+    const distance = this.getDistanceWithBoardSides(attacker, shield);
     const shieldDef = this.getDefinitionForInstance(shield);
     const tauntSkill = shieldDef?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:shieldTaunt'));
     const tauntRange = tauntSkill?.modifiers?.tauntRange ?? 2;
@@ -1912,7 +1936,7 @@ export class ArenaScene extends Phaser.Scene {
 
         const beamTarget = this.findTranscendenceBeamTarget(attacker);
         const forcedTarget = this.resolveTauntForcedTarget(attacker);
-        const target = forcedTarget ?? beamTarget ?? findAttackTarget(this.gameState, attacker, this.getDefinitionsForCombat(attacker));
+        const target = forcedTarget ?? beamTarget ?? this.findAttackTargetForArena(attacker);
         if (!target) {
           this.gameState = {
             ...this.gameState,
