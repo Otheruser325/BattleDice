@@ -156,6 +156,9 @@ export class MenuScene extends Phaser.Scene {
     const isNewUser = !createdAt || (Date.now() - createdAt.getTime()) <= (7 * 24 * 60 * 60 * 1000);
     if (!isNewUser) return;
     const reward = profile.loginReward ?? { startDate: new Date().toISOString().slice(0, 10), claimedDays: [] as number[] };
+    const now = Date.now();
+    const lastClaimAtMs = reward.lastClaimAt ? new Date(reward.lastClaimAt).getTime() : NaN;
+    if (Number.isFinite(lastClaimAtMs) && now - lastClaimAtMs < 24 * 60 * 60 * 1000) return;
     const claimed = new Set(reward.claimedDays);
     const day = Math.max(1, Math.min(7, claimed.size + 1));
     if (claimed.has(day)) return;
@@ -179,7 +182,8 @@ export class MenuScene extends Phaser.Scene {
       loginReward: {
         ...reward,
         claimedDays: [...claimed].sort((a, b) => a - b),
-        lastClaimDate: new Date().toISOString().slice(0, 10)
+        lastClaimDate: new Date().toISOString().slice(0, 10),
+        lastClaimAt: new Date().toISOString()
       }
     });
     this.openLoginRewardModal(day, message);

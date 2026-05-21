@@ -12,6 +12,7 @@ export interface PlayerProfile {
     startDate: string;
     claimedDays: number[];
     lastClaimDate?: string;
+    lastClaimAt?: string;
   };
 }
 

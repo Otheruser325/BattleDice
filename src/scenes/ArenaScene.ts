@@ -1757,7 +1757,8 @@ export class ArenaScene extends Phaser.Scene {
       const targetOwner = assassin.ownerId === 'player' ? 'enemy' : 'player';
       const occupied = new Set(
         this.gameState.dice
-          .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === targetOwner && d.instanceId !== assassin.instanceId && d.gridPosition)
+          .filter((d) => d.zone === 'board' && !d.isDestroyed && d.instanceId !== assassin.instanceId && d.gridPosition)
+          .filter((d) => this.getBoardSideForDie(d) === targetOwner)
           .map((d) => `${d.gridPosition!.row},${d.gridPosition!.col}`)
       );
 
@@ -1767,9 +1768,13 @@ export class ArenaScene extends Phaser.Scene {
         for (let col = 0; col < GRID_SIZE; col++) {
           if (occupied.has(`${row},${col}`)) continue;
           const proxy: DiceInstanceState = { ...assassin, ownerId: targetOwner, gridPosition: { row, col } };
-          if (jumpRange >= 0 && getCombatDistance(assassin, proxy) > jumpRange) continue;
+          const jumpDistance = getCombatDistance(assassin, proxy);
+          if (jumpRange >= 0 && jumpDistance > jumpRange) continue;
           const distance = getCombatDistance(proxy, furthest);
-          if (distance < bestDistance) {
+          const isBetter = distance < bestDistance
+            || (distance === bestDistance && Math.abs(col - furthest.gridPosition!.col) < Math.abs((chosen?.col ?? col) - furthest.gridPosition!.col))
+            || (distance === bestDistance && col === furthest.gridPosition!.col && Math.abs(row - furthest.gridPosition!.row) < Math.abs((chosen?.row ?? row) - furthest.gridPosition!.row));
+          if (isBetter) {
             bestDistance = distance;
             chosen = { row, col };
           }
