@@ -13,6 +13,7 @@ interface ToastConfig {
   message: string;
   type?: Exclude<AlertType, 'checking'>;
   durationMs?: number;
+  bottom?: boolean;
 }
 
 export class AlertManager {
@@ -74,7 +75,7 @@ export class AlertManager {
     scene.events.once('destroy', () => this.hide());
   }
 
-  static toast(scene: Phaser.Scene, { message, type = 'success', durationMs = 1800 }: ToastConfig) {
+  static toast(scene: Phaser.Scene, { message, type = 'success', durationMs = 1800, bottom = false }: ToastConfig) {
     if (this.toastElements.length > 0 && this.toastMessage === message) {
       this.toastTimer?.remove(false);
       this.toastTimer = scene.time.delayedCall(durationMs + 1000, () => this.clearToast());
@@ -83,13 +84,15 @@ export class AlertManager {
     this.clearToast();
 
     const { color } = this.getTypeConfig(type);
-    const toastBg = scene.add.rectangle(scene.scale.width / 2, 48, 420, 38, 0x102434, 0.96)
+    const y = bottom ? scene.scale.height - 56 : 48;
+    const toastBg = scene.add.rectangle(scene.scale.width / 2, y, 520, 64, 0x102434, 0.96)
       .setStrokeStyle(1, color)
       .setDepth(9000);
-    const toastText = scene.add.text(scene.scale.width / 2, 48, message, {
+    const toastText = scene.add.text(scene.scale.width / 2, y, message, {
       fontFamily: 'Orbitron',
       fontSize: '13px',
-      color: PALETTE.text
+      color: PALETTE.text,
+      align: 'center'
     }).setOrigin(0.5).setDepth(9001);
 
     this.toastMessage = message;

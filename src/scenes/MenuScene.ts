@@ -120,11 +120,8 @@ export class MenuScene extends Phaser.Scene {
     }
     this.refreshTabs();
 
-    if (tab.status === 'WIP') {
-      AlertManager.toast(this, {
-        type: 'warning',
-        message: `${tab.label} is a work-in-progress surface.`
-      });
+    if (tab.status === 'Flex') {
+      AlertManager.toast(this, { type: 'success', message: 'Flex your progress and unlocked milestones.' });
     }
   }
 

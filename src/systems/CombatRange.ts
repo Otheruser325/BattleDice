@@ -4,11 +4,9 @@ export const ARENA_GRID_SIZE = 5;
 
 export function getCombatDistance(attacker: DiceInstanceState, target: DiceInstanceState): number {
   if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
-
   if (attacker.ownerId === 'player') {
     return (ARENA_GRID_SIZE - attacker.gridPosition.col) + target.gridPosition.col;
   }
-
   return attacker.gridPosition.col + (ARENA_GRID_SIZE - target.gridPosition.col);
 }
 
