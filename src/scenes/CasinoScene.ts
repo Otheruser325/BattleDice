@@ -7,6 +7,7 @@ import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDice
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
+import { AchievementStore } from '../systems/AchievementStore';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -96,6 +97,11 @@ export class CasinoScene extends Phaser.Scene {
   private activeRewardDetailClose: (() => void) | null = null;
 
   create() {
+    this.registry.events.off('casino:grantChips');
+    this.registry.events.on('casino:grantChips', (amount: number) => {
+      CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + Math.max(0, Math.floor(amount)) }));
+      this.render();
+    });
     this.resetRuntimeUiState();
 
     const panel = drawPanel(this, 'CASINO', 'TABLES + CHESTS');
@@ -270,6 +276,7 @@ export class CasinoScene extends Phaser.Scene {
     this.tableActive = true;
     this.crapsTableActive = false;
     CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - 10 }));
+    this.trackCasinoTablePlay();
     this.rollDice();
     this.render();
   }
@@ -297,6 +304,7 @@ export class CasinoScene extends Phaser.Scene {
     this.clearFivesHandRuntime();
     this.clearSavedFivesHand();
     this.crapsTableActive = false;
+    if (payout.combo === 'Five-of-a-kind') AchievementStore.unlock(this, 'jackpot');
     this.render();
   }
 
@@ -318,11 +326,19 @@ export class CasinoScene extends Phaser.Scene {
         ? { ...current.chests, [outcome.chestType]: current.chests[outcome.chestType] + outcome.chestCount }
         : current.chests
     }));
+    this.trackCasinoTablePlay();
 
     const chestText = outcome.chestType ? `${outcome.chestType} x${outcome.chestCount}` : 'no chest';
     void AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: [false, false, true, true, true], jitter: 8 });
     this.statusText.setText(`Craps: ${outcome.summary} • ${chestText}`);
     this.render(outcome.summary, chestText);
+  }
+
+  private trackCasinoTablePlay() {
+    const next = AchievementStore.mutate(this, (state) => ({ ...state, casinoTablesPlayed: state.casinoTablesPlayed + 1 }));
+    AchievementStore.unlock(this, 'vegas_boy');
+    if (next.casinoTablesPlayed >= 10) AchievementStore.unlock(this, 'gambolic');
+    if (next.casinoTablesPlayed >= 50) AchievementStore.unlock(this, 'risksino');
   }
 
   private getComboSfxKey(combo: string): string | null {

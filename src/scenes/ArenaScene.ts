@@ -29,6 +29,7 @@ import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { canOfferDiceCards, getDiceCardMagnitude, getDiceCardRarityRoll, rollDiceCards, type DiceCard, type DiceCardRarity } from '../systems/DiceCards';
 import { ProfileStore } from '../systems/ProfileStore';
+import { AchievementStore } from '../systems/AchievementStore';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -118,6 +119,8 @@ export class ArenaScene extends Phaser.Scene {
   private instanceDefinitionOverrides: Map<string, DiceDefinition> = new Map();
   private instanceClassLevels: Map<string, number> = new Map();
   private enemyLoadoutRevealed = false;
+  private sessionStartedAtMs = 0;
+  private infiltratedBoardSideByInstance: Map<string, 'player' | 'enemy'> = new Map();
   private rangeHighlightObjects: Phaser.GameObjects.GameObject[] = [];
   private highlightedRangeInstanceId: string | null = null;
 
@@ -203,11 +206,13 @@ export class ArenaScene extends Phaser.Scene {
     this.fountainHealRateByOwner = { player: 0, enemy: 0 };
     this.manaPotionGainByOwner = { player: 0, enemy: 0 };
     this.assassinBoostAttacksByInstance.clear();
+    this.infiltratedBoardSideByInstance.clear();
     this.diceCardPicksUsed = 0;
   }
 
   create() {
     this.resetRuntimeState();
+    this.sessionStartedAtMs = Date.now();
     const layout = getLayout(this);
 
     this.definitions = new Map(getAllDiceDefinitions(this).map((die) => [die.typeId, die]));
@@ -217,6 +222,11 @@ export class ArenaScene extends Phaser.Scene {
     this.createBackground(layout);
     this.createLobbyUI();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      const elapsed = Math.max(0, Date.now() - this.sessionStartedAtMs);
+      const next = AchievementStore.mutate(this, (state) => ({ ...state, playtimeMs: state.playtimeMs + elapsed }));
+      if (next.playtimeMs >= 3_600_000) AchievementStore.unlock(this, 'sweatin_it');
+      if (next.playtimeMs >= 43_200_000) AchievementStore.unlock(this, 'cant_keep_up');
+      if (next.playtimeMs >= 86_400_000) AchievementStore.unlock(this, 'diceaholic');
       this.tweens.killAll();
       this.time.removeAllEvents();
       this.combatTimerText?.destroy();
@@ -1482,7 +1492,7 @@ export class ArenaScene extends Phaser.Scene {
       const hasPassivePipAura = (meta.pipMatchAllyAttackDelta ?? 0) !== 0 || (meta.pipMatchFoeAttackDelta ?? 0) !== 0;
       if (hasCombatStart || hasPassivePipAura) this.playSkillSfxForDie(die);
       if (definition.typeId === 'Light' && hasCombatStart && die.gridPosition) {
-        const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+        const grid = this.getGridContainerForDie(die);
         const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
         const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
         AnimationManager.animateLightCombatStart(this, x, y, Math.max(1, meta.combatStartExtraAttacks ?? 1));
@@ -1554,7 +1564,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private animateTimeMark(die: DiceInstanceState, color: number) {
     if (!die.gridPosition) return;
-    const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const grid = this.getGridContainerForDie(die);
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     void color;
@@ -1584,7 +1594,7 @@ export class ArenaScene extends Phaser.Scene {
       boardDice.filter((ally) => ally.ownerId === battery.ownerId).forEach((ally) => {
         const allyDef = this.getDefinitionForInstance(ally);
         if (ally.gridPosition) {
-          const grid = ally.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+          const grid = this.getGridContainerForDie(ally);
           const x = grid.x + ally.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = grid.y + ally.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           AnimationManager.animateBatteryCharge(this, x, y, ally.instanceId === battery.instanceId ? 0x95c2ff : 0x3f5573);
@@ -1744,10 +1754,11 @@ export class ArenaScene extends Phaser.Scene {
       const furthest = [...foes].sort((a, b) => getCombatDistance(assassin, b) - getCombatDistance(assassin, a))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
       const jumpRange = skill?.modifiers?.jumpRange ?? -1;
-      const targetOwner = assassin.ownerId;
+      const targetOwner = assassin.ownerId === 'player' ? 'enemy' : 'player';
       const occupied = new Set(
         this.gameState.dice
-          .filter((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === targetOwner && d.instanceId !== assassin.instanceId && d.gridPosition)
+          .filter((d) => d.zone === 'board' && !d.isDestroyed && d.instanceId !== assassin.instanceId && d.gridPosition)
+          .filter((d) => this.getBoardSideForDie(d) === targetOwner)
           .map((d) => `${d.gridPosition!.row},${d.gridPosition!.col}`)
       );
 
@@ -1757,9 +1768,13 @@ export class ArenaScene extends Phaser.Scene {
         for (let col = 0; col < GRID_SIZE; col++) {
           if (occupied.has(`${row},${col}`)) continue;
           const proxy: DiceInstanceState = { ...assassin, ownerId: targetOwner, gridPosition: { row, col } };
-          if (jumpRange >= 0 && getCombatDistance(assassin, proxy) > jumpRange) continue;
+          const jumpDistance = getCombatDistance(assassin, proxy);
+          if (jumpRange >= 0 && jumpDistance > jumpRange) continue;
           const distance = getCombatDistance(proxy, furthest);
-          if (distance < bestDistance) {
+          const isBetter = distance < bestDistance
+            || (distance === bestDistance && Math.abs(col - furthest.gridPosition!.col) < Math.abs((chosen?.col ?? col) - furthest.gridPosition!.col))
+            || (distance === bestDistance && col === furthest.gridPosition!.col && Math.abs(row - furthest.gridPosition!.row) < Math.abs((chosen?.row ?? row) - furthest.gridPosition!.row));
+          if (isBetter) {
             bestDistance = distance;
             chosen = { row, col };
           }
@@ -1773,10 +1788,19 @@ export class ArenaScene extends Phaser.Scene {
           ? { ...d, gridPosition: chosen! }
           : d)
       };
+      this.infiltratedBoardSideByInstance.set(assassin.instanceId, targetOwner);
       const passive = this.getDefinitionForInstance(assassin)?.skills.find((sk)=>sk.type==='Passive');
       const passiveMods = passive?.modifiers as { numAttacksBoosted?: number } | undefined;
       this.assassinBoostAttacksByInstance.set(assassin.instanceId, Math.max(0, passiveMods?.numAttacksBoosted ?? 0));
     });
+  }
+
+  private getBoardSideForDie(die: DiceInstanceState): 'player' | 'enemy' {
+    return this.infiltratedBoardSideByInstance.get(die.instanceId) ?? die.ownerId;
+  }
+
+  private getGridContainerForDie(die: DiceInstanceState): Phaser.GameObjects.Container {
+    return this.getBoardSideForDie(die) === 'player' ? this.playerGridContainer : this.enemyGridContainer;
   }
   private resolveTauntForcedTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
     const taunt = this.tauntedByInstance.get(attacker.instanceId);
@@ -1871,14 +1895,7 @@ export class ArenaScene extends Phaser.Scene {
     this.combatTimeRemainingMs = 30_000;
     this.combatCountdownTriggered = false;
     this.updateCombatTimerUi();
-    const ownerHasReadyAssassin = (owner: 'player' | 'enemy') => this.gameState.dice.some((die) => {
-      if (die.ownerId !== owner || die.zone !== 'board' || die.isDestroyed || die.hasFinishedAttacking || die.attacksRemaining <= 0) return false;
-      const def = this.getDefinitionForInstance(die);
-      return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
-    });
-    const enemyHasAssassin = ownerHasReadyAssassin('enemy');
-    const playerHasAssassin = ownerHasReadyAssassin('player');
-    const owners: Array<'player' | 'enemy'> = enemyHasAssassin && !playerHasAssassin ? ['enemy', 'player'] : ['player', 'enemy'];
+    const owners: Array<'player' | 'enemy'> = ['player', 'enemy'];
 
     let timedOut = false;
     for (const owner of owners) {
@@ -1890,13 +1907,7 @@ export class ArenaScene extends Phaser.Scene {
           break;
         }
 
-        const readyAssassin = this.gameState.dice
-          .filter((die) => die.ownerId === owner && die.zone === 'board' && !die.isDestroyed && !die.hasFinishedAttacking && die.attacksRemaining > 0)
-          .find((die) => {
-            const def = this.getDefinitionForInstance(die);
-            return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
-          });
-        const attacker = readyAssassin ?? getNextAttacker(this.gameState, owner);
+        const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
         const beamTarget = this.findTranscendenceBeamTarget(attacker);
@@ -1950,6 +1961,7 @@ export class ArenaScene extends Phaser.Scene {
             const giantHunter = this.giantHunterRateByOwner[attacker.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[attacker.ownerId])) : 0;
             const assassinBoost = (this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0) > 0 ? 2 : 1;
             const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
+            if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
             this.gameState = spendAttack(this.gameState, attacker.instanceId);
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
             this.gameState = hit.state;
@@ -2505,7 +2517,7 @@ export class ArenaScene extends Phaser.Scene {
     if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
       if (attacker.typeId === 'Wind') {
         if (attacker.gridPosition) {
-          const g = attacker.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+          const g = this.getGridContainerForDie(attacker);
           const x = g.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = g.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
@@ -2699,6 +2711,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.handDice.forEach((container) => container.destroy());
     this.handDice.clear();
+    this.infiltratedBoardSideByInstance.clear();
 
     this.renderDice();
     this.renderEnemyDice();
@@ -2747,7 +2760,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!attacker.gridPosition || !target.gridPosition) return;
     const isPlayerAttacker = attacker.ownerId === 'player';
     const attackerGrid = isPlayerAttacker ? this.playerGridContainer : this.enemyGridContainer;
-    const targetGrid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const targetGrid = this.getGridContainerForDie(target);
     const ax = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
@@ -2763,7 +2776,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private animateMeteorStrike(target: DiceInstanceState) {
     if (!target.gridPosition) return;
-    const targetGrid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const targetGrid = this.getGridContainerForDie(target);
     const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const meteor = this.add.circle(tx - 110, ty - 140, 8, 0xff8f4d, 0.95).setDepth(2000);
@@ -2790,7 +2803,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private animateSkullRevive(die: DiceInstanceState) {
     if (die.typeId !== 'Skull' || !die.gridPosition) return;
-    const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const grid = this.getGridContainerForDie(die);
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     AnimationManager.animateSkullRevive(this, x, y);
@@ -2798,7 +2811,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private animateTransformEffect(die: DiceInstanceState) {
     if (!die.gridPosition) return;
-    const grid = die.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const grid = this.getGridContainerForDie(die);
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     AnimationManager.animateDeathTransform(this, x, y);
@@ -2864,8 +2877,8 @@ export class ArenaScene extends Phaser.Scene {
 
   private animateSpearActive(attacker: DiceInstanceState, target: DiceInstanceState) {
     if (!attacker.gridPosition || !target.gridPosition) return;
-    const attackerGrid = attacker.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
-    const targetGrid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const attackerGrid = this.getGridContainerForDie(attacker);
+    const targetGrid = this.getGridContainerForDie(target);
     const ax = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
@@ -3250,7 +3263,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a', textOverride?: string) {
     if (!target.gridPosition || (amount <= 0 && !textOverride)) return;
-    const grid = target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const grid = this.getGridContainerForDie(target);
     const x = grid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18;
     const text = this.add.text(x, y, textOverride ?? `-${amount}`, {
@@ -3267,10 +3280,10 @@ export class ArenaScene extends Phaser.Scene {
     const fallbackHand = target.ownerId === 'player' ? this.handDice.get(target.instanceId) : undefined;
     if (!target.gridPosition && !fallbackHand) return;
     const x = target.gridPosition
-      ? (target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer).x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
+      ? (this.getGridContainerForDie(target)).x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
       : fallbackHand!.x;
     const y = target.gridPosition
-      ? (target.ownerId === 'player' ? this.playerGridContainer : this.enemyGridContainer).y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18
+      ? (this.getGridContainerForDie(target)).y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18
       : fallbackHand!.y - 24;
     const text = this.add.text(x, y, `+${amount}`, {
       fontFamily: 'Orbitron',
@@ -3663,6 +3676,12 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (stage !== 'victory' && this.activeChallenge === 'daily') this.setChallengeStatus('daily', 'failed');
     if (stage !== 'victory' && this.activeChallenge === 'deucifer') this.setChallengeStatus('deucifer', 'failed');
+    if (stage === 'victory') {
+      const next = AchievementStore.mutate(this, (state) => ({ ...state, wins: state.wins + 1 }));
+      AchievementStore.unlock(this, 'winner');
+      if (next.wins >= 10) AchievementStore.unlock(this, 'veteran');
+      if (next.wins >= 50) AchievementStore.unlock(this, 'master');
+    }
     setDiceTokens(this, getDiceTokens(this) + tokenReward);
     if (chipReward > 0) {
       CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + chipReward }));

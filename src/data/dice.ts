@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { DiceDefinition, DiceTypeId, DiceFlags } from '../types/game';
+import { AchievementStore } from '../systems/AchievementStore';
 
 export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'] as const;
 export const DEFAULT_LOADOUT_IDS = new Set<string>(['Fire', 'Ice', 'Poison', 'Electric', 'Wind']);
@@ -209,6 +210,7 @@ export function getRemainingUsefulCopies(scene: Phaser.Scene, typeId: DiceTypeId
 
 export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies: number) {
   if (copies <= 0) return;
+  const definition = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
   const progress = getDiceProgress(scene, typeId);
   if (DEFAULT_LOADOUT_IDS.has(typeId) || progress.unlocked) {
     const maxUseful = getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
@@ -219,6 +221,7 @@ export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies:
   const remainder = Math.max(0, copies - spendForUnlock);
   const maxUseful = getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
   setDiceProgress(scene, typeId, { classLevel: progress.classLevel, copies: Math.min(progress.copies + remainder, Math.min(getMaxStoredCopiesForType(scene, typeId), maxUseful)), unlocked: true });
+  if (definition?.rarity === 'Legendary') AchievementStore.unlock(scene, 'darkest_hour');
 }
 
 export function getRangeLabel(range: number): string {
