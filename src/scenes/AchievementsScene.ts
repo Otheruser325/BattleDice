@@ -23,25 +23,49 @@ export class AchievementsScene extends Phaser.Scene {
       { title: 'Casino', items: [{ id: 'vegas_boy', label: 'Vegas Boy: First time playing a casino table.' }, { id: 'gambolic', label: 'Gambolic: Play 10 casino tables total.' }, { id: 'risksino', label: 'Risksino: Play 50 casino tables total.' }, { id: 'jackpot', label: 'Jackpot: Roll a Five-of-a-kind in Fives/Combanity.' }] }
     ];
 
+    const allItems = columns.flatMap((col) => col.items);
+    const unlockedCount = allItems.filter((item) => Boolean(unlocked[item.id])).length;
+    this.add.text(panel.right - 24, panel.y + 70, `UNLOCKED: ${unlockedCount}/${allItems.length}`, {
+      fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft
+    }).setOrigin(1, 0);
+
+    const content = this.add.container(0, 0);
     columns.forEach((column, index) => {
       const x = panel.x + 28 + index * 355;
-      this.add.rectangle(x + 154, panel.y + 174, 300, 240, 0x102434, 0.97)
+      const card = this.add.rectangle(x + 154, panel.y + 174, 300, 520, 0x102434, 0.97)
         .setStrokeStyle(1, 0x406987);
-      this.add.text(x + 24, panel.y + 104, column.title.toUpperCase(), {
+      const title = this.add.text(x + 24, panel.y + 104, column.title.toUpperCase(), {
         fontFamily: 'Orbitron',
         fontSize: '18px',
         color: PALETTE.accentSoft
       });
+      content.add([card, title]);
 
       column.items.forEach((item, itemIndex) => {
         const done = Boolean(unlocked[item.id]);
-        this.add.text(x + 24, panel.y + 146 + itemIndex * 52, `${done ? '✓' : '•'} ${item.label}`, {
+        const text = this.add.text(x + 24, panel.y + 146 + itemIndex * 52, `${done ? '✓' : '•'} ${item.label}`, {
           fontFamily: 'Orbitron',
           fontSize: '12px',
           color: done ? PALETTE.success : PALETTE.textMuted,
           wordWrap: { width: 250 }
         });
+        content.add(text);
       });
+    });
+
+    const viewTop = panel.y + 96;
+    const viewHeight = panel.height - 150;
+    const viewLeft = panel.x + 16;
+    const viewWidth = panel.width - 32;
+    const maskRect = this.add.rectangle(viewLeft, viewTop, viewWidth, viewHeight, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
+    content.setMask(maskRect.createGeometryMask());
+    const maxScroll = 120;
+    let scroll = 0;
+    this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      const within = pointer.worldX >= viewLeft && pointer.worldX <= viewLeft + viewWidth && pointer.worldY >= viewTop && pointer.worldY <= viewTop + viewHeight;
+      if (!within) return;
+      scroll = Phaser.Math.Clamp(scroll - dy * 0.35, -maxScroll, 0);
+      content.y = scroll;
     });
   }
 }

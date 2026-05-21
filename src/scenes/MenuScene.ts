@@ -17,6 +17,7 @@ export class MenuScene extends Phaser.Scene {
   private activeSceneKey: SceneKey = SCENE_KEYS.Shop;
   private tabButtons: Array<{ tab: MenuTab; container: Phaser.GameObjects.Container; label: Phaser.GameObjects.Text; chip: Phaser.GameObjects.Text; }> = [];
   private readonly debug = DebugManager.attachScene(MenuScene.KEY);
+  private loginRewardModalOpen = false;
 
   constructor() {
     super(MenuScene.KEY);
@@ -181,6 +182,24 @@ export class MenuScene extends Phaser.Scene {
         lastClaimDate: new Date().toISOString().slice(0, 10)
       }
     });
-    AlertManager.toast(this, { type: 'success', message: `7-Day Login Reward (Day ${day}): ${message}` });
+    this.openLoginRewardModal(day, message);
+  }
+
+  private openLoginRewardModal(day: number, rewardText: string) {
+    if (this.loginRewardModalOpen) return;
+    this.loginRewardModalOpen = true;
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.72).setDepth(200).setInteractive();
+    const panel = this.add.rectangle(width / 2, height / 2, 540, 300, 0x102434, 0.98).setDepth(201).setStrokeStyle(2, 0x406987);
+    const title = this.add.text(width / 2, height / 2 - 90, `NEW USER LOGIN REWARD — DAY ${day}`, { fontFamily: 'Orbitron', fontSize: '19px', color: PALETTE.accentSoft }).setOrigin(0.5).setDepth(202);
+    const subtitle = this.add.text(width / 2, height / 2 - 28, rewardText, { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.text }).setOrigin(0.5).setDepth(202);
+    const hint = this.add.text(width / 2, height / 2 + 18, 'Click CLAIM! to continue', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(202);
+    const claim = this.add.text(width / 2, height / 2 + 74, 'CLAIM!', { fontFamily: 'Orbitron', fontSize: '18px', color: '#000000', backgroundColor: '#f4b860', padding: { left: 18, right: 18, top: 8, bottom: 8 } })
+      .setOrigin(0.5).setDepth(203).setInteractive({ useHandCursor: true });
+    claim.on('pointerdown', () => {
+      [overlay, panel, title, subtitle, hint, claim].forEach((node) => node.destroy());
+      this.loginRewardModalOpen = false;
+      AlertManager.toast(this, { type: 'success', message: `Claimed Day ${day}: ${rewardText}` });
+    });
   }
 }

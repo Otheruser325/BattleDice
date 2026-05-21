@@ -60,7 +60,11 @@ export class AnimationManager {
     const textureKeyPrefix = options.textureKeyPrefix ?? 'dice-face-';
     let elapsed = 0;
 
-    diceSprites.forEach((die) => {
+    const isRenderable = (die: Phaser.GameObjects.Image | undefined) => Boolean(die && die.scene && die.active && die.texture && die.frame);
+    const liveDice = diceSprites.filter((die) => isRenderable(die));
+    if (!scene.sys.isActive() || liveDice.length === 0) return;
+
+    liveDice.forEach((die) => {
       die.setVisible(true);
       die.setScale(1);
       die.setAngle(0);
@@ -75,7 +79,8 @@ export class AnimationManager {
         callback: () => {
           elapsed += interval;
 
-          diceSprites.forEach((die, index) => {
+          liveDice.forEach((die, index) => {
+            if (!isRenderable(die) || !scene.sys.isActive()) return;
             const originalX = Number(die.getData('originalX'));
             const originalY = Number(die.getData('originalY'));
             const tempFace = Phaser.Math.Between(1, 6);
@@ -88,6 +93,7 @@ export class AnimationManager {
               );
             }
 
+            if (!die.scene) return;
             scene.tweens.add({
               targets: die,
               x: originalX,
@@ -103,12 +109,14 @@ export class AnimationManager {
 
           timer.remove(false);
 
-          diceSprites.forEach((die, index) => {
+          liveDice.forEach((die, index) => {
+            if (!isRenderable(die) || !scene.sys.isActive()) return;
             const originalX = Number(die.getData('originalX'));
             const originalY = Number(die.getData('originalY'));
             const finalFace = finalFaces[index] ?? Phaser.Math.Between(1, 6);
 
             die.setTexture(`${textureKeyPrefix}${finalFace}`);
+            if (!die.scene) return;
             scene.tweens.add({
               targets: die,
               angle: { from: Phaser.Math.Between(-180, 180), to: 0 },
