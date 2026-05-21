@@ -6,6 +6,8 @@ import { MENU_TABS, PALETTE, getLayout } from '../ui/theme';
 import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { ProfileStore } from '../systems/ProfileStore';
+import { getAllDiceDefinitions, getDiamonds, getDiceTokens, grantDiceCopies, setDiamonds, setDiceTokens } from '../data/dice';
+import { AchievementStore } from '../systems/AchievementStore';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
@@ -15,6 +17,7 @@ export class MenuScene extends Phaser.Scene {
   private activeSceneKey: SceneKey = SCENE_KEYS.Shop;
   private tabButtons: Array<{ tab: MenuTab; container: Phaser.GameObjects.Container; label: Phaser.GameObjects.Text; chip: Phaser.GameObjects.Text; }> = [];
   private readonly debug = DebugManager.attachScene(MenuScene.KEY);
+  private loginRewardModalOpen = false;
 
   constructor() {
     super(MenuScene.KEY);
@@ -91,6 +94,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     this.ensureUsername();
+    this.maybeGrantNewUserLoginReward();
     this.openTab(MENU_TABS.find((tab) => tab.sceneKey === this.activeSceneKey) ?? MENU_TABS[2]);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.tabButtons = [];
@@ -143,6 +147,59 @@ export class MenuScene extends Phaser.Scene {
       if (active) {
         AnimationManager.pulse(this, label, 1.03, 120);
       }
+    });
+  }
+
+  private maybeGrantNewUserLoginReward() {
+    const profile = ProfileStore.get(this);
+    const createdAt = profile.createdAt ? new Date(profile.createdAt) : undefined;
+    const isNewUser = !createdAt || (Date.now() - createdAt.getTime()) <= (7 * 24 * 60 * 60 * 1000);
+    if (!isNewUser) return;
+    const reward = profile.loginReward ?? { startDate: new Date().toISOString().slice(0, 10), claimedDays: [] as number[] };
+    const claimed = new Set(reward.claimedDays);
+    const day = Math.max(1, Math.min(7, claimed.size + 1));
+    if (claimed.has(day)) return;
+
+    let message = '';
+    if (day === 1) { setDiamonds(this, getDiamonds(this) + 50); message = '+50 Diamonds'; }
+    if (day === 2) { setDiceTokens(this, getDiceTokens(this) + 1000); message = '+1,000 Dice Tokens'; }
+    if (day === 3) { message = '+20 Casino Chips'; this.registry.events.emit('casino:grantChips', 20); }
+    if (day === 4) { setDiamonds(this, getDiamonds(this) + 100); message = '+100 Diamonds'; }
+    if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
+    if (day === 6) { message = '+50 Casino Chips'; this.registry.events.emit('casino:grantChips', 50); }
+    if (day === 7) {
+      const legendaries = getAllDiceDefinitions(this).filter((d) => d.rarity === 'Legendary');
+      const pick = legendaries[Math.floor(Math.random() * legendaries.length)];
+      if (pick) grantDiceCopies(this, pick.typeId, 1);
+      AchievementStore.unlock(this, 'darkest_hour');
+      message = 'Free Random Legendary Dice!';
+    }
+    claimed.add(day);
+    ProfileStore.set(this, {
+      loginReward: {
+        ...reward,
+        claimedDays: [...claimed].sort((a, b) => a - b),
+        lastClaimDate: new Date().toISOString().slice(0, 10)
+      }
+    });
+    this.openLoginRewardModal(day, message);
+  }
+
+  private openLoginRewardModal(day: number, rewardText: string) {
+    if (this.loginRewardModalOpen) return;
+    this.loginRewardModalOpen = true;
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.72).setDepth(200).setInteractive();
+    const panel = this.add.rectangle(width / 2, height / 2, 540, 300, 0x102434, 0.98).setDepth(201).setStrokeStyle(2, 0x406987);
+    const title = this.add.text(width / 2, height / 2 - 90, `NEW USER LOGIN REWARD — DAY ${day}`, { fontFamily: 'Orbitron', fontSize: '19px', color: PALETTE.accentSoft }).setOrigin(0.5).setDepth(202);
+    const subtitle = this.add.text(width / 2, height / 2 - 28, rewardText, { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.text }).setOrigin(0.5).setDepth(202);
+    const hint = this.add.text(width / 2, height / 2 + 18, 'Click CLAIM! to continue', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(202);
+    const claim = this.add.text(width / 2, height / 2 + 74, 'CLAIM!', { fontFamily: 'Orbitron', fontSize: '18px', color: '#000000', backgroundColor: '#f4b860', padding: { left: 18, right: 18, top: 8, bottom: 8 } })
+      .setOrigin(0.5).setDepth(203).setInteractive({ useHandCursor: true });
+    claim.on('pointerdown', () => {
+      [overlay, panel, title, subtitle, hint, claim].forEach((node) => node.destroy());
+      this.loginRewardModalOpen = false;
+      AlertManager.toast(this, { type: 'success', message: `Claimed Day ${day}: ${rewardText}` });
     });
   }
 }
