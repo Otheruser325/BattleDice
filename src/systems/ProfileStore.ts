@@ -7,6 +7,13 @@ export interface PlayerProfile {
   username: string;
   trophies: number;
   nameChangesUsed: number;
+  createdAt?: string;
+  loginReward?: {
+    startDate: string;
+    claimedDays: number[];
+    lastClaimDate?: string;
+    lastClaimAt?: string;
+  };
 }
 
 const DEFAULT_PROFILE: PlayerProfile = {
@@ -25,7 +32,9 @@ export class ProfileStore {
   }
 
   static set(scene: Phaser.Scene, next: Partial<PlayerProfile>): PlayerProfile {
-    const merged = { ...this.get(scene), ...next };
+    const current = this.get(scene);
+    const merged = { ...current, ...next };
+    if (!merged.createdAt) merged.createdAt = new Date().toISOString();
     scene.registry.set(PROFILE_KEY, merged);
     localStorage.setItem(PROFILE_KEY, JSON.stringify(merged));
     return merged;
@@ -56,7 +65,9 @@ export class ProfileStore {
       return {
         username: typeof parsed.username === 'string' ? parsed.username : '',
         trophies: Math.max(0, Math.floor(Number(parsed.trophies ?? 0) || 0)),
-        nameChangesUsed: Math.max(0, Math.floor(Number(parsed.nameChangesUsed ?? 0) || 0))
+        nameChangesUsed: Math.max(0, Math.floor(Number(parsed.nameChangesUsed ?? 0) || 0)),
+        createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : undefined,
+        loginReward: parsed.loginReward
       };
     } catch {
       return { ...DEFAULT_PROFILE };
