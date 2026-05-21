@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { AlertManager } from '../utils/AlertManager';
 
 const ACHIEVEMENTS_KEY = 'player:achievements:v1';
 
@@ -24,6 +25,20 @@ export interface AchievementState {
 }
 
 const DEFAULT_STATE: AchievementState = { wins: 0, playtimeMs: 0, casinoTablesPlayed: 0, unlocked: {} };
+const ACHIEVEMENT_LABELS: Record<AchievementId, string> = {
+  winner: 'Winner',
+  veteran: 'Veteran',
+  master: 'Master',
+  sweatin_it: "Sweatin' It",
+  cant_keep_up: "Can't Keep Up",
+  diceaholic: 'Diceaholic',
+  vegas_boy: 'Vegas Boy',
+  gambolic: 'Gambolic',
+  risksino: 'Risksino',
+  jackpot: 'Jackpot',
+  lotta_damage: 'Lotta Damage',
+  darkest_hour: 'In Our Darkest Hour...'
+};
 
 export class AchievementStore {
   static get(scene: Phaser.Scene): AchievementState {
@@ -48,6 +63,7 @@ export class AchievementStore {
       ...state,
       unlocked: { ...state.unlocked, [id]: new Date().toISOString() }
     }));
+    AlertManager.toast(scene, { type: 'success', bottom: true, durationMs: 2400, message: `Achievement Unlocked\n\n${ACHIEVEMENT_LABELS[id]}` });
     return true;
   }
 

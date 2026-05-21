@@ -14,7 +14,7 @@ export class AchievementsScene extends Phaser.Scene {
 
   create() {
     this.debug.log('Achievements scene rendered.');
-    const panel = drawPanel(this, 'ACHIEVEMENTS', 'WIP  |  progression shell');
+    const panel = drawPanel(this, 'ACHIEVEMENTS', 'FLEX  |  progression shell');
 
     const unlocked = AchievementStore.get(this).unlocked;
     const columns: Array<{ title: string; items: Array<{ id: AchievementId; label: string }> }> = [

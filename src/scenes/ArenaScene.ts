@@ -1807,15 +1807,30 @@ export class ArenaScene extends Phaser.Scene {
     return getCombatDistance(attackerProxy, targetProxy);
   }
 
+  private isOnBlockedBackline(die: DiceInstanceState): boolean {
+    if (!die.gridPosition) return false;
+    const boardSide = this.getBoardSideForDie(die);
+    return (boardSide === 'player' && die.gridPosition.col === 0) || (boardSide === 'enemy' && die.gridPosition.col === GRID_SIZE - 1);
+  }
+
+  private getAttackDistance(attacker: DiceInstanceState, target: DiceInstanceState): number {
+    if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
+    if (attacker.typeId === 'Assassin') return 1 + Math.abs(attacker.gridPosition.col - target.gridPosition.col);
+    return this.getDistanceWithBoardSides(attacker, target);
+  }
+
   private findAttackTargetForArena(attacker: DiceInstanceState): DiceInstanceState | undefined {
+    if (attacker.typeId !== 'Assassin' && this.isOnBlockedBackline(attacker)) return undefined;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const attackerDef = this.getDefinitionForInstance(attacker);
     if (!attackerDef || !attacker.gridPosition) return undefined;
     const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
+    const blockedEnemyBacklineCol = enemyOwner === 'enemy' ? GRID_SIZE - 1 : 0;
     const candidates = this.gameState.dice
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
         die.ownerId === enemyOwner && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition))
-      .map((die) => ({ die, distance: this.getDistanceWithBoardSides(attacker, die) }))
+      .filter((die) => attacker.typeId === 'Assassin' || die.gridPosition.col !== blockedEnemyBacklineCol)
+      .map((die) => ({ die, distance: this.getAttackDistance(attacker, die) }))
       .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));
     if (candidates.length === 0) return undefined;
     const byNear = [...candidates].sort((a, b) => a.distance - b.distance || a.die.gridPosition.row - b.die.gridPosition.row || a.die.gridPosition.col - b.die.gridPosition.col);
@@ -1920,6 +1935,24 @@ export class ArenaScene extends Phaser.Scene {
     this.combatCountdownTriggered = false;
     this.updateCombatTimerUi();
     const owners: Array<'player' | 'enemy'> = ['player', 'enemy'];
+    for (const openingOwner of owners) {
+      const assassin = getNextAttacker(this.gameState, openingOwner);
+      if (!assassin || assassin.typeId !== 'Assassin') continue;
+      const target = this.findAttackTargetForArena(assassin);
+      if (!target) continue;
+      const defs = this.getDefinitionsForCombat(assassin, target);
+      const rawResult = executeAttack(this.gameState, assassin.instanceId, target.instanceId, defs, {
+        attacker: this.getDefinitionForInstance(assassin),
+        target: this.getDefinitionForInstance(target)
+      });
+      this.gameState = rawResult.newState;
+      this.showDamageText(target, rawResult.damage, '#ffdf7a');
+      this.combatLog.setText(`${openingOwner === 'player' ? 'Your' : 'Enemy'} Assassin strikes first for ${rawResult.damage}!`);
+      this.renderDice();
+      this.renderEnemyDice();
+      if (!(await this.delayCombatPaced(350))) return;
+      if (this.checkWinConditions()) return;
+    }
 
     let timedOut = false;
     for (const owner of owners) {
