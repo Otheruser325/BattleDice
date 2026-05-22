@@ -84,6 +84,7 @@ export class CasinoScene extends Phaser.Scene {
   private dice: number[] = [1, 1, 1, 1, 1];
   private locks: boolean[] = [false, false, false, false, false];
   private rollsLeft = 3;
+  private isRolling = false;
   private tableActive = false;
   private crapsTableActive = false;
 
@@ -163,6 +164,7 @@ export class CasinoScene extends Phaser.Scene {
 
   private clearFivesHandRuntime() {
     this.tableActive = false;
+    this.isRolling = false;
     this.crapsTableActive = false;
     this.rollsLeft = 3;
     this.locks = [false, false, false, false, false];
@@ -200,7 +202,7 @@ export class CasinoScene extends Phaser.Scene {
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
       lock.on('pointerdown', () => {
-        if (!this.tableActive || this.rollsLeft >= 3 || this.rollsLeft <= 0) return;
+        if (!this.tableActive || this.rollsLeft >= 3 || this.rollsLeft <= 0 || this.isRolling) return;
         this.locks[i] = !this.locks[i];
         this.saveFivesHand();
         this.render();
@@ -282,12 +284,17 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private async rollDice() {
-    if (!this.tableActive || this.rollsLeft <= 0) return;
+    if (!this.tableActive || this.rollsLeft <= 0 || this.isRolling) return;
+    this.isRolling = true;
     AudioManager.playSfx(this, 'chest-open');
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
     this.rollsLeft -= 1;
     this.saveFivesHand();
-    await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: this.locks, jitter: 8 });
+    try {
+      await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: this.locks, jitter: 8 });
+    } finally {
+      this.isRolling = false;
+    }
     const combo = evaluateFivesCombo(this.dice);
     const comboSfxKey = this.getComboSfxKey(combo.combo);
     if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);
@@ -295,7 +302,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private cashOut() {
-    if (!this.tableActive || this.rollsLeft === 3) return;
+    if (!this.tableActive || this.rollsLeft === 3 || this.isRolling) return;
     const payout = evaluateFivesCombo(this.dice);
     CasinoProgressStore.mutate(this, (current) => ({
       ...current,
@@ -513,17 +520,27 @@ export class CasinoScene extends Phaser.Scene {
     const pendingCopies = new Map<string, number>();
     const tokenRange = CHEST_TOKEN_REWARDS[type];
     let diceTokens = 0;
+    let emptyRewardRolls = 0;
 
     for (let i = 0; i < openCount; i++) {
       diceTokens += Phaser.Math.Between(tokenRange[0], tokenRange[1]);
       const reward = this.rollChestReward(type, pendingCopies);
-      if (!reward) continue;
+      if (!reward) {
+        emptyRewardRolls += 1;
+        continue;
+      }
       pendingCopies.set(reward.typeId, (pendingCopies.get(reward.typeId) ?? 0) + reward.copies);
 
       const current = merged.get(reward.typeId);
       merged.set(reward.typeId, current
         ? { ...current, copies: current.copies + reward.copies, isNew: current.isNew || reward.isNew }
         : reward);
+    }
+
+    if (emptyRewardRolls > 0) {
+      const fallbackMin = Math.max(10, Math.floor(tokenRange[0] * 0.5));
+      const fallbackMax = Math.max(fallbackMin, Math.floor(tokenRange[1] * 0.5));
+      for (let i = 0; i < emptyRewardRolls; i++) diceTokens += Phaser.Math.Between(fallbackMin, fallbackMax);
     }
 
     setDiceTokens(this, getDiceTokens(this) + diceTokens);
@@ -537,29 +554,45 @@ export class CasinoScene extends Phaser.Scene {
       const pending = pendingCopies.get(definition.typeId) ?? 0;
       return pending < getRemainingUsefulCopies(this, definition.typeId);
     });
-    const byRarity = (rarity: string) => defs.filter((definition) => definition.rarity === rarity);
-    const pick = (pool: typeof defs) => (pool.length ? pool[Math.floor(Math.random() * pool.length)] : null);
+    const byRarity = (rarity: string, pool = defs) => pool.filter((definition) => definition.rarity === rarity);
     const table = CHEST_DROP_RATES[type];
-    const roll = Math.random() * 100;
-    let cumulative = 0;
-    const selected = table.find((entry) => {
-      cumulative += entry.rate;
-      return roll < cumulative;
-    }) ?? table[table.length - 1];
 
-    const die = pick(byRarity(selected.rarity));
-    if (!die) return null;
+    const tryGrantFromPool = (pool: typeof defs, rarity: string, copyRange: [number, number]): ChestRewardEntry | null => {
+      const remainingPool = [...pool];
+      while (remainingPool.length > 0) {
+        const index = Math.floor(Math.random() * remainingPool.length);
+        const die = remainingPool[index];
+        const copies = Phaser.Math.Between(copyRange[0], copyRange[1]);
+        const progress = getDiceProgress(this, die.typeId);
+        const isNew = progress.copies <= 0;
+        const beforeCopies = progress.copies;
+        grantDiceCopies(this, die.typeId, copies);
+        const afterCopies = getDiceProgress(this, die.typeId).copies;
+        const grantedCopies = Math.max(0, afterCopies - beforeCopies);
+        if (grantedCopies > 0) return { typeId: die.typeId, title: die.title, rarity, copies: grantedCopies, isNew };
+        remainingPool.splice(index, 1);
+      }
+      return null;
+    };
 
-    const copies = Phaser.Math.Between(selected.copies[0], selected.copies[1]);
+    const availableTable = table.filter((entry) => byRarity(entry.rarity).length > 0);
+    if (availableTable.length === 0) return null;
 
-    const progress = getDiceProgress(this, die.typeId);
-    const isNew = progress.copies <= 0;
-    const beforeCopies = progress.copies;
-    grantDiceCopies(this, die.typeId, copies);
-    const afterCopies = getDiceProgress(this, die.typeId).copies;
-    const grantedCopies = Math.max(0, afterCopies - beforeCopies);
-    if (grantedCopies <= 0) return null;
-    return { typeId: die.typeId, title: die.title, rarity: die.rarity, copies: grantedCopies, isNew };
+    let remainingEntries = [...availableTable];
+    while (remainingEntries.length > 0) {
+      const totalRate = remainingEntries.reduce((sum, entry) => sum + entry.rate, 0);
+      let roll = Math.random() * totalRate;
+      const selected = remainingEntries.find((entry) => {
+        roll -= entry.rate;
+        return roll < 0;
+      }) ?? remainingEntries[remainingEntries.length - 1];
+
+      const reward = tryGrantFromPool(byRarity(selected.rarity), selected.rarity, selected.copies);
+      if (reward) return reward;
+      remainingEntries = remainingEntries.filter((entry) => entry.rarity !== selected.rarity);
+    }
+
+    return null;
   }
 
   private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number) {

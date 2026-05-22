@@ -16,6 +16,7 @@ import { applyClassProgression, getClassProgressionPreview } from '../systems/Cl
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
+import { AchievementStore } from '../systems/AchievementStore';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
 
 function formatSkillType(type: string | undefined): string {
@@ -412,7 +413,11 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       upBtn.on('pointerdown', () => {
         AudioManager.playSfx(this, 'class-up');
         setDiceTokens(this, getDiceTokens(this) - tokenCost);
-        setDiceProgress(this, typeId, { classLevel: cls + 1, copies: progress.copies - copyCost });
+        const newClassLevel = cls + 1;
+        setDiceProgress(this, typeId, { classLevel: newClassLevel, copies: progress.copies - copyCost });
+        if (newClassLevel >= 6) AchievementStore.unlock(this, 'getting_stronger');
+        if (newClassLevel >= 11) AchievementStore.unlock(this, 'augmented');
+        if (newClassLevel >= 15) AchievementStore.unlock(this, 'maximum_power');
         tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click cards to assign selected slot`);
         onUpdate();
         this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot, showAlternate);
