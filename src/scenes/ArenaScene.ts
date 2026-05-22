@@ -96,6 +96,7 @@ export class ArenaScene extends Phaser.Scene {
   private enemyClassLevels: Map<string, number> = new Map();
   private manaByInstance: Map<string, number> = new Map();
   private shieldHpByInstance: Map<string, number> = new Map();
+  private shieldDurationTurnsByInstance: Map<string, number> = new Map();
   private tauntedByInstance: Map<string, { sourceId: string; turns: number }> = new Map();
   private attackCapacityByInstance: Map<string, number> = new Map();
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
@@ -171,6 +172,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyClassLevels.clear();
     this.manaByInstance.clear();
     this.shieldHpByInstance.clear();
+    this.shieldDurationTurnsByInstance.clear();
     this.tauntedByInstance.clear();
     this.attackDeltaByInstance.clear();
     this.extraAttackTurnsByInstance.clear();
@@ -1395,6 +1397,7 @@ export class ArenaScene extends Phaser.Scene {
     this.gameState = this.beginCombatPhaseWithRolledPips();
     this.applyAssassinCombatStart();
     this.shieldHpByInstance.clear();
+    this.shieldDurationTurnsByInstance.clear();
     this.applyShieldTauntsAtCombatStart();
     await this.applyBatteryManaAtCombatStart();
     this.applyManaPotionAtCombatStart();
@@ -1753,7 +1756,8 @@ export class ArenaScene extends Phaser.Scene {
       if (foes.length === 0 || !assassin.gridPosition) return;
       const furthest = [...foes].sort((a, b) => this.getDistanceWithBoardSides(assassin, b) - this.getDistanceWithBoardSides(assassin, a))[0];
       const skill = this.getDefinitionForInstance(assassin)?.skills.find((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
-      const jumpRange = skill?.modifiers?.jumpRange ?? -1;
+      const attackerDefinition = this.getDefinitionForInstance(assassin);
+      const jumpRange = skill?.modifiers?.jumpRange ?? attackerDefinition?.range ?? 2;
       const targetOwner = assassin.ownerId === 'player' ? 'enemy' : 'player';
       const occupied = new Set(
         this.gameState.dice
@@ -2484,6 +2488,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     const manaNeeded = meta.activeManaNeeded ?? 0;
+    const activeDurationTurns = this.getSkillDurationTurns(meta.activeDurationTurns);
     const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
     const windBuffTurns = this.attackMultiplierTurnsByInstance.get(attacker.instanceId)?.turns ?? 0;
@@ -2530,6 +2535,7 @@ export class ArenaScene extends Phaser.Scene {
       this.playSkillSfxForDie(attacker, meta);
       const shieldGain = Math.max(1, Math.ceil((meta.shield ?? 0) * this.getCombanityDamageMultiplier(attacker, attacker) * this.getTypeUpgradeMultiplier(attacker)));
       this.shieldHpByInstance.set(attacker.instanceId, (this.shieldHpByInstance.get(attacker.instanceId) ?? 0) + shieldGain);
+      if (activeDurationTurns !== undefined) this.shieldDurationTurnsByInstance.set(attacker.instanceId, activeDurationTurns);
       this.showHealText(attacker, shieldGain);
     }
     if (attacker.typeId === 'Ice') {
@@ -2552,7 +2558,7 @@ export class ArenaScene extends Phaser.Scene {
     if (attacker.typeId === 'Poison') {
       const poisonMultiplier = this.getCombanityDamageMultiplier(attacker, target);
       const poisonDamage = Math.max(1, Math.ceil((meta.poisonDamage ?? 0) * poisonMultiplier));
-      const poisonTurns = Math.max(1, meta.activeDurationTurns ?? 0);
+      const poisonTurns = activeDurationTurns ?? 1;
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         const activePoisonBase = Math.max(1, this.getDefinitionForInstance(attacker)?.attack ?? 1);
@@ -2575,7 +2581,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
 
-    if ((meta.activeExtraAttacks ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
+    if ((meta.activeExtraAttacks ?? 0) > 0 && activeDurationTurns !== undefined) {
       if (attacker.typeId === 'Wind') {
         if (attacker.gridPosition) {
           const g = this.getGridContainerForDie(attacker);
@@ -2583,7 +2589,7 @@ export class ArenaScene extends Phaser.Scene {
           const y = g.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
         }
-        this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: meta.activeDurationTurns! });
+        this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: activeDurationTurns });
         const freshAttacker = this.gameState.dice.find(d => d.instanceId === attacker.instanceId);
         if (freshAttacker && !freshAttacker.isDestroyed) {
           this.gameState = {
@@ -2596,14 +2602,14 @@ export class ArenaScene extends Phaser.Scene {
           };
         }
       } else {
-        this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: meta.activeDurationTurns! });
+        this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: activeDurationTurns });
       }
     }
-    if ((meta.armorShredRate ?? 0) > 0 && (meta.activeDurationTurns ?? 0) > 0) {
-      this.armorShredByInstance.set(target.instanceId, { rate: meta.armorShredRate!, turns: meta.activeDurationTurns! });
+    if ((meta.armorShredRate ?? 0) > 0 && activeDurationTurns !== undefined) {
+      this.armorShredByInstance.set(target.instanceId, { rate: meta.armorShredRate!, turns: activeDurationTurns });
     }
-    if ((meta.activeAttackDelta ?? 0) !== 0 && (meta.activeDurationTurns ?? 0) > 0) {
-      this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: meta.activeDurationTurns! });
+    if ((meta.activeAttackDelta ?? 0) !== 0 && activeDurationTurns !== undefined) {
+      this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: activeDurationTurns });
       if (attacker.typeId === 'Ice') this.animateSkillEffect('ice', attacker, target);
     }
     this.manaByInstance.set(attacker.instanceId, 0);
@@ -2699,6 +2705,15 @@ export class ArenaScene extends Phaser.Scene {
         this.attackMultiplierTurnsByInstance.set(key, { ...value, turns: nextTurns });
       }
     });
+    this.shieldDurationTurnsByInstance.forEach((turns, key) => {
+      const nextTurns = turns - 1;
+      if (nextTurns <= 0) {
+        this.shieldDurationTurnsByInstance.delete(key);
+        this.shieldHpByInstance.delete(key);
+      } else {
+        this.shieldDurationTurnsByInstance.set(key, nextTurns);
+      }
+    });
     const expiredLava: string[] = [];
     this.lavaPoolsByTile.forEach((pool, key) => {
       const nextTurns = pool.turns - 1;
@@ -2759,6 +2774,12 @@ export class ArenaScene extends Phaser.Scene {
     });
     newlyDefeated.forEach((die) => this.checkDeathTransformCondition(die));
     if (newlyDefeated.length > 0) AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
+  }
+
+  private getSkillDurationTurns(rawTurns?: number): number | undefined {
+    if (rawTurns === undefined) return undefined;
+    if (!Number.isFinite(rawTurns)) return undefined;
+    return Math.max(1, Math.floor(rawTurns));
   }
 
   private async returnDiceToHand() {
@@ -3739,8 +3760,8 @@ export class ArenaScene extends Phaser.Scene {
         this.markChallengeRewardClaimed(deuciferClaimKey);
       }
     }
-    if (stage !== 'victory' && this.activeChallenge === 'daily') this.setChallengeStatus('daily', 'failed');
-    if (stage !== 'victory' && this.activeChallenge === 'deucifer') this.setChallengeStatus('deucifer', 'failed');
+    if (stage !== 'victory' && this.activeChallenge === 'daily' && this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'failed');
+    if (stage !== 'victory' && this.activeChallenge === 'deucifer' && this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'failed');
     if (stage === 'victory') {
       const next = AchievementStore.mutate(this, (state) => ({ ...state, wins: state.wins + 1 }));
       AchievementStore.unlock(this, 'winner');
@@ -3807,8 +3828,8 @@ export class ArenaScene extends Phaser.Scene {
     overlay.on('pointerdown', () => this.closeExitPrompt());
     cancel.on('pointerdown', () => this.closeExitPrompt());
     quit.on('pointerdown', () => {
-      if (this.activeChallenge === 'daily') this.setChallengeStatus('daily', 'failed');
-      if (this.activeChallenge === 'deucifer') this.setChallengeStatus('deucifer', 'failed');
+      if (this.activeChallenge === 'daily' && this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'failed');
+      if (this.activeChallenge === 'deucifer' && this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'failed');
       this.scene.wake(SCENE_KEYS.Menu);
       this.scene.start(SCENE_KEYS.Menu);
     });

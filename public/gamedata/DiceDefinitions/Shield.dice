@@ -22,11 +22,11 @@
     {
       "type": "Active",
       "title": "Bulwark",
-      "description": "Gain +300 shield for this turn.",
+      "description": "Gain +300 shield for 2 turns.",
       "manaNeeded": 8,
       "modifiers": {
         "shield": 300,
-        "durationTurns": 1
+        "durationTurns": 2
       }
     }
   ],

@@ -185,11 +185,7 @@ export function getNextAttacker(state: MatchBattleState, ownerId: DiceOwnerId): 
       die.attacksRemaining > 0 &&
       die.gridPosition !== undefined
     )
-    .sort((a, b) => {
-      if (a.typeId === 'Assassin' && b.typeId !== 'Assassin') return -1;
-      if (b.typeId === 'Assassin' && a.typeId !== 'Assassin') return 1;
-      return b.gridPosition.row - a.gridPosition.row;
-    });
+    .sort((a, b) => b.gridPosition.row - a.gridPosition.row);
 
   return boardDice[0];
 }
