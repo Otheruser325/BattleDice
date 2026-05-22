@@ -9,7 +9,7 @@
     {
       "type": "CombatStart",
       "title": "Backline Breach",
-      "description": "Teleports to the nearest free tile by the furthest enemy and strikes first while hidden.",
+      "description": "Teleports to a nearby free tile by the furthest enemy on the opposite board and strikes first while hidden.",
       "modifiers": {
         "jumpRange": -1,
         "notes": ["runtime:assassinBacklineTeleport", "runtime:assassinInvisibleOnStart"]
