@@ -1,5 +1,4 @@
 import type Phaser from 'phaser';
-import { AlertManager } from '../utils/AlertManager';
 
 const ACHIEVEMENTS_KEY = 'player:achievements:v1';
 
@@ -15,30 +14,23 @@ export type AchievementId =
   | 'risksino'
   | 'jackpot'
   | 'lotta_damage'
-  | 'darkest_hour';
+  | 'darkest_hour'
+  | 'challenger'
+  | 'problem_solver'
+  | 'demonic_torment'
+  | 'getting_stronger'
+  | 'augmented'
+  | 'maximum_power';
 
 export interface AchievementState {
   wins: number;
   playtimeMs: number;
   casinoTablesPlayed: number;
+  dailyChallengeWins: number;
   unlocked: Partial<Record<AchievementId, string>>;
 }
 
-const DEFAULT_STATE: AchievementState = { wins: 0, playtimeMs: 0, casinoTablesPlayed: 0, unlocked: {} };
-const ACHIEVEMENT_LABELS: Record<AchievementId, string> = {
-  winner: 'Winner',
-  veteran: 'Veteran',
-  master: 'Master',
-  sweatin_it: "Sweatin' It",
-  cant_keep_up: "Can't Keep Up",
-  diceaholic: 'Diceaholic',
-  vegas_boy: 'Vegas Boy',
-  gambolic: 'Gambolic',
-  risksino: 'Risksino',
-  jackpot: 'Jackpot',
-  lotta_damage: 'Lotta Damage',
-  darkest_hour: 'In Our Darkest Hour...'
-};
+const DEFAULT_STATE: AchievementState = { wins: 0, playtimeMs: 0, casinoTablesPlayed: 0, dailyChallengeWins: 0, unlocked: {} };
 
 export class AchievementStore {
   static get(scene: Phaser.Scene): AchievementState {
@@ -63,7 +55,6 @@ export class AchievementStore {
       ...state,
       unlocked: { ...state.unlocked, [id]: new Date().toISOString() }
     }));
-    AlertManager.toast(scene, { type: 'success', bottom: true, durationMs: 2400, message: `Achievement Unlocked\n\n${ACHIEVEMENT_LABELS[id]}` });
     return true;
   }
 
@@ -76,6 +67,7 @@ export class AchievementStore {
         wins: Math.max(0, Math.floor(Number(parsed.wins ?? 0) || 0)),
         playtimeMs: Math.max(0, Math.floor(Number(parsed.playtimeMs ?? 0) || 0)),
         casinoTablesPlayed: Math.max(0, Math.floor(Number(parsed.casinoTablesPlayed ?? 0) || 0)),
+        dailyChallengeWins: Math.max(0, Math.floor(Number((parsed as Partial<AchievementState>).dailyChallengeWins ?? 0) || 0)),
         unlocked: parsed.unlocked ?? {}
       };
     } catch {

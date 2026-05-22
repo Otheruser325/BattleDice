@@ -1394,6 +1394,7 @@ export class ArenaScene extends Phaser.Scene {
 
     this.gameState = this.beginCombatPhaseWithRolledPips();
     this.applyAssassinCombatStart();
+    this.shieldHpByInstance.clear();
     this.applyShieldTauntsAtCombatStart();
     await this.applyBatteryManaAtCombatStart();
     this.applyManaPotionAtCombatStart();
@@ -1761,24 +1762,26 @@ export class ArenaScene extends Phaser.Scene {
           .map((d) => `${d.gridPosition!.row},${d.gridPosition!.col}`)
       );
 
+      const neighbors = [
+        { row: furthest.gridPosition!.row - 1, col: furthest.gridPosition!.col },
+        { row: furthest.gridPosition!.row + 1, col: furthest.gridPosition!.col },
+        { row: furthest.gridPosition!.row, col: furthest.gridPosition!.col - 1 },
+        { row: furthest.gridPosition!.row, col: furthest.gridPosition!.col + 1 }
+      ].filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE && !occupied.has(`${tile.row},${tile.col}`));
+
       let chosen: { row: number; col: number } | null = null;
-      let bestDistance = Number.POSITIVE_INFINITY;
-      for (let row = 0; row < GRID_SIZE; row++) {
-        for (let col = 0; col < GRID_SIZE; col++) {
-          if (occupied.has(`${row},${col}`)) continue;
-          const proxy: DiceInstanceState = { ...assassin, ownerId: targetOwner, gridPosition: { row, col } };
-          const jumpDistance = this.getDistanceWithBoardSides(assassin, proxy);
-          if (jumpRange >= 0 && jumpDistance > jumpRange) continue;
-          const distance = this.getDistanceWithBoardSides(proxy, furthest);
-          const isBetter = distance < bestDistance
-            || (distance === bestDistance && Math.abs(col - furthest.gridPosition!.col) < Math.abs((chosen?.col ?? col) - furthest.gridPosition!.col))
-            || (distance === bestDistance && col === furthest.gridPosition!.col && Math.abs(row - furthest.gridPosition!.row) < Math.abs((chosen?.row ?? row) - furthest.gridPosition!.row));
-          if (isBetter) {
-            bestDistance = distance;
-            chosen = { row, col };
-          }
+      let bestJumpDistance = Number.POSITIVE_INFINITY;
+      neighbors.forEach((tile) => {
+        const proxy: DiceInstanceState = { ...assassin, ownerId: targetOwner, gridPosition: tile };
+        const jumpDistance = this.getDistanceWithBoardSides(assassin, proxy);
+        if (jumpRange >= 0 && jumpDistance > jumpRange) return;
+        const isBetter = jumpDistance < bestJumpDistance
+          || (jumpDistance === bestJumpDistance && Math.abs(tile.col - furthest.gridPosition!.col) < Math.abs((chosen?.col ?? tile.col) - furthest.gridPosition!.col));
+        if (isBetter) {
+          bestJumpDistance = jumpDistance;
+          chosen = tile;
         }
-      }
+      });
 
       if (!chosen) return;
       this.gameState = {
@@ -1935,7 +1938,8 @@ export class ArenaScene extends Phaser.Scene {
     this.combatCountdownTriggered = false;
     this.updateCombatTimerUi();
     const owners: Array<'player' | 'enemy'> = ['player', 'enemy'];
-    for (const openingOwner of owners) {
+    const openingOwners: Array<'player' | 'enemy'> = ['player', 'enemy'];
+    for (const openingOwner of openingOwners) {
       const assassin = getNextAttacker(this.gameState, openingOwner);
       if (!assassin || assassin.typeId !== 'Assassin') continue;
       const target = this.findAttackTargetForArena(assassin);
@@ -3714,6 +3718,9 @@ export class ArenaScene extends Phaser.Scene {
       this.markBotFirstWinClaimed(this.configDifficulty);
     }
     if (stage === 'victory' && this.activeChallenge === 'daily') {
+      const nextAchievements = AchievementStore.mutate(this, (state) => ({ ...state, dailyChallengeWins: state.dailyChallengeWins + 1 }));
+      AchievementStore.unlock(this, 'challenger');
+      if (nextAchievements.dailyChallengeWins >= 10) AchievementStore.unlock(this, 'problem_solver');
       this.setChallengeStatus('daily', 'completed');
       const dailyClaimKey = `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}`;
       if (!this.hasChallengeRewardClaimed(dailyClaimKey)) {
@@ -3723,6 +3730,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if (stage === 'victory' && this.activeChallenge === 'deucifer') {
+      AchievementStore.unlock(this, 'demonic_torment');
       this.setChallengeStatus('deucifer', 'completed');
       const deuciferClaimKey = 'deucifer';
       if (!this.hasChallengeRewardClaimed(deuciferClaimKey)) {
