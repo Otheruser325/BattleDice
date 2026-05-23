@@ -248,8 +248,9 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       interactiveCards.forEach((card) => {
         const typeId = (card as any).data?.values?.typeId as string | undefined;
         const isLocked = typeId ? this.isDiceLocked(typeId) : false;
-        const top = card.getTopLeft().y;
-        const bottom = card.getBottomLeft().y;
+        const cardHalfHeight = card.displayHeight / 2;
+        const top = card.y + cardsContainer.y - cardHalfHeight;
+        const bottom = card.y + cardsContainer.y + cardHalfHeight;
         const isVisible = bottom >= viewTop && top <= viewTop + viewHeight;
         if (isVisible && !isLocked) {
           if (!card.input?.enabled) card.setInteractive({ useHandCursor: true });
