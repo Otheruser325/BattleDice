@@ -128,6 +128,7 @@ export class DiceScene extends Phaser.Scene {
     refreshSlots();
 
     const cardsContainer = this.add.container(0, 0).setDepth(6);
+    const interactiveCards: Phaser.GameObjects.Rectangle[] = [];
     const refreshCardStats: Array<() => void> = [];
     const cardsTopY = panel.y + 160;
     const cardPitch = 250;
@@ -201,6 +202,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       header.setPosition(x + 160, cardTopY + 22);
 
       if (!locked) {
+        interactiveCards.push(card);
         card.on('pointerdown', () => {
           this.openDiceModal(die.typeId, tokenText, () => {
             loadout = getSelectedLoadout(this);
@@ -238,6 +240,19 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const totalRows = Math.ceil(definitions.length / 3);
     const contentHeight = totalRows * cardPitch;
     const maxScroll = Math.max(0, contentHeight - viewHeight + 24);
+    const refreshVisibleCardInteractivity = () => {
+      interactiveCards.forEach((card) => {
+        const top = card.getTopLeft().y;
+        const bottom = card.getBottomLeft().y;
+        const isVisible = bottom >= viewTop && top <= viewTop + viewHeight;
+        if (isVisible) {
+          if (!card.input?.enabled) card.setInteractive({ useHandCursor: true });
+        } else if (card.input?.enabled) {
+          card.disableInteractive();
+        }
+      });
+    };
+    refreshVisibleCardInteractivity();
 
     this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       const withinX = pointer.worldX >= viewLeft && pointer.worldX <= viewLeft + viewWidth;
@@ -245,6 +260,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       if (!withinX || !withinY) return;
       this.cardScrollOffset = Phaser.Math.Clamp(this.cardScrollOffset - dy * 0.35, -maxScroll, 0);
       cardsContainer.y = this.cardScrollOffset;
+      refreshVisibleCardInteractivity();
     });
 
     this.input.keyboard?.on('keydown-TAB', (event: KeyboardEvent) => {

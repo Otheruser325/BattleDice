@@ -111,7 +111,8 @@ export class ShopScene extends Phaser.Scene {
           if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
 
           const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
-          if (offer.isCasinoChipOffer) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount }));
+          const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
+          if (offer.isCasinoChipOffer) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount * (firstChipPurchase ? 2 : 1) }));
           else if (offer.isCoinOffer) setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
           else {
             const progress = getDiceProgress(this, offer.typeId);
@@ -123,7 +124,13 @@ export class ShopScene extends Phaser.Scene {
             diamondText.setText(`◆ ${diamonds}`);
           }
           const updatedOffers = shopState.offers.map((o, i) => i === offerIdx ? { ...o, purchased: this.isInfiniteCurrencyOffer(offer) ? false : true } : o);
-          setShopState(this, { ...shopState, offers: updatedOffers, freebieClaimedThisSession: offer.isFreebie ? true : shopState.freebieClaimedThisSession, diceTokenFirstPurchaseIds: firstTokenPurchase ? [...shopState.diceTokenFirstPurchaseIds, offer.id] : shopState.diceTokenFirstPurchaseIds });
+          setShopState(this, {
+            ...shopState,
+            offers: updatedOffers,
+            freebieClaimedThisSession: offer.isFreebie ? true : shopState.freebieClaimedThisSession,
+            diceTokenFirstPurchaseIds: firstTokenPurchase ? [...shopState.diceTokenFirstPurchaseIds, offer.id] : shopState.diceTokenFirstPurchaseIds,
+            casinoChipFirstPurchaseIds: firstChipPurchase ? [...shopState.casinoChipFirstPurchaseIds, offer.id] : shopState.casinoChipFirstPurchaseIds
+          });
           offer.purchased = !this.isInfiniteCurrencyOffer(offer);
           renderOfferCards();
         };
@@ -145,6 +152,10 @@ export class ShopScene extends Phaser.Scene {
 
   private isFirstDiceTokenPurchase(shopState: ShopState, offer: ShopOffer): boolean {
     return Boolean(offer.isDiceTokenOffer && !shopState.diceTokenFirstPurchaseIds.includes(offer.id));
+  }
+
+  private isFirstCasinoChipPurchase(shopState: ShopState, offer: ShopOffer): boolean {
+    return Boolean(offer.isCasinoChipOffer && !shopState.casinoChipFirstPurchaseIds.includes(offer.id));
   }
 
   private isInfiniteCurrencyOffer(offer: ShopOffer): boolean {
@@ -218,9 +229,11 @@ export class ShopScene extends Phaser.Scene {
     objs.push(nameText);
 
     const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
+    const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
     const tokenAmount = offer.coinAmount * (firstTokenPurchase ? 2 : 1);
+    const chipAmount = offer.coinAmount * (firstChipPurchase ? 2 : 1);
     const descLine = offer.isCasinoChipOffer
-      ? `+${offer.coinAmount.toLocaleString()} Casino Chips`
+      ? `+${chipAmount.toLocaleString()} Casino Chips${firstChipPurchase ? ' (2× first buy)' : ''}`
       : (offer.isCoinOffer
         ? `+${tokenAmount.toLocaleString()} Dice Tokens${firstTokenPurchase ? ' (2× first buy)' : ''}`
         : `×${offer.copies} ${offer.copies === 1 ? 'copy' : 'copies'}`);

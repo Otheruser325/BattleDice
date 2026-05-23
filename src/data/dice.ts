@@ -286,6 +286,7 @@ export interface ShopState {
   generatedDay: number;
   freebieClaimedThisSession: boolean;
   diceTokenFirstPurchaseIds: string[];
+  casinoChipFirstPurchaseIds: string[];
 }
 
 function getDayNumber(): number {
@@ -302,7 +303,8 @@ export function getShopState(scene: Phaser.Scene): ShopState {
     offers: state.offers ?? [],
     generatedDay: state.generatedDay ?? -1,
     freebieClaimedThisSession: state.freebieClaimedThisSession ?? false,
-    diceTokenFirstPurchaseIds: state.diceTokenFirstPurchaseIds ?? []
+    diceTokenFirstPurchaseIds: state.diceTokenFirstPurchaseIds ?? [],
+    casinoChipFirstPurchaseIds: state.casinoChipFirstPurchaseIds ?? []
   };
 }
 
@@ -432,7 +434,8 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
     offers,
     generatedDay: currentDay,
     freebieClaimedThisSession: false,
-    diceTokenFirstPurchaseIds: existing.diceTokenFirstPurchaseIds
+    diceTokenFirstPurchaseIds: existing.diceTokenFirstPurchaseIds,
+    casinoChipFirstPurchaseIds: existing.casinoChipFirstPurchaseIds
   };
 
   setShopState(scene, newState);
