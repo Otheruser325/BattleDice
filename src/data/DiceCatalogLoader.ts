@@ -6,10 +6,9 @@ import { withBasePath } from '../utils/BuildEnv';
 const DICE_FLAGS_PATHS = [
   withBasePath('gamedata/DiceDefinitions/Flags.json')
 ];
-const DICE_DATA_VERSION = '2026-05-10';
 
 function getDefinitionPath(typeId: string) {
-  return `${withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`)}?v=${DICE_DATA_VERSION}`;
+  return withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
 }
 
 export class DiceCatalogLoader {
@@ -20,7 +19,7 @@ export class DiceCatalogLoader {
     let flags: DiceFlags | undefined;
     for (const path of DICE_FLAGS_PATHS) {
       try {
-        const res = await fetch(`${path}?v=${DICE_DATA_VERSION}`, { credentials: 'same-origin', cache: 'no-store' });
+        const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
         if (!res.ok) continue;
         const contentType = res.headers.get('content-type') ?? '';
         if (!contentType.includes('application/json') && !path.endsWith('.json')) continue;
@@ -46,32 +45,32 @@ export class DiceCatalogLoader {
     scene.cache.json.add('dice:flags', { fetchableTypeIds });
     debug.log('Loading dice definitions from flags.', { fetchableTypeIds });
 
-    await new Promise<void>((resolve, reject) => {
-      if (!fetchableTypeIds.length) {
-        resolve();
-        return;
+    if (!fetchableTypeIds.length) return { fetchableTypeIds: [] };
+
+    const loadedTypeIds: string[] = [];
+    for (const typeId of fetchableTypeIds) {
+      const path = getDefinitionPath(typeId);
+      try {
+        const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
+        if (!res.ok) {
+          debug.warn('Dice definition HTTP error.', { typeId, path, status: res.status });
+          continue;
+        }
+        const definition = await res.json();
+        scene.cache.json.add(`dice:${typeId}`, definition);
+        loadedTypeIds.push(typeId);
+      } catch (error) {
+        debug.warn('Failed to fetch dice definition.', { typeId, path, error });
       }
+    }
 
-      const onComplete = () => {
-        scene.load.off('loaderror', onError);
-        resolve();
-      };
+    if (!loadedTypeIds.length) {
+      throw new Error('No dice definitions were loaded.');
+    }
 
-      const onError = (_file: unknown, fileObject: { src?: string }) => {
-        scene.load.off('complete', onComplete);
-        reject(new Error(`Failed to load dice definition from ${fileObject?.src ?? 'unknown source'}.`));
-      };
+    scene.cache.json.add('dice:flags', { fetchableTypeIds: loadedTypeIds });
+    debug.log('Loaded dice definitions.', { requested: fetchableTypeIds.length, loaded: loadedTypeIds.length });
 
-      scene.load.once('complete', onComplete);
-      scene.load.once('loaderror', onError);
-
-      fetchableTypeIds.forEach((typeId) => {
-        scene.load.json(`dice:${typeId}`, getDefinitionPath(typeId));
-      });
-
-      scene.load.start();
-    });
-
-    return flags;
+    return { fetchableTypeIds: loadedTypeIds };
   }
 }
