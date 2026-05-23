@@ -6,7 +6,7 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ["lucide-react"],
   },
-  base: process.env.REPO_FIX || '/',
+  base: '/BattleDice/' || '/',
   build: {
     outDir: "dist",
   },
