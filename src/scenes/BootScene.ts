@@ -5,11 +5,12 @@ import { AlertManager } from '../utils/AlertManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { DebugManager } from '../utils/DebugManager';
 import { AudioManager } from '../utils/AudioManager';
+import { withBasePath } from '../utils/BuildEnv';
 import { SCENE_KEYS } from './sceneKeys';
 
-const MENU_BACKGROUND_PATH = '/assets/images/bg/Background-floor.png';
-const SETTINGS_ICON_PATH = '/assets/images/ui/settings.png';
-const CHANGELOG_ICON_PATH = '/assets/images/ui/changelog.png';
+const MENU_BACKGROUND_PATH = withBasePath('assets/images/bg/Background-floor.png');
+const SETTINGS_ICON_PATH = withBasePath('assets/images/ui/settings.png');
+const CHANGELOG_ICON_PATH = withBasePath('assets/images/ui/changelog.png');
 
 export class BootScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Boot;
@@ -68,7 +69,7 @@ export class BootScene extends Phaser.Scene {
     AudioManager.preload(this);
     for (let face = 1; face <= 6; face++) {
       const names = ['one', 'two', 'three', 'four', 'five', 'six'];
-      this.load.image(`dice-face-${face}`, `/assets/images/dice/dice-six-faces-${names[face - 1]}.png`);
+      this.load.image(`dice-face-${face}`, withBasePath(`assets/images/dice/dice-six-faces-${names[face - 1]}.png`));
     }
     DiceCatalogLoader.preloadFlags(this);
   }

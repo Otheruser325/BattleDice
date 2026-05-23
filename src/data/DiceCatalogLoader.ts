@@ -1,15 +1,15 @@
 import type Phaser from 'phaser';
 import type { DiceFlags } from '../types/game';
 import { DebugManager } from '../utils/DebugManager';
+import { withBasePath } from '../utils/BuildEnv';
 
 const DICE_FLAGS_PATHS = [
-  'gamedata/DiceDefinitions/Flags.json',
-  '/gamedata/DiceDefinitions/Flags.json'
+  withBasePath('gamedata/DiceDefinitions/Flags.json')
 ];
 const DICE_DATA_VERSION = '2026-05-10';
 
 function getDefinitionPath(typeId: string) {
-  return `gamedata/DiceDefinitions/${typeId}.dice?v=${DICE_DATA_VERSION}`;
+  return `${withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`)}?v=${DICE_DATA_VERSION}`;
 }
 
 export class DiceCatalogLoader {

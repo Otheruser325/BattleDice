@@ -24,3 +24,10 @@ export function readBooleanEnv(key: string): boolean | undefined {
 export function isDevBuild(): boolean {
   return BUILD_ENV.DEV === true;
 }
+
+export function withBasePath(path: string): string {
+  const base = typeof BUILD_ENV.BASE_URL === 'string' ? BUILD_ENV.BASE_URL : '/';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+  return `${normalizedBase}${normalizedPath}`;
+}
