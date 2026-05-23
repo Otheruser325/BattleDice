@@ -2,19 +2,13 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), nodePolyfills()],
   optimizeDeps: {
     exclude: ["lucide-react"],
   },
-  base: "./",
+  base: process.env.GITHUB_ACTIONS ? '/BattleDice/' : '/',
   build: {
     outDir: "dist",
   },
-  define: {
-	'process.env': {},
-    'process.platform': '""',
-    'process.version': '""',
-    'import.meta.env.VITE_ENABLE_DEV_MENU': JSON.stringify(process.env.VITE_ENABLE_DEV_MENU || 'true'),
-    'import.meta.env.VITE_DEBUG_LOGS': JSON.stringify(process.env.VITE_DEBUG_LOGS || 'true'),
-  },
+  define: {},
 });
