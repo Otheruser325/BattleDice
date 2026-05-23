@@ -1,0 +1,17 @@
+{
+  "typeId": "Broken",
+  "title": "Broken Dice",
+  "attack": 32,
+  "health": 500,
+  "range": 6,
+  "rarity": "Uncommon",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Fractured Volley",
+      "description": "Attacks a random foe in range."
+    }
+  ],
+  "accent": "#c5a880",
+  "targetingMode": "Random"
+}

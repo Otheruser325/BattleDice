@@ -1,0 +1,20 @@
+{
+  "typeId": "Skull",
+  "title": "Skull Dice",
+  "attack": 16,
+  "health": 600,
+  "range": 3,
+  "rarity": "Rare",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Last Rattle",
+      "description": "When defeated, it comes back to life with a 50% chance.",
+      "modifiers": {
+        "reviveChance": 0.5
+      }
+    }
+  ],
+  "accent": "#d9d9df",
+  "targetingMode": "Nearest"
+}

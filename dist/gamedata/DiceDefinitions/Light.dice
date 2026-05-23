@@ -1,0 +1,23 @@
+{
+  "typeId": "Light",
+  "title": "Light Dice",
+  "attack": 12,
+  "health": 500,
+  "range": 3,
+  "rarity": "Rare",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Radiant Rally",
+      "description": "Adds +1 attack count to all friendly dice (resets on combat end).",
+      "modifiers": {
+        "extraAttacks": 1,
+        "notes": [
+          "runtime:skillSfx=dice_light_skill"
+        ]
+      }
+    }
+  ],
+  "accent": "#f9e27d",
+  "targetingMode": "Nearest"
+}

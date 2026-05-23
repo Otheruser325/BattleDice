@@ -1,0 +1,25 @@
+{
+  "typeId": "Wind",
+  "title": "Wind Dice",
+  "attack": 20,
+  "health": 480,
+  "range": 6,
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Gale Tempo",
+      "description": "Shoots twice as many attacks for 2 turns and cannot gain mana again until the effect ends.",
+      "manaNeeded": 10,
+      "modifiers": {
+        "extraAttacks": 2,
+        "durationTurns": 2,
+        "notes": [
+          "runtime:skillSfx=dice_wind_skill"
+        ]
+      }
+    }
+  ],
+  "accent": "#d1f0ff",
+  "rarity": "Common",
+  "targetingMode": "Nearest"
+}

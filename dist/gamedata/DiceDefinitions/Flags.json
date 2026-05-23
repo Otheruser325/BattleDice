@@ -1,0 +1,29 @@
+{
+  "fetchableTypeIds": [
+    "Fire",
+    "Ice",
+    "Poison",
+    "Electric",
+    "Wind",
+    "Broken",
+    "Light",
+    "Skull",
+    "Gamble",
+    "Iron",
+    "Transcendence",
+    "Sniper",
+    "Meteor",
+    "Death",
+    "Growth",
+    "Healing",
+    "Berserk",
+    "Time",
+    "Spear",
+    "Solitude",
+    "Judgment",
+    "Shield",
+    "Assassin",
+    "Battery",
+    "Crack"
+  ]
+}
