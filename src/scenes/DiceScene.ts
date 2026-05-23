@@ -197,24 +197,28 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       refreshCardStats.push(refreshCardStatLine);
 
       const computedCardHeight = Math.max(baseCardHeight, Math.ceil((skillDesc.y + skillDesc.height) - cardTopY + 18));
-      const card = this.add.rectangle(x + 160, cardTopY + computedCardHeight / 2, cardWidth, computedCardHeight, cardFill, 0.92).setInteractive({ useHandCursor: !locked })
+      const card = this.add.rectangle(x + 160, cardTopY + computedCardHeight / 2, cardWidth, computedCardHeight, cardFill, 0.92)
         .setStrokeStyle(2, locked ? 0x2a3a47 : accent);
+      card.setData('typeId', die.typeId);
       header.setPosition(x + 160, cardTopY + 22);
 
-      if (!locked) {
-        interactiveCards.push(card);
-        card.on('pointerdown', () => {
-          this.openDiceModal(die.typeId, tokenText, () => {
-            loadout = getSelectedLoadout(this);
-            refreshSlots();
-            tokens = getDiceTokens(this);
-            tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
-            refreshCardStats.forEach((refresh) => refresh());
-          }, selectedSlot);
-        });
-        card.on('pointerover', () => card.setFillStyle(0x1f3e56, 1));
-        card.on('pointerout', () => card.setFillStyle(0x173247, 0.98));
-      }
+      interactiveCards.push(card);
+      card.on('pointerdown', () => {
+        if (this.isDiceLocked(die.typeId)) return;
+        this.openDiceModal(die.typeId, tokenText, () => {
+          loadout = getSelectedLoadout(this);
+          refreshSlots();
+          tokens = getDiceTokens(this);
+          tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
+          refreshCardStats.forEach((refresh) => refresh());
+          refreshVisibleCardInteractivity();
+        }, selectedSlot);
+      });
+      card.on('pointerover', () => {
+        if (this.isDiceLocked(die.typeId)) return;
+        card.setFillStyle(0x1f3e56, 1);
+      });
+      card.on('pointerout', () => card.setFillStyle(this.isDiceLocked(die.typeId) ? 0x111e28 : 0x173247, 0.98));
 
       cardsContainer.add([card, header, title, classTag, statLine, skillTypeLine, skillDesc]);
       card.setDepth(0); header.setDepth(1);
@@ -242,11 +246,14 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const maxScroll = Math.max(0, contentHeight - viewHeight + 24);
     const refreshVisibleCardInteractivity = () => {
       interactiveCards.forEach((card) => {
+        const typeId = (card as any).data?.values?.typeId as string | undefined;
+        const isLocked = typeId ? this.isDiceLocked(typeId) : false;
         const top = card.getTopLeft().y;
         const bottom = card.getBottomLeft().y;
         const isVisible = bottom >= viewTop && top <= viewTop + viewHeight;
-        if (isVisible) {
+        if (isVisible && !isLocked) {
           if (!card.input?.enabled) card.setInteractive({ useHandCursor: true });
+          else card.input.cursor = 'pointer';
         } else if (card.input?.enabled) {
           card.disableInteractive();
         }
