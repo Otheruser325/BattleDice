@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
+import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { AlertManager } from '../utils/AlertManager';
@@ -77,7 +77,7 @@ export class DevScene extends Phaser.Scene {
     this.makeButton(x + 96, y + 190, '+10 CARDS', () => this.grantDiceCards(10));
     this.makeButton(x + 236, y + 190, '+100 CARDS', () => this.grantDiceCards(100));
     this.makeButton(x + 390, y + 190, '+1000 CARDS', () => this.grantDiceCards(1000));
-    this.makeButton(x + width / 2, y + 244, 'UNLOCK / TOP UP SELECTED DIE', () => this.grantDiceCardsToMaxLevel());
+    this.makeButton(x + width / 2, y + 244, 'UNLOCK / MAX SELECTED DIE', () => this.grantDiceCardsToMaxClass());
   }
 
   private drawCurrencyGrantPanel(x: number, y: number, width: number, height: number) {
@@ -102,27 +102,27 @@ export class DevScene extends Phaser.Scene {
       fontSize: '12px',
       color: PALETTE.text
     });
-    this.makeButton(x + 58, y + 128, '+1,000', () => this.grantTokens(1_000));
-    this.makeButton(x + 128, y + 128, '+10,000', () => this.grantTokens(10_000));
-    this.makeButton(x + 210, y + 128, '+100,000', () => this.grantTokens(100_000));
+    this.makeButton(x + 58, y + 143, '+1,000', () => this.grantTokens(1_000));
+    this.makeButton(x + 128, y + 143, '+10,000', () => this.grantTokens(10_000));
+    this.makeButton(x + 210, y + 143, '+100,000', () => this.grantTokens(100_000));
 
     this.add.text(x + 18, y + 164, 'Diamonds', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text
     });
-    this.makeButton(x + 52, y + 188, '+10', () => this.grantDiamonds(10));
-    this.makeButton(x + 116, y + 188, '+100', () => this.grantDiamonds(100));
-    this.makeButton(x + 188, y + 188, '+1,000', () => this.grantDiamonds(1_000));
+    this.makeButton(x + 52, y + 203, '+10', () => this.grantDiamonds(10));
+    this.makeButton(x + 116, y + 203, '+100', () => this.grantDiamonds(100));
+    this.makeButton(x + 188, y + 203, '+1,000', () => this.grantDiamonds(1_000));
 
     this.add.text(x + 18, y + 224, 'Casino Chips', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text
     });
-    this.makeButton(x + 52, y + 248, '+10', () => this.grantChips(10));
-    this.makeButton(x + 116, y + 248, '+100', () => this.grantChips(100));
-    this.makeButton(x + 188, y + 248, '+1,000', () => this.grantChips(1_000));
+    this.makeButton(x + 52, y + 263, '+10', () => this.grantChips(10));
+    this.makeButton(x + 116, y + 263, '+100', () => this.grantChips(100));
+    this.makeButton(x + 188, y + 263, '+1,000', () => this.grantChips(1_000));
   }
 
   private makeButton(x: number, y: number, label: string, onClick: () => void) {
@@ -154,26 +154,39 @@ export class DevScene extends Phaser.Scene {
   private grantDiceCards(copies: number) {
     const definition = this.getSelectedDefinition();
     if (!definition) return;
-    grantDiceCopies(this, definition.typeId, copies);
-    AlertManager.toast(this, { type: 'success', message: `Granted ${copies} ${definition.title} card${copies === 1 ? '' : 's'}.` });
+    const remainingUseful = getRemainingUsefulCopies(this, definition.typeId);
+    const grantAmount = Math.min(copies, remainingUseful);
+    if (grantAmount <= 0) {
+      AlertManager.toast(this, { type: 'warning', message: `${definition.title} cannot receive more useful copies.` });
+      return;
+    }
+    grantDiceCopies(this, definition.typeId, grantAmount);
+    const cappedSuffix = grantAmount < copies ? ` (requested ${copies}, capped at ${grantAmount})` : '';
+    AlertManager.toast(this, { type: 'success', message: `Granted ${grantAmount} ${definition.title} card${grantAmount === 1 ? '' : 's'}${cappedSuffix}.` });
     this.refresh();
   }
 
-  private grantDiceCardsToMaxLevel() {
+  private grantDiceCardsToMaxClass() {
     const definition = this.getSelectedDefinition();
     if (!definition) return;
     const progress = getDiceProgress(this, definition.typeId);
-    const copiesNeeded = this.getCopiesNeededToReachMaxLevel(progress.classLevel, progress.copies, definition.rarity);
+    if (!progress.unlocked) {
+      grantDiceCopies(this, definition.typeId, 1);
+      AlertManager.toast(this, { type: 'success', message: `${definition.title} unlocked. Click again to max selected die class copies.` });
+      this.refresh();
+      return;
+    }
+    const copiesNeeded = this.getCopiesNeededToReachMaxClass(progress.classLevel, progress.copies, definition.rarity);
     if (copiesNeeded <= 0) {
       AlertManager.toast(this, { type: 'warning', message: `${definition.title} is already maxed for available copy progression.` });
       return;
     }
     grantDiceCopies(this, definition.typeId, copiesNeeded);
-    AlertManager.toast(this, { type: 'success', message: `Granted ${copiesNeeded} ${definition.title} card${copiesNeeded === 1 ? '' : 's'} to reach max level progression.` });
+    AlertManager.toast(this, { type: 'success', message: `Granted ${copiesNeeded} ${definition.title} card${copiesNeeded === 1 ? '' : 's'} to reach max class progression.` });
     this.refresh();
   }
 
-  private getCopiesNeededToReachMaxLevel(classLevel: number, copies: number, rarity: string): number {
+  private getCopiesNeededToReachMaxClass(classLevel: number, copies: number, rarity: string): number {
     let level = classLevel;
     let remainingCopies = copies;
     let additional = 0;
