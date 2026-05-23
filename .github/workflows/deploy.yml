@@ -34,6 +34,8 @@ jobs:
         run: npm ci
 
       - name: Build Project
+        env:
+          REPO_FIX: ${{ vars.REPO_FIX }}
         run: npm run build
 
       - name: Upload Build Artifacts
