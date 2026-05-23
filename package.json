@@ -16,11 +16,13 @@
     "dev:clean": "npm run launcher:clean"
   },
   "dependencies": {
-    "phaser": "3.88.2"
+    "phaser": "3.9.0"
   },
   "devDependencies": {
     "esbuild": "^0.27.7",
     "typescript": "^5.9.3",
-    "vite": "^7.1.12"
+    "vite": "^7.1.12",
+	"webpack": "^5.x",
+    "webpack-cli": "^5.x"
   }
 }
