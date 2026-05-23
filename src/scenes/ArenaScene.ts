@@ -584,6 +584,11 @@ export class ArenaScene extends Phaser.Scene {
     return 'NOT STARTED';
   }
 
+  private hasAssassinOpeningRuntime(definition: DiceDefinition | undefined): boolean {
+    if (!definition) return false;
+    return definition.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
+  }
+
   private openSingleplayerConfigModal() {
     this.activeChallenge = null;
     this.turnLimit = this.configTurnCount;
@@ -1776,7 +1781,7 @@ export class ArenaScene extends Phaser.Scene {
       let chosen: { row: number; col: number } | null = null;
       let bestJumpDistance = Number.POSITIVE_INFINITY;
       neighbors.forEach((tile) => {
-        const proxy: DiceInstanceState = { ...assassin, ownerId: targetOwner, gridPosition: tile };
+      const proxy: DiceInstanceState = { ...assassin, gridPosition: tile };
         const jumpDistance = this.getDistanceWithBoardSides(assassin, proxy);
         if (jumpRange >= 0 && jumpDistance > jumpRange) return;
         const isBetter = jumpDistance < bestJumpDistance
@@ -1941,8 +1946,12 @@ export class ArenaScene extends Phaser.Scene {
     const owners: Array<'player' | 'enemy'> = ['player', 'enemy'];
     const openingOwners: Array<'player' | 'enemy'> = ['player', 'enemy'];
     for (const openingOwner of openingOwners) {
-      const assassin = getNextAttacker(this.gameState, openingOwner);
-      if (!assassin || assassin.typeId !== 'Assassin') continue;
+      const assassin = this.gameState.dice.find((die) => {
+        if (die.ownerId !== openingOwner || die.zone !== 'board' || die.isDestroyed || die.hasFinishedAttacking) return false;
+        if ((die.attacksRemaining ?? 0) <= 0 || !die.gridPosition) return false;
+        return this.hasAssassinOpeningRuntime(this.getDefinitionForInstance(die));
+      });
+      if (!assassin) continue;
       const target = this.findAttackTargetForArena(assassin);
       if (!target) continue;
       const defs = this.getDefinitionsForCombat(assassin, target);
@@ -3825,8 +3834,8 @@ export class ArenaScene extends Phaser.Scene {
     overlay.on('pointerdown', () => this.closeExitPrompt());
     cancel.on('pointerdown', () => this.closeExitPrompt());
     quit.on('pointerdown', () => {
-      if (this.activeChallenge === 'daily' && this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'failed');
-      if (this.activeChallenge === 'deucifer' && this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'failed');
+      if (this.activeChallenge === 'daily' && this.getChallengeStatus('daily') === 'started') this.setChallengeStatus('daily', 'failed');
+      if (this.activeChallenge === 'deucifer' && this.getChallengeStatus('deucifer') === 'started') this.setChallengeStatus('deucifer', 'failed');
       this.scene.wake(SCENE_KEYS.Menu);
       this.scene.start(SCENE_KEYS.Menu);
     });
