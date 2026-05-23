@@ -1827,16 +1827,13 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private findAttackTargetForArena(attacker: DiceInstanceState): DiceInstanceState | undefined {
-    if (attacker.typeId !== 'Assassin' && this.isOnBlockedBackline(attacker)) return undefined;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const attackerDef = this.getDefinitionForInstance(attacker);
     if (!attackerDef || !attacker.gridPosition) return undefined;
     const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
-    const blockedEnemyBacklineCol = enemyOwner === 'enemy' ? GRID_SIZE - 1 : 0;
     const candidates = this.gameState.dice
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
         die.ownerId === enemyOwner && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition))
-      .filter((die) => attacker.typeId === 'Assassin' || die.gridPosition.col !== blockedEnemyBacklineCol)
       .map((die) => ({ die, distance: this.getAttackDistance(attacker, die) }))
       .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));
     if (candidates.length === 0) return undefined;
