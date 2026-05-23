@@ -152,7 +152,7 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
     store = sanitizeDiceProgressStore(scene, store);
     scene.registry.set(DICE_PROGRESS_KEY, store);
   }
-  const defaultCopies = DEFAULT_LOADOUT_IDS.has(typeId) ? 200 : 0;
+  const defaultCopies = 0;
   const progress = store[typeId];
   if (!progress) return { classLevel: 1, copies: defaultCopies, unlocked: DEFAULT_LOADOUT_IDS.has(typeId) };
   return {
