@@ -8,6 +8,7 @@ import { SCENE_KEYS } from './sceneKeys';
 import { ProfileStore } from '../systems/ProfileStore';
 import { getDiamonds } from '../data/dice';
 import { AlertManager } from '../utils/AlertManager';
+import { withBasePath } from '../utils/BuildEnv';
 
 type SettingKey = keyof AppSettings;
 
@@ -112,12 +113,12 @@ export class SettingsScene extends Phaser.Scene {
     closeBtn.on('pointerdown', close);
 
     try {
-      const response = await fetch('/config/changelog.json');
+      const response = await fetch(withBasePath('config/changelog.json'));
       const payload = await response.json();
       const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => `• ${entry.version} (${entry.date})\n${entry.notes.map((n) => `  - ${n}`).join('\n')}`);
       body.setText(lines.join('\n\n') || 'No entries found.');
     } catch {
-      body.setText('Could not fetch /config/changelog.json');
+      body.setText('Could not fetch config/changelog.json');
     }
   }
 
