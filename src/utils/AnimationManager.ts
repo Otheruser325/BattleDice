@@ -248,4 +248,61 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, scale: 1.04, duration: 520, onComplete: () => g.destroy() });
   }
 
+  static animateAchievementPopup(scene: Phaser.Scene, achievementId: string, onComplete?: () => void) {
+    const { width, height } = scene.scale;
+    const popupContainer = scene.add.container(width - 220, -100).setDepth(1000);
+    
+    const bg = scene.add.rectangle(0, 0, 200, 70, 0x1a3a52, 0.95)
+      .setStrokeStyle(2, 0xf4b860);
+    const title = scene.add.text(-80, -20, 'ACHIEVEMENT', {
+      fontFamily: 'Orbitron',
+      fontSize: '10px',
+      color: '#f4b860'
+    }).setOrigin(0.5);
+    const name = scene.add.text(0, 10, achievementId.replace(/_/g, ' ').toUpperCase(), {
+      fontFamily: 'Orbitron',
+      fontSize: '14px',
+      color: '#ffffff',
+      wordWrap: { width: 180 }
+    }).setOrigin(0.5);
+    
+    popupContainer.add([bg, title, name]);
+    
+    // Animate in (slide down from top)
+    scene.tweens.add({
+      targets: popupContainer,
+      y: 20,
+      duration: 500,
+      ease: 'Back.easeOut'
+    });
+    
+    // After 2 seconds, start periodic up/down animation
+    const floatTween = scene.tweens.add({
+      targets: popupContainer,
+      y: 10,
+      duration: 800,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: 3,
+      delay: 2000
+    });
+    
+    // Total lifetime: 2s delay + 3 * 0.8s * 2 (yoyo) = ~6.8s, then fade out
+    scene.time.delayedCall(7000, () => {
+      scene.tweens.add({
+        targets: popupContainer,
+        y: -100,
+        alpha: 0,
+        duration: 400,
+        ease: 'Sine.easeIn',
+        onComplete: () => {
+          popupContainer.destroy();
+          if (onComplete) onComplete();
+        }
+      });
+    });
+    
+    return popupContainer;
+  }
+
 }
