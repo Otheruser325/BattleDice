@@ -564,11 +564,13 @@ export class CasinoScene extends Phaser.Scene {
         const die = remainingPool[index];
         const copies = Phaser.Math.Between(copyRange[0], copyRange[1]);
         const progress = getDiceProgress(this, die.typeId);
-        const isNew = progress.copies <= 0;
         const beforeCopies = progress.copies;
+        const wasUnlocked = progress.unlocked || DEFAULT_LOADOUT_IDS.has(die.typeId);
         grantDiceCopies(this, die.typeId, copies);
         const afterCopies = getDiceProgress(this, die.typeId).copies;
         const grantedCopies = Math.max(0, afterCopies - beforeCopies);
+        // Only mark as NEW if the die was not previously unlocked AND we actually granted copies
+        const isNew = !wasUnlocked && grantedCopies > 0;
         if (grantedCopies > 0) return { typeId: die.typeId, title: die.title, rarity, copies: grantedCopies, isNew };
         remainingPool.splice(index, 1);
       }

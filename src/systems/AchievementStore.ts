@@ -33,6 +33,8 @@ export interface AchievementState {
 const DEFAULT_STATE: AchievementState = { wins: 0, playtimeMs: 0, casinoTablesPlayed: 0, dailyChallengeWins: 0, unlocked: {} };
 
 export class AchievementStore {
+  private static pendingPopups: Array<{ id: AchievementId; timestamp: number }> = [];
+
   static get(scene: Phaser.Scene): AchievementState {
     const stored = scene.registry.get(ACHIEVEMENTS_KEY) as AchievementState | undefined;
     if (stored) return stored;
@@ -55,7 +57,21 @@ export class AchievementStore {
       ...state,
       unlocked: { ...state.unlocked, [id]: new Date().toISOString() }
     }));
+    // Queue popup for this newly unlocked achievement
+    this.pendingPopups.push({ id, timestamp: Date.now() });
     return true;
+  }
+
+  static getPendingPopups(): Array<{ id: AchievementId; timestamp: number }> {
+    return [...this.pendingPopups];
+  }
+
+  static clearPendingPopup(id: AchievementId) {
+    this.pendingPopups = this.pendingPopups.filter((p) => p.id !== id);
+  }
+
+  static clearAllPendingPopups() {
+    this.pendingPopups = [];
   }
 
   private static load(): AchievementState {

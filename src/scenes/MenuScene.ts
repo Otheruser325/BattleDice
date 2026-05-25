@@ -7,7 +7,7 @@ import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { ProfileStore } from '../systems/ProfileStore';
 import { getAllDiceDefinitions, getDiamonds, getDiceTokens, grantDiceCopies, setDiamonds, setDiceTokens } from '../data/dice';
-import { AchievementStore } from '../systems/AchievementStore';
+import { AchievementStore, type AchievementId } from '../systems/AchievementStore';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
@@ -18,6 +18,7 @@ export class MenuScene extends Phaser.Scene {
   private tabButtons: Array<{ tab: MenuTab; container: Phaser.GameObjects.Container; label: Phaser.GameObjects.Text; chip: Phaser.GameObjects.Text; }> = [];
   private readonly debug = DebugManager.attachScene(MenuScene.KEY);
   private loginRewardModalOpen = false;
+  private achievementPopupTimer: Phaser.Time.TimerEvent | null = null;
 
   constructor() {
     super(MenuScene.KEY);
@@ -96,8 +97,36 @@ export class MenuScene extends Phaser.Scene {
     this.ensureUsername();
     this.maybeGrantNewUserLoginReward();
     this.openTab(MENU_TABS.find((tab) => tab.sceneKey === this.activeSceneKey) ?? MENU_TABS[2]);
+    
+    // Start achievement popup checker
+    this.achievementPopupTimer = this.time.addEvent({
+      delay: 100,
+      loop: true,
+      callback: () => this.checkAchievementPopups()
+    });
+    
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.tabButtons = [];
+      this.achievementPopupTimer?.destroy();
+      this.achievementPopupTimer = null;
+    });
+  }
+
+  private checkAchievementPopups() {
+    const pending = AchievementStore.getPendingPopups();
+    if (pending.length === 0) return;
+    
+    // Only show one popup at a time, with staggered timing
+    const now = Date.now();
+    const readyPopup = pending.find((p) => now - p.timestamp >= 0);
+    if (!readyPopup) return;
+    
+    // Check if another popup is currently animating (within its 7s lifetime)
+    const activePopups = pending.filter((p) => now - p.timestamp < 7000);
+    if (activePopups.length > 0 && activePopups[0] !== readyPopup) return;
+    
+    AnimationManager.animateAchievementPopup(this, readyPopup.id, () => {
+      AchievementStore.clearPendingPopup(readyPopup.id);
     });
   }
 
