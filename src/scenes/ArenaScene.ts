@@ -92,6 +92,9 @@ export class ArenaScene extends Phaser.Scene {
   private configUseLevelling: boolean = true;
   private configTurnCount: number = -1;
   private turnLimit: number = -1;
+  private matchCompleted = false;
+  private sevenDayLoginButton!: Phaser.GameObjects.Rectangle | null;
+  private sevenDayLoginPanel: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super(ArenaScene.KEY);
@@ -122,6 +125,8 @@ export class ArenaScene extends Phaser.Scene {
     this.instanceBaseAttack.clear();
     this.clearModeModal();
     this.turnLimit = -1;
+    this.matchCompleted = false;
+    this.closeSevenDayLogin();
   }
 
   create() {
@@ -1836,6 +1841,12 @@ export class ArenaScene extends Phaser.Scene {
   private toggleExitPrompt() {
     if (this.exitPromptOpen) {
       this.closeExitPrompt();
+      return;
+    }
+    // Prevent false "False" failed attempts when backing out/losing a challenge if already completed
+    if (this.matchCompleted) {
+      this.scene.wake('MenuScene');
+      this.scene.start('MenuScene');
       return;
     }
     this.exitPromptOpen = true;
