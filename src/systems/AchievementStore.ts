@@ -57,8 +57,11 @@ export class AchievementStore {
       ...state,
       unlocked: { ...state.unlocked, [id]: new Date().toISOString() }
     }));
-    // Queue popup for this newly unlocked achievement
-    this.pendingPopups.push({ id, timestamp: Date.now() });
+    // Queue popup for this newly unlocked achievement only if not already queued
+    const alreadyQueued = this.pendingPopups.some((p) => p.id === id);
+    if (!alreadyQueued) {
+      this.pendingPopups.push({ id, timestamp: Date.now() });
+    }
     return true;
   }
 
