@@ -2,12 +2,21 @@ import type { DiceInstanceState } from '../types/game';
 
 export const ARENA_GRID_SIZE = 5;
 
+function getRelativeEnemyColumn(attacker: DiceInstanceState, target: DiceInstanceState): number {
+  const targetCol = target.gridPosition?.col ?? 0;
+  if (attacker.ownerId === target.ownerId) return targetCol;
+  // Enemy board is mirrored relative to each side's perspective.
+  return (ARENA_GRID_SIZE - 1) - targetCol;
+}
+
 export function getCombatDistance(attacker: DiceInstanceState, target: DiceInstanceState): number {
   if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
-  if (attacker.ownerId === 'player') {
-    return (ARENA_GRID_SIZE - attacker.gridPosition.col) + target.gridPosition.col;
-  }
-  return attacker.gridPosition.col + (ARENA_GRID_SIZE - target.gridPosition.col);
+
+  const attackerCol = attacker.gridPosition.col;
+  const relativeTargetCol = getRelativeEnemyColumn(attacker, target);
+  const lateralOffset = Math.abs(attackerCol - relativeTargetCol);
+  // Range 1 should always cover a die's own mirrored column, then fan out left/right.
+  return lateralOffset + 1;
 }
 
 export function getCoveredEnemyColumns(attacker: DiceInstanceState, range: number): number[] {
