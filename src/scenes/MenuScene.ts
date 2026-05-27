@@ -19,6 +19,7 @@ export class MenuScene extends Phaser.Scene {
   private readonly debug = DebugManager.attachScene(MenuScene.KEY);
   private loginRewardModalOpen = false;
   private achievementPopupTimer: Phaser.Time.TimerEvent | null = null;
+  private achievementPopupActive = false;
 
   constructor() {
     super(MenuScene.KEY);
@@ -113,20 +114,16 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private checkAchievementPopups() {
+    if (this.achievementPopupActive) return;
     const pending = AchievementStore.getPendingPopups();
     if (pending.length === 0) return;
-    
-    // Only show one popup at a time, with staggered timing
-    const now = Date.now();
-    const readyPopup = pending.find((p) => now - p.timestamp >= 0);
-    if (!readyPopup) return;
-    
-    // Check if another popup is currently animating (within its 7s lifetime)
-    const activePopups = pending.filter((p) => now - p.timestamp < 7000);
-    if (activePopups.length > 0 && activePopups[0] !== readyPopup) return;
-    
-    AnimationManager.animateAchievementPopup(this, readyPopup.id, () => {
-      AchievementStore.clearPendingPopup(readyPopup.id);
+
+    const nextPopup = pending[0];
+    if (!nextPopup) return;
+    this.achievementPopupActive = true;
+    AnimationManager.animateAchievementPopup(this, nextPopup.id, () => {
+      AchievementStore.clearPendingPopup(nextPopup.id);
+      this.achievementPopupActive = false;
     });
   }
 

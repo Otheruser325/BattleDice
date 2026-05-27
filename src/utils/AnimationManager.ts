@@ -278,20 +278,20 @@ export class AnimationManager {
       ease: 'Back.easeOut'
     });
     
-    // After 2 seconds, start periodic up/down animation
+    // Keep the popup gently floating while visible.
     const floatTween = scene.tweens.add({
       targets: popupContainer,
       y: restY - 10,
-      duration: 800,
+      duration: 500,
       ease: 'Sine.easeInOut',
       yoyo: true,
-      repeat: 3,
-      delay: 2000
+      repeat: -1,
+      delay: 500
     });
-    
-    // Total lifetime: 2s delay + 4 * 0.8s * 2 (yoyo) = ~8.4s, then fade out
-    floatTween.setRepeat(4);
-    scene.time.delayedCall(8600, () => {
+
+    // Around 3 seconds of on-screen time after open animation.
+    scene.time.delayedCall(3500, () => {
+      floatTween.stop();
       scene.tweens.add({
         targets: popupContainer,
         y: startY,

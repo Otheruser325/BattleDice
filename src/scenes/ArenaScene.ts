@@ -295,6 +295,28 @@ export class ArenaScene extends Phaser.Scene {
     playButton.on('pointerout', () => playButton.setFillStyle(0x2ecc71, 0.9));
     playButton.on('pointerdown', () => this.openModeSelectModal());
 
+    const claimedDays = new Set(profile.loginReward?.claimedDays ?? []);
+    const loginRewardComplete = claimedDays.size >= 7;
+    const loginRewardBtn = this.add.rectangle(centerX + 280, centerY + 34, 118, 118, loginRewardComplete ? 0x3e4f5c : 0xf4b860, 0.96)
+      .setStrokeStyle(2, loginRewardComplete ? 0x8ea1b2 : 0xffffff);
+    const loginRewardLabel = this.add.text(centerX + 280, centerY + 16, '7-DAY\nLOGIN', {
+      fontFamily: 'Orbitron',
+      fontSize: '14px',
+      color: loginRewardComplete ? '#c8d2da' : '#111111',
+      align: 'center'
+    }).setOrigin(0.5);
+    const loginRewardSub = this.add.text(centerX + 280, centerY + 58, loginRewardComplete ? 'COMPLETE' : 'REWARDS', {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: loginRewardComplete ? '#c8d2da' : '#111111'
+    }).setOrigin(0.5);
+    if (!loginRewardComplete) {
+      loginRewardBtn.setInteractive({ useHandCursor: true });
+      loginRewardBtn.on('pointerover', () => loginRewardBtn.setAlpha(1));
+      loginRewardBtn.on('pointerout', () => loginRewardBtn.setAlpha(0.96));
+      loginRewardBtn.on('pointerdown', () => this.openLoginRewardModal());
+    }
+
     const rules = this.add.text(centerX, centerY + 120, [
       'Win: Defeat all enemy dice',
       'Lose: All your dice are defeated',
@@ -307,7 +329,7 @@ export class ArenaScene extends Phaser.Scene {
       align: 'center'
     }).setOrigin(0.5);
 
-    this.uiContainer.add([wipBadge, playerHeader, title, subtitle, playButton, rules]);
+    this.uiContainer.add([wipBadge, playerHeader, title, subtitle, playButton, rules, loginRewardBtn, loginRewardLabel, loginRewardSub]);
   }
 
   // ── MATCH MODE MODAL ────────────────────────────────────────────────────────
