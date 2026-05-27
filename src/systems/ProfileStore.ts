@@ -13,6 +13,8 @@ export interface PlayerProfile {
     claimedDays: number[];
     lastClaimDate?: string;
     lastClaimAt?: string;
+    day7LegendaryTypeId?: string;
+    day7LegendaryTitle?: string;
   };
 }
 

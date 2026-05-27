@@ -297,15 +297,17 @@ export class ArenaScene extends Phaser.Scene {
 
     const claimedDays = new Set(profile.loginReward?.claimedDays ?? []);
     const loginRewardComplete = claimedDays.size >= 7;
-    const loginRewardBtn = this.add.rectangle(centerX + 280, centerY + 34, 118, 118, loginRewardComplete ? 0x3e4f5c : 0xf4b860, 0.96)
+    const loginBtnX = width - 118;
+    const loginBtnY = 124;
+    const loginRewardBtn = this.add.rectangle(loginBtnX, loginBtnY, 118, 118, loginRewardComplete ? 0x3e4f5c : 0xf4b860, 0.96)
       .setStrokeStyle(2, loginRewardComplete ? 0x8ea1b2 : 0xffffff);
-    const loginRewardLabel = this.add.text(centerX + 280, centerY + 16, '7-DAY\nLOGIN', {
+    const loginRewardLabel = this.add.text(loginBtnX, loginBtnY - 18, '7-DAY\nLOGIN', {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: loginRewardComplete ? '#c8d2da' : '#111111',
       align: 'center'
     }).setOrigin(0.5);
-    const loginRewardSub = this.add.text(centerX + 280, centerY + 58, loginRewardComplete ? 'COMPLETE' : 'REWARDS', {
+    const loginRewardSub = this.add.text(loginBtnX, loginBtnY + 24, loginRewardComplete ? 'COMPLETE' : 'REWARDS', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: loginRewardComplete ? '#c8d2da' : '#111111'
@@ -703,8 +705,9 @@ export class ArenaScene extends Phaser.Scene {
       day7Btn.on('pointerdown', () => this.claimDailyReward(7));
     }
     
+    const day7Legendary = reward.day7LegendaryTitle ? ` • Day 7: ${reward.day7LegendaryTitle}` : '';
     const statusText = isComplete 
-      ? '🎉 7-DAY CALENDAR COMPLETE!' 
+      ? `🎉 7-DAY CALENDAR COMPLETE!${day7Legendary}` 
       : `Claimed: ${claimed.size}/7 days • Next unlock: Day ${Math.min(7, unlockedDay + 1)}`;
     const status = this.add.text(cx, cy + 160, statusText, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(253);
     
@@ -741,18 +744,31 @@ export class ArenaScene extends Phaser.Scene {
     }
     
     let message = '';
+    let claimedDay7LegendaryTypeId = reward.day7LegendaryTypeId;
+    let claimedDay7LegendaryTitle = reward.day7LegendaryTitle;
     if (day === 1) { setDiamonds(this, getDiamonds(this) + 50); message = '+50 Diamonds'; }
     if (day === 2) { setDiceTokens(this, getDiceTokens(this) + 1000); message = '+1,000 Dice Tokens'; }
-    if (day === 3) { message = '+20 Casino Chips'; this.registry.events.emit('casino:grantChips', 20); }
+    if (day === 3) { message = '+20 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 20 })); this.registry.events.emit('casino:grantChips', 20); }
     if (day === 4) { setDiamonds(this, getDiamonds(this) + 100); message = '+100 Diamonds'; }
     if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
-    if (day === 6) { message = '+50 Casino Chips'; this.registry.events.emit('casino:grantChips', 50); }
+    if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); this.registry.events.emit('casino:grantChips', 50); }
     if (day === 7) {
-      const legendaries = getAllDiceDefinitions(this).filter((d) => d.rarity === 'Legendary');
+      const legendaries = getAllDiceDefinitions(this)
+        .filter((d) => d.rarity === 'Legendary')
+        .filter((d) => canReceiveUsefulCopies(this, d.typeId));
       const pick = legendaries[Math.floor(Math.random() * legendaries.length)];
-      if (pick) grantDiceCopies(this, pick.typeId, 1);
+      if (pick) {
+        grantDiceCopies(this, pick.typeId, 1);
+        message = `Legendary Dice: ${pick.title}`;
+        claimedDay7LegendaryTypeId = pick.typeId;
+        claimedDay7LegendaryTitle = pick.title;
+      } else {
+        setDiceTokens(this, getDiceTokens(this) + 5000);
+        message = 'Legendary pool full → +5,000 Dice Tokens';
+        claimedDay7LegendaryTypeId = undefined;
+        claimedDay7LegendaryTitle = 'Legendary pool full (+5,000 Dice Tokens)';
+      }
       AchievementStore.unlock(this, 'darkest_hour');
-      message = 'Free Random Legendary Dice!';
     }
     
     claimed.add(day);
@@ -761,7 +777,9 @@ export class ArenaScene extends Phaser.Scene {
         ...reward,
         claimedDays: [...claimed].sort((a, b) => a - b),
         lastClaimDate: new Date().toISOString().slice(0, 10),
-        lastClaimAt: new Date().toISOString()
+        lastClaimAt: new Date().toISOString(),
+        day7LegendaryTypeId: day === 7 ? claimedDay7LegendaryTypeId : reward.day7LegendaryTypeId,
+        day7LegendaryTitle: day === 7 ? claimedDay7LegendaryTitle : reward.day7LegendaryTitle
       }
     });
     

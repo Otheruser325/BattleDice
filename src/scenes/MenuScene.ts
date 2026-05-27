@@ -6,7 +6,7 @@ import { MENU_TABS, PALETTE, getLayout } from '../ui/theme';
 import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { ProfileStore } from '../systems/ProfileStore';
-import { getAllDiceDefinitions, getDiamonds, getDiceTokens, grantDiceCopies, setDiamonds, setDiceTokens } from '../data/dice';
+import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiamonds, getDiceTokens, grantDiceCopies, setDiamonds, setDiceTokens } from '../data/dice';
 import { AchievementStore, type AchievementId } from '../systems/AchievementStore';
 
 type MenuTab = (typeof MENU_TABS)[number];
@@ -191,11 +191,18 @@ export class MenuScene extends Phaser.Scene {
     if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
     if (day === 6) { message = '+50 Casino Chips'; this.registry.events.emit('casino:grantChips', 50); }
     if (day === 7) {
-      const legendaries = getAllDiceDefinitions(this).filter((d) => d.rarity === 'Legendary');
+      const legendaries = getAllDiceDefinitions(this)
+        .filter((d) => d.rarity === 'Legendary')
+        .filter((d) => canReceiveUsefulCopies(this, d.typeId));
       const pick = legendaries[Math.floor(Math.random() * legendaries.length)];
-      if (pick) grantDiceCopies(this, pick.typeId, 1);
+      if (pick) {
+        grantDiceCopies(this, pick.typeId, 1);
+        message = `Legendary Dice: ${pick.title}`;
+      } else {
+        setDiceTokens(this, getDiceTokens(this) + 5000);
+        message = 'Legendary pool full → +5,000 Dice Tokens';
+      }
       AchievementStore.unlock(this, 'darkest_hour');
-      message = 'Free Random Legendary Dice!';
     }
     claimed.add(day);
     ProfileStore.set(this, {
