@@ -526,13 +526,13 @@ export class ArenaScene extends Phaser.Scene {
     const deuciferStatus = this.getChallengeStatus('deucifer');
     const dopamineStatus = this.getChallengeStatus('dopamine');
     const makeBtn = (x: number, y: number, label: string, sub: string, onClick: () => void) => {
-      const r = this.add.rectangle(x, y, 280, 120, 0x173247, 0.96).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
+      const r = this.add.rectangle(x, y, 300, 150, 0x173247, 0.96).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
       const t = this.add.text(x, y - 28, label, { fontFamily: 'Orbitron', fontSize: '16px', color: PALETTE.accent }).setOrigin(0.5);
-      const d = this.add.text(x, y + 2, sub, { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 250 } }).setOrigin(0.5, 0);
+      const d = this.add.text(x, y - 2, sub, { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 268 } }).setOrigin(0.5, 0);
       r.on('pointerdown', onClick);
       return [r, t, d];
     };
-    const daily = makeBtn(cx - 170, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup • Reward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
+    const daily = makeBtn(cx - 320, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup\nReward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
       this.activeChallenge = 'daily';
       if (this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'started');
       this.configRandomMode = true;
@@ -556,7 +556,7 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips`, () => {
+    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns\nReward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
@@ -572,7 +572,7 @@ export class ArenaScene extends Phaser.Scene {
     back.on('pointerdown', () => this.openSingleplayerModal());
     this.modalContainer = this.add.container(0, 0, [
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
-      this.add.rectangle(cx, cy, 1060, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.rectangle(cx, cy, 1120, 390, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 145, 'CHALLENGES', { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent }).setOrigin(0.5),
       ...daily, ...dopamine, ...deuc, back
     ]).setDepth(250);
@@ -1933,7 +1933,7 @@ export class ArenaScene extends Phaser.Scene {
       const turns = skill?.modifiers?.tauntDuration ?? 1;
       if (range <= 0) return;
       boardDice.filter((foe) => foe.ownerId !== shield.ownerId).forEach((foe) => {
-        const dist = getCombatDistance(shield, foe);
+        const dist = this.getDistanceWithBoardSides(shield, foe);
         if (dist <= range) this.tauntedByInstance.set(foe.instanceId, { sourceId: shield.instanceId, turns });
       });
     });
@@ -2040,9 +2040,21 @@ export class ArenaScene extends Phaser.Scene {
     return this.getBoardSideForDie(die) === 'player' ? this.playerGridContainer : this.enemyGridContainer;
   }
   private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
-    const attackerProxy: DiceInstanceState = { ...attacker, ownerId: this.getBoardSideForDie(attacker) };
-    const targetProxy: DiceInstanceState = { ...target, ownerId: this.getBoardSideForDie(target) };
-    return getCombatDistance(attackerProxy, targetProxy);
+    if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
+    const attackerSide = this.getBoardSideForDie(attacker);
+    const targetSide = this.getBoardSideForDie(target);
+
+    if (attackerSide === targetSide) {
+      return 1 + Math.abs(attacker.gridPosition.col - target.gridPosition.col);
+    }
+
+    const attackerToFrontline = attackerSide === 'player'
+      ? GRID_SIZE - attacker.gridPosition.col
+      : attacker.gridPosition.col + 1;
+    const targetFromFrontline = targetSide === 'player'
+      ? GRID_SIZE - target.gridPosition.col
+      : target.gridPosition.col + 1;
+    return attackerToFrontline + targetFromFrontline;
   }
 
   private isOnBlockedBackline(die: DiceInstanceState): boolean {
@@ -3564,7 +3576,7 @@ export class ArenaScene extends Phaser.Scene {
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const targets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition);
     return targets
-      .map((die) => ({ die, distance: getCombatDistance(attacker, die) }))
+      .map((die) => ({ die, distance: this.getDistanceWithBoardSides(attacker, die) }))
       .sort((a, b) => a.distance - b.distance)[0]?.die;
   }
 
@@ -3654,7 +3666,7 @@ export class ArenaScene extends Phaser.Scene {
       for (let row = 0; row < GRID_SIZE; row++) {
         for (let col = 0; col < GRID_SIZE; col++) {
           const proxyTarget: DiceInstanceState = { ...die, ownerId: targetOwner, gridPosition: { row, col } };
-          if (getCombatDistance(die, proxyTarget) > Math.max(1, definition.range)) continue;
+          if (this.getDistanceWithBoardSides(die, proxyTarget) > Math.max(1, definition.range)) continue;
           const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, targetOwner === die.ownerId ? 0.16 : 0.24)
