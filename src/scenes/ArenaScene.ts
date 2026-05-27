@@ -2045,7 +2045,7 @@ export class ArenaScene extends Phaser.Scene {
     const targetSide = this.getBoardSideForDie(target);
 
     if (attackerSide === targetSide) {
-      return 1 + Math.abs(attacker.gridPosition.col - target.gridPosition.col);
+      return Math.abs(attacker.gridPosition.col - target.gridPosition.col);
     }
 
     const attackerToFrontline = attackerSide === 'player'
@@ -2054,7 +2054,7 @@ export class ArenaScene extends Phaser.Scene {
     const targetFromFrontline = targetSide === 'player'
       ? GRID_SIZE - target.gridPosition.col
       : target.gridPosition.col + 1;
-    return attackerToFrontline + targetFromFrontline;
+    return Math.max(0, attackerToFrontline + targetFromFrontline - 1);
   }
 
   private isOnBlockedBackline(die: DiceInstanceState): boolean {
@@ -3244,10 +3244,12 @@ export class ArenaScene extends Phaser.Scene {
     });
     childrenToRemove.forEach((child) => child.destroy());
 
-    const enemyDice = getBoardDice(this.gameState, 'enemy');
-    enemyDice.forEach((die: DiceInstanceState) => {
+    const enemyBoardDice = this.gameState.dice.filter((die) =>
+      die.zone === 'board' && !die.isDestroyed && die.gridPosition && this.getBoardSideForDie(die) === 'enemy');
+    enemyBoardDice.forEach((die: DiceInstanceState) => {
       if (die.gridPosition) this.renderDie(this.getGridContainerForDie(die), die, die.gridPosition.row, die.gridPosition.col, false);
     });
+    const enemyDice = getBoardDice(this.gameState, 'enemy');
     const statusDice = enemyDice.length > 0 || !this.enemyLoadoutRevealed
       ? enemyDice
       : this.gameState.dice.filter((die) => die.ownerId === 'enemy' && !die.isDestroyed);
@@ -3369,10 +3371,12 @@ export class ArenaScene extends Phaser.Scene {
     });
     childrenToRemove.forEach(child => child.destroy());
 
-    const playerDice = getBoardDice(this.gameState, 'player');
-    playerDice.forEach((die: DiceInstanceState) => {
+    const playerBoardDice = this.gameState.dice.filter((die) =>
+      die.zone === 'board' && !die.isDestroyed && die.gridPosition && this.getBoardSideForDie(die) === 'player');
+    playerBoardDice.forEach((die: DiceInstanceState) => {
       if (die.gridPosition) this.renderDie(this.getGridContainerForDie(die), die, die.gridPosition.row, die.gridPosition.col, true);
     });
+    const playerDice = getBoardDice(this.gameState, 'player');
     const livingPlayerDice = this.gameState.dice.filter((die) => die.ownerId === 'player' && !die.isDestroyed);
     const statusDice = this.gameState.turn <= 1 && this.gameState.combatPhase !== 'attacking'
       ? playerDice
