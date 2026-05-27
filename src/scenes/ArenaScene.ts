@@ -2103,7 +2103,8 @@ export class ArenaScene extends Phaser.Scene {
     if (this.lavaPoolsByTile.size === 0) return;
     const allBoardDice = this.gameState.dice.filter(d => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
     allBoardDice.forEach(die => {
-      const tileKey = `${die.ownerId}:${die.gridPosition!.row},${die.gridPosition!.col}`;
+      const boardSide = this.getBoardSideForDie(die);
+      const tileKey = `${boardSide}:${die.gridPosition!.row},${die.gridPosition!.col}`;
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
         const wasAlive = !die.isDestroyed;
@@ -2687,8 +2688,10 @@ export class ArenaScene extends Phaser.Scene {
       const manaNeeded = meta.activeManaNeeded ?? 7;
       const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
       if (currentMana >= manaNeeded) {
-        const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-        const enemies = getBoardDice(this.gameState, enemyOwner);
+        const attackerBoardSide = this.getBoardSideForDie(attacker);
+        const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
+        const enemies = this.gameState.dice.filter((die) =>
+          die.zone === 'board' && !die.isDestroyed && die.gridPosition && this.getBoardSideForDie(die) === targetBoardSide);
         if (enemies.length > 0) {
           const meteorTarget = enemies[Math.floor(Math.random() * enemies.length)];
           const freshTarget = this.gameState.dice.find(d => d.instanceId === meteorTarget.instanceId);
@@ -2702,7 +2705,7 @@ export class ArenaScene extends Phaser.Scene {
               const tiles = [origin, { row: origin.row - 1, col: origin.col }, { row: origin.row + 1, col: origin.col }, { row: origin.row, col: origin.col - 1 }, { row: origin.row, col: origin.col + 1 }]
                 .filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE);
               tiles.forEach((tile) => {
-                const lavaKey = `${enemyOwner}:${tile.row},${tile.col}`;
+                const lavaKey = `${targetBoardSide}:${tile.row},${tile.col}`;
                 this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: 3, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
               });
             }
@@ -2711,7 +2714,9 @@ export class ArenaScene extends Phaser.Scene {
               .filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE);
             let hits = 0;
             plusTiles.forEach((tile) => {
-              const victim = this.gameState.dice.find((d) => d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col);
+              const victim = this.gameState.dice.find((d) =>
+                d.zone === 'board' && !d.isDestroyed && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
+                && this.getBoardSideForDie(d) === targetBoardSide);
               if (!victim) return;
               const dealt = applyDirectDamage(victim, meteorDamage);
               this.showDamageText(victim, dealt, '#ff9f58');
@@ -3107,8 +3112,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal', attacker: DiceInstanceState, target: DiceInstanceState) {
     if (!attacker.gridPosition || !target.gridPosition) return;
-    const isPlayerAttacker = attacker.ownerId === 'player';
-    const attackerGrid = isPlayerAttacker ? this.playerGridContainer : this.enemyGridContainer;
+    const attackerGrid = this.getGridContainerForDie(attacker);
     const targetGrid = this.getGridContainerForDie(target);
     const ax = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
@@ -3169,9 +3173,8 @@ export class ArenaScene extends Phaser.Scene {
   private animateAttack(attacker: DiceInstanceState, target: DiceInstanceState) {
     if (!attacker.gridPosition || !target.gridPosition) return;
 
-    const isPlayerAttacker = attacker.ownerId === 'player';
-    const attackerGrid = isPlayerAttacker ? this.playerGridContainer : this.enemyGridContainer;
-    const targetGrid = isPlayerAttacker ? this.enemyGridContainer : this.playerGridContainer;
+    const attackerGrid = this.getGridContainerForDie(attacker);
+    const targetGrid = this.getGridContainerForDie(target);
 
     const attackerX = attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const attackerY = attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
