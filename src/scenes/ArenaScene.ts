@@ -552,13 +552,24 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
+    const profile = ProfileStore.get(this);
+    const claimedDays = new Set(profile.loginReward?.claimedDays ?? []);
+    const loginRewardComplete = claimedDays.size >= 7;
     const back = this.add.text(cx, cy + 136, '← BACK', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     back.on('pointerdown', () => this.openSingleplayerModal());
+    const loginRewardsBtn = this.add.text(cx, cy + 172, loginRewardComplete ? '7-DAY LOGIN COMPLETE' : '7-DAY LOGIN REWARDS', {
+      fontFamily: 'Orbitron', fontSize: '12px', color: '#000000',
+      backgroundColor: loginRewardComplete ? '#95a5a6' : '#f4b860', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5);
+    if (!loginRewardComplete) {
+      loginRewardsBtn.setInteractive({ useHandCursor: true });
+      loginRewardsBtn.on('pointerdown', () => this.openLoginRewardModal());
+    }
     this.modalContainer = this.add.container(0, 0, [
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
       this.add.rectangle(cx, cy, 760, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 145, 'CHALLENGES', { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent }).setOrigin(0.5),
-      ...daily, ...deuc, back
+      ...daily, ...deuc, back, loginRewardsBtn
     ]).setDepth(250);
     this.setModalEsc(() => this.openSingleplayerModal());
   }
