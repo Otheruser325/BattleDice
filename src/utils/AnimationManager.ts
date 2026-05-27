@@ -250,11 +250,13 @@ export class AnimationManager {
 
   static animateAchievementPopup(scene: Phaser.Scene, achievementId: string, onComplete?: () => void) {
     const { width, height } = scene.scale;
-    const popupContainer = scene.add.container(width - 220, -100).setDepth(1000);
+    const startY = height + 80;
+    const restY = height - 72;
+    const popupContainer = scene.add.container(width / 2, startY).setDepth(1000);
     
     const bg = scene.add.rectangle(0, 0, 200, 70, 0x1a3a52, 0.95)
       .setStrokeStyle(2, 0xf4b860);
-    const title = scene.add.text(-80, -20, 'ACHIEVEMENT', {
+    const title = scene.add.text(0, -20, 'ACHIEVEMENT UNLOCKED', {
       fontFamily: 'Orbitron',
       fontSize: '10px',
       color: '#f4b860'
@@ -268,30 +270,31 @@ export class AnimationManager {
     
     popupContainer.add([bg, title, name]);
     
-    // Animate in (slide down from top)
+    // Animate in from below (middle-bottom HUD area)
     scene.tweens.add({
       targets: popupContainer,
-      y: 20,
+      y: restY,
       duration: 500,
       ease: 'Back.easeOut'
     });
     
-    // After 2 seconds, start periodic up/down animation
+    // Keep the popup gently floating while visible.
     const floatTween = scene.tweens.add({
       targets: popupContainer,
-      y: 10,
-      duration: 800,
+      y: restY - 10,
+      duration: 500,
       ease: 'Sine.easeInOut',
       yoyo: true,
-      repeat: 3,
-      delay: 2000
+      repeat: -1,
+      delay: 500
     });
-    
-    // Total lifetime: 2s delay + 3 * 0.8s * 2 (yoyo) = ~6.8s, then fade out
-    scene.time.delayedCall(7000, () => {
+
+    // Around 3 seconds of on-screen time after open animation.
+    scene.time.delayedCall(3500, () => {
+      floatTween.stop();
       scene.tweens.add({
         targets: popupContainer,
-        y: -100,
+        y: startY,
         alpha: 0,
         duration: 400,
         ease: 'Sine.easeIn',
