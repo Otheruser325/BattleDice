@@ -531,7 +531,7 @@ export class ArenaScene extends Phaser.Scene {
     };
     const daily = makeBtn(cx - 170, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup • Reward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
       this.activeChallenge = 'daily';
-      this.setChallengeStatus('daily', 'started');
+      if (this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'started');
       this.configRandomMode = true;
       this.configRandomizeLoadoutAndClassUps = true;
       this.configUseLevelling = true;
@@ -543,7 +543,7 @@ export class ArenaScene extends Phaser.Scene {
     const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
-      this.setChallengeStatus('deucifer', 'started');
+      if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
       this.configRandomMode = false;
       // Keep prior toggle value to avoid visual desync when re-opening this config.
       this.configDifficulty = 'Nightmare';
@@ -3979,11 +3979,11 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (stage !== 'victory' && this.activeChallenge === 'daily') {
       const dailyStatus = this.getChallengeStatus('daily');
-      if (dailyStatus !== 'completed') this.setChallengeStatus('daily', 'failed');
+      if (dailyStatus !== 'completed' && this.canChallengeBeMarkedFailed('daily')) this.setChallengeStatus('daily', 'failed');
     }
     if (stage !== 'victory' && this.activeChallenge === 'deucifer') {
       const deuciferStatus = this.getChallengeStatus('deucifer');
-      if (deuciferStatus !== 'completed') this.setChallengeStatus('deucifer', 'failed');
+      if (deuciferStatus !== 'completed' && this.canChallengeBeMarkedFailed('deucifer')) this.setChallengeStatus('deucifer', 'failed');
     }
     if (stage === 'victory') {
       const next = AchievementStore.mutate(this, (state) => ({ ...state, wins: state.wins + 1 }));
@@ -4054,11 +4054,11 @@ export class ArenaScene extends Phaser.Scene {
       const wasFinished = this.gamePhase.stage === 'victory' || this.gamePhase.stage === 'defeat' || this.gamePhase.stage === 'draw';
       if (this.activeChallenge === 'daily') {
         const dailyStatus = this.getChallengeStatus('daily');
-        if (!wasFinished && dailyStatus !== 'completed') this.setChallengeStatus('daily', 'failed');
+        if (!wasFinished && dailyStatus !== 'completed' && this.canChallengeBeMarkedFailed('daily')) this.setChallengeStatus('daily', 'failed');
       }
       if (this.activeChallenge === 'deucifer') {
         const deuciferStatus = this.getChallengeStatus('deucifer');
-        if (!wasFinished && deuciferStatus !== 'completed') this.setChallengeStatus('deucifer', 'failed');
+        if (!wasFinished && deuciferStatus !== 'completed' && this.canChallengeBeMarkedFailed('deucifer')) this.setChallengeStatus('deucifer', 'failed');
       }
       this.scene.wake(SCENE_KEYS.Menu);
       this.scene.start(SCENE_KEYS.Menu);
@@ -4122,5 +4122,12 @@ export class ArenaScene extends Phaser.Scene {
 
   private pickRandomColumn(columns: number[]): number {
     return columns[Phaser.Math.Between(0, columns.length - 1)] ?? 0;
+  }
+  private canChallengeBeMarkedFailed(challenge: Exclude<ChallengeKey, null>): boolean {
+    if (challenge === 'daily') {
+      const claimKey = `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}`;
+      return !this.hasChallengeRewardClaimed(claimKey);
+    }
+    return !this.hasChallengeRewardClaimed('deucifer');
   }
 }
