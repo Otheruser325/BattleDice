@@ -34,7 +34,7 @@ import { AchievementStore } from '../systems/AchievementStore';
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
 type MatchResultStage = 'victory' | 'defeat' | 'draw';
 type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy' | 'DiceCard';
-type ChallengeKey = 'daily' | 'deucifer' | null;
+type ChallengeKey = 'daily' | 'deucifer' | 'dopamine' | null;
 type ChallengeStatus = 'not-started' | 'started' | 'completed' | 'failed';
 
 interface GamePhase {
@@ -297,8 +297,8 @@ export class ArenaScene extends Phaser.Scene {
 
     const claimedDays = new Set(profile.loginReward?.claimedDays ?? []);
     const loginRewardComplete = claimedDays.size >= 7;
-    const loginBtnX = width - 118;
-    const loginBtnY = 124;
+    const loginBtnX = width - 108;
+    const loginBtnY = 144;
     const loginRewardBtn = this.add.rectangle(loginBtnX, loginBtnY, 118, 118, loginRewardComplete ? 0x3e4f5c : 0xf4b860, 0.96)
       .setStrokeStyle(2, loginRewardComplete ? 0x8ea1b2 : 0xffffff);
     const loginRewardLabel = this.add.text(loginBtnX, loginBtnY - 18, '7-DAY\nLOGIN', {
@@ -501,7 +501,7 @@ export class ArenaScene extends Phaser.Scene {
     createOption(cx, cy + 2, 'Bossfight', 'WIP: bossfight content and rulesets are coming soon.', 0x6f5bb5, () => {
       AlertManager.toast(this, { type: 'warning', message: 'Bossfight is a WIP feature and is not implemented yet.' });
     });
-    createOption(cx + 220, cy + 2, 'Challenges', 'Daily PvE + Deucifer boss challenge.', 0x5d6770, () => this.openChallengesModal());
+    createOption(cx + 220, cy + 2, 'Challenges', 'Daily PvE + Dopamine + Deucifer boss challenge.', 0x5d6770, () => this.openChallengesModal());
 
     const backBtn = this.add.text(cx, cy + 126, '← BACK', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
@@ -524,14 +524,15 @@ export class ArenaScene extends Phaser.Scene {
     this.dailyHard = Number(dateKey.split('-')[2]) % 4 === 0;
     const dailyStatus = this.getChallengeStatus('daily');
     const deuciferStatus = this.getChallengeStatus('deucifer');
+    const dopamineStatus = this.getChallengeStatus('dopamine');
     const makeBtn = (x: number, y: number, label: string, sub: string, onClick: () => void) => {
-      const r = this.add.rectangle(x, y, 280, 120, 0x173247, 0.96).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
+      const r = this.add.rectangle(x, y, 300, 150, 0x173247, 0.96).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
       const t = this.add.text(x, y - 28, label, { fontFamily: 'Orbitron', fontSize: '16px', color: PALETTE.accent }).setOrigin(0.5);
-      const d = this.add.text(x, y + 2, sub, { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 250 } }).setOrigin(0.5, 0);
+      const d = this.add.text(x, y - 2, sub, { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 268 } }).setOrigin(0.5, 0);
       r.on('pointerdown', onClick);
       return [r, t, d];
     };
-    const daily = makeBtn(cx - 170, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup • Reward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
+    const daily = makeBtn(cx - 320, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup\nReward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
       this.activeChallenge = 'daily';
       if (this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'started');
       this.configRandomMode = true;
@@ -542,7 +543,20 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips`, () => {
+    const dopamine = makeBtn(cx, cy, `Dopamine Challenge`, `Status: ${this.getChallengeStatusLabel(dopamineStatus)}\nMedium • Dice Card • 10 Turns\nReward: 2500 Tokens + 20 Chips`, () => {
+      this.activeChallenge = 'dopamine';
+      this.activeDailyKey = '';
+      if (this.getChallengeStatus('dopamine') !== 'completed') this.setChallengeStatus('dopamine', 'started');
+      this.configRandomMode = true;
+      this.activeRandomModifier = 'DiceCard';
+      this.configRandomizeLoadoutAndClassUps = false;
+      this.configDifficulty = 'Medium';
+      this.configUseLevelling = true;
+      this.turnLimit = 10;
+      this.clearModeModal();
+      this.startGame();
+    });
+    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns\nReward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
@@ -558,9 +572,9 @@ export class ArenaScene extends Phaser.Scene {
     back.on('pointerdown', () => this.openSingleplayerModal());
     this.modalContainer = this.add.container(0, 0, [
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
-      this.add.rectangle(cx, cy, 760, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.rectangle(cx, cy, 1120, 390, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 145, 'CHALLENGES', { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent }).setOrigin(0.5),
-      ...daily, ...deuc, back
+      ...daily, ...dopamine, ...deuc, back
     ]).setDepth(250);
     this.setModalEsc(() => this.openSingleplayerModal());
   }
@@ -630,7 +644,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private openLoginRewardModal() {
-    const { claimed, unlockedDay, nextClaimableDay, isComplete } = this.getLoginRewardProgress();
+    const { reward, claimed, unlockedDay, nextClaimableDay, isComplete } = this.getLoginRewardProgress();
     
     this.clearModeModal();
     const { width, height } = this.scale;
@@ -1169,10 +1183,16 @@ export class ArenaScene extends Phaser.Scene {
       ? ['Poison', 'Solitude', 'Judgment', 'Skull', 'Death']
         .map((typeId) => allDefinitions.find((d) => d.typeId === typeId))
         .filter((d): d is DiceDefinition => Boolean(d))
+      : this.activeChallenge === 'dopamine'
+      ? ['Healing', 'Light', 'Battery', 'Meteor', 'Wind']
+        .map((typeId) => allDefinitions.find((d) => d.typeId === typeId))
+        .filter((d): d is DiceDefinition => Boolean(d))
       : this.pickRandomEnemyLoadout(allDefinitions);
     const enemyDefs = enemyRawDefs.map((definition) => {
       const classLevel = this.activeChallenge === 'deucifer'
         ? 11
+        : this.activeChallenge === 'dopamine'
+        ? 7
         : shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
         ? (this.activeChallenge === 'daily'
           ? this.getDailySeededIndex(`enemy-class-${definition.typeId}-${this.enemyClassLevels.size}`, 15) + 1
@@ -1187,6 +1207,8 @@ export class ArenaScene extends Phaser.Scene {
       const modifiers: RandomModeModifier[] = ['Classic', 'Combanity', 'Duality', 'Necromancy', 'DiceCard'];
       this.activeRandomModifier = this.activeChallenge === 'daily'
         ? this.getDailySeededModifier()
+        : this.activeChallenge === 'dopamine'
+        ? 'DiceCard'
         : (modifiers[Phaser.Math.Between(0, modifiers.length - 1)] ?? 'Classic');
       if (this.activeRandomModifier === 'Duality') {
         this.gameState = {
@@ -1911,7 +1933,7 @@ export class ArenaScene extends Phaser.Scene {
       const turns = skill?.modifiers?.tauntDuration ?? 1;
       if (range <= 0) return;
       boardDice.filter((foe) => foe.ownerId !== shield.ownerId).forEach((foe) => {
-        const dist = getCombatDistance(shield, foe);
+        const dist = this.getDistanceWithBoardSides(shield, foe);
         if (dist <= range) this.tauntedByInstance.set(foe.instanceId, { sourceId: shield.instanceId, turns });
       });
     });
@@ -2018,9 +2040,21 @@ export class ArenaScene extends Phaser.Scene {
     return this.getBoardSideForDie(die) === 'player' ? this.playerGridContainer : this.enemyGridContainer;
   }
   private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
-    const attackerProxy: DiceInstanceState = { ...attacker, ownerId: this.getBoardSideForDie(attacker) };
-    const targetProxy: DiceInstanceState = { ...target, ownerId: this.getBoardSideForDie(target) };
-    return getCombatDistance(attackerProxy, targetProxy);
+    if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
+    const attackerSide = this.getBoardSideForDie(attacker);
+    const targetSide = this.getBoardSideForDie(target);
+
+    if (attackerSide === targetSide) {
+      return 1 + Math.abs(attacker.gridPosition.col - target.gridPosition.col);
+    }
+
+    const attackerToFrontline = attackerSide === 'player'
+      ? GRID_SIZE - attacker.gridPosition.col
+      : attacker.gridPosition.col + 1;
+    const targetFromFrontline = targetSide === 'player'
+      ? GRID_SIZE - target.gridPosition.col
+      : target.gridPosition.col + 1;
+    return attackerToFrontline + targetFromFrontline;
   }
 
   private isOnBlockedBackline(die: DiceInstanceState): boolean {
@@ -2031,12 +2065,6 @@ export class ArenaScene extends Phaser.Scene {
 
   private getAttackDistance(attacker: DiceInstanceState, target: DiceInstanceState): number {
     if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
-    const attackerDef = this.getDefinitionForInstance(attacker);
-    const range = attackerDef?.range ?? 2;
-    if (attacker.typeId === 'Assassin') {
-      const distance = 1 + Math.abs(attacker.gridPosition.col - target.gridPosition.col);
-      return distance <= range ? distance : Number.POSITIVE_INFINITY;
-    }
     return this.getDistanceWithBoardSides(attacker, target);
   }
 
@@ -3548,7 +3576,7 @@ export class ArenaScene extends Phaser.Scene {
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const targets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition);
     return targets
-      .map((die) => ({ die, distance: getCombatDistance(attacker, die) }))
+      .map((die) => ({ die, distance: this.getDistanceWithBoardSides(attacker, die) }))
       .sort((a, b) => a.distance - b.distance)[0]?.die;
   }
 
@@ -3638,7 +3666,7 @@ export class ArenaScene extends Phaser.Scene {
       for (let row = 0; row < GRID_SIZE; row++) {
         for (let col = 0; col < GRID_SIZE; col++) {
           const proxyTarget: DiceInstanceState = { ...die, ownerId: targetOwner, gridPosition: { row, col } };
-          if (getCombatDistance(die, proxyTarget) > Math.max(1, definition.range)) continue;
+          if (this.getDistanceWithBoardSides(die, proxyTarget) > Math.max(1, definition.range)) continue;
           const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, targetOwner === die.ownerId ? 0.16 : 0.24)
@@ -3995,6 +4023,15 @@ export class ArenaScene extends Phaser.Scene {
         this.markChallengeRewardClaimed(deuciferClaimKey);
       }
     }
+    if (stage === 'victory' && this.activeChallenge === 'dopamine') {
+      this.setChallengeStatus('dopamine', 'completed');
+      const dopamineClaimKey = 'dopamine';
+      if (!this.hasChallengeRewardClaimed(dopamineClaimKey)) {
+        tokenReward += 2500;
+        chipReward += 20;
+        this.markChallengeRewardClaimed(dopamineClaimKey);
+      }
+    }
     if (stage !== 'victory' && this.activeChallenge === 'daily') {
       const dailyStatus = this.getChallengeStatus('daily');
       if (dailyStatus !== 'completed' && this.canChallengeBeMarkedFailed('daily')) this.setChallengeStatus('daily', 'failed');
@@ -4002,6 +4039,10 @@ export class ArenaScene extends Phaser.Scene {
     if (stage !== 'victory' && this.activeChallenge === 'deucifer') {
       const deuciferStatus = this.getChallengeStatus('deucifer');
       if (deuciferStatus !== 'completed' && this.canChallengeBeMarkedFailed('deucifer')) this.setChallengeStatus('deucifer', 'failed');
+    }
+    if (stage !== 'victory' && this.activeChallenge === 'dopamine') {
+      const dopamineStatus = this.getChallengeStatus('dopamine');
+      if (dopamineStatus !== 'completed' && this.canChallengeBeMarkedFailed('dopamine')) this.setChallengeStatus('dopamine', 'failed');
     }
     if (stage === 'victory') {
       const next = AchievementStore.mutate(this, (state) => ({ ...state, wins: state.wins + 1 }));
@@ -4078,6 +4119,10 @@ export class ArenaScene extends Phaser.Scene {
         const deuciferStatus = this.getChallengeStatus('deucifer');
         if (!wasFinished && deuciferStatus !== 'completed' && this.canChallengeBeMarkedFailed('deucifer')) this.setChallengeStatus('deucifer', 'failed');
       }
+      if (this.activeChallenge === 'dopamine') {
+        const dopamineStatus = this.getChallengeStatus('dopamine');
+        if (!wasFinished && dopamineStatus !== 'completed' && this.canChallengeBeMarkedFailed('dopamine')) this.setChallengeStatus('dopamine', 'failed');
+      }
       this.scene.wake(SCENE_KEYS.Menu);
       this.scene.start(SCENE_KEYS.Menu);
     });
@@ -4146,6 +4191,7 @@ export class ArenaScene extends Phaser.Scene {
       const claimKey = `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}`;
       return !this.hasChallengeRewardClaimed(claimKey);
     }
-    return !this.hasChallengeRewardClaimed('deucifer');
+    if (challenge === 'deucifer') return !this.hasChallengeRewardClaimed('deucifer');
+    return !this.hasChallengeRewardClaimed('dopamine');
   }
 }
