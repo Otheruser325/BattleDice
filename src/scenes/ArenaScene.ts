@@ -297,15 +297,17 @@ export class ArenaScene extends Phaser.Scene {
 
     const claimedDays = new Set(profile.loginReward?.claimedDays ?? []);
     const loginRewardComplete = claimedDays.size >= 7;
-    const loginRewardBtn = this.add.rectangle(centerX + 280, centerY + 34, 118, 118, loginRewardComplete ? 0x3e4f5c : 0xf4b860, 0.96)
+    const loginBtnX = width - 118;
+    const loginBtnY = 124;
+    const loginRewardBtn = this.add.rectangle(loginBtnX, loginBtnY, 118, 118, loginRewardComplete ? 0x3e4f5c : 0xf4b860, 0.96)
       .setStrokeStyle(2, loginRewardComplete ? 0x8ea1b2 : 0xffffff);
-    const loginRewardLabel = this.add.text(centerX + 280, centerY + 16, '7-DAY\nLOGIN', {
+    const loginRewardLabel = this.add.text(loginBtnX, loginBtnY - 18, '7-DAY\nLOGIN', {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: loginRewardComplete ? '#c8d2da' : '#111111',
       align: 'center'
     }).setOrigin(0.5);
-    const loginRewardSub = this.add.text(centerX + 280, centerY + 58, loginRewardComplete ? 'COMPLETE' : 'REWARDS', {
+    const loginRewardSub = this.add.text(loginBtnX, loginBtnY + 24, loginRewardComplete ? 'COMPLETE' : 'REWARDS', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: loginRewardComplete ? '#c8d2da' : '#111111'
@@ -531,7 +533,7 @@ export class ArenaScene extends Phaser.Scene {
     };
     const daily = makeBtn(cx - 170, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup • Reward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
       this.activeChallenge = 'daily';
-      this.setChallengeStatus('daily', 'started');
+      if (this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'started');
       this.configRandomMode = true;
       this.configRandomizeLoadoutAndClassUps = true;
       this.configUseLevelling = true;
@@ -543,7 +545,7 @@ export class ArenaScene extends Phaser.Scene {
     const deuc = makeBtn(cx + 170, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns • Reward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
-      this.setChallengeStatus('deucifer', 'started');
+      if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
       this.configRandomMode = false;
       // Keep prior toggle value to avoid visual desync when re-opening this config.
       this.configDifficulty = 'Nightmare';
@@ -552,24 +554,13 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const profile = ProfileStore.get(this);
-    const claimedDays = new Set(profile.loginReward?.claimedDays ?? []);
-    const loginRewardComplete = claimedDays.size >= 7;
     const back = this.add.text(cx, cy + 136, '← BACK', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     back.on('pointerdown', () => this.openSingleplayerModal());
-    const loginRewardsBtn = this.add.text(cx, cy + 172, loginRewardComplete ? '7-DAY LOGIN COMPLETE' : '7-DAY LOGIN REWARDS', {
-      fontFamily: 'Orbitron', fontSize: '12px', color: '#000000',
-      backgroundColor: loginRewardComplete ? '#95a5a6' : '#f4b860', padding: { left: 12, right: 12, top: 7, bottom: 7 }
-    }).setOrigin(0.5);
-    if (!loginRewardComplete) {
-      loginRewardsBtn.setInteractive({ useHandCursor: true });
-      loginRewardsBtn.on('pointerdown', () => this.openLoginRewardModal());
-    }
     this.modalContainer = this.add.container(0, 0, [
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
       this.add.rectangle(cx, cy, 760, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 145, 'CHALLENGES', { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent }).setOrigin(0.5),
-      ...daily, ...deuc, back, loginRewardsBtn
+      ...daily, ...deuc, back
     ]).setDepth(250);
     this.setModalEsc(() => this.openSingleplayerModal());
   }
@@ -622,11 +613,24 @@ export class ArenaScene extends Phaser.Scene {
     return definition.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport'));
   }
 
-  private openLoginRewardModal() {
+  private getLoginRewardProgress() {
+    const today = new Date().toISOString().slice(0, 10);
     const profile = ProfileStore.get(this);
-    const reward = profile.loginReward ?? { startDate: new Date().toISOString().slice(0, 10), claimedDays: [] as number[] };
-    const claimed = new Set(reward.claimedDays);
-    const isComplete = claimed.size >= 7;
+    const reward = profile.loginReward ?? { startDate: today, claimedDays: [] as number[] };
+    const claimed = new Set((reward.claimedDays ?? []).filter((d) => d >= 1 && d <= 7));
+    const startMs = new Date(`${reward.startDate}T00:00:00Z`).getTime();
+    const todayMs = new Date(`${today}T00:00:00Z`).getTime();
+    const elapsedDays = Number.isFinite(startMs) ? Math.max(0, Math.floor((todayMs - startMs) / 86400000)) : 0;
+    const unlockedDay = Math.max(1, Math.min(7, elapsedDays + 1));
+    let nextClaimableDay: number | null = null;
+    for (let day = 1; day <= unlockedDay; day++) {
+      if (!claimed.has(day)) { nextClaimableDay = day; break; }
+    }
+    return { reward, claimed, unlockedDay, nextClaimableDay, isComplete: claimed.size >= 7 };
+  }
+
+  private openLoginRewardModal() {
+    const { claimed, unlockedDay, nextClaimableDay, isComplete } = this.getLoginRewardProgress();
     
     this.clearModeModal();
     const { width, height } = this.scale;
@@ -661,15 +665,18 @@ export class ArenaScene extends Phaser.Scene {
       const x = startX + col * (mediumBtnWidth + gapX);
       const y = startY + row * (mediumBtnHeight + gapY);
       const isClaimed = claimed.has(r.day);
+      const isUnlocked = r.day <= unlockedDay;
+      const isClaimable = nextClaimableDay === r.day;
       
       const btn = this.add.rectangle(x, y, mediumBtnWidth, mediumBtnHeight, isClaimed ? 0x2c3e50 : r.color, 0.9)
         .setStrokeStyle(2, isClaimed ? 0x7f8c8d : 0xffffff)
         .setDepth(252);
       
-      const dayText = this.add.text(x, y - 18, `DAY ${r.day}`, { fontFamily: 'Orbitron', fontSize: '11px', color: isClaimed ? '#7f8c8d' : '#ffffff' }).setOrigin(0.5).setDepth(253);
-      const rewardText = this.add.text(x, y + 8, r.label, { fontFamily: 'Orbitron', fontSize: '10px', color: isClaimed ? '#7f8c8d' : '#ffffff', align: 'center' }).setOrigin(0.5).setDepth(253);
+      const dayText = this.add.text(x, y - 18, `DAY ${r.day}`, { fontFamily: 'Orbitron', fontSize: '11px', color: (isClaimed || !isUnlocked) ? '#7f8c8d' : '#ffffff' }).setOrigin(0.5).setDepth(253);
+      const rewardText = this.add.text(x, y + 8, r.label, { fontFamily: 'Orbitron', fontSize: '10px', color: (isClaimed || !isUnlocked) ? '#7f8c8d' : '#ffffff', align: 'center' }).setOrigin(0.5).setDepth(253);
+      if (isClaimed) this.add.text(x + (mediumBtnWidth / 2) - 12, y - (mediumBtnHeight / 2) + 10, '✓', { fontFamily: 'Orbitron', fontSize: '16px', color: '#7dff9f' }).setOrigin(0.5).setDepth(254);
       
-      if (!isClaimed && !isComplete) {
+      if (!isClaimed && !isComplete && isClaimable) {
         btn.setInteractive({ useHandCursor: true });
         btn.on('pointerover', () => { if (!isClaimed) btn.setFillStyle(r.color, 1); });
         btn.on('pointerout', () => { if (!isClaimed) btn.setFillStyle(r.color, 0.9); });
@@ -690,16 +697,18 @@ export class ArenaScene extends Phaser.Scene {
       .setDepth(252);
     const day7Text = this.add.text(day7X, day7Y - 8, `DAY 7 - ${day7.label}`, { fontFamily: 'Orbitron', fontSize: '13px', color: isDay7Claimed ? '#7f8c8d' : '#000000' }).setOrigin(0.5).setDepth(253);
     
-    if (!isDay7Claimed && !isComplete) {
+    if (isDay7Claimed) this.add.text(day7X + (day7Width / 2) - 14, day7Y - (day7Height / 2) + 12, '✓', { fontFamily: 'Orbitron', fontSize: '18px', color: '#7dff9f' }).setOrigin(0.5).setDepth(254);
+    if (!isDay7Claimed && !isComplete && nextClaimableDay === 7) {
       day7Btn.setInteractive({ useHandCursor: true });
       day7Btn.on('pointerover', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 1); });
       day7Btn.on('pointerout', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 0.9); });
       day7Btn.on('pointerdown', () => this.claimDailyReward(7));
     }
     
+    const day7Legendary = reward.day7LegendaryTitle ? ` • Day 7: ${reward.day7LegendaryTitle}` : '';
     const statusText = isComplete 
-      ? '🎉 7-DAY CALENDAR COMPLETE!' 
-      : `Claimed: ${claimed.size}/7 days`;
+      ? `🎉 7-DAY CALENDAR COMPLETE!${day7Legendary}` 
+      : `Claimed: ${claimed.size}/7 days • Next unlock: Day ${Math.min(7, unlockedDay + 1)}`;
     const status = this.add.text(cx, cy + 160, statusText, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(253);
     
     const closeBtn = this.add.text(cx, cy + 195, 'CLOSE', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } })
@@ -721,28 +730,45 @@ export class ArenaScene extends Phaser.Scene {
   }
   
   private claimDailyReward(day: number) {
-    const profile = ProfileStore.get(this);
-    const reward = profile.loginReward ?? { startDate: new Date().toISOString().slice(0, 10), claimedDays: [] as number[] };
-    const claimed = new Set(reward.claimedDays);
+    const { reward, claimed, nextClaimableDay, unlockedDay } = this.getLoginRewardProgress();
     
     if (claimed.has(day)) {
       AlertManager.toast(this, { type: 'warning', message: `Day ${day} already claimed!` });
       return;
     }
+    if (nextClaimableDay === null || day !== nextClaimableDay) {
+      const waitingDay = Math.min(7, unlockedDay + 1);
+      AlertManager.toast(this, { type: 'warning', message: day > unlockedDay ? `Day ${day} is locked. Come back tomorrow.` : `Claim Day ${nextClaimableDay} first.` });
+      if (day > unlockedDay && waitingDay <= 7) AlertManager.toast(this, { type: 'info', message: `Next reward unlocks on Day ${waitingDay}.` });
+      return;
+    }
     
     let message = '';
+    let claimedDay7LegendaryTypeId = reward.day7LegendaryTypeId;
+    let claimedDay7LegendaryTitle = reward.day7LegendaryTitle;
     if (day === 1) { setDiamonds(this, getDiamonds(this) + 50); message = '+50 Diamonds'; }
     if (day === 2) { setDiceTokens(this, getDiceTokens(this) + 1000); message = '+1,000 Dice Tokens'; }
-    if (day === 3) { message = '+20 Casino Chips'; this.registry.events.emit('casino:grantChips', 20); }
+    if (day === 3) { message = '+20 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 20 })); this.registry.events.emit('casino:grantChips', 20); }
     if (day === 4) { setDiamonds(this, getDiamonds(this) + 100); message = '+100 Diamonds'; }
     if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
-    if (day === 6) { message = '+50 Casino Chips'; this.registry.events.emit('casino:grantChips', 50); }
+    if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); this.registry.events.emit('casino:grantChips', 50); }
     if (day === 7) {
-      const legendaries = getAllDiceDefinitions(this).filter((d) => d.rarity === 'Legendary');
+      const legendaries = getAllDiceDefinitions(this)
+        .filter((d) => d.rarity === 'Legendary')
+        .filter((d) => canReceiveUsefulCopies(this, d.typeId));
       const pick = legendaries[Math.floor(Math.random() * legendaries.length)];
-      if (pick) grantDiceCopies(this, pick.typeId, 1);
+      if (pick) {
+        grantDiceCopies(this, pick.typeId, 1);
+        message = `Legendary Dice: ${pick.title}`;
+        claimedDay7LegendaryTypeId = pick.typeId;
+        claimedDay7LegendaryTitle = pick.title;
+      } else {
+        setDiceTokens(this, getDiceTokens(this) + 5000);
+        message = 'Legendary pool full → +5,000 Dice Tokens';
+        claimedDay7LegendaryTypeId = undefined;
+        claimedDay7LegendaryTitle = 'Legendary pool full (+5,000 Dice Tokens)';
+      }
       AchievementStore.unlock(this, 'darkest_hour');
-      message = 'Free Random Legendary Dice!';
     }
     
     claimed.add(day);
@@ -751,7 +777,9 @@ export class ArenaScene extends Phaser.Scene {
         ...reward,
         claimedDays: [...claimed].sort((a, b) => a - b),
         lastClaimDate: new Date().toISOString().slice(0, 10),
-        lastClaimAt: new Date().toISOString()
+        lastClaimAt: new Date().toISOString(),
+        day7LegendaryTypeId: day === 7 ? claimedDay7LegendaryTypeId : reward.day7LegendaryTypeId,
+        day7LegendaryTitle: day === 7 ? claimedDay7LegendaryTitle : reward.day7LegendaryTitle
       }
     });
     
@@ -2127,43 +2155,50 @@ export class ArenaScene extends Phaser.Scene {
     const owners: Array<'player' | 'enemy'> = ['player', 'enemy'];
     const openingOwners: Array<'player' | 'enemy'> = ['player', 'enemy'];
     for (const openingOwner of openingOwners) {
-      const assassin = this.gameState.dice.find((die) => {
-        if (die.ownerId !== openingOwner || die.zone !== 'board' || die.isDestroyed || die.hasFinishedAttacking) return false;
-        if ((die.attacksRemaining ?? 0) <= 0 || !die.gridPosition) return false;
-        return this.hasAssassinOpeningRuntime(this.getDefinitionForInstance(die));
-      });
-      if (!assassin) continue;
-      const target = this.findAttackTargetForArena(assassin);
-      if (!target) continue;
-      // Assassins perform basic attacks first with their bonus damage, not an instant strike
-      const defs = this.getDefinitionsForCombat(assassin, target);
-      const rawResult = executeAttack(this.gameState, assassin.instanceId, target.instanceId, defs, {
-        attacker: this.getDefinitionForInstance(assassin),
-        target: this.getDefinitionForInstance(target)
-      });
-      const multiplier = this.getCombanityDamageMultiplier(assassin, target);
-      const solitudeBonus = this.getSolitudeBasicAttackBonus(assassin, target);
-      const offenseMult = this.getOffenseMultiplier(assassin);
-      const attackerMeta = getRuntimeSkillMeta(this.getDefinitionForInstance(assassin)!);
-      const ironRate = attackerMeta?.targetCurrentHpBonusRate ?? 0;
-      const proportional = Math.max(0, Math.floor(target.currentHealth * ironRate));
-      const nonProportional = Math.max(1, rawResult.damage - proportional);
-      const scaledNonProportional = Math.floor(nonProportional * multiplier);
-      const giantHunter = this.giantHunterRateByOwner[assassin.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[assassin.ownerId])) : 0;
-      const assassinBoost = (this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0) > 0 ? 2 : 1;
-      const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
-      this.gameState = spendAttack(this.gameState, assassin.instanceId);
-      const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
-      this.gameState = hit.state;
-      this.showDamageText(target, hit.dealt, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
-      this.applyPassiveSkillEffects(assassin, target);
-      const rem = this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0;
-      if (rem > 0) this.assassinBoostAttacksByInstance.set(assassin.instanceId, rem - 1);
-      this.combatLog.setText(`${openingOwner === 'player' ? 'Your' : 'Enemy'} Assassin strikes first for ${hit.dealt}!`);
-      this.renderDice();
-      this.renderEnemyDice();
-      if (!(await this.delayCombatPaced(350))) return;
-      if (this.checkWinConditions()) return;
+      while (true) {
+        const assassin = this.gameState.dice.find((die) => {
+          if (die.ownerId !== openingOwner || die.zone !== 'board' || die.isDestroyed || die.hasFinishedAttacking) return false;
+          if ((die.attacksRemaining ?? 0) <= 0 || !die.gridPosition) return false;
+          return this.hasAssassinOpeningRuntime(this.getDefinitionForInstance(die));
+        });
+        if (!assassin) break;
+        const target = this.findAttackTargetForArena(assassin);
+        if (!target) {
+          this.gameState = {
+            ...this.gameState,
+            dice: this.gameState.dice.map((die) => die.instanceId === assassin.instanceId ? { ...die, attacksRemaining: 0, hasFinishedAttacking: true } : die)
+          };
+          continue;
+        }
+        const defs = this.getDefinitionsForCombat(assassin, target);
+        const rawResult = executeAttack(this.gameState, assassin.instanceId, target.instanceId, defs, {
+          attacker: this.getDefinitionForInstance(assassin),
+          target: this.getDefinitionForInstance(target)
+        });
+        const multiplier = this.getCombanityDamageMultiplier(assassin, target);
+        const solitudeBonus = this.getSolitudeBasicAttackBonus(assassin, target);
+        const offenseMult = this.getOffenseMultiplier(assassin);
+        const attackerMeta = getRuntimeSkillMeta(this.getDefinitionForInstance(assassin)!);
+        const ironRate = attackerMeta?.targetCurrentHpBonusRate ?? 0;
+        const proportional = Math.max(0, Math.floor(target.currentHealth * ironRate));
+        const nonProportional = Math.max(1, rawResult.damage - proportional);
+        const scaledNonProportional = Math.floor(nonProportional * multiplier);
+        const giantHunter = this.giantHunterRateByOwner[assassin.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[assassin.ownerId])) : 0;
+        const assassinBoost = (this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0) > 0 ? 2 : 1;
+        const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
+        this.gameState = spendAttack(this.gameState, assassin.instanceId);
+        const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
+        this.gameState = hit.state;
+        this.showDamageText(target, hit.dealt, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
+        this.applyPassiveSkillEffects(assassin, target);
+        const rem = this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0;
+        if (rem > 0) this.assassinBoostAttacksByInstance.set(assassin.instanceId, rem - 1);
+        this.combatLog.setText(`${openingOwner === 'player' ? 'Your' : 'Enemy'} Assassin strikes first for ${hit.dealt}!`);
+        this.renderDice();
+        this.renderEnemyDice();
+        if (!(await this.delayCombatPaced(350))) return;
+        if (this.checkWinConditions()) return;
+      }
     }
 
     let timedOut = false;
@@ -3183,9 +3218,7 @@ export class ArenaScene extends Phaser.Scene {
 
     const enemyDice = getBoardDice(this.gameState, 'enemy');
     enemyDice.forEach((die: DiceInstanceState) => {
-      if (die.gridPosition) {
-        this.renderDie(this.enemyGridContainer, die, die.gridPosition.row, die.gridPosition.col, false);
-      }
+      if (die.gridPosition) this.renderDie(this.getGridContainerForDie(die), die, die.gridPosition.row, die.gridPosition.col, false);
     });
     const statusDice = enemyDice.length > 0 || !this.enemyLoadoutRevealed
       ? enemyDice
@@ -3310,9 +3343,7 @@ export class ArenaScene extends Phaser.Scene {
 
     const playerDice = getBoardDice(this.gameState, 'player');
     playerDice.forEach((die: DiceInstanceState) => {
-      if (die.gridPosition) {
-        this.renderDie(this.playerGridContainer, die, die.gridPosition.row, die.gridPosition.col, true);
-      }
+      if (die.gridPosition) this.renderDie(this.getGridContainerForDie(die), die, die.gridPosition.row, die.gridPosition.col, true);
     });
     const livingPlayerDice = this.gameState.dice.filter((die) => die.ownerId === 'player' && !die.isDestroyed);
     const statusDice = this.gameState.turn <= 1 && this.gameState.combatPhase !== 'attacking'
@@ -3966,11 +3997,11 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (stage !== 'victory' && this.activeChallenge === 'daily') {
       const dailyStatus = this.getChallengeStatus('daily');
-      if (dailyStatus !== 'completed') this.setChallengeStatus('daily', 'failed');
+      if (dailyStatus !== 'completed' && this.canChallengeBeMarkedFailed('daily')) this.setChallengeStatus('daily', 'failed');
     }
     if (stage !== 'victory' && this.activeChallenge === 'deucifer') {
       const deuciferStatus = this.getChallengeStatus('deucifer');
-      if (deuciferStatus !== 'completed') this.setChallengeStatus('deucifer', 'failed');
+      if (deuciferStatus !== 'completed' && this.canChallengeBeMarkedFailed('deucifer')) this.setChallengeStatus('deucifer', 'failed');
     }
     if (stage === 'victory') {
       const next = AchievementStore.mutate(this, (state) => ({ ...state, wins: state.wins + 1 }));
@@ -4038,13 +4069,14 @@ export class ArenaScene extends Phaser.Scene {
     overlay.on('pointerdown', () => this.closeExitPrompt());
     cancel.on('pointerdown', () => this.closeExitPrompt());
     quit.on('pointerdown', () => {
+      const wasFinished = this.gamePhase.stage === 'victory' || this.gamePhase.stage === 'defeat' || this.gamePhase.stage === 'draw';
       if (this.activeChallenge === 'daily') {
         const dailyStatus = this.getChallengeStatus('daily');
-        if (dailyStatus !== 'completed') this.setChallengeStatus('daily', 'failed');
+        if (!wasFinished && dailyStatus !== 'completed' && this.canChallengeBeMarkedFailed('daily')) this.setChallengeStatus('daily', 'failed');
       }
       if (this.activeChallenge === 'deucifer') {
         const deuciferStatus = this.getChallengeStatus('deucifer');
-        if (deuciferStatus !== 'completed') this.setChallengeStatus('deucifer', 'failed');
+        if (!wasFinished && deuciferStatus !== 'completed' && this.canChallengeBeMarkedFailed('deucifer')) this.setChallengeStatus('deucifer', 'failed');
       }
       this.scene.wake(SCENE_KEYS.Menu);
       this.scene.start(SCENE_KEYS.Menu);
@@ -4108,5 +4140,12 @@ export class ArenaScene extends Phaser.Scene {
 
   private pickRandomColumn(columns: number[]): number {
     return columns[Phaser.Math.Between(0, columns.length - 1)] ?? 0;
+  }
+  private canChallengeBeMarkedFailed(challenge: Exclude<ChallengeKey, null>): boolean {
+    if (challenge === 'daily') {
+      const claimKey = `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}`;
+      return !this.hasChallengeRewardClaimed(claimKey);
+    }
+    return !this.hasChallengeRewardClaimed('deucifer');
   }
 }
