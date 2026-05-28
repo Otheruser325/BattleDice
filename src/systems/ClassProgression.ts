@@ -121,27 +121,30 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
   };
 }
 
-export function getClassScaledSkillDescription(definition: DiceDefinition, skill = definition.skills[0]): string {
+export function getClassScaledSkillDescription(definition: DiceDefinition, skill = definition.skills[0], skillDamageMultiplier = 1): string {
   const modifiers = getModifier(skill);
   const notes = modifiers.notes ?? [];
+  const scaleSkillDamage = (value: number | undefined) => value === undefined ? undefined : Math.max(1, Math.round(value * Math.max(1, skillDamageMultiplier)));
 
   if (modifiers.damageRange) {
-    return `Deals random damage from ${modifiers.damageRange[0]} to ${modifiers.damageRange[1]} to a foe.`;
+    const min = scaleSkillDamage(modifiers.damageRange[0]) ?? modifiers.damageRange[0];
+    const max = scaleSkillDamage(modifiers.damageRange[1]) ?? modifiers.damageRange[1];
+    return `Deals random damage from ${min} to ${max} to a foe.`;
   }
   if (modifiers.splashDamage !== undefined) {
-    return `Attacks cause ${modifiers.splashDamage} splash damage to adjacent foes.`;
+    return `Attacks cause ${scaleSkillDamage(modifiers.splashDamage)} splash damage to adjacent foes.`;
   }
   if (modifiers.chainDamage !== undefined) {
-    return `Attacks chain onto a nearby target in a 2-tile radius for ${modifiers.chainDamage} bonus damage.`;
+    return `Attacks chain onto a nearby target in a 2-tile radius for ${scaleSkillDamage(modifiers.chainDamage)} bonus damage.`;
   }
   if (modifiers.activeHeal !== undefined) {
-    return `Heals the weakest ally for ${modifiers.activeHeal} HP.`;
+    return `Heals the weakest ally for ${scaleSkillDamage(modifiers.activeHeal)} HP.`;
   }
   if (notes.includes('runtime:spearActive') && modifiers.activeDamage !== undefined && modifiers.pierceBehindDamage !== undefined) {
-    return `Sends in a charged spear that deals ${modifiers.activeDamage} damage to its target, then ${modifiers.pierceBehindDamage} damage behind it with extended range.`;
+    return `Sends in a charged spear that deals ${scaleSkillDamage(modifiers.activeDamage)} damage to its target, then ${scaleSkillDamage(modifiers.pierceBehindDamage)} damage behind it with extended range.`;
   }
   if (notes.includes('runtime:judgmentHammer') && modifiers.hammerDamage !== undefined) {
-    return `On kill, summons a judge hammer on the weakest foe for ${modifiers.hammerDamage} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
+    return `On kill, summons a judge hammer on the weakest foe for ${scaleSkillDamage(modifiers.hammerDamage)} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
   }
   if (notes.includes('runtime:solitudePreCombat') && modifiers.targetMaxHpBonusRate !== undefined) {
     return `When isolated from adjacent allies, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
@@ -150,21 +153,21 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Basic attacks also stab ${modifiers.pierceBehindRange} tile behind the target.`;
   }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
-    return `Deals ${modifiers.activeDamage} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
+    return `Deals ${scaleSkillDamage(modifiers.activeDamage)} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
   }
   if (definition.typeId === 'Crack' && modifiers.activeDamage !== undefined) {
     const shredNote = (modifiers.notes ?? []).find((note) => note.startsWith('runtime:armorShredRate='));
     const shredRate = shredNote ? Number(shredNote.split('=')[1]) : 0.2;
-    return `Deal ${modifiers.activeDamage} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
+    return `Deal ${scaleSkillDamage(modifiers.activeDamage)} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
   }
   if (modifiers.poisonDamage !== undefined) {
-    return `Deals direct toxic damage, then applies ${modifiers.poisonDamage} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
+    return `Deals direct toxic damage, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
   if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
-    return `Throws a striking meteor at a random foe, causing ${modifiers.meteorDamage} damage. Drops a lava pool on the hit tile lasting 3 turns. Foes standing on a lava tile take ${modifiers.lavaDamage} damage at the start of combat.`;
+    return `Throws a striking meteor at a random foe, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage. Drops a lava pool on the hit tile lasting 3 turns. Foes standing on a lava tile take ${scaleSkillDamage(modifiers.lavaDamage)} damage at the start of combat.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
-    return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${modifiers.beamDamage} damage.`;
+    return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
   }
   if (notes.some((note) => note.startsWith('runtime:deuciferOddSiphon='))) {
     return skill?.description ?? '';
@@ -180,7 +183,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   }
 
   if (modifiers.shield !== undefined) {
-    return `Gain +${modifiers.shield} shield for ${modifiers.durationTurns ?? 1} turn.`;
+    return `Gain +${scaleSkillDamage(modifiers.shield)} shield for ${modifiers.durationTurns ?? 1} turn.`;
   }
 
   if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {

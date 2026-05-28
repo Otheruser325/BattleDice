@@ -107,19 +107,31 @@ export function getAllDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
     .filter((definition): definition is DiceDefinition => Boolean(definition));
 }
 
+export function getExclusiveDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
+  return (getDiceFlags(scene).exclusiveTypeIds ?? [])
+    .map((typeId) => scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined)
+    .filter((definition): definition is DiceDefinition => Boolean(definition));
+}
+
 export function getSelectedLoadout(scene: Phaser.Scene): DiceTypeId[] {
   const stored = scene.registry.get(LOADOUT_KEY) as DiceTypeId[] | undefined;
-  if (stored?.length === 5) return stored;
+  if (stored?.length === 5) {
+    const loadout = stored.filter((typeId) => isTypeIdFetchable(scene, typeId));
+    if (loadout.length === 5) return loadout;
+  }
   const saved = readStored<DiceTypeId[]>(LOADOUT_KEY);
   if (saved?.length === 5) {
-    scene.registry.set(LOADOUT_KEY, saved);
-    return saved;
+    const loadout = saved.filter((typeId) => isTypeIdFetchable(scene, typeId));
+    if (loadout.length === 5) {
+      scene.registry.set(LOADOUT_KEY, loadout);
+      return loadout;
+    }
   }
   return [...DEFAULT_LOADOUT];
 }
 
 export function setSelectedLoadout(scene: Phaser.Scene, loadout: DiceTypeId[]) {
-  const next = loadout.slice(0, 5);
+  const next = loadout.filter((typeId) => isTypeIdFetchable(scene, typeId)).slice(0, 5);
   scene.registry.set(LOADOUT_KEY, next);
   writeStored(LOADOUT_KEY, next);
 }
@@ -153,6 +165,7 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
     scene.registry.set(DICE_PROGRESS_KEY, store);
   }
   const defaultCopies = 0;
+  if (!isTypeIdFetchable(scene, typeId)) return { classLevel: 1, copies: defaultCopies, unlocked: false };
   const progress = store[typeId];
   if (!progress) return { classLevel: 1, copies: defaultCopies, unlocked: DEFAULT_LOADOUT_IDS.has(typeId) };
   return {
@@ -167,6 +180,11 @@ function sanitizeDiceProgressStore(scene: Phaser.Scene, store: Record<string, Di
   const sanitized = { ...store };
   Object.entries(store).forEach(([key, value]) => {
     const typeId = key as DiceTypeId;
+    if (!isTypeIdFetchable(scene, typeId)) {
+      delete sanitized[key];
+      changed = true;
+      return;
+    }
     const classLevel = Math.max(1, Math.min(MAX_CLASS_LEVEL, value.classLevel || 1));
     const maxCopies = Math.min(getMaxStoredCopiesForType(scene, typeId), getMaxUsefulCopiesForType(scene, typeId, classLevel));
     const copies = Math.max(0, Math.min(value.copies || 0, maxCopies));
@@ -181,6 +199,7 @@ function sanitizeDiceProgressStore(scene: Phaser.Scene, store: Record<string, Di
 }
 
 export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: DiceProgressState) {
+  if (!isTypeIdFetchable(scene, typeId)) return;
   const store = (scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined) ?? {};
   const existing = store[typeId];
   const updated = {
@@ -197,6 +216,7 @@ export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: D
 
 
 export function canReceiveUsefulCopies(scene: Phaser.Scene, typeId: DiceTypeId): boolean {
+  if (!isTypeIdFetchable(scene, typeId)) return false;
   const progress = getDiceProgress(scene, typeId);
   if (progress.classLevel >= MAX_CLASS_LEVEL) return false;
   return progress.copies < getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
@@ -210,6 +230,7 @@ export function getRemainingUsefulCopies(scene: Phaser.Scene, typeId: DiceTypeId
 
 export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies: number) {
   if (copies <= 0) return;
+  if (!isTypeIdFetchable(scene, typeId)) return;
   const definition = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
   const progress = getDiceProgress(scene, typeId);
   if (DEFAULT_LOADOUT_IDS.has(typeId) || progress.unlocked) {

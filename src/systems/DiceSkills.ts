@@ -103,7 +103,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     activeExtraAttacks: activeSkill ? (activeModifiers?.extraAttacks ?? 0) : 0,
     activeAttackDelta: activeSkill ? (activeModifiers?.attackDelta ?? 0) : 0,
     activeDurationTurns: activeSkill ? (activeModifiers?.durationTurns ?? 0) : 0,
-    poisonDamage: (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
+    poisonDamage: (activeModifiers as { poisonDamage?: number } | undefined)?.poisonDamage ?? (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
     onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
     onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
     distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile,

@@ -7,13 +7,35 @@ const DICE_FLAGS_PATHS = [
   withBasePath('gamedata/DiceDefinitions/Flags.json')
 ];
 
-export const EXCLUSIVE_DEFINITION_PATHS = {
-  Deucifer: withBasePath('gamedata/DiceDefinitions/Bosses/Deucifer.dice'),
-  Imp: withBasePath('gamedata/DiceDefinitions/Minions/Imp.dice')
-} as const;
-
 function getDefinitionPath(typeId: string) {
   return withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
+}
+
+function getSubfolderDefinitionPath(entryPath: string | undefined, typeId: string) {
+  const path = entryPath?.trim();
+  if (!path) return getDefinitionPath(typeId);
+  const normalized = path.replace(/^\/+/, '');
+  return withBasePath(`gamedata/DiceDefinitions/${normalized}`);
+}
+
+function normalizeTypeId(typeId: unknown): string | undefined {
+  if (typeof typeId !== 'string') return undefined;
+  const trimmed = typeId.trim();
+  return /^[A-Za-z][A-Za-z0-9_-]{1,31}$/.test(trimmed) ? trimmed : undefined;
+}
+
+function normalizeExclusiveEntries(flags: DiceFlags): Array<{ typeId: string; path?: string }> {
+  return (flags.exclusiveTypeIds ?? [])
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        const typeId = normalizeTypeId(entry);
+        return typeId ? { typeId } : undefined;
+      }
+      const typeId = normalizeTypeId(entry?.typeId);
+      if (!typeId) return undefined;
+      return { typeId, path: typeof entry.path === 'string' ? entry.path : undefined };
+    })
+    .filter((entry): entry is { typeId: string; path?: string } => Boolean(entry));
 }
 
 export class DiceCatalogLoader {
@@ -43,11 +65,12 @@ export class DiceCatalogLoader {
     }
 
     const fetchableTypeIds = [...new Set(flags.fetchableTypeIds)]
-      .filter((typeId): typeId is string => typeof typeId === 'string')
-      .map((typeId) => typeId.trim())
-      .filter((typeId) => /^[A-Za-z][A-Za-z0-9_-]{1,31}$/.test(typeId))
+      .map(normalizeTypeId)
+      .filter((typeId): typeId is string => Boolean(typeId))
       .slice(0, 32);
-    scene.cache.json.add('dice:flags', { fetchableTypeIds });
+    const exclusiveEntries = normalizeExclusiveEntries(flags);
+    const exclusiveTypeIds = exclusiveEntries.map((entry) => entry.typeId);
+    scene.cache.json.add('dice:flags', { fetchableTypeIds, exclusiveTypeIds });
     debug.log('Loading dice definitions from flags.', { fetchableTypeIds });
 
     if (!fetchableTypeIds.length) return { fetchableTypeIds: [] };
@@ -73,23 +96,27 @@ export class DiceCatalogLoader {
       throw new Error('No dice definitions were loaded.');
     }
 
-    scene.cache.json.add('dice:flags', { fetchableTypeIds: loadedTypeIds });
+    scene.cache.json.add('dice:flags', { fetchableTypeIds: loadedTypeIds, exclusiveTypeIds });
     debug.log('Loaded dice definitions.', { requested: fetchableTypeIds.length, loaded: loadedTypeIds.length });
 
-    for (const [typeId, path] of Object.entries(EXCLUSIVE_DEFINITION_PATHS)) {
+    const loadedExclusiveTypeIds: string[] = [];
+    for (const entry of exclusiveEntries) {
+      const path = getSubfolderDefinitionPath(entry.path, entry.typeId);
       try {
         const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
         if (!res.ok) {
-          debug.warn('Exclusive dice definition HTTP error.', { typeId, path, status: res.status });
+          debug.warn('Exclusive dice definition HTTP error.', { typeId: entry.typeId, path, status: res.status });
           continue;
         }
         const definition = await res.json();
-        scene.cache.json.add(`dice:${typeId}`, definition);
+        scene.cache.json.add(`dice:${entry.typeId}`, definition);
+        loadedExclusiveTypeIds.push(entry.typeId);
       } catch (error) {
-        debug.warn('Failed to fetch exclusive dice definition.', { typeId, path, error });
+        debug.warn('Failed to fetch exclusive dice definition.', { typeId: entry.typeId, path, error });
       }
     }
+    scene.cache.json.add('dice:flags', { fetchableTypeIds: loadedTypeIds, exclusiveTypeIds: loadedExclusiveTypeIds });
 
-    return { fetchableTypeIds: loadedTypeIds };
+    return { fetchableTypeIds: loadedTypeIds, exclusiveTypeIds: loadedExclusiveTypeIds };
   }
 }

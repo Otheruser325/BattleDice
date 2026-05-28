@@ -25,5 +25,15 @@
     "Assassin",
     "Battery",
     "Crack"
+  ],
+  "exclusiveTypeIds": [
+    {
+      "typeId": "Deucifer",
+      "path": "Bosses/Deucifer.dice"
+    },
+    {
+      "typeId": "Imp",
+      "path": "Minions/Imp.dice"
+    }
   ]
 }
