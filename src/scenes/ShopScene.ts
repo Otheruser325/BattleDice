@@ -165,7 +165,7 @@ export class ShopScene extends Phaser.Scene {
   private getOfferHeaderLabel(offer: ShopOffer): string {
     if (offer.isDiceTokenOffer) return 'DICE TOKEN VAULT';
     if (offer.isCasinoChipOffer) return 'CASINO CHIP STACK';
-    if (offer.isFreebie) return '★ DAILY FREEBIE';
+    if (offer.isFreebie) return `★ DAILY FREEBIE — ${offer.rarity.toUpperCase()}`;
     return offer.rarity.toUpperCase();
   }
 
@@ -218,12 +218,11 @@ export class ShopScene extends Phaser.Scene {
     }).setOrigin(0.5, 0);
     objs.push(headerTag);
 
-    const freebieRaritySuffix = offer.isFreebie && !offer.isCoinOffer && offer.typeId ? ` [${offer.rarity}]` : '';
     const nameLine = offer.isCasinoChipOffer
       ? 'Casino Chips'
       : (offer.isCoinOffer
         ? 'Dice Tokens'
-        : (offer.typeId ? `${offer.typeId} Dice${freebieRaritySuffix}` : '—'));
+        : (offer.typeId ? offer.typeId + ' Dice' : '—'));
     const nameText = this.add.text(x + 8, y + 48, nameLine.toUpperCase(), {
       fontFamily: 'Orbitron', fontSize: '17px', color: effectivelyClaimed ? PALETTE.textMuted : (offer.isFreebie ? '#8ae0a1' : accentHex)
     });
