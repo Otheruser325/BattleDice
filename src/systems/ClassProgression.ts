@@ -194,7 +194,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Throws striking meteors at random foes, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Drops lava pools on each epicentre lasting ${modifiers.durationTurns ?? 3} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
-    return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
+    return `If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
   }
   if (notes.some((note) => note.startsWith('runtime:deuciferOddSiphon='))) {
     return skill?.description ?? '';
@@ -217,8 +217,8 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (notes.includes('runtime:leonMightyRoar')) {
     return skill?.description ?? '';
   }
-  if (notes.includes('runtime:leonRage')) {
-    return skill?.description ?? '';
+  if (notes.includes('runtime:leonRage') && modifiers.targetMaxHpBonusRate !== undefined) {
+    return `On Kill: Leon gains +${formatPercent(modifiers.targetMaxHpBonusRate)} basic attack damage for each fallen foe.`;
   }
   if (notes.includes('runtime:deuciferSummonImp')) {
     return skill?.description ?? '';

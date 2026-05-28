@@ -104,7 +104,7 @@ export class SettingsScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
     const panel = this.add.rectangle(width / 2, height / 2, 720, 520, 0x102434, 0.98).setStrokeStyle(2, 0x496a84).setDepth(71);
-    const title = this.add.text(width / 2, height / 2 - 228, 'CHANGELOG (v0.5 beta mock)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
+    const title = this.add.text(width / 2, height / 2 - 228, 'CHANGELOG (v0.7 beta)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
     const body = this.add.text(width / 2, height / 2 - 6, 'Loading changelog...', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted, wordWrap: { width: 650 } }).setOrigin(0.5).setDepth(72);
     const closeBtn = this.add.text(width / 2, height / 2 + 220, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
 

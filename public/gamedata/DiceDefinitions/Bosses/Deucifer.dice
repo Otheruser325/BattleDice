@@ -30,7 +30,7 @@
     {
       "type": "Active",
       "title": "Rise From Hell",
-      "description": "Summons an Imp Dice on a random unoccupied tile.",
+      "description": "Summons an Imp Dice 5 class levels lower (min. Class 1) on a random unoccupied tile.",
       "manaNeeded": 15,
       "modifiers": {
         "notes": [

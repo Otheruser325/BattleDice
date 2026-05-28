@@ -110,6 +110,7 @@ export class ArenaScene extends Phaser.Scene {
   private enemyDicePips: Map<string, number> = new Map();
   private enemyClassLevels: Map<string, number> = new Map();
   private manaByInstance: Map<string, number> = new Map();
+  private playerManaChargedAccrued = 0;
   private activeManaByInstance: Map<string, Map<string, number>> = new Map();
   private shieldHpByInstance: Map<string, number> = new Map();
   private shieldDurationTurnsByInstance: Map<string, number> = new Map();
@@ -275,7 +276,10 @@ export class ArenaScene extends Phaser.Scene {
     this.createLobbyUI();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       const elapsed = Math.max(0, Date.now() - this.sessionStartedAtMs);
-      const next = AchievementStore.mutate(this, (state) => ({ ...state, playtimeMs: state.playtimeMs + elapsed }));
+      const charged = this.playerManaChargedAccrued;
+      this.playerManaChargedAccrued = 0;
+      const next = AchievementStore.mutate(this, (state) => ({ ...state, playtimeMs: state.playtimeMs + elapsed, manaCharged: state.manaCharged + charged }));
+      if (next.manaCharged >= 100) AchievementStore.unlock(this, 'magical_cycle');
       if (next.playtimeMs >= 3_600_000) AchievementStore.unlock(this, 'sweatin_it');
       if (next.playtimeMs >= 43_200_000) AchievementStore.unlock(this, 'cant_keep_up');
       if (next.playtimeMs >= 86_400_000) AchievementStore.unlock(this, 'diceaholic');
@@ -550,12 +554,12 @@ export class ArenaScene extends Phaser.Scene {
     createOption(cx - 220, cy + 2, 'Versus Bot', 'Setup and play against a realtime computer opponent.', 0x2271b3, () => {
       this.openSingleplayerConfigModal();
     });
-    createOption(cx, cy + 2, 'Bossfight', 'Fight Magician and Leon in escalating Mythic boss stages.', 0x6f5bb5, () => {
+    createOption(cx, cy + 2, 'Bossfight', 'Fight all-powerful bosses that everyone fears the most in Diceville.', 0x6f5bb5, () => {
       this.activeChallenge = 'bossfight';
       this.activeDailyKey = '';
       this.openBossfightModal();
     });
-    createOption(cx + 220, cy + 2, 'Challenges', 'Daily PvE + Dopamine + Deucifer boss challenge.', 0x5d6770, () => this.openChallengesModal());
+    createOption(cx + 220, cy + 2, 'Challenges', 'Challenge yourself in dailies or handcrafted battles to earn big rewards.', 0x5d6770, () => this.openChallengesModal());
 
     const backBtn = this.add.text(cx, cy + 126, '← BACK', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
@@ -2178,6 +2182,13 @@ export class ArenaScene extends Phaser.Scene {
     const slots = this.getActiveManaSlots(die);
     if (slots.length === 0) return;
     slots.forEach((slot) => this.addMana(die.instanceId, slot.manaNeeded, this.getActiveMana(die.instanceId, slot.key), gain, slot.key));
+    if (die.ownerId === 'player' && gain > 0) this.trackPlayerManaCharged(gain);
+  }
+
+  private trackPlayerManaCharged(gain: number) {
+    this.playerManaChargedAccrued += gain;
+    const total = AchievementStore.get(this).manaCharged + this.playerManaChargedAccrued;
+    if (total >= 100) AchievementStore.unlock(this, 'magical_cycle');
   }
 
   private getActiveManaSlot(die: DiceInstanceState, title: string): { key: string; title: string; manaNeeded: number; mana: number } | undefined {
@@ -2492,10 +2503,12 @@ export class ArenaScene extends Phaser.Scene {
       c.add([bg, title]);
       cards.forEach((card, idx) => {
         const x = -170 + idx * 170;
+        const info = this.getDiceCardDescription(card.key);
         const btn = this.add.rectangle(x, 10, 150, 130, 0x16344a, 0.95).setStrokeStyle(2, 0xf0c36a).setInteractive({ useHandCursor: true });
-        const tx = this.add.text(x, 2, `${card.rarity}\n${card.title}`, { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', align: 'center', wordWrap: { width: 138 } }).setOrigin(0.5);
+        const iconText = this.add.text(x, -34, info.icon, { fontSize: '30px', color: info.color ?? '#ffffff' }).setOrigin(0.5);
+        const tx = this.add.text(x, 26, `${card.rarity}\n${card.title}`, { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', align: 'center', wordWrap: { width: 138 } }).setOrigin(0.5);
         btn.on('pointerdown', () => { c.destroy(true); resolve(card); });
-        c.add([btn, tx]);
+        c.add([btn, iconText, tx]);
       });
     });
   }
@@ -2518,6 +2531,11 @@ export class ArenaScene extends Phaser.Scene {
       const bonusRate = [0, 0.5, 0.75, 1][mag];
       const key = `${owner}:${card.typeId}`;
       this.diceTypeUpgradeBonus.set(key, (this.diceTypeUpgradeBonus.get(key) ?? 0) + bonusRate);
+      if (owner === 'player' && this.activeRandomModifier === 'DiceCard') {
+        const ownedKeys = this.activeDiceCardKeysByOwner.player;
+        const hasAllRarities = (['Bronze', 'Silver', 'Gold'] as const).every((rarity) => ownedKeys.has(`${card.typeId} Upgrade:${rarity}`));
+        if (hasAllRarities) AchievementStore.unlock(this, 'stacked_up');
+      }
       this.gameState = {
         ...this.gameState,
         dice: this.gameState.dice.map((d) => {
@@ -3436,7 +3454,7 @@ export class ArenaScene extends Phaser.Scene {
       const wizardMana = wizardSlot?.manaNeeded ?? 18;
       const currentMana = wizardSlot?.mana ?? 0;
       if (currentMana >= wizardMana) {
-        const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.instanceClassLevels.get(attacker.instanceId) ?? 1);
+        const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getBossMinionClassLevel(attacker));
         if (wizard) {
           this.resetActiveMana(attacker.instanceId, wizardSlot?.key);
           this.combatLog.setText(`🪄 ${attacker.typeId} summons a Wizard Dice!`);
@@ -3523,7 +3541,7 @@ export class ArenaScene extends Phaser.Scene {
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
     if (meta.canSummonImp) {
       if (canCastActive) {
-        const imp = this.summonImpForOwner(attacker.ownerId);
+        const imp = this.summonMinionForOwner(attacker.ownerId, 'Imp', this.getBossMinionClassLevel(attacker));
         if (imp) {
           this.resetActiveMana(attacker.instanceId, activeSlot?.key);
           this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
@@ -3813,7 +3831,7 @@ export class ArenaScene extends Phaser.Scene {
       currentHealth: definition.health,
       maxHealth: definition.health,
       attacksRemaining: 0,
-      hasFinishedAttacking: false,
+      hasFinishedAttacking: true,
       isDestroyed: false,
       zone: 'board',
       gridPosition: position
@@ -3825,8 +3843,9 @@ export class ArenaScene extends Phaser.Scene {
     return minion;
   }
 
-  private summonImpForOwner(ownerId: 'player' | 'enemy'): DiceInstanceState | undefined {
-    return this.summonMinionForOwner(ownerId, 'Imp', 1);
+  private getBossMinionClassLevel(parent: DiceInstanceState): number {
+    const parentClassLevel = this.instanceClassLevels.get(parent.instanceId) ?? 1;
+    return Math.max(1, parentClassLevel - 5);
   }
 
   private summonDeuciferBoss() {
@@ -4222,13 +4241,16 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private getDiceCardDescription(key: string): { icon: string; title: string; rarity: string; desc: string } {
+  private getDiceCardDescription(key: string): { icon: string; title: string; rarity: string; desc: string; color?: string } {
     const [name, rarity = ''] = key.split(':');
     const mag = getDiceCardMagnitude((rarity || 'Bronze') as DiceCardRarity);
     if (name.endsWith(' Upgrade')) {
       const pct = [0, 50, 75, 100][mag];
       const typeName = name.replace(' Upgrade', '');
-      return { icon: '⬆️', title: name, rarity, desc: `${typeName} gets +${pct}% basic+skill damage and max HP.` };
+      const dieFaceByRarity: Record<string, string> = { Bronze: '⚃', Silver: '⚄', Gold: '⚅' };
+      const icon = dieFaceByRarity[rarity] ?? '⚅';
+      const color = this.definitions.get(typeName)?.accent ?? '#9ed0ff';
+      return { icon, color, title: name, rarity, desc: `${typeName} gets +${pct}% basic+skill damage and max HP.` };
     }
     if (name === 'Fountain of Love') {
       const pct = [0, 10, 15, 20][mag];
@@ -4271,7 +4293,7 @@ export class ArenaScene extends Phaser.Scene {
       keys.slice(-8).forEach((key, idx) => {
       const info = this.getDiceCardDescription(key);
       const px = right ? this.scale.width - 24 - (idx*24) : 24 + (idx*24);
-      const icon = this.add.text(px, y, info.icon, { fontSize: '18px' }).setOrigin(right ? 1 : 0, 1).setInteractive({ useHandCursor: true });
+      const icon = this.add.text(px, y, info.icon, { fontSize: '18px', color: info.color ?? '#ffffff' }).setOrigin(right ? 1 : 0, 1).setInteractive({ useHandCursor: true });
       icon.on('pointerover', () => { tip.setText(`${info.title} (${info.rarity})\n${info.desc}`).setVisible(true); });
       icon.on('pointerout', () => tip.setVisible(false));
       c.add(icon);
@@ -4547,7 +4569,6 @@ export class ArenaScene extends Phaser.Scene {
       .map((die) => ({ die, pattern: this.getTranscendencePatternPriority(attacker, die), distance: this.getAttackDistance(attacker, die) }))
       .filter((entry): entry is { die: DiceInstanceState; pattern: TranscendenceBeamPattern; distance: number } => entry.pattern !== null)
       .filter(({ die }) => isForwardTarget(die))
-      .filter(({ distance }) => distance <= Math.max(1, definition.range))
       .sort((a, b) => {
         const priority: Record<TranscendenceBeamPattern, number> = { row: 0, column: 1, diagonalDown: 2, diagonalUp: 2 };
         return priority[a.pattern] - priority[b.pattern] || a.distance - b.distance || a.die.gridPosition!.row - b.die.gridPosition!.row || a.die.gridPosition!.col - b.die.gridPosition!.col;
@@ -4785,7 +4806,9 @@ export class ArenaScene extends Phaser.Scene {
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
     const dmgNote = typeUpgradeMult > 1 ? ` • ${die.typeId} Upgrade DMG x${typeUpgradeMult.toFixed(2)}` : '';
-    const desc = this.add.text(width / 2, 86, `${definition.skills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}${manaNote}${dmgNote}`, {
+    const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
+    const visibleSkills = definition.skills.filter((skill) => !(skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') || classLevel >= 6);
+    const desc = this.add.text(width / 2, 86, `${visibleSkills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}${manaNote}${dmgNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
@@ -5035,6 +5058,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if (stage === 'victory' && this.activeChallenge === 'dopamine') {
+      AchievementStore.unlock(this, 'hooked');
       this.setChallengeStatus('dopamine', 'completed');
       const dopamineClaimKey = 'dopamine';
       if (!this.hasChallengeRewardClaimed(dopamineClaimKey)) {
@@ -5044,6 +5068,10 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     if (stage === 'victory' && this.activeChallenge === 'bossfight' && this.bossfightPendingReward) {
+      const defeatedTier = this.bossfightPendingReward.level;
+      AchievementStore.unlock(this, 'boss_slayer');
+      if (defeatedTier >= 5) AchievementStore.unlock(this, 'boss_ripper');
+      if (defeatedTier >= 10) AchievementStore.unlock(this, 'boss_hunter');
       const reward = this.claimBossfightReward(this.bossfightPendingReward.boss, this.bossfightPendingReward.level);
       tokenReward += reward.tokens;
       chipReward += reward.chips;

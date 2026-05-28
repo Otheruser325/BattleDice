@@ -20,17 +20,24 @@ export type AchievementId =
   | 'demonic_torment'
   | 'getting_stronger'
   | 'augmented'
-  | 'maximum_power';
+  | 'maximum_power'
+  | 'magical_cycle'
+  | 'boss_slayer'
+  | 'boss_ripper'
+  | 'boss_hunter'
+  | 'hooked'
+  | 'stacked_up';
 
 export interface AchievementState {
   wins: number;
   playtimeMs: number;
   casinoTablesPlayed: number;
   dailyChallengeWins: number;
+  manaCharged: number;
   unlocked: Partial<Record<AchievementId, string>>;
 }
 
-const DEFAULT_STATE: AchievementState = { wins: 0, playtimeMs: 0, casinoTablesPlayed: 0, dailyChallengeWins: 0, unlocked: {} };
+const DEFAULT_STATE: AchievementState = { wins: 0, playtimeMs: 0, casinoTablesPlayed: 0, dailyChallengeWins: 0, manaCharged: 0, unlocked: {} };
 
 export class AchievementStore {
   private static pendingPopups: Array<{ id: AchievementId; timestamp: number }> = [];
@@ -87,6 +94,7 @@ export class AchievementStore {
         playtimeMs: Math.max(0, Math.floor(Number(parsed.playtimeMs ?? 0) || 0)),
         casinoTablesPlayed: Math.max(0, Math.floor(Number(parsed.casinoTablesPlayed ?? 0) || 0)),
         dailyChallengeWins: Math.max(0, Math.floor(Number((parsed as Partial<AchievementState>).dailyChallengeWins ?? 0) || 0)),
+        manaCharged: Math.max(0, Math.floor(Number((parsed as Partial<AchievementState>).manaCharged ?? 0) || 0)),
         unlocked: parsed.unlocked ?? {}
       };
     } catch {
