@@ -5,6 +5,7 @@ import { DebugManager } from '../utils/DebugManager';
 export type ArenaMultiplayerTopic =
   | 'arena:matchmaking:join'
   | 'arena:matchmaking:state'
+  | 'arena:multiplayer:create'
   | 'arena:multiplayer:join'
   | 'arena:multiplayer:state'
   | 'arena:turn:sync';
@@ -18,9 +19,13 @@ export interface ArenaMultiplayerStatus {
 
 export interface ArenaMultiplayerJoinOptions {
   mode: 'matchmaking' | 'multiplayer';
+  lobbyAction?: 'create' | 'join';
+  lobbyCode?: string;
   playerName: string;
   useLevelling: boolean;
   turnLimit: number;
+  randomMode: boolean;
+  loadoutTypeIds: string[];
 }
 
 export class ArenaMultiplayerClient {
@@ -78,7 +83,11 @@ export class ArenaMultiplayerClient {
       this.debug.warn('Join skipped because Rivalis is not connected.', options);
       return;
     }
-    const topic: ArenaMultiplayerTopic = options.mode === 'matchmaking' ? 'arena:matchmaking:join' : 'arena:multiplayer:join';
+    const topic: ArenaMultiplayerTopic = options.mode === 'matchmaking'
+      ? 'arena:matchmaking:join'
+      : options.lobbyAction === 'create'
+      ? 'arena:multiplayer:create'
+      : 'arena:multiplayer:join';
     this.client.send(topic, this.encodeJson(options));
   }
 

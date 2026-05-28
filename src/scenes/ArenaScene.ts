@@ -103,6 +103,7 @@ export class ArenaScene extends Phaser.Scene {
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
+  private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
   private poisonByInstance: Map<string, { damage: number; turns: number; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> = new Map();
   private armorShredByInstance: Map<string, { rate: number; turns: number }> = new Map();
@@ -184,6 +185,7 @@ export class ArenaScene extends Phaser.Scene {
     this.attackDeltaByInstance.clear();
     this.extraAttackTurnsByInstance.clear();
     this.attackMultiplierTurnsByInstance.clear();
+    this.combanityAttackMultiplierByInstance.clear();
     this.damageReductionByInstance.clear();
     this.poisonByInstance.clear();
     this.armorShredByInstance.clear();
@@ -389,9 +391,9 @@ export class ArenaScene extends Phaser.Scene {
     );
 
     const modes: { key: 'matchmaking' | 'singleplayer' | 'multiplayer'; label: string; desc: string }[] = [
-      { key: 'matchmaking',  label: 'MATCHMAKING',  desc: 'Pure PvP vs real players.\nNo bots — no turn limit.' },
+      { key: 'matchmaking',  label: 'MATCHMAKING',  desc: 'Queue for fixed 10-turn PvP.\nClassic with current loadouts.' },
       { key: 'singleplayer', label: 'SINGLEPLAYER', desc: 'Battle a bot opponent.\nFully configurable.' },
-      { key: 'multiplayer',  label: 'MULTIPLAYER',  desc: 'Play against friends.\nFully configurable.' }
+      { key: 'multiplayer',  label: 'MULTIPLAYER',  desc: 'Join or create friend sessions.\nShare a 6-digit lobby code.' }
     ];
 
     const cardW = 196;
@@ -446,10 +448,10 @@ export class ArenaScene extends Phaser.Scene {
       this.add.text(cx, cy - 112, 'MATCHMAKING', {
         fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
       }).setOrigin(0.5),
-      this.add.text(cx, cy - 60, 'Pure PvP — No bots, no turn limit.', {
+      this.add.text(cx, cy - 60, 'Pure PvP — fixed 10 turns, Classic, current loadouts.', {
         fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text
       }).setOrigin(0.5),
-      this.add.text(cx, cy - 22, 'Automatically finds a real opponent in the matchmaking\nqueue. Requires real players to be online.', {
+      this.add.text(cx, cy - 22, 'Automatically finds a real opponent in the matchmaking queue.\nMatchmaking always uses Classic mode and current loadouts.', {
         fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted,
         align: 'center', wordWrap: { width: 540 }
       }).setOrigin(0.5)
@@ -467,7 +469,7 @@ export class ArenaScene extends Phaser.Scene {
       backgroundColor: '#2d6f99', padding: { left: 12, right: 12, top: 7, bottom: 7 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     queueBtn.on('pointerdown', () => {
-      this.queueArenaMultiplayer('matchmaking');
+      this.queueArenaMultiplayer({ mode: 'matchmaking', randomMode: false });
     });
     elements.push(queueBtn);
 
@@ -947,36 +949,33 @@ export class ArenaScene extends Phaser.Scene {
 
     elements.push(
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
-      this.add.rectangle(cx, cy, 640, 370, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
-      this.add.text(cx, cy - 158, 'MULTIPLAYER', {
+      this.add.rectangle(cx, cy, 660, 320, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 128, 'MULTIPLAYER SESSIONS', {
         fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
       }).setOrigin(0.5),
-      this.add.text(cx - 265, cy - 90, 'Use Levelling', {
-        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
-      }).setOrigin(0, 0.5),
-      this.add.text(cx - 265, cy - 28, 'Turn Count', {
-        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
-      }).setOrigin(0, 0.5)
+      this.add.text(cx, cy - 92, 'Join a friend by code, or create a lobby with configurable rules.', {
+        fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
+      }).setOrigin(0.5)
     );
 
-    const rowContainer = this.add.container(0, 0);
-    elements.push(rowContainer);
+    const makeSessionCard = (x: number, title: string, subtitle: string, color: number, onClick: () => void) => {
+      const card = this.add.rectangle(x, cy + 12, 220, 122, color, 0.94)
+        .setStrokeStyle(2, 0x8fd5ff)
+        .setInteractive({ useHandCursor: true });
+      const titleText = this.add.text(x, cy - 22, title, {
+        fontFamily: 'Orbitron', fontSize: '17px', color: '#ffffff'
+      }).setOrigin(0.5);
+      const subText = this.add.text(x, cy + 10, subtitle, {
+        fontFamily: 'Orbitron', fontSize: '10px', color: '#e6f4ff', align: 'center', wordWrap: { width: 190 }
+      }).setOrigin(0.5, 0);
+      card.on('pointerover', () => card.setAlpha(1));
+      card.on('pointerout', () => card.setAlpha(0.94));
+      card.on('pointerdown', onClick);
+      elements.push(card, titleText, subText);
+    };
 
-    this.makeSelectRow(
-      [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
-      () => this.configUseLevelling, (v) => { this.configUseLevelling = v; },
-      cx - 12, cy - 90, rowContainer
-    );
-    this.makeSelectRow(
-      [{ label: '3', value: 3 }, { label: '5', value: 5 }, { label: '7', value: 7 }, { label: '10', value: 10 }, { label: '∞', value: -1 }],
-      () => this.configTurnCount, (v) => { this.configTurnCount = v; },
-      cx + 84, cy - 28, rowContainer
-    );
-
-    const noteText = this.add.text(cx, cy + 32, 'Play against friends over Rivalis multiplayer.\nShare the same Rivalis room/ticket to sync requests smoothly.', {
-      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
-    }).setOrigin(0.5);
-    elements.push(noteText);
+    makeSessionCard(cx - 140, 'JOIN', 'Enter a 6-digit lobby code from a friend.', 0x2d6f99, () => this.openMultiplayerJoinModal());
+    makeSessionCard(cx + 140, 'CREATE', 'Configure a friend lobby and share your generated code.', 0x2d9968, () => this.openMultiplayerCreateModal());
 
     const backBtn = this.add.text(cx - 90, cy + 140, '← BACK', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
@@ -985,22 +984,136 @@ export class ArenaScene extends Phaser.Scene {
     backBtn.on('pointerdown', () => this.openModeSelectModal());
     elements.push(backBtn);
 
-    const queueBtn = this.add.text(cx + 90, cy + 140, 'QUEUE →', {
-      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text,
-      backgroundColor: '#2d6f99', padding: { left: 16, right: 16, top: 7, bottom: 7 }
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    queueBtn.on('pointerdown', () => {
-      this.queueArenaMultiplayer('multiplayer');
-    });
-    elements.push(queueBtn);
-
     this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
     this.setModalEsc(() => this.openModeSelectModal());
   }
 
-  private queueArenaMultiplayer(mode: 'matchmaking' | 'multiplayer') {
+  private openMultiplayerJoinModal() {
+    const rawCode = window.prompt('Enter 6-digit lobby code', '');
+    const lobbyCode = this.normalizeLobbyCode(rawCode ?? '');
+    if (!lobbyCode) {
+      AlertManager.toast(this, { type: 'warning', message: 'Enter a valid 6-character lobby code.' });
+      return;
+    }
+    this.queueArenaMultiplayer({ mode: 'multiplayer', lobbyAction: 'join', lobbyCode, randomMode: false });
+  }
+
+  private openMultiplayerCreateModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const elements: Phaser.GameObjects.GameObject[] = [];
+
+    elements.push(
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 660, 410, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 172, 'CREATE LOBBY', {
+        fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent
+      }).setOrigin(0.5),
+      this.add.text(cx - 265, cy - 104, 'Use Levelling', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5),
+      this.add.text(cx - 265, cy - 42, 'Turn Count', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5),
+      this.add.text(cx - 265, cy + 20, 'Random Mode', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted
+      }).setOrigin(0, 0.5)
+    );
+
+    const rowContainer = this.add.container(0, 0);
+    elements.push(rowContainer);
+    this.makeSelectRow(
+      [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
+      () => this.configUseLevelling, (v) => { this.configUseLevelling = v; },
+      cx - 12, cy - 104, rowContainer
+    );
+    this.makeSelectRow(
+      [{ label: '3', value: 3 }, { label: '5', value: 5 }, { label: '7', value: 7 }, { label: '10', value: 10 }, { label: '∞', value: -1 }],
+      () => this.configTurnCount, (v) => { this.configTurnCount = v; },
+      cx + 84, cy - 42, rowContainer
+    );
+    this.makeSelectRow(
+      [{ label: 'ON', value: true }, { label: 'OFF', value: false }],
+      () => this.configRandomMode,
+      (v) => { this.configRandomMode = v; },
+      cx - 12, cy + 20, rowContainer
+    );
+
+    const noteText = this.add.text(cx, cy + 72, 'Creates a Rivalis lobby using your current loadout.\nShare the generated 6-digit code with your friend.', {
+      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
+    }).setOrigin(0.5);
+    elements.push(noteText);
+
+    const backBtn = this.add.text(cx - 90, cy + 154, '← BACK', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft,
+      backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => this.openMultiplayerModal());
+    elements.push(backBtn);
+
+    const createBtn = this.add.text(cx + 90, cy + 154, 'CREATE →', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: '#000000',
+      backgroundColor: '#2ecc71', padding: { left: 16, right: 16, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    createBtn.on('pointerdown', () => {
+      const lobbyCode = this.generateLobbyCode();
+      this.openMultiplayerLobbyWaitModal(lobbyCode);
+      this.queueArenaMultiplayer({ mode: 'multiplayer', lobbyAction: 'create', lobbyCode, randomMode: this.configRandomMode });
+    });
+    elements.push(createBtn);
+
+    this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
+    this.setModalEsc(() => this.openMultiplayerModal());
+  }
+
+  private openMultiplayerLobbyWaitModal(lobbyCode: string) {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const closeBtn = this.add.text(cx, cy + 116, 'START LOCAL PREVIEW →', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: '#000000',
+      backgroundColor: '#2ecc71', padding: { left: 16, right: 16, top: 7, bottom: 7 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerdown', () => {
+      this.clearModeModal();
+      this.startGame();
+    });
+    this.modalContainer = this.add.container(0, 0, [
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 620, 330, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 120, 'LOBBY CREATED', { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent }).setOrigin(0.5),
+      this.add.text(cx, cy - 50, lobbyCode, { fontFamily: 'Orbitron', fontSize: '44px', color: '#f4b860' }).setOrigin(0.5),
+      this.add.text(cx, cy + 12, 'Share this code with your friend.\nWaiting for Rivalis to match the lobby...', {
+        fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center'
+      }).setOrigin(0.5),
+      closeBtn
+    ]).setDepth(250);
+    this.setModalEsc(() => this.openMultiplayerCreateModal());
+  }
+
+  private generateLobbyCode(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    return Array.from({ length: 6 }, () => alphabet[Phaser.Math.Between(0, alphabet.length - 1)] ?? 'A').join('');
+  }
+
+  private normalizeLobbyCode(code: string): string {
+    const normalized = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return normalized.length === 6 ? normalized : '';
+  }
+
+  private queueArenaMultiplayer(options: { mode: 'matchmaking' | 'multiplayer'; lobbyAction?: 'create' | 'join'; lobbyCode?: string; randomMode: boolean }) {
     const profile = ProfileStore.get(this);
     this.playerDisplayName = profile.username || 'Player';
+    const loadoutTypeIds = getDiceDefinitions(this).map((definition) => definition.typeId);
+    this.enemyDisplayName = options.mode === 'matchmaking' ? 'Rivalis Opponent' : 'Friend';
+    this.turnLimit = options.mode === 'matchmaking' ? 10 : this.configTurnCount;
+    this.activeChallenge = null;
+    this.activeDailyKey = '';
+    this.configRandomMode = options.randomMode;
+    this.configRandomizeLoadoutAndClassUps = false;
     const setStatus = (status: ArenaMultiplayerStatus) => {
       this.multiplayerStatus = status;
       AlertManager.toast(this, {
@@ -1009,10 +1122,14 @@ export class ArenaScene extends Phaser.Scene {
       });
       if (status.state === 'connected') {
         this.multiplayerClient.join({
-          mode,
+          mode: options.mode,
+          lobbyAction: options.lobbyAction,
+          lobbyCode: options.lobbyCode,
           playerName: this.playerDisplayName,
           useLevelling: this.configUseLevelling,
-          turnLimit: this.configTurnCount
+          turnLimit: this.turnLimit,
+          randomMode: this.configRandomMode,
+          loadoutTypeIds
         });
       }
     };
@@ -1022,13 +1139,10 @@ export class ArenaScene extends Phaser.Scene {
       AlertManager.toast(this, { type: 'warning', message: this.multiplayerStatus.message });
       return;
     }
-    this.enemyDisplayName = mode === 'matchmaking' ? 'Rivalis Opponent' : 'Friend';
-    this.turnLimit = this.configTurnCount;
-    this.activeChallenge = null;
-    this.activeDailyKey = '';
-    this.configRandomMode = false;
-    this.clearModeModal();
-    this.startGame();
+    if (options.mode === 'matchmaking' || options.lobbyAction === 'join') {
+      this.clearModeModal();
+      this.startGame();
+    }
   }
 
   private makeSelectRow<T extends string | number | boolean>(
@@ -1750,10 +1864,11 @@ export class ArenaScene extends Phaser.Scene {
   private computeAttackCount(instanceId: string, basePips: number, timeDelta = 0): number {
     const debuff = this.attackDeltaByInstance.get(instanceId)?.delta ?? 0;
     const buff = this.extraAttackTurnsByInstance.get(instanceId)?.extra ?? 0;
-    const mult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
+    const skillMult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
+    const comboMult = this.combanityAttackMultiplierByInstance.get(instanceId)?.multiplier ?? 1;
     const permanent = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
     const adjusted = Math.max(1, basePips + timeDelta + debuff + buff + permanent);
-    return Math.max(1, Math.floor(adjusted * mult));
+    return Math.max(1, Math.floor(adjusted * skillMult * comboMult));
   }
 
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
@@ -1871,7 +1986,7 @@ export class ArenaScene extends Phaser.Scene {
       dice: state.dice.map((die) => {
         if (die.zone !== 'board' || die.isDestroyed) return die;
         const bonus = die.ownerId === 'player' ? player : enemy;
-        this.attackMultiplierTurnsByInstance.set(die.instanceId, { multiplier: bonus.multiplier, turns: 1 });
+        this.combanityAttackMultiplierByInstance.set(die.instanceId, { multiplier: bonus.multiplier, turns: 1 });
         this.damageReductionByInstance.set(die.instanceId, Phaser.Math.Clamp(bonus.reduction, 0, 0.95));
         return die;
       })
@@ -2216,14 +2331,12 @@ export class ArenaScene extends Phaser.Scene {
       const tileKey = `${boardSide}:${die.gridPosition!.row},${die.gridPosition!.col}`;
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
-        const wasAlive = !die.isDestroyed;
         const sourceProxy: DiceInstanceState = { ...die, ownerId: pool.sourceOwnerId ?? die.ownerId, typeId: pool.sourceTypeId ?? die.typeId };
         const lavaMultiplier = this.getCombanityDamageMultiplier(sourceProxy, die) * this.getDiceCardSkillDamageMultiplier(sourceProxy);
         const finalDamage = Math.max(1, Math.floor(pool.damage * lavaMultiplier));
         const lavaHit = this.applyDamageWithRevive(die.instanceId, finalDamage);
         this.gameState = lavaHit.state;
-        const after = this.gameState.dice.find((d) => d.instanceId === die.instanceId);
-        if (wasAlive && after?.isDestroyed) this.checkDeathTransformCondition(die);
+        if (lavaHit.defeated) this.checkDeathTransformCondition(die);
         this.combatLog.setText(`${die.typeId} takes ${finalDamage} lava damage from the pool!`);
       }
     });
@@ -2378,14 +2491,14 @@ export class ArenaScene extends Phaser.Scene {
         const skipBasicAttack = anyActiveFires;
 
         let damage = 0;
-        let targetDestroyed = false;
+        let targetDefeated = false;
 
         if (!skipBasicAttack) {
           if (beamTarget && (!forcedTarget || forcedTarget.instanceId === beamTarget.instanceId)) {
             this.playAttackSfx(attacker, attackerMeta);
             const result = this.executeTranscendenceBeam(attacker, target);
             damage = result.damage;
-            targetDestroyed = result.targetDestroyed;
+            targetDefeated = result.targetDestroyed;
           } else {
             this.playAttackSfx(attacker, attackerMeta);
             const defs = this.getDefinitionsForCombat(attacker, target);
@@ -2410,7 +2523,7 @@ export class ArenaScene extends Phaser.Scene {
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
             this.gameState = hit.state;
             damage = hit.dealt;
-            targetDestroyed = this.gameState.dice.find((d) => d.instanceId === target.instanceId)?.isDestroyed ?? false;
+            targetDefeated = hit.defeated;
             this.showDamageText(target, damage, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
             if (pips % 2 === 1 && (attackerMeta?.deuciferOddSiphonRate ?? 0) > 0) this.healDie(attacker.instanceId, Math.floor(damage * (attackerMeta?.deuciferOddSiphonRate ?? 0)));
             this.applyPassiveSkillEffects(attacker, target);
@@ -2430,7 +2543,7 @@ export class ArenaScene extends Phaser.Scene {
           timedOut = true;
           break;
         }
-        if (targetDestroyed) {
+        if (targetDefeated) {
           await this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
           this.checkDeathTransformCondition(target);
@@ -2439,7 +2552,7 @@ export class ArenaScene extends Phaser.Scene {
         this.combatLog.setText(
           skipBasicAttack
             ? `${ownerName} ${attacker.typeId} uses active skill!`
-            : `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${damage} damage!${targetDestroyed ? ' DESTROYED!' : ''}`
+            : `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${damage} damage!${targetDefeated ? ' DESTROYED!' : ''}`
         );
 
         if (!beamTarget && !skipBasicAttack) this.animateAttack(attacker, target);
@@ -2645,7 +2758,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private applyDamageWithRevive(instanceId: string, damage: number): { state: MatchBattleState; dealt: number } {
+  private applyDamageWithRevive(instanceId: string, damage: number): { state: MatchBattleState; dealt: number; defeated: boolean } {
     let reduction = this.damageReductionByInstance.get(instanceId) ?? 0;
     const die = this.gameState.dice.find((d) => d.instanceId === instanceId);
     if (die) reduction += this.getSpotlightScale(die);
@@ -2661,22 +2774,23 @@ export class ArenaScene extends Phaser.Scene {
       const nextShield = shieldHp - absorbed;
       if (nextShield > 0) this.shieldHpByInstance.set(instanceId, nextShield);
       else this.shieldHpByInstance.delete(instanceId);
-      if (remaining <= 0) return { state: this.gameState, dealt: 0 };
+      if (remaining <= 0) return { state: this.gameState, dealt: 0, defeated: false };
       damage = remaining;
     }
     const before = this.gameState.dice.find((die) => die.instanceId === instanceId);
     const beforePosition = before?.gridPosition;
     const nextState = applyDamage(this.gameState, instanceId, damage);
     const after = nextState.dice.find((die) => die.instanceId === instanceId);
-    if (!before || !after?.isDestroyed) return { state: nextState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)) };
+    if (!before || !after?.isDestroyed) return { state: nextState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)), defeated: false };
     AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
     const definition = this.getDefinitionForInstance(before);
     const reviveChance = definition ? getRuntimeSkillMeta(definition).reviveChance : undefined;
-    if (!reviveChance || Math.random() >= reviveChance) return { state: nextState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)) };
+    if (!reviveChance || Math.random() >= reviveChance) return { state: nextState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), defeated: true };
 
     this.animateSkullRevive(before);
     return {
       dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)),
+      defeated: true,
       state: {
       ...nextState,
       dice: nextState.dice.map((die) => die.instanceId === instanceId
@@ -2751,7 +2865,7 @@ export class ArenaScene extends Phaser.Scene {
         const splashHit = this.applyDamageWithRevive(die.instanceId, dealt);
         this.gameState = splashHit.state;
         this.showDamageText(die, splashHit.dealt, '#ff9f58');
-        if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
+        if (splashHit.defeated) this.checkDeathTransformCondition(die);
         this.animateSkillEffect('fire', attacker, die);
       });
     }
@@ -2768,7 +2882,7 @@ export class ArenaScene extends Phaser.Scene {
         const chainHit = this.applyDamageWithRevive(chainTarget.instanceId, dealt);
         this.gameState = chainHit.state;
         this.showDamageText(chainTarget, chainHit.dealt, '#fff176');
-        if (this.gameState.dice.find((d) => d.instanceId === chainTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(chainTarget);
+        if (chainHit.defeated) this.checkDeathTransformCondition(chainTarget);
         this.animateSkillEffect('electric', attacker, chainTarget);
       }
     }
@@ -2780,19 +2894,19 @@ export class ArenaScene extends Phaser.Scene {
         const pierceHit = this.applyDamageWithRevive(die.instanceId, pierceDamage);
         this.gameState = pierceHit.state;
         this.showDamageText(die, pierceHit.dealt, '#c9d6d3');
-        if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
+        if (pierceHit.defeated) this.checkDeathTransformCondition(die);
       });
     }
   }
 
   private async applyActiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
-    const applyDirectDamage = (victim: DiceInstanceState, baseDamage: number): number => {
+    const applyDirectDamage = (victim: DiceInstanceState, baseDamage: number): { dealt: number; defeated: boolean } => {
       const multiplier = this.getCombanityDamageMultiplier(attacker, victim);
       const giantHunter = this.giantHunterRateByOwner[attacker.ownerId] > 0 ? Math.max(0, Math.floor(victim.maxHealth * this.giantHunterRateByOwner[attacker.ownerId])) : 0;
       const adjustedDamage = Math.max(1, Math.floor((baseDamage + giantHunter) * multiplier * this.getDiceCardSkillDamageMultiplier(attacker)));
       const directHit = this.applyDamageWithRevive(victim.instanceId, adjustedDamage);
       this.gameState = directHit.state;
-      return directHit.dealt;
+      return { dealt: directHit.dealt, defeated: directHit.defeated };
     };
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
@@ -2832,9 +2946,9 @@ export class ArenaScene extends Phaser.Scene {
                 d.zone === 'board' && !d.isDestroyed && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
                 && this.getBoardSideForDie(d) === targetBoardSide);
               if (!victim) return;
-              const dealt = applyDirectDamage(victim, meteorDamage);
-              this.showDamageText(victim, dealt, '#ff9f58');
-              if (this.gameState.dice.find(d => d.instanceId === victim.instanceId)?.isDestroyed) this.checkDeathTransformCondition(victim);
+              const hit = applyDirectDamage(victim, meteorDamage);
+              this.showDamageText(victim, hit.dealt, '#ff9f58');
+              if (hit.defeated) this.checkDeathTransformCondition(victim);
               hits += 1;
             });
             this.renderLavaPools();
@@ -2859,8 +2973,7 @@ export class ArenaScene extends Phaser.Scene {
           this.gameState = instakillHit.state;
           this.showDamageText(freshTarget, instakillHit.dealt, '#c57cff');
           this.combatLog.setText(`☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
-          const destroyed = this.gameState.dice.find(d => d.instanceId === freshTarget.instanceId)?.isDestroyed;
-          if (destroyed) {
+          if (instakillHit.defeated) {
             await this.applyOnKillSkillEffects(attacker, freshTarget);
             this.applyOnDeathSkillEffects(freshTarget, attacker);
             this.checkDeathTransformCondition(freshTarget);
@@ -2900,14 +3013,14 @@ export class ArenaScene extends Phaser.Scene {
       if (freshTarget && !freshTarget.isDestroyed) {
         this.animateSpearActive(attacker, freshTarget);
         const primaryDamage = Math.max(1, Math.ceil(meta.activeDamage ?? 104));
-        const dealt = applyDirectDamage(freshTarget, primaryDamage);
-        this.showDamageText(freshTarget, dealt, '#dbe7e4');
-        if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
+        const hit = applyDirectDamage(freshTarget, primaryDamage);
+        this.showDamageText(freshTarget, hit.dealt, '#dbe7e4');
+        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
         this.getPierceBehindTargets(attacker, freshTarget, 2).forEach((die) => {
           const pierceDamage = Math.max(1, Math.ceil(meta.pierceBehindDamage ?? 208));
-          const dealt = applyDirectDamage(die, pierceDamage);
-          this.showDamageText(die, dealt, '#b58cff');
-          if (this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed) this.checkDeathTransformCondition(die);
+          const pierceHit = applyDirectDamage(die, pierceDamage);
+          this.showDamageText(die, pierceHit.dealt, '#b58cff');
+          if (pierceHit.defeated) this.checkDeathTransformCondition(die);
         });
       }
       this.manaByInstance.set(attacker.instanceId, 0);
@@ -2939,8 +3052,8 @@ export class ArenaScene extends Phaser.Scene {
     if (attacker.typeId === 'Ice') {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        const dealt = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 16)));
-        this.showDamageText(freshTarget, dealt, '#8fd5ff');
+        const hit = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 16)));
+        this.showDamageText(freshTarget, hit.dealt, '#8fd5ff');
         this.gameState = {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => {
@@ -2949,7 +3062,7 @@ export class ArenaScene extends Phaser.Scene {
             return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
           })
         };
-        if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
+        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
         this.animateSkillEffect('ice', attacker, freshTarget);
       }
     }
@@ -2959,8 +3072,9 @@ export class ArenaScene extends Phaser.Scene {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         const activePoisonDamage = Math.max(1, this.getDefinitionForInstance(attacker)?.attack ?? 1);
-        const dealt = applyDirectDamage(freshTarget, activePoisonDamage);
-        this.showDamageText(freshTarget, dealt, '#89f57a');
+        const hit = applyDirectDamage(freshTarget, activePoisonDamage);
+        this.showDamageText(freshTarget, hit.dealt, '#89f57a');
+        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
       }
       const existing = this.poisonByInstance.get(target.instanceId);
       this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
@@ -2971,9 +3085,9 @@ export class ArenaScene extends Phaser.Scene {
     if (shouldApplyGenericActiveDamage) {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
-        const dealt = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 1)));
-        this.showDamageText(freshTarget, dealt, '#ffbf80');
-        if (this.gameState.dice.find((d) => d.instanceId === freshTarget.instanceId)?.isDestroyed) this.checkDeathTransformCondition(freshTarget);
+        const hit = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 1)));
+        this.showDamageText(freshTarget, hit.dealt, '#ffbf80');
+        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
       }
     }
 
@@ -3024,14 +3138,9 @@ export class ArenaScene extends Phaser.Scene {
       const definition = this.getDefinitionForInstance(deathDie);
       if (!definition || !getRuntimeSkillMeta(definition).hasDeathTransform) return;
 
-      const defeatedAllies = this.gameState.dice.filter((die) =>
-        die.ownerId === owner &&
-        die.instanceId !== deathDie.instanceId &&
-        die.isDestroyed
-      ).length;
       const previous = this.deathAlliesDefeatedCount.get(deathDie.instanceId) ?? 0;
       const cap = getRuntimeSkillMeta(definition).maxSouls ?? 2;
-      const count = Math.min(cap, Math.max(previous, defeatedAllies));
+      const count = defeated.instanceId === deathDie.instanceId ? previous : Math.min(cap, previous + 1);
       this.deathAlliesDefeatedCount.set(deathDie.instanceId, count);
 
       if (count >= 2) {
@@ -3101,6 +3210,14 @@ export class ArenaScene extends Phaser.Scene {
         this.attackMultiplierTurnsByInstance.set(key, { ...value, turns: nextTurns });
       }
     });
+    this.combanityAttackMultiplierByInstance.forEach((value, key) => {
+      const nextTurns = value.turns - 1;
+      if (nextTurns <= 0) {
+        this.combanityAttackMultiplierByInstance.delete(key);
+      } else {
+        this.combanityAttackMultiplierByInstance.set(key, { ...value, turns: nextTurns });
+      }
+    });
     this.shieldDurationTurnsByInstance.forEach((turns, key) => {
       const nextTurns = turns - 1;
       if (nextTurns <= 0) {
@@ -3165,10 +3282,6 @@ export class ArenaScene extends Phaser.Scene {
   private summonDeuciferBoss() {
     const definition = this.definitions.get('Deucifer');
     if (!definition) return;
-    const footprint = this.getFootprintForDefinition(definition);
-    const usedCells = this.collectOccupiedCells('enemy');
-    const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(definition.range));
-    if (!position) return;
     const instanceId = `enemy-Deucifer-boss-${Date.now()}`;
     const boss: DiceInstanceState = {
       instanceId,
@@ -3179,8 +3292,8 @@ export class ArenaScene extends Phaser.Scene {
       attacksRemaining: 0,
       hasFinishedAttacking: false,
       isDestroyed: false,
-      zone: 'board',
-      gridPosition: position
+      zone: 'hand',
+      gridPosition: undefined
     };
     this.gameState = { ...this.gameState, dice: [...this.gameState.dice, boss] };
     this.enemyDicePips.set(instanceId, Phaser.Math.Between(1, 6));
@@ -3188,7 +3301,7 @@ export class ArenaScene extends Phaser.Scene {
     this.deuciferBossPending = false;
     this.deuciferBossSummoned = true;
     this.enemyLoadoutRevealed = true;
-    this.combatLog.setText('Deucifer enters the arena!');
+    this.combatLog.setText('Deucifer is waiting in hand...');
   }
 
   private healDie(instanceId: string, amount: number) {
@@ -3421,8 +3534,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private animateJudgmentHammer(ownerId: 'player' | 'enemy', row: number, col: number) {
-    const grid = ownerId === 'player' ? this.enemyGridContainer : this.playerGridContainer;
+  private animateJudgmentHammer(boardSide: 'player' | 'enemy', row: number, col: number) {
+    const grid = boardSide === 'player' ? this.playerGridContainer : this.enemyGridContainer;
     const x = grid.x + col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     AnimationManager.animateJudgmentHammer(this, x, y, 420);
@@ -3682,12 +3795,16 @@ export class ArenaScene extends Phaser.Scene {
       .sort((a, b) => a.currentHealth - b.currentHealth || a.maxHealth - b.maxHealth)[0];
     if (!weakest?.gridPosition || chainGuard.has(weakest.instanceId)) return;
     chainGuard.add(weakest.instanceId);
-    const center = weakest.gridPosition;
     await this.delayCombatVisualPaced(500);
     if (!this.sys.isActive()) return;
-    this.animateJudgmentHammer(attacker.ownerId, center.row, center.col);
+    const freshWeakest = this.gameState.dice.find((die) => die.instanceId === weakest.instanceId && die.zone === 'board' && !die.isDestroyed && die.gridPosition);
+    if (!freshWeakest?.gridPosition) return;
+    const center = freshWeakest.gridPosition;
+    const targetBoardSide = this.getBoardSideForDie(freshWeakest);
+    this.animateJudgmentHammer(targetBoardSide, center.row, center.col);
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
       die.gridPosition &&
+      this.getBoardSideForDie(die) === targetBoardSide &&
       Math.abs(die.gridPosition.row - center.row) <= 1 &&
       Math.abs(die.gridPosition.col - center.col) <= 1
     );
@@ -3697,8 +3814,7 @@ export class ArenaScene extends Phaser.Scene {
       const hammerHit = this.applyDamageWithRevive(die.instanceId, dealt);
       this.gameState = hammerHit.state;
       this.showDamageText(die, hammerHit.dealt, '#ffd36f');
-      const destroyed = this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed ?? false;
-      if (destroyed) {
+      if (hammerHit.defeated) {
         defeatedByHammer.push(die);
         this.checkDeathTransformCondition(die);
       }
@@ -3745,15 +3861,14 @@ export class ArenaScene extends Phaser.Scene {
       (die.instanceId === target.instanceId || die.gridPosition.row === targetPos.row)
     );
 
-    let primaryDestroyed = false;
+    let primaryDefeated = false;
     victims.forEach((die) => {
       const dealt = Math.max(1, Math.floor(damage * this.getCombanityDamageMultiplier(attacker, die) * this.getDiceCardSkillDamageMultiplier(attacker)));
       const beamHit = this.applyDamageWithRevive(die.instanceId, dealt);
       this.gameState = beamHit.state;
       this.showDamageText(die, beamHit.dealt, '#9ff8ff');
-      const destroyed = this.gameState.dice.find((d) => d.instanceId === die.instanceId)?.isDestroyed ?? false;
-      if (destroyed) this.checkDeathTransformCondition(die);
-      if (die.instanceId === target.instanceId) primaryDestroyed = destroyed;
+      if (beamHit.defeated && die.instanceId !== target.instanceId) this.checkDeathTransformCondition(die);
+      if (die.instanceId === target.instanceId) primaryDefeated = beamHit.defeated;
     });
 
     this.gameState = {
@@ -3768,7 +3883,7 @@ export class ArenaScene extends Phaser.Scene {
       })
     };
     this.animateTranscendenceBeam(attacker, target);
-    return { damage, targetDestroyed: primaryDestroyed };
+    return { damage, targetDestroyed: primaryDefeated };
   }
 
 
