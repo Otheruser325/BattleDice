@@ -103,6 +103,7 @@ export class ArenaScene extends Phaser.Scene {
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
+  private manaPausedTurnsByInstance: Map<string, number> = new Map();
   private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
   private poisonByInstance: Map<string, { damage: number; turns: number; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> = new Map();
@@ -185,6 +186,7 @@ export class ArenaScene extends Phaser.Scene {
     this.attackDeltaByInstance.clear();
     this.extraAttackTurnsByInstance.clear();
     this.attackMultiplierTurnsByInstance.clear();
+    this.manaPausedTurnsByInstance.clear();
     this.combanityAttackMultiplierByInstance.clear();
     this.damageReductionByInstance.clear();
     this.poisonByInstance.clear();
@@ -1871,6 +1873,11 @@ export class ArenaScene extends Phaser.Scene {
     return Math.max(0, Math.floor(adjusted * skillMult * comboMult));
   }
 
+  private addMana(instanceId: string, manaNeeded: number, currentMana: number, gain = 1) {
+    if (this.manaPausedTurnsByInstance.has(instanceId)) return;
+    this.manaByInstance.set(instanceId, Math.min(manaNeeded, currentMana + gain));
+  }
+
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
     const playerBoardDice = getBoardDice(this.gameState, 'player');
     const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
@@ -2060,7 +2067,7 @@ export class ArenaScene extends Phaser.Scene {
         const cap = this.getManaCapForDie(ally);
         if (cap <= 0) return;
         const current = this.manaByInstance.get(ally.instanceId) ?? 0;
-        this.manaByInstance.set(ally.instanceId, Math.min(cap, current + gain));
+        this.addMana(ally.instanceId, cap, current, gain);
       });
     });
     if (playedChargeVisual) await this.delay(500);
@@ -2077,7 +2084,7 @@ export class ArenaScene extends Phaser.Scene {
       const gain = this.manaPotionGainByOwner[ally.ownerId];
       if (gain <= 0) return;
       const current = this.manaByInstance.get(ally.instanceId) ?? 0;
-      this.manaByInstance.set(ally.instanceId, Math.min(cap, current + gain));
+      this.addMana(ally.instanceId, cap, current, gain);
     });
   }
 
@@ -2981,7 +2988,7 @@ export class ArenaScene extends Phaser.Scene {
         }
         this.manaByInstance.set(attacker.instanceId, 0);
       } else {
-        this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+        this.addMana(attacker.instanceId, manaNeeded, currentMana);
       }
       return;
     }
@@ -3005,7 +3012,7 @@ export class ArenaScene extends Phaser.Scene {
         }
         this.manaByInstance.set(attacker.instanceId, 0);
       } else {
-        this.manaByInstance.set(attacker.instanceId, Math.min(instakillMana, currentMana + 1));
+        this.addMana(attacker.instanceId, instakillMana, currentMana);
       }
       return;
     }
@@ -3014,8 +3021,6 @@ export class ArenaScene extends Phaser.Scene {
     const activeDurationTurns = this.getSkillDurationTurns(meta.activeDurationTurns);
     const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
-    const windBuffTurns = this.attackMultiplierTurnsByInstance.get(attacker.instanceId)?.turns ?? 0;
-    const windMultiplierActive = attacker.typeId === 'Wind' && windBuffTurns > 0;
     if (meta.canSummonImp) {
       if (canCastActive) {
         const imp = this.summonImpForOwner(attacker.ownerId);
@@ -3024,12 +3029,12 @@ export class ArenaScene extends Phaser.Scene {
           this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
         }
       } else if (manaNeeded > 0) {
-        this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+        this.addMana(attacker.instanceId, manaNeeded, currentMana);
       }
       return;
     }
     if (!canCastActive) {
-      if (manaNeeded > 0 && !windMultiplierActive) this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+      if (manaNeeded > 0) this.addMana(attacker.instanceId, manaNeeded, currentMana);
       return;
     }
     if (meta.hasSpearActive) {
@@ -3082,7 +3087,7 @@ export class ArenaScene extends Phaser.Scene {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => {
             if (die.instanceId !== freshTarget.instanceId || die.isDestroyed || die.attacksRemaining <= 0) return die;
-            const attacksRemaining = Math.max(1, die.attacksRemaining - 1);
+            const attacksRemaining = Math.max(0, die.attacksRemaining - 1);
             return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
           })
         };
@@ -3124,17 +3129,7 @@ export class ArenaScene extends Phaser.Scene {
           AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
         }
         this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: activeDurationTurns });
-        const freshAttacker = this.gameState.dice.find(d => d.instanceId === attacker.instanceId);
-        if (freshAttacker && !freshAttacker.isDestroyed) {
-          this.gameState = {
-            ...this.gameState,
-            dice: this.gameState.dice.map(d =>
-              d.instanceId === attacker.instanceId
-                ? { ...d, attacksRemaining: Math.max(0, d.attacksRemaining) + Math.max(1, meta.activeExtraAttacks ?? 1), hasFinishedAttacking: false }
-                : d
-            )
-          };
-        }
+        this.manaPausedTurnsByInstance.set(attacker.instanceId, activeDurationTurns);
       } else {
         this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: activeDurationTurns });
       }
@@ -3236,6 +3231,14 @@ export class ArenaScene extends Phaser.Scene {
         this.attackMultiplierTurnsByInstance.delete(key);
       } else {
         this.attackMultiplierTurnsByInstance.set(key, { ...value, turns: nextTurns });
+      }
+    });
+    this.manaPausedTurnsByInstance.forEach((turns, key) => {
+      const nextTurns = turns - 1;
+      if (nextTurns <= 0) {
+        this.manaPausedTurnsByInstance.delete(key);
+      } else {
+        this.manaPausedTurnsByInstance.set(key, nextTurns);
       }
     });
     this.combanityAttackMultiplierByInstance.forEach((value, key) => {
@@ -3924,11 +3927,20 @@ export class ArenaScene extends Phaser.Scene {
     if (meta.hasTranscendence && basePips === 6) this.transcendenceTransformed.add(attacker.instanceId);
     if (!meta.hasTranscendence || basePips !== 6 || !attacker.gridPosition || attacker.attacksRemaining <= 0) return undefined;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const rowTargets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition?.row === attacker.gridPosition?.row);
-    const direction = attacker.ownerId === 'player' ? -1 : 1;
+    const attackerSide = this.getBoardSideForDie(attacker);
+    const isForwardTarget = (die: DiceInstanceState) => {
+      if (!die.gridPosition || !attacker.gridPosition) return false;
+      const targetSide = this.getBoardSideForDie(die);
+      if (targetSide !== attackerSide) return true;
+      return attackerSide === 'player'
+        ? die.gridPosition.col > attacker.gridPosition.col
+        : die.gridPosition.col < attacker.gridPosition.col;
+    };
+    const rowTargets = getBoardDice(this.gameState, enemyOwner).filter((die) =>
+      die.gridPosition?.row === attacker.gridPosition?.row && isForwardTarget(die));
     return rowTargets
-      .map((die) => ({ die, distance: direction * (attacker.gridPosition!.col - die.gridPosition!.col) }))
-      .filter(({ distance }) => distance > 0)
+      .map((die) => ({ die, distance: this.getAttackDistance(attacker, die) }))
+      .filter(({ distance }) => distance <= Math.max(1, definition.range))
       .sort((a, b) => a.distance - b.distance)[0]?.die;
   }
 
@@ -4019,7 +4031,7 @@ export class ArenaScene extends Phaser.Scene {
       for (let row = 0; row < GRID_SIZE; row++) {
         for (let col = 0; col < GRID_SIZE; col++) {
           const proxyTarget: DiceInstanceState = { ...die, ownerId: targetOwner, gridPosition: { row, col } };
-          if (targetOwner !== die.ownerId && this.getDistanceWithBoardSides(die, proxyTarget) > Math.max(1, definition.range)) continue;
+          if (this.getDistanceWithBoardSides(die, proxyTarget) > Math.max(1, definition.range)) continue;
           const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, targetOwner === die.ownerId ? 0.16 : 0.24)

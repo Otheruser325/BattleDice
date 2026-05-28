@@ -144,7 +144,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Sends in a charged spear that deals ${scaleSkillDamage(modifiers.activeDamage)} damage to its target, then ${scaleSkillDamage(modifiers.pierceBehindDamage)} damage behind it with extended range.`;
   }
   if (notes.includes('runtime:judgmentHammer') && modifiers.hammerDamage !== undefined) {
-    return `On kill, summons a judge hammer on the weakest foe for ${scaleSkillDamage(modifiers.hammerDamage)} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
+    return `Summons a judge hammer on the weakest foe for ${scaleSkillDamage(modifiers.hammerDamage)} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
   }
   if (notes.includes('runtime:solitudePreCombat') && modifiers.targetMaxHpBonusRate !== undefined) {
     return `When isolated from adjacent allies, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
@@ -164,7 +164,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deals direct toxic damage, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
   if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
-    return `Throws a striking meteor at a random foe, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage. Drops a lava pool on the hit tile lasting 3 turns. Foes standing on a lava tile take ${scaleSkillDamage(modifiers.lavaDamage)} damage at the start of combat.`;
+    return `Throws a striking meteor at a random foe, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a + pattern. Drops lava pools on the hit tile and adjacent tiles (+ pattern) lasting 3 turns. Foes standing on a lava tile take ${scaleSkillDamage(modifiers.lavaDamage)} damage at the start of combat.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
     return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
@@ -201,7 +201,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
   }
   if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
-    return `On Combat Start, all friendly charging active skills gain +${modifiers.manaGain} mana.`;
+    return `All friendly charging active skills gain +${modifiers.manaGain} mana.`;
   }
   if (modifiers.reviveChance !== undefined) {
     return `When defeated, it comes back to life with a ${formatPercent(modifiers.reviveChance)} chance.`;
@@ -235,6 +235,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
   pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
   pushNumericDelta('Mana gain', currentModifiers.manaGain, nextModifiers.manaGain);
+  pushNumericDelta('Empowered attack count', currentModifiers.numAttacksBoosted, nextModifiers.numAttacksBoosted);
 
   if (currentModifiers.damageRange && nextModifiers.damageRange) {
     const minDelta = nextModifiers.damageRange[0] - currentModifiers.damageRange[0];
