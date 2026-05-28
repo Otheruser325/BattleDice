@@ -21,7 +21,7 @@
     {
       "type": "Active",
       "title": "Spell Strike",
-      "description": "Summons 3 magic meteors on random enemy tiles, causing 200 damage in plus patterns. Leaves lava on each epicentre for 4 turns that deals 100 damage.",
+      "description": "Summons 3 magic meteors on random player-grid tiles, causing 200 damage in plus patterns. Leaves lava on each epicentre for 4 turns that deals 100 damage.",
       "manaNeeded": 12,
       "modifiers": {
         "meteorDamage": 200,
@@ -29,7 +29,8 @@
         "durationTurns": 4,
         "notes": [
           "runtime:meteorStrike",
-          "runtime:tripleMeteor"
+          "runtime:tripleMeteor",
+          "runtime:skillSfx=dice_meteor_skill"
         ]
       }
     },
