@@ -1,8 +1,11 @@
 type BuildEnvValue = string | boolean | undefined;
 type BuildEnv = Record<string, BuildEnvValue> & {
+  BASE_URL?: string;
   DEV?: boolean;
   MODE?: string;
   PROD?: boolean;
+  VITE_RIVALIS_TICKET?: string;
+  VITE_RIVALIS_WS_URL?: string;
 };
 
 const TRUTHY_VALUES = ['1', 'true', 'yes', 'on'];

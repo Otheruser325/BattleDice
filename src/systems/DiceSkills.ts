@@ -1,5 +1,5 @@
 import type { DiceDefinition, DiceInstanceState } from '../types/game';
-import { getCombatDistance } from './CombatRange';
+import { getBoardSideCombatDistance } from './CombatRange';
 
 export interface DiceSkillRuntimeMeta {
   randomDamage?: { min: number; max: number };
@@ -54,6 +54,9 @@ export interface DiceSkillRuntimeMeta {
   canConjureSouls?: boolean;
   conjureType?: 'ally' | 'enemy';
   maxSouls?: number;
+  deuciferOddSiphonRate?: number;
+  deuciferEvenDamageRate?: number;
+  canSummonImp?: boolean;
 }
 
 
@@ -81,6 +84,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
 
   const getNoteValue = (prefix: string) => notes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
   const hasDeathInstakill = notes.includes('runtime:deathInstakill');
+  const allNotes = allModifiers.flatMap((modifier) => modifier.notes ?? []);
+  const getAnyNoteValue = (prefix: string) => allNotes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
+  const oddSiphonRate = Number(getAnyNoteValue('runtime:deuciferOddSiphon='));
+  const evenDamageRate = Number(getAnyNoteValue('runtime:deuciferEvenDamage='));
 
   return {
     randomDamage: range ? { min: range[0], max: range[1] } : undefined,
@@ -139,7 +146,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     transformedAttackSfxKey: getNoteValue('runtime:attackSfxTransformed='),
     canConjureSouls: Boolean((modifiers as { canConjureSouls?: boolean } | undefined)?.canConjureSouls),
     conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' } | undefined)?.conjureType),
-    maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls
+    maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls,
+    deuciferOddSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
+    deuciferEvenDamageRate: Number.isFinite(evenDamageRate) ? evenDamageRate : undefined,
+    canSummonImp: allNotes.includes('runtime:deuciferSummonImp')
   };
 }
 
@@ -167,7 +177,7 @@ export function resolveDamage(
     damage = Math.max(1, Math.round(damage * meta.berserkDamageMultiplier));
   }
   if ((meta.distanceDamageBonusPerTile || meta.distanceDamageBonusRatePerTile) && attacker.gridPosition && target.gridPosition) {
-    const distance = getCombatDistance(attacker, target);
+    const distance = getBoardSideCombatDistance(attacker, target);
     if (meta.distanceDamageBonusPerTile) {
       damage += distance * meta.distanceDamageBonusPerTile;
     }

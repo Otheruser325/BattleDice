@@ -21,7 +21,7 @@ import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/gam
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { applyClassProgression } from '../systems/ClassProgression';
-import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
+import { getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
@@ -29,6 +29,7 @@ import { AnimationManager } from '../utils/AnimationManager';
 import { canOfferDiceCards, getDiceCardMagnitude, getDiceCardRarityRoll, rollDiceCards, type DiceCard, type DiceCardRarity } from '../systems/DiceCards';
 import { ProfileStore } from '../systems/ProfileStore';
 import { AchievementStore } from '../systems/AchievementStore';
+import { ArenaMultiplayerClient, type ArenaMultiplayerStatus } from '../systems/ArenaMultiplayerClient';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -155,6 +156,12 @@ export class ArenaScene extends Phaser.Scene {
   private evenInvestmentByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private assassinBoostAttacksByInstance: Map<string, number> = new Map();
   private diceCardPicksUsed = 0;
+  private multiplayerClient = new ArenaMultiplayerClient();
+  private multiplayerStatus: ArenaMultiplayerStatus = this.multiplayerClient.getStatus();
+  private playerDisplayName = 'Player';
+  private enemyDisplayName = 'Opponent';
+  private deuciferBossPending = false;
+  private deuciferBossSummoned = false;
 
   constructor() {
     super(ArenaScene.KEY);
@@ -185,6 +192,8 @@ export class ArenaScene extends Phaser.Scene {
     this.activeRandomModifier = null;
     this.transcendenceTransformed.clear();
     this.lavaPoolsByTile.clear();
+    this.deuciferBossPending = false;
+    this.deuciferBossSummoned = false;
     this.deathDiceTransformed.clear();
     this.deathAlliesDefeatedCount.clear();
     this.permanentAttackBonusByInstance.clear();
@@ -209,14 +218,21 @@ export class ArenaScene extends Phaser.Scene {
     this.assassinBoostAttacksByInstance.clear();
     this.infiltratedBoardSideByInstance.clear();
     this.diceCardPicksUsed = 0;
+    this.multiplayerStatus = this.multiplayerClient.getStatus();
+    this.enemyDisplayName = 'Opponent';
   }
 
   create() {
     this.resetRuntimeState();
     this.sessionStartedAtMs = Date.now();
     const layout = getLayout(this);
+    this.playerDisplayName = ProfileStore.get(this).username || 'Player';
 
-    this.definitions = new Map(getAllDiceDefinitions(this).map((die) => [die.typeId, die]));
+    this.definitions = new Map([
+      ...getAllDiceDefinitions(this),
+      this.cache.json.get('dice:Deucifer') as DiceDefinition | undefined,
+      this.cache.json.get('dice:Imp') as DiceDefinition | undefined
+    ].filter((die): die is DiceDefinition => Boolean(die)).map((die) => [die.typeId, die]));
     this.skillIndex = buildSkillIndex([...this.definitions.values()]);
 
     AudioManager.playMusic(this, 'arena-music');
@@ -230,6 +246,7 @@ export class ArenaScene extends Phaser.Scene {
       if (next.playtimeMs >= 86_400_000) AchievementStore.unlock(this, 'diceaholic');
       this.tweens.killAll();
       this.time.removeAllEvents();
+      this.multiplayerClient.disconnect();
       this.combatTimerText?.destroy();
       this.combatTimerText = null;
     });
@@ -447,11 +464,11 @@ export class ArenaScene extends Phaser.Scene {
     elements.push(backBtn);
 
     const queueBtn = this.add.text(cx + 90, cy + 104, 'ENTER QUEUE →', {
-      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted,
-      backgroundColor: '#1e3347', padding: { left: 12, right: 12, top: 7, bottom: 7 }
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text,
+      backgroundColor: '#2d6f99', padding: { left: 12, right: 12, top: 7, bottom: 7 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     queueBtn.on('pointerdown', () => {
-      AlertManager.toast(this, { type: 'warning', message: 'Online matchmaking is not yet available.' });
+      this.queueArenaMultiplayer('matchmaking');
     });
     elements.push(queueBtn);
 
@@ -957,7 +974,7 @@ export class ArenaScene extends Phaser.Scene {
       cx + 84, cy - 28, rowContainer
     );
 
-    const noteText = this.add.text(cx, cy + 32, 'Play against friends in the same session.\nOnline connectivity for remote matches coming soon.', {
+    const noteText = this.add.text(cx, cy + 32, 'Play against friends over Rivalis multiplayer.\nShare the same Rivalis room/ticket to sync requests smoothly.', {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted, align: 'center'
     }).setOrigin(0.5);
     elements.push(noteText);
@@ -970,16 +987,49 @@ export class ArenaScene extends Phaser.Scene {
     elements.push(backBtn);
 
     const queueBtn = this.add.text(cx + 90, cy + 140, 'QUEUE →', {
-      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted,
-      backgroundColor: '#1e3347', padding: { left: 16, right: 16, top: 7, bottom: 7 }
+      fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text,
+      backgroundColor: '#2d6f99', padding: { left: 16, right: 16, top: 7, bottom: 7 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     queueBtn.on('pointerdown', () => {
-      AlertManager.toast(this, { type: 'warning', message: 'Online multiplayer is not yet available.' });
+      this.queueArenaMultiplayer('multiplayer');
     });
     elements.push(queueBtn);
 
     this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
     this.setModalEsc(() => this.openModeSelectModal());
+  }
+
+  private queueArenaMultiplayer(mode: 'matchmaking' | 'multiplayer') {
+    const profile = ProfileStore.get(this);
+    this.playerDisplayName = profile.username || 'Player';
+    const setStatus = (status: ArenaMultiplayerStatus) => {
+      this.multiplayerStatus = status;
+      AlertManager.toast(this, {
+        type: status.state === 'failed' || status.state === 'disabled' ? 'warning' : 'success',
+        message: status.message
+      });
+      if (status.state === 'connected') {
+        this.multiplayerClient.join({
+          mode,
+          playerName: this.playerDisplayName,
+          useLevelling: this.configUseLevelling,
+          turnLimit: this.configTurnCount
+        });
+      }
+    };
+    this.multiplayerClient.connect(setStatus);
+    this.multiplayerStatus = this.multiplayerClient.getStatus();
+    if (this.multiplayerStatus.state === 'disabled') {
+      AlertManager.toast(this, { type: 'warning', message: this.multiplayerStatus.message });
+      return;
+    }
+    this.enemyDisplayName = mode === 'matchmaking' ? 'Rivalis Opponent' : 'Friend';
+    this.turnLimit = this.configTurnCount;
+    this.activeChallenge = null;
+    this.activeDailyKey = '';
+    this.configRandomMode = false;
+    this.clearModeModal();
+    this.startGame();
   }
 
   private makeSelectRow<T extends string | number | boolean>(
@@ -1044,6 +1094,8 @@ export class ArenaScene extends Phaser.Scene {
     const selectedRandomizeLoadoutAndClassUps = this.configRandomizeLoadoutAndClassUps;
     const selectedDifficulty = this.configDifficulty;
     const selectedUseLevelling = this.configUseLevelling;
+    const selectedEnemyDisplayName = this.enemyDisplayName;
+    const selectedPlayerDisplayName = this.playerDisplayName;
 
     this.resetRuntimeState();
 
@@ -1055,6 +1107,8 @@ export class ArenaScene extends Phaser.Scene {
     this.configRandomizeLoadoutAndClassUps = selectedRandomizeLoadoutAndClassUps;
     this.configDifficulty = selectedDifficulty;
     this.configUseLevelling = selectedUseLevelling;
+    this.enemyDisplayName = selectedEnemyDisplayName;
+    this.playerDisplayName = selectedPlayerDisplayName;
     this.gamePhase = { stage: 'placement' };
     const loading = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x050d14, 0.95).setDepth(500);
     const loadingLabel = this.add.text(this.scale.width / 2, this.scale.height / 2, 'BATTLE DICE\nCaching arena...', { fontFamily: 'Orbitron', fontSize: '24px', color: PALETTE.text, align: 'center' }).setOrigin(0.5).setDepth(501);
@@ -1161,7 +1215,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private initializeBattle() {
-    const allDefinitions = getAllDiceDefinitions(this);
+    const allDefinitions = [...this.definitions.values()].filter((definition) => definition.typeId !== 'Deucifer' && definition.typeId !== 'Imp');
     const shouldRandomizeLoadoutAndClassUps = this.configRandomMode && this.configRandomizeLoadoutAndClassUps;
     const playerLoadoutDefinitions = shouldRandomizeLoadoutAndClassUps ? this.pickRandomEnemyLoadout(allDefinitions) : getDiceDefinitions(this);
 
@@ -1181,7 +1235,7 @@ export class ArenaScene extends Phaser.Scene {
 
     const enemyRawDefs = this.activeChallenge === 'deucifer'
       ? ['Poison', 'Solitude', 'Judgment', 'Skull', 'Death']
-        .map((typeId) => allDefinitions.find((d) => d.typeId === typeId))
+        .map((typeId) => this.definitions.get(typeId) ?? allDefinitions.find((d) => d.typeId === typeId))
         .filter((d): d is DiceDefinition => Boolean(d))
       : this.activeChallenge === 'dopamine'
       ? ['Healing', 'Light', 'Battery', 'Meteor', 'Wind']
@@ -1236,6 +1290,7 @@ export class ArenaScene extends Phaser.Scene {
       }
     });
 
+    if (this.activeChallenge === 'deucifer') this.enemyDisplayName = 'Deucifer';
     this.generateEnemyPositions();
 
     this.turnText.setVisible(false);
@@ -1263,6 +1318,58 @@ export class ArenaScene extends Phaser.Scene {
 
   private getDefinitionForInstance(die: DiceInstanceState): DiceDefinition | undefined {
     return this.instanceDefinitionOverrides.get(die.instanceId) ?? this.definitions.get(die.typeId);
+  }
+
+  private getFootprintForDefinition(definition: DiceDefinition | undefined): number {
+    return Math.max(1, Math.min(GRID_SIZE, Math.floor(definition?.footprint ?? 1)));
+  }
+
+  private getFootprintForDie(die: DiceInstanceState): number {
+    return this.getFootprintForDefinition(this.getDefinitionForInstance(die));
+  }
+
+  private forEachFootprintCell(row: number, col: number, footprint: number, callback: (row: number, col: number) => void) {
+    for (let rowOffset = 0; rowOffset < footprint; rowOffset++) {
+      for (let colOffset = 0; colOffset < footprint; colOffset++) {
+        callback(row + rowOffset, col + colOffset);
+      }
+    }
+  }
+
+  private canPlaceFootprint(row: number, col: number, footprint: number, usedCells: Set<string>): boolean {
+    if (row < 0 || col < 0 || row + footprint > GRID_SIZE || col + footprint > GRID_SIZE) return false;
+    let available = true;
+    this.forEachFootprintCell(row, col, footprint, (cellRow, cellCol) => {
+      if (usedCells.has(`${cellRow},${cellCol}`)) available = false;
+    });
+    return available;
+  }
+
+  private markFootprint(row: number, col: number, footprint: number, usedCells: Set<string>) {
+    this.forEachFootprintCell(row, col, footprint, (cellRow, cellCol) => usedCells.add(`${cellRow},${cellCol}`));
+  }
+
+  private collectOccupiedCells(ownerId: 'player' | 'enemy', excludedInstanceId?: string): Set<string> {
+    const usedCells = new Set<string>();
+    this.gameState.dice.forEach((die) => {
+      if (die.ownerId !== ownerId || die.instanceId === excludedInstanceId || die.zone !== 'board' || die.isDestroyed || !die.gridPosition) return;
+      this.markFootprint(die.gridPosition.row, die.gridPosition.col, this.getFootprintForDie(die), usedCells);
+    });
+    return usedCells;
+  }
+
+  private findRandomFootprintPosition(footprint: number, usedCells: Set<string>, pickColumn: () => number): { row: number; col: number } | undefined {
+    for (let attempts = 0; attempts < 80; attempts++) {
+      const row = Phaser.Math.Between(0, GRID_SIZE - footprint);
+      const col = Math.min(GRID_SIZE - footprint, Math.max(0, pickColumn()));
+      if (this.canPlaceFootprint(row, col, footprint, usedCells)) return { row, col };
+    }
+    for (let row = 0; row <= GRID_SIZE - footprint; row++) {
+      for (let col = 0; col <= GRID_SIZE - footprint; col++) {
+        if (this.canPlaceFootprint(row, col, footprint, usedCells)) return { row, col };
+      }
+    }
+    return undefined;
   }
 
   private getDefinitionsForCombat(...dice: DiceInstanceState[]): Map<string, DiceDefinition> {
@@ -1365,6 +1472,7 @@ export class ArenaScene extends Phaser.Scene {
     this.rollAllButton.disableInteractive();
     this.rollAllButton.setFillStyle(0x7f8c8d, 0.5);
     this.rollAllButtonLabel.setText('ROLLED');
+    this.updateCombatButtonState();
 
     this.combatLog.setText(`Rolled: ${rollResults.join(', ')}`);
     this.debug.log('All dice rolled', { results: rollResults });
@@ -1486,18 +1594,6 @@ export class ArenaScene extends Phaser.Scene {
 
     const gridPos = droppedZone.getData('gridPos') as { row: number; col: number };
 
-    const existingDie = this.gameState.dice.find((die) =>
-      die.ownerId === 'player' &&
-      die.zone === 'board' &&
-      die.gridPosition?.row === gridPos.row &&
-      die.gridPosition?.col === gridPos.col
-    );
-
-    if (existingDie) {
-      this.returnDieToHand(container, instanceId);
-      return;
-    }
-
     const existingDieInHand = this.gameState.dice.find((die) =>
       die.ownerId === 'player' &&
       die.instanceId === instanceId &&
@@ -1505,6 +1601,13 @@ export class ArenaScene extends Phaser.Scene {
       !die.isDestroyed
     );
     if (!existingDieInHand) {
+      this.returnDieToHand(container, instanceId);
+      return;
+    }
+
+    const footprint = this.getFootprintForDie(existingDieInHand);
+    const usedCells = this.collectOccupiedCells('player', instanceId);
+    if (!this.canPlaceFootprint(gridPos.row, gridPos.col, footprint, usedCells)) {
       this.returnDieToHand(container, instanceId);
       return;
     }
@@ -1598,6 +1701,13 @@ export class ArenaScene extends Phaser.Scene {
     this.gamePhase = { stage: 'combat' };
     this.clearRangeHighlights();
     this.placeEnemyDiceForTurn();
+    this.multiplayerClient.syncTurn({
+      turn: this.gameState.turn,
+      playerName: this.playerDisplayName,
+      dice: this.gameState.dice
+        .filter((die) => die.zone === 'board' && !die.isDestroyed)
+        .map((die) => ({ ownerId: die.ownerId, typeId: die.typeId, gridPosition: die.gridPosition }))
+    });
 
     this.enemyDicePips.clear();
     this.attackCapacityByInstance.clear();
@@ -2293,7 +2403,9 @@ export class ArenaScene extends Phaser.Scene {
             const scaledNonProportional = Math.floor(nonProportional * multiplier);
             const giantHunter = this.giantHunterRateByOwner[attacker.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[attacker.ownerId])) : 0;
             const assassinBoost = (this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0) > 0 ? 2 : 1;
-            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
+            const pips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 1) : (this.enemyDicePips.get(attacker.instanceId) ?? 1);
+            const deuciferEvenMult = pips % 2 === 0 ? 1 + (attackerMeta?.deuciferEvenDamageRate ?? 0) : 1;
+            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult));
             if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
             this.gameState = spendAttack(this.gameState, attacker.instanceId);
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
@@ -2301,6 +2413,7 @@ export class ArenaScene extends Phaser.Scene {
             damage = hit.dealt;
             targetDestroyed = this.gameState.dice.find((d) => d.instanceId === target.instanceId)?.isDestroyed ?? false;
             this.showDamageText(target, damage, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
+            if (pips % 2 === 1 && (attackerMeta?.deuciferOddSiphonRate ?? 0) > 0) this.healDie(attacker.instanceId, Math.floor(damage * (attackerMeta?.deuciferOddSiphonRate ?? 0)));
             this.applyPassiveSkillEffects(attacker, target);
             const rem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
             if (rem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, rem - 1);
@@ -2375,6 +2488,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     this.gameState = endTurn(this.gameState);
+    if (this.deuciferBossPending) this.summonDeuciferBoss();
     await this.maybeRunDiceCardDraft();
     if (this.configRandomMode && this.activeRandomModifier === 'Necromancy' && this.gameState.turn > 1) {
       this.applyNecromancyTurnEffect();
@@ -2496,6 +2610,21 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(die);
     if (!definition || die.isDestroyed || die.maxHealth <= 0) return false;
     const meta = getRuntimeSkillMeta(definition);
+
+    if (meta.canSummonImp) {
+      const manaNeeded = meta.activeManaNeeded ?? 15;
+      const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+      if (currentMana >= manaNeeded) {
+        const imp = this.summonImpForOwner(attacker.ownerId);
+        if (imp) {
+          this.manaByInstance.set(attacker.instanceId, 0);
+          this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
+        }
+      } else {
+        this.manaByInstance.set(attacker.instanceId, Math.min(manaNeeded, currentMana + 1));
+      }
+      return;
+    }
     return meta.berserkThresholdRate !== undefined && die.currentHealth / die.maxHealth < meta.berserkThresholdRate;
   }
 
@@ -3012,6 +3141,75 @@ export class ArenaScene extends Phaser.Scene {
     };
   }
 
+  private summonImpForOwner(ownerId: 'player' | 'enemy'): DiceInstanceState | undefined {
+    const definition = this.definitions.get('Imp');
+    if (!definition) return undefined;
+    const footprint = this.getFootprintForDefinition(definition);
+    const usedCells = this.collectOccupiedCells(ownerId);
+    const position = this.findRandomFootprintPosition(footprint, usedCells, () => ownerId === 'enemy' ? this.pickEnemyColumn(definition.range) : Phaser.Math.Between(0, GRID_SIZE - footprint));
+    if (!position) return undefined;
+    const instanceId = `${ownerId}-Imp-summon-${Date.now()}-${Phaser.Math.Between(1, 9999)}`;
+    const imp: DiceInstanceState = {
+      instanceId,
+      ownerId,
+      typeId: 'Imp',
+      currentHealth: definition.health,
+      maxHealth: definition.health,
+      attacksRemaining: 0,
+      hasFinishedAttacking: false,
+      isDestroyed: false,
+      zone: 'board',
+      gridPosition: position
+    };
+    this.gameState = { ...this.gameState, dice: [...this.gameState.dice, imp] };
+    this.instanceClassLevels.set(instanceId, 1);
+    this.markFootprint(position.row, position.col, footprint, usedCells);
+    return imp;
+  }
+
+  private summonDeuciferBoss() {
+    const definition = this.definitions.get('Deucifer');
+    if (!definition) return;
+    const footprint = this.getFootprintForDefinition(definition);
+    const usedCells = this.collectOccupiedCells('enemy');
+    const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(definition.range));
+    if (!position) return;
+    const instanceId = `enemy-Deucifer-boss-${Date.now()}`;
+    const boss: DiceInstanceState = {
+      instanceId,
+      ownerId: 'enemy',
+      typeId: 'Deucifer',
+      currentHealth: definition.health,
+      maxHealth: definition.health,
+      attacksRemaining: 0,
+      hasFinishedAttacking: false,
+      isDestroyed: false,
+      zone: 'board',
+      gridPosition: position
+    };
+    this.gameState = { ...this.gameState, dice: [...this.gameState.dice, boss] };
+    this.enemyDicePips.set(instanceId, Phaser.Math.Between(1, 6));
+    this.instanceClassLevels.set(instanceId, 1);
+    this.deuciferBossPending = false;
+    this.deuciferBossSummoned = true;
+    this.enemyLoadoutRevealed = true;
+    this.combatLog.setText('Deucifer enters the arena!');
+  }
+
+  private healDie(instanceId: string, amount: number) {
+    const target = this.gameState.dice.find((die) => die.instanceId === instanceId && !die.isDestroyed);
+    if (!target || amount <= 0) return;
+    const healedAmount = Math.min(amount, Math.max(0, target.maxHealth - target.currentHealth));
+    if (healedAmount <= 0) return;
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => die.instanceId === instanceId
+        ? { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healedAmount) }
+        : die)
+    };
+    this.showHealText(target, healedAmount);
+  }
+
   private applyTurnBasedEffects() {
     const newlyDefeated: DiceInstanceState[] = [];
     this.poisonByInstance.forEach((effect, instanceId) => {
@@ -3264,18 +3462,13 @@ export class ArenaScene extends Phaser.Scene {
     const usedCells = new Set<string>();
 
     for (const die of enemyHandDice) {
-      const definition = this.definitions.get(die.typeId);
+      const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
       const range = definition?.range ?? 4;
-      let row: number, col: number, key: string;
-      let attempts = 0;
-      do {
-        row = Phaser.Math.Between(0, GRID_SIZE - 1);
-        col = this.pickEnemyColumn(range);
-        key = `${row},${col}`;
-        attempts++;
-      } while (usedCells.has(key) && attempts < 50);
-      usedCells.add(key);
-      this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
+      const footprint = this.getFootprintForDefinition(definition);
+      const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
+      if (!position) continue;
+      this.markFootprint(position.row, position.col, footprint, usedCells);
+      this.gameState = placeDieOnBoard(this.gameState, die.instanceId, position.row, position.col);
     }
   }
 
@@ -3389,14 +3582,16 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderDiceStatusPanel(panel: Phaser.GameObjects.Container, dice: DiceInstanceState[], title: string, centered: boolean) {
     panel.removeAll(true);
-    panel.add(this.add.text(0, 0, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }).setOrigin(centered ? 0.5 : 0, 0));
+    const ownerName = centered ? this.playerDisplayName : this.enemyDisplayName;
+    panel.add(this.add.text(0, 0, ownerName, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text }).setOrigin(centered ? 0.5 : 0, 0));
+    panel.add(this.add.text(0, 16, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }).setOrigin(centered ? 0.5 : 0, 0));
     dice.forEach((diceUnit, index) => {
       const visual = this.getTransformedVisual(diceUnit);
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
       const shieldHp = this.shieldHpByInstance.get(diceUnit.instanceId) ?? 0;
       const shieldTag = shieldHp > 0 ? ` | SH ${shieldHp}` : '';
       const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${shieldTag}${visual ? ` ${visual.symbol}` : ''}`;
-      panel.add(this.add.text(0, 20 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
+      panel.add(this.add.text(0, 36 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
     });
   }
 
@@ -3581,9 +3776,11 @@ export class ArenaScene extends Phaser.Scene {
     const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
     if (!meta.hasTranscendence || basePips !== 6 || !this.transcendenceTransformed.has(attacker.instanceId) || !attacker.gridPosition || attacker.attacksRemaining <= 0) return undefined;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const targets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition);
-    return targets
-      .map((die) => ({ die, distance: this.getDistanceWithBoardSides(attacker, die) }))
+    const rowTargets = getBoardDice(this.gameState, enemyOwner).filter((die) => die.gridPosition?.row === attacker.gridPosition?.row);
+    const direction = attacker.ownerId === 'player' ? -1 : 1;
+    return rowTargets
+      .map((die) => ({ die, distance: direction * (attacker.gridPosition!.col - die.gridPosition!.col) }))
+      .filter(({ distance }) => distance >= 0)
       .sort((a, b) => a.distance - b.distance)[0]?.die;
   }
 
@@ -3712,7 +3909,12 @@ export class ArenaScene extends Phaser.Scene {
       container.add(shieldBubble);
     }
 
-    const dieRect = this.add.rectangle(x, y, TILE_SIZE - 8, TILE_SIZE - 8, color, visual ? 0.55 : 0.28)
+    const footprint = this.getFootprintForDefinition(definition);
+    const visualSize = footprint * TILE_SIZE + (footprint - 1) * TILE_GAP - 8;
+    const centerX = x + (footprint - 1) * (TILE_SIZE + TILE_GAP) / 2;
+    const centerY = y + (footprint - 1) * (TILE_SIZE + TILE_GAP) / 2;
+
+    const dieRect = this.add.rectangle(centerX, centerY, visualSize, visualSize, color, visual ? 0.55 : 0.28)
       .setStrokeStyle(2, color)
       .setInteractive({ useHandCursor: true });
     dieRect.setData('isDie', true);
@@ -3724,7 +3926,7 @@ export class ArenaScene extends Phaser.Scene {
     container.add(dieRect);
 
     const shortLabel = visual?.symbol ?? definition.typeId.slice(0, 3).toUpperCase();
-    const label = this.add.text(x, y - 12, shortLabel, {
+    const label = this.add.text(centerX, centerY - 12, shortLabel, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: accentHex
@@ -3737,7 +3939,7 @@ export class ArenaScene extends Phaser.Scene {
       : (isPlayer
         ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
         : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId)));
-    const pipLabel = this.add.text(x, y + 2, `${pips}♦`, {
+    const pipLabel = this.add.text(centerX, centerY + 2, `${pips}♦`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.accent
@@ -3745,27 +3947,27 @@ export class ArenaScene extends Phaser.Scene {
     pipLabel.setName('die-info');
     container.add(pipLabel);
 	
-    this.renderStatusEffects(container, x, y, die);
-    this.renderHealthBar(container, x, y + 18, die.currentHealth, die.maxHealth);
+    this.renderStatusEffects(container, centerX, centerY, die);
+    this.renderHealthBar(container, centerX, centerY + 18, die.currentHealth, die.maxHealth);
     const ammo = Math.max(0, die.attacksRemaining);
     const maxAmmo = Math.max(1, this.gameState.combatPhase === 'attacking'
       ? Math.max(this.attackCapacityByInstance.get(die.instanceId) ?? 1, die.attacksRemaining)
       : this.getPipCount(die.typeId));
     this.attackCapacityByInstance.set(die.instanceId, maxAmmo);
     const mana = this.manaByInstance.get(die.instanceId) ?? 0;
-    this.renderAmmoBar(container, x, y + 28, ammo, maxAmmo);
+    this.renderAmmoBar(container, centerX, centerY + 28, ammo, maxAmmo);
     const meta = getRuntimeSkillMeta(definition);
     const manaSkills = definition.skills.filter((skill) => (skill.manaNeeded ?? 0) > 0);
     const isDeathTransformed = meta.hasDeathTransform && this.deathDiceTransformed.has(die.instanceId);
     if (meta.canConjureSouls && !this.deathDiceTransformed.has(die.instanceId)) {
       const souls = this.deathAlliesDefeatedCount.get(die.instanceId) ?? 0;
       const soulCap = Math.max(1, meta.maxSouls ?? 2);
-      this.renderManaBar(container, x, y + 34, souls, soulCap, 0xc06bdb);
+      this.renderManaBar(container, centerX, centerY + 34, souls, soulCap, 0xc06bdb);
     }
     if (meta.hasDeathInstakill && !isDeathTransformed) return;
     const skillsToRender = meta.hasDeathInstakill ? [{ manaNeeded: meta.deathInstakillMana ?? 12 }] : manaSkills;
     skillsToRender.forEach((skill, index) => {
-      this.renderManaBar(container, x, y + 40 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1), 0x6fa8ff);
+      this.renderManaBar(container, centerX, centerY + 40 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1), 0x6fa8ff);
     });
   }
 
@@ -3785,7 +3987,8 @@ export class ArenaScene extends Phaser.Scene {
     const panel = this.add.rectangle(width / 2, 76, 560, 112, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
     const typeUpgradeMult = this.getTypeUpgradeMultiplier(die);
     const effectiveAtk = Math.max(1, Math.floor(definition.attack * typeUpgradeMult));
-    const stats = this.add.text(width / 2, 50, `${definition.title} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${effectiveAtk} • RNG ${definition.range} • TARGET ${definition.targetingMode.toUpperCase()}`, {
+    const footprintNote = this.getFootprintForDefinition(definition) > 1 ? ` • ${this.getFootprintForDefinition(definition)}x${this.getFootprintForDefinition(definition)}` : '';
+    const stats = this.add.text(width / 2, 50, `${definition.title} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${effectiveAtk} • RNG ${definition.range}${footprintNote} • TARGET ${definition.targetingMode.toUpperCase()}`, {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: PALETTE.text
@@ -3924,6 +4127,11 @@ export class ArenaScene extends Phaser.Scene {
     const enemyLiving = getLivingDiceCount(this.gameState, 'enemy');
 
     if (enemyLiving === 0) {
+      if (this.activeChallenge === 'deucifer' && !this.deuciferBossSummoned) {
+        this.deuciferBossPending = true;
+        this.combatLog.setText('Deucifer rises next turn...');
+        return false;
+      }
       this.endGame('victory', 'All enemy dice defeated!');
       return true;
     }
@@ -4167,7 +4375,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private placeEnemyDiceForTurn() {
     const enemyHandDice = getAvailableHandDice(this.gameState, 'enemy');
-    const usedCells = new Set<string>();
+    const usedCells = this.collectOccupiedCells('enemy');
     enemyHandDice.forEach((die) => {
       this.placeEnemyDieUsingBehavior(die, usedCells);
     });
@@ -4176,18 +4384,11 @@ export class ArenaScene extends Phaser.Scene {
   private placeEnemyDieUsingBehavior(die: DiceInstanceState, usedCells: Set<string>) {
     const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
     const range = definition?.range ?? 4;
-    let row = 0;
-    let col = 0;
-    let key = '';
-    let attempts = 0;
-    do {
-      row = Phaser.Math.Between(0, GRID_SIZE - 1);
-      col = this.pickEnemyColumn(range);
-      key = `${row},${col}`;
-      attempts++;
-    } while (usedCells.has(key) && attempts < 50);
-    usedCells.add(key);
-    this.gameState = placeDieOnBoard(this.gameState, die.instanceId, row, col);
+    const footprint = this.getFootprintForDefinition(definition);
+    const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
+    if (!position) return;
+    this.markFootprint(position.row, position.col, footprint, usedCells);
+    this.gameState = placeDieOnBoard(this.gameState, die.instanceId, position.row, position.col);
   }
 
   private pickRandomColumn(columns: number[]): number {

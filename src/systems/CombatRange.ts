@@ -1,6 +1,10 @@
-import type { DiceInstanceState } from '../types/game';
+import type { DiceInstanceState, DiceOwnerId } from '../types/game';
 
 export const ARENA_GRID_SIZE = 5;
+
+function getBoardSideForDistance(die: DiceInstanceState): DiceOwnerId {
+  return die.ownerId;
+}
 
 function getRelativeEnemyColumn(attacker: DiceInstanceState, target: DiceInstanceState): number {
   const targetCol = target.gridPosition?.col ?? 0;
@@ -17,6 +21,28 @@ export function getCombatDistance(attacker: DiceInstanceState, target: DiceInsta
   const lateralOffset = Math.abs(attackerCol - relativeTargetCol);
   // Range 1 should always cover a die's own mirrored column, then fan out left/right.
   return lateralOffset + 1;
+}
+
+export function getBoardSideCombatDistance(
+  attacker: DiceInstanceState,
+  target: DiceInstanceState,
+  getBoardSide: (die: DiceInstanceState) => DiceOwnerId = getBoardSideForDistance
+): number {
+  if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
+  const attackerSide = getBoardSide(attacker);
+  const targetSide = getBoardSide(target);
+
+  if (attackerSide === targetSide) {
+    return Math.abs(attacker.gridPosition.col - target.gridPosition.col) + 1;
+  }
+
+  const attackerToFrontline = attackerSide === 'player'
+    ? ARENA_GRID_SIZE - attacker.gridPosition.col
+    : attacker.gridPosition.col + 1;
+  const targetFromFrontline = targetSide === 'player'
+    ? ARENA_GRID_SIZE - target.gridPosition.col
+    : target.gridPosition.col + 1;
+  return Math.max(0, attackerToFrontline + targetFromFrontline - 1);
 }
 
 export function getCoveredEnemyColumns(attacker: DiceInstanceState, range: number): number[] {

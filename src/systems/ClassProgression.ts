@@ -166,6 +166,15 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
     return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${modifiers.beamDamage} damage.`;
   }
+  if (notes.some((note) => note.startsWith('runtime:deuciferOddSiphon='))) {
+    return skill?.description ?? '';
+  }
+  if (notes.some((note) => note.startsWith('runtime:deuciferEvenDamage='))) {
+    return skill?.description ?? '';
+  }
+  if (notes.includes('runtime:deuciferSummonImp')) {
+    return skill?.description ?? '';
+  }
   if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
     return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
   }
