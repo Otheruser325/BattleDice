@@ -62,6 +62,15 @@ const BOT_FIRST_WIN_REWARDS: Record<BotDifficulty, { tokens: number; chips: numb
 const BOT_FIRST_WIN_KEY = 'arena:claimedBotFirstWins';
 const CHALLENGE_STATUS_KEY = 'arena:challengeStatus';
 const CHALLENGE_REWARD_CLAIMS_KEY = 'arena:challengeRewardClaims';
+const BOSSFIGHT_PROGRESS_KEY = 'arena:bossfightProgress';
+type BossfightBossType = 'Magician' | 'Leon';
+const BOSSFIGHT_BOSSES: BossfightBossType[] = ['Magician', 'Leon'];
+const MAX_BOSSFIGHT_LEVEL = 15;
+
+interface BossfightProgress {
+  unlockedLevels: Record<BossfightBossType, number>;
+  rewardClaims: string[];
+}
 
 const BOT_DIFFICULTY_CLASSES: Record<BotDifficulty, [number, number]> = {
   Baby: [1, 1],
@@ -102,6 +111,7 @@ export class ArenaScene extends Phaser.Scene {
   private enemyDicePips: Map<string, number> = new Map();
   private enemyClassLevels: Map<string, number> = new Map();
   private manaByInstance: Map<string, number> = new Map();
+  private activeManaByInstance: Map<string, Map<string, number>> = new Map();
   private shieldHpByInstance: Map<string, number> = new Map();
   private shieldDurationTurnsByInstance: Map<string, number> = new Map();
   private tauntedByInstance: Map<string, { sourceId: string; turns: number }> = new Map();
@@ -171,10 +181,12 @@ export class ArenaScene extends Phaser.Scene {
   private enemyDisplayName = 'Opponent';
   private deuciferBossPending = false;
   private deuciferBossSummoned = false;
-  private bossfightStage = 1;
-  private bossfightCurrentBoss: 'Magician' | 'Leon' = 'Magician';
+  private bossfightLevel = 1;
+  private bossfightCurrentBoss: BossfightBossType = 'Magician';
+  private bossfightMenuBoss: BossfightBossType = 'Magician';
+  private bossfightMenuLevel = 1;
   private bossfightBossDefeatedThisTurn = false;
-  private bossfightRewardGiven = false;
+  private bossfightPendingReward: { boss: BossfightBossType; level: number } | null = null;
   private stunnedByInstance: Map<string, number> = new Map();
 
   constructor() {
@@ -192,6 +204,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyDicePips.clear();
     this.enemyClassLevels.clear();
     this.manaByInstance.clear();
+    this.activeManaByInstance.clear();
     this.shieldHpByInstance.clear();
     this.shieldDurationTurnsByInstance.clear();
     this.tauntedByInstance.clear();
@@ -211,10 +224,12 @@ export class ArenaScene extends Phaser.Scene {
     this.lavaPoolsByTile.clear();
     this.deuciferBossPending = false;
     this.deuciferBossSummoned = false;
-    this.bossfightStage = 1;
+    this.bossfightLevel = 1;
     this.bossfightCurrentBoss = 'Magician';
+    this.bossfightMenuBoss = 'Magician';
+    this.bossfightMenuLevel = 1;
     this.bossfightBossDefeatedThisTurn = false;
-    this.bossfightRewardGiven = false;
+    this.bossfightPendingReward = null;
     this.stunnedByInstance.clear();
     this.deathDiceTransformed.clear();
     this.deathAlliesDefeatedCount.clear();
@@ -539,17 +554,7 @@ export class ArenaScene extends Phaser.Scene {
     createOption(cx, cy + 2, 'Bossfight', 'Fight Magician and Leon in escalating Mythic boss stages.', 0x6f5bb5, () => {
       this.activeChallenge = 'bossfight';
       this.activeDailyKey = '';
-      this.bossfightStage = 1;
-      this.bossfightCurrentBoss = 'Magician';
-      this.bossfightBossDefeatedThisTurn = false;
-      this.bossfightRewardGiven = false;
-      this.configRandomMode = false;
-      this.configDifficulty = 'Nightmare';
-      this.configUseLevelling = true;
-      this.turnLimit = -1;
-      this.enemyDisplayName = 'Bossfight';
-      this.clearModeModal();
-      this.startGame();
+      this.openBossfightModal();
     });
     createOption(cx + 220, cy + 2, 'Challenges', 'Daily PvE + Dopamine + Deucifer boss challenge.', 0x5d6770, () => this.openChallengesModal());
 
@@ -562,6 +567,157 @@ export class ArenaScene extends Phaser.Scene {
 
     this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
     this.setModalEsc(() => this.openModeSelectModal());
+  }
+
+
+  private normalizeBossfightProgress(value: Partial<BossfightProgress> | null | undefined): BossfightProgress {
+    const fallback: BossfightProgress = { unlockedLevels: { Magician: 1, Leon: 1 }, rewardClaims: [] };
+    const unlockedLevels = { ...fallback.unlockedLevels };
+    BOSSFIGHT_BOSSES.forEach((boss) => {
+      const raw = value?.unlockedLevels?.[boss];
+      unlockedLevels[boss] = Phaser.Math.Clamp(Math.floor(Number(raw ?? 1) || 1), 1, MAX_BOSSFIGHT_LEVEL);
+    });
+    const rewardClaims = Array.isArray(value?.rewardClaims)
+      ? value.rewardClaims.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+    return { unlockedLevels, rewardClaims };
+  }
+
+  private getBossfightProgress(): BossfightProgress {
+    const stored = this.registry.get(BOSSFIGHT_PROGRESS_KEY) as BossfightProgress | undefined;
+    if (stored) {
+      const normalized = this.normalizeBossfightProgress(stored);
+      this.registry.set(BOSSFIGHT_PROGRESS_KEY, normalized);
+      return normalized;
+    }
+    try {
+      const parsed = JSON.parse(localStorage.getItem(BOSSFIGHT_PROGRESS_KEY) ?? '{}') as Partial<BossfightProgress>;
+      const normalized = this.normalizeBossfightProgress(parsed);
+      this.registry.set(BOSSFIGHT_PROGRESS_KEY, normalized);
+      return normalized;
+    } catch {
+      return this.normalizeBossfightProgress(undefined);
+    }
+  }
+
+  private setBossfightProgress(progress: BossfightProgress) {
+    const normalized = this.normalizeBossfightProgress(progress);
+    this.registry.set(BOSSFIGHT_PROGRESS_KEY, normalized);
+    localStorage.setItem(BOSSFIGHT_PROGRESS_KEY, JSON.stringify(normalized));
+  }
+
+  private getBossfightHighestUnlockedLevel(boss: BossfightBossType): number {
+    return this.getBossfightProgress().unlockedLevels[boss];
+  }
+
+  private getBossfightClaimKey(boss: BossfightBossType, level: number): string {
+    return `${boss}:${level}`;
+  }
+
+  private getBossfightRewards(level: number): { tokens: number; chips: number } {
+    const boundedLevel = Phaser.Math.Clamp(Math.floor(level), 1, MAX_BOSSFIGHT_LEVEL);
+    return { tokens: 1000 + (boundedLevel - 1) * 500, chips: 10 + (boundedLevel - 1) * 5 };
+  }
+
+  private completeBossfightLevel(boss: BossfightBossType, level: number) {
+    const progress = this.getBossfightProgress();
+    const currentUnlocked = progress.unlockedLevels[boss];
+    if (level >= currentUnlocked && currentUnlocked < MAX_BOSSFIGHT_LEVEL) {
+      progress.unlockedLevels[boss] = Math.min(MAX_BOSSFIGHT_LEVEL, level + 1);
+      this.setBossfightProgress(progress);
+    }
+  }
+
+  private claimBossfightReward(boss: BossfightBossType, level: number): { tokens: number; chips: number } {
+    const progress = this.getBossfightProgress();
+    const claimKey = this.getBossfightClaimKey(boss, level);
+    if (progress.rewardClaims.includes(claimKey)) return { tokens: 0, chips: 0 };
+    const reward = this.getBossfightRewards(level);
+    progress.rewardClaims = [...progress.rewardClaims, claimKey];
+    this.setBossfightProgress(progress);
+    return reward;
+  }
+
+  private openBossfightModal() {
+    this.clearModeModal();
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const elements: Phaser.GameObjects.GameObject[] = [];
+    const progress = this.getBossfightProgress();
+    const unlockedLevel = progress.unlockedLevels[this.bossfightMenuBoss];
+    this.bossfightMenuLevel = Phaser.Math.Clamp(this.bossfightMenuLevel, 1, unlockedLevel);
+    const reward = this.getBossfightRewards(this.bossfightMenuLevel);
+    const isMaxSelected = this.bossfightMenuLevel >= unlockedLevel;
+
+    const bossColor: Record<BossfightBossType, string> = { Magician: '#b073ff', Leon: '#e63946' };
+    elements.push(
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
+      this.add.rectangle(cx, cy, 720, 390, 0x102434, 0.98).setStrokeStyle(2, 0x6f5bb5),
+      this.add.text(cx, cy - 158, 'BOSSFIGHT', { fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.accent }).setOrigin(0.5),
+      this.add.text(cx, cy - 130, 'Choose a Mythic boss and highest unlocked level.', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5)
+    );
+
+    const makeBossButton = (boss: BossfightBossType, x: number) => {
+      const selected = this.bossfightMenuBoss === boss;
+      const button = this.add.rectangle(x, cy - 76, 210, 82, selected ? 0x2d4e72 : 0x173247, 0.96)
+        .setStrokeStyle(2, Phaser.Display.Color.HexStringToColor(bossColor[boss]).color)
+        .setInteractive({ useHandCursor: true });
+      const title = this.add.text(x, cy - 94, boss.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '16px', color: bossColor[boss] }).setOrigin(0.5);
+      const sub = this.add.text(x, cy - 66, `Unlocked Lv.${progress.unlockedLevels[boss]}`, { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted }).setOrigin(0.5);
+      button.on('pointerdown', () => {
+        this.bossfightMenuBoss = boss;
+        this.bossfightMenuLevel = Math.min(this.bossfightMenuLevel, this.getBossfightHighestUnlockedLevel(boss));
+        this.openBossfightModal();
+      });
+      elements.push(button, title, sub);
+    };
+    makeBossButton('Magician', cx - 128);
+    makeBossButton('Leon', cx + 128);
+
+    const levelText = this.add.text(cx, cy + 18, `${this.bossfightMenuBoss} Lv.${this.bossfightMenuLevel}`, {
+      fontFamily: 'Orbitron', fontSize: '28px', color: bossColor[this.bossfightMenuBoss]
+    }).setOrigin(0.5);
+    const leftEnabled = this.bossfightMenuLevel > 1;
+    const rightEnabled = this.bossfightMenuLevel < unlockedLevel;
+    const left = this.add.text(cx - 148, cy + 18, '◀', { fontFamily: 'Orbitron', fontSize: '28px', color: leftEnabled ? PALETTE.accentSoft : '#4d6170' }).setOrigin(0.5).setInteractive({ useHandCursor: leftEnabled });
+    const right = this.add.text(cx + 148, cy + 18, '▶', { fontFamily: 'Orbitron', fontSize: '28px', color: rightEnabled ? PALETTE.accentSoft : '#4d6170' }).setOrigin(0.5).setInteractive({ useHandCursor: rightEnabled });
+    if (leftEnabled) left.on('pointerdown', () => { this.bossfightMenuLevel -= 1; this.openBossfightModal(); });
+    if (rightEnabled) right.on('pointerdown', () => { this.bossfightMenuLevel += 1; this.openBossfightModal(); });
+    elements.push(levelText, left, right);
+
+    elements.push(
+      this.add.text(cx, cy + 64, `Reward: ${reward.tokens.toLocaleString()} Dice Tokens + ${reward.chips} Casino Chips`, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5),
+      this.add.text(cx, cy + 88, isMaxSelected ? 'Defeat this level to unlock the next level.' : 'Replay unlocked levels for practice; rewards are first-clear only.', {
+        fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
+      }).setOrigin(0.5)
+    );
+
+    const startBtn = this.add.rectangle(cx, cy + 134, 180, 44, 0x2ecc71, 0.92).setInteractive({ useHandCursor: true });
+    const startText = this.add.text(cx, cy + 134, 'START BOSSFIGHT', { fontFamily: 'Orbitron', fontSize: '13px', color: '#071018' }).setOrigin(0.5);
+    startBtn.on('pointerdown', () => this.startBossfight(this.bossfightMenuBoss, this.bossfightMenuLevel));
+    const back = this.add.text(cx, cy + 178, '← BACK', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    back.on('pointerdown', () => this.openSingleplayerModal());
+    elements.push(startBtn, startText, back);
+
+    this.modalContainer = this.add.container(0, 0, elements).setDepth(250);
+    this.setModalEsc(() => this.openSingleplayerModal());
+  }
+
+  private startBossfight(boss: BossfightBossType, level: number) {
+    this.activeChallenge = 'bossfight';
+    this.activeDailyKey = '';
+    this.bossfightCurrentBoss = boss;
+    this.bossfightLevel = Phaser.Math.Clamp(Math.floor(level), 1, this.getBossfightHighestUnlockedLevel(boss));
+    this.bossfightBossDefeatedThisTurn = false;
+    this.bossfightPendingReward = null;
+    this.configRandomMode = false;
+    this.configDifficulty = 'Nightmare';
+    this.configUseLevelling = true;
+    this.turnLimit = -1;
+    this.enemyDisplayName = `${boss} Lv.${this.bossfightLevel}`;
+    this.clearModeModal();
+    this.startGame();
   }
 
   private openChallengesModal() {
@@ -1281,6 +1437,8 @@ export class ArenaScene extends Phaser.Scene {
     const selectedUseLevelling = this.configUseLevelling;
     const selectedEnemyDisplayName = this.enemyDisplayName;
     const selectedPlayerDisplayName = this.playerDisplayName;
+    const selectedBossfightBoss = this.bossfightCurrentBoss;
+    const selectedBossfightLevel = this.bossfightLevel;
 
     this.resetRuntimeState();
 
@@ -1294,6 +1452,8 @@ export class ArenaScene extends Phaser.Scene {
     this.configUseLevelling = selectedUseLevelling;
     this.enemyDisplayName = selectedEnemyDisplayName;
     this.playerDisplayName = selectedPlayerDisplayName;
+    this.bossfightCurrentBoss = selectedBossfightBoss;
+    this.bossfightLevel = selectedBossfightLevel;
     this.gamePhase = { stage: 'placement' };
     const loading = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x050d14, 0.95).setDepth(500);
     const loadingLabel = this.add.text(this.scale.width / 2, this.scale.height / 2, 'BATTLE DICE\nCaching arena...', { fontFamily: 'Orbitron', fontSize: '24px', color: PALETTE.text, align: 'center' }).setOrigin(0.5).setDepth(501);
@@ -1433,7 +1593,7 @@ export class ArenaScene extends Phaser.Scene {
       : this.pickRandomEnemyLoadout(allDefinitions);
     const enemyDefs = enemyRawDefs.map((definition) => {
       const classLevel = this.activeChallenge === 'bossfight'
-        ? this.bossfightStage
+        ? this.bossfightLevel
         : this.activeChallenge === 'deucifer'
         ? 11
         : this.activeChallenge === 'dopamine'
@@ -1482,7 +1642,7 @@ export class ArenaScene extends Phaser.Scene {
     });
 
     if (this.activeChallenge === 'deucifer') this.enemyDisplayName = 'Deucifer';
-    if (this.activeChallenge === 'bossfight') this.enemyDisplayName = `${this.bossfightCurrentBoss} Lv.${this.bossfightStage}`;
+    if (this.activeChallenge === 'bossfight') this.enemyDisplayName = `${this.bossfightCurrentBoss} Lv.${this.bossfightLevel}`;
     this.generateEnemyPositions();
 
     this.turnText.setVisible(false);
@@ -1952,9 +2112,67 @@ export class ArenaScene extends Phaser.Scene {
     return Math.max(0, Math.floor(adjusted * skillMult * comboMult));
   }
 
-  private addMana(instanceId: string, manaNeeded: number, currentMana: number, gain = 1) {
+  private getActiveManaSlots(die: DiceInstanceState): Array<{ key: string; title: string; manaNeeded: number }> {
+    const def = this.getDefinitionForInstance(die);
+    if (!def) return [];
+    const meta = getRuntimeSkillMeta(def);
+    const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
+    if (meta.hasDeathInstakill && !this.deathDiceTransformed.has(die.instanceId)) return [];
+    if (meta.hasDeathInstakill && this.deathDiceTransformed.has(die.instanceId)) {
+      return [{ key: 'deathInstakill', title: `Reaper's Touch`, manaNeeded: meta.deathInstakillMana ?? 12 }];
+    }
+    return def.skills
+      .filter((skill) => (skill.manaNeeded ?? 0) > 0)
+      .filter((skill) => !(skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') || classLevel >= 6)
+      .map((skill, index) => ({ key: `${skill.title}:${index}`, title: skill.title, manaNeeded: Math.max(1, skill.manaNeeded ?? 1) }));
+  }
+
+  private getActiveMana(instanceId: string, key?: string): number {
+    if (key) return this.activeManaByInstance.get(instanceId)?.get(key) ?? 0;
+    return this.manaByInstance.get(instanceId) ?? 0;
+  }
+
+  private setActiveMana(instanceId: string, key: string | undefined, value: number, cap: number) {
+    const next = Phaser.Math.Clamp(Math.floor(value), 0, Math.max(1, cap));
+    if (!key) {
+      this.manaByInstance.set(instanceId, next);
+      return;
+    }
+    const slots = new Map(this.activeManaByInstance.get(instanceId) ?? []);
+    slots.set(key, next);
+    this.activeManaByInstance.set(instanceId, slots);
+    const maxCurrent = Math.max(0, ...Array.from(slots.values()));
+    this.manaByInstance.set(instanceId, maxCurrent);
+  }
+
+  private resetActiveMana(instanceId: string, key?: string) {
+    if (!key) {
+      this.manaByInstance.set(instanceId, 0);
+      this.activeManaByInstance.delete(instanceId);
+      return;
+    }
+    const slots = new Map(this.activeManaByInstance.get(instanceId) ?? []);
+    slots.set(key, 0);
+    this.activeManaByInstance.set(instanceId, slots);
+    this.manaByInstance.set(instanceId, Math.max(0, ...Array.from(slots.values())));
+  }
+
+  private addMana(instanceId: string, manaNeeded: number, currentMana: number, gain = 1, key?: string) {
     if (this.manaPausedTurnsByInstance.has(instanceId)) return;
-    this.manaByInstance.set(instanceId, Math.min(manaNeeded, currentMana + gain));
+    this.setActiveMana(instanceId, key, currentMana + gain, manaNeeded);
+  }
+
+  private addManaToAllActiveSlots(die: DiceInstanceState, gain = 1) {
+    if (this.manaPausedTurnsByInstance.has(die.instanceId)) return;
+    const slots = this.getActiveManaSlots(die);
+    if (slots.length === 0) return;
+    slots.forEach((slot) => this.addMana(die.instanceId, slot.manaNeeded, this.getActiveMana(die.instanceId, slot.key), gain, slot.key));
+  }
+
+  private getActiveManaSlot(die: DiceInstanceState, title: string): { key: string; title: string; manaNeeded: number; mana: number } | undefined {
+    return this.getActiveManaSlots(die)
+      .map((slot) => ({ ...slot, mana: this.getActiveMana(die.instanceId, slot.key) }))
+      .find((slot) => slot.title === title);
   }
 
   private shouldCastWizardRoyale(attacker: DiceInstanceState, currentMana: number): boolean {
@@ -2145,12 +2363,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private getManaCapForDie(die: DiceInstanceState): number {
-    const def = this.getDefinitionForInstance(die);
-    if (!def) return 0;
-    const meta = getRuntimeSkillMeta(def);
-    if (meta.hasDeathInstakill && this.deathDiceTransformed.has(die.instanceId)) return meta.deathInstakillMana ?? 12;
-    if (meta.canSummonWizard && (this.instanceClassLevels.get(die.instanceId) ?? 1) >= 6) return 18;
-    return meta.activeManaNeeded ?? 0;
+    const slots = this.getActiveManaSlots(die);
+    return slots.reduce((max, slot) => Math.max(max, slot.manaNeeded), 0);
   }
 
   private applyMagicianManaManipulatorAtCombatStart() {
@@ -2165,12 +2379,16 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState.dice
         .filter((die) => die.ownerId === enemyOwner && die.zone === 'board' && !die.isDestroyed && this.getManaCapForDie(die) > 0)
         .forEach((enemy) => {
-          const current = this.manaByInstance.get(enemy.instanceId) ?? 0;
-          const drained = Math.min(current, steal);
-          if (drained <= 0) return;
-          this.manaByInstance.set(enemy.instanceId, current - drained);
-          const cap = this.getManaCapForDie(magician);
-          if (cap > 0) this.manaByInstance.set(magician.instanceId, Math.min(cap, (this.manaByInstance.get(magician.instanceId) ?? 0) + drained));
+          let drainedTotal = 0;
+          this.getActiveManaSlots(enemy).forEach((slot) => {
+            const current = this.getActiveMana(enemy.instanceId, slot.key);
+            const drained = Math.min(current, steal);
+            if (drained <= 0) return;
+            this.setActiveMana(enemy.instanceId, slot.key, current - drained, slot.manaNeeded);
+            drainedTotal += drained;
+          });
+          if (drainedTotal <= 0) return;
+          this.addManaToAllActiveSlots(magician, drainedTotal);
         });
       this.playSkillSfxForDie(magician, meta);
     });
@@ -2185,9 +2403,8 @@ export class ArenaScene extends Phaser.Scene {
       const meta = getRuntimeSkillMeta(this.getDefinitionForInstance(wizard)!);
       const magician = this.gameState.dice.find((die) => die.ownerId === wizard.ownerId && die.typeId === 'Magician' && !die.isDestroyed);
       if (!magician) return;
-      const cap = this.getManaCapForDie(magician);
-      if (cap <= 0) return;
-      this.addMana(magician.instanceId, cap, this.manaByInstance.get(magician.instanceId) ?? 0, Math.max(1, Math.floor(meta.spellcastManaGain ?? 2)));
+      if (this.getManaCapForDie(magician) <= 0) return;
+      this.addManaToAllActiveSlots(magician, Math.max(1, Math.floor(meta.spellcastManaGain ?? 2)));
       this.playSkillSfxForDie(wizard, meta);
     });
   }
@@ -2214,10 +2431,8 @@ export class ArenaScene extends Phaser.Scene {
           playedChargeVisual = true;
         }
         if (!allyDef) return;
-        const cap = this.getManaCapForDie(ally);
-        if (cap <= 0) return;
-        const current = this.manaByInstance.get(ally.instanceId) ?? 0;
-        this.addMana(ally.instanceId, cap, current, gain);
+        if (this.getManaCapForDie(ally) <= 0) return;
+        this.addManaToAllActiveSlots(ally, gain);
       });
     });
     if (playedChargeVisual) await this.delay(500);
@@ -2229,12 +2444,10 @@ export class ArenaScene extends Phaser.Scene {
     boardDice.forEach((ally) => {
       const allyDef = this.getDefinitionForInstance(ally);
       if (!allyDef) return;
-      const cap = this.getManaCapForDie(ally);
-      if (cap <= 0) return;
+      if (this.getManaCapForDie(ally) <= 0) return;
       const gain = this.manaPotionGainByOwner[ally.ownerId];
       if (gain <= 0) return;
-      const current = this.manaByInstance.get(ally.instanceId) ?? 0;
-      this.addMana(ally.instanceId, cap, current, gain);
+      this.addManaToAllActiveSlots(ally, gain);
     });
   }
 
@@ -2701,11 +2914,16 @@ export class ArenaScene extends Phaser.Scene {
 
         const attackerDef = this.getDefinitionForInstance(attacker);
         const attackerMeta = attackerDef ? getRuntimeSkillMeta(attackerDef) : undefined;
-        const currMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
-        const wizardFires = this.shouldCastWizardRoyale(attacker, currMana);
-        const meteorFires = (attackerMeta?.hasMeteorStrike ?? false) && !wizardFires && currMana >= (attackerMeta?.activeManaNeeded ?? 7);
-        const deathFires = (attackerMeta?.hasDeathInstakill ?? false) && this.deathDiceTransformed.has(attacker.instanceId) && currMana >= (attackerMeta?.deathInstakillMana ?? 12);
-        const regularActiveFires = (attackerMeta?.activeManaNeeded ?? 0) > 0 && currMana >= (attackerMeta?.activeManaNeeded ?? 0) && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill && !wizardFires;
+        const wizardSlot = this.getActiveManaSlot(attacker, 'Wizard Royale');
+        const meteorSlot = this.getActiveManaSlot(attacker, 'Spell Strike') ?? this.getActiveManaSlot(attacker, 'Meteor');
+        const deathSlot = this.getActiveManaSlot(attacker, `Reaper's Touch`);
+        const primarySlot = this.getActiveManaSlots(attacker)
+          .map((slot) => ({ ...slot, mana: this.getActiveMana(attacker.instanceId, slot.key) }))
+          .find((slot) => slot.mana >= slot.manaNeeded);
+        const wizardFires = Boolean(wizardSlot && this.shouldCastWizardRoyale(attacker, wizardSlot.mana));
+        const meteorFires = Boolean(attackerMeta?.hasMeteorStrike && !wizardFires && meteorSlot && meteorSlot.mana >= meteorSlot.manaNeeded);
+        const deathFires = Boolean(attackerMeta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && deathSlot && deathSlot.mana >= deathSlot.manaNeeded);
+        const regularActiveFires = Boolean(primarySlot && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill && !wizardFires);
         const anyActiveFires = wizardFires || meteorFires || deathFires || regularActiveFires;
         const skipBasicAttack = anyActiveFires;
 
@@ -2841,7 +3059,10 @@ export class ArenaScene extends Phaser.Scene {
 
     this.gameState = endTurn(this.gameState);
     if (this.deuciferBossPending) this.summonDeuciferBoss();
-    if (this.activeChallenge === 'bossfight' && this.bossfightBossDefeatedThisTurn) this.advanceBossfightStage();
+    if (this.activeChallenge === 'bossfight' && this.bossfightBossDefeatedThisTurn) {
+      this.awardBossfightPendingReward();
+      this.advanceBossfightStage();
+    }
     await this.maybeRunDiceCardDraft();
     if (this.configRandomMode && this.activeRandomModifier === 'Necromancy' && this.gameState.turn > 1) {
       this.applyNecromancyTurnEffect();
@@ -2936,6 +3157,19 @@ export class ArenaScene extends Phaser.Scene {
       `Some hand dice perished from poison between turns. ${this.currentHandOrder.length} dice remain.`
     );
     this.updateCombatButtonState();
+  }
+
+  private awardBossfightPendingReward() {
+    if (!this.bossfightPendingReward) return;
+    const reward = this.claimBossfightReward(this.bossfightPendingReward.boss, this.bossfightPendingReward.level);
+    if (reward.tokens <= 0 && reward.chips <= 0) {
+      this.bossfightPendingReward = null;
+      return;
+    }
+    setDiceTokens(this, getDiceTokens(this) + reward.tokens);
+    if (reward.chips > 0) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + reward.chips }));
+    this.bossfightPendingReward = null;
+    this.combatLog.setText(`Bossfight clear reward: +${reward.tokens.toLocaleString()} Dice Tokens +${reward.chips} Casino Chips!`);
   }
 
   private resolveTurnLimitResult() {
@@ -3202,12 +3436,13 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition);
 
     if (meta.canSummonWizard && (this.instanceClassLevels.get(attacker.instanceId) ?? 1) >= 6) {
-      const wizardMana = 18;
-      const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+      const wizardSlot = this.getActiveManaSlot(attacker, 'Wizard Royale');
+      const wizardMana = wizardSlot?.manaNeeded ?? 18;
+      const currentMana = wizardSlot?.mana ?? 0;
       if (currentMana >= wizardMana) {
         const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.instanceClassLevels.get(attacker.instanceId) ?? 1);
         if (wizard) {
-          this.manaByInstance.set(attacker.instanceId, 0);
+          this.resetActiveMana(attacker.instanceId, wizardSlot?.key);
           this.combatLog.setText(`🪄 ${attacker.typeId} summons a Wizard Dice!`);
           return;
         }
@@ -3215,8 +3450,9 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     if (meta.hasMeteorStrike) {
-      const manaNeeded = meta.activeManaNeeded ?? 7;
-      const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+      const meteorSlot = this.getActiveManaSlot(attacker, 'Spell Strike') ?? this.getActiveManaSlot(attacker, 'Meteor');
+      const manaNeeded = meteorSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 7);
+      const currentMana = meteorSlot?.mana ?? 0;
       if (currentMana >= manaNeeded) {
         const attackerBoardSide = this.getBoardSideForDie(attacker);
         const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
@@ -3259,16 +3495,17 @@ export class ArenaScene extends Phaser.Scene {
             }
           }
         }
-        this.manaByInstance.set(attacker.instanceId, 0);
+        this.resetActiveMana(attacker.instanceId, meteorSlot?.key);
       } else {
-        this.addMana(attacker.instanceId, manaNeeded, currentMana);
+        this.addManaToAllActiveSlots(attacker);
       }
       return;
     }
 
     if (meta.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId)) {
-      const instakillMana = meta.deathInstakillMana ?? 12;
-      const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+      const deathSlot = this.getActiveManaSlot(attacker, `Reaper's Touch`);
+      const instakillMana = deathSlot?.manaNeeded ?? (meta.deathInstakillMana ?? 12);
+      const currentMana = deathSlot?.mana ?? 0;
       if (currentMana >= instakillMana) {
         const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
         if (freshTarget && !freshTarget.isDestroyed) {
@@ -3283,31 +3520,32 @@ export class ArenaScene extends Phaser.Scene {
             this.handleDefeatedDie(freshTarget, true);
           }
         }
-        this.manaByInstance.set(attacker.instanceId, 0);
+        this.resetActiveMana(attacker.instanceId, deathSlot?.key);
       } else {
-        this.addMana(attacker.instanceId, instakillMana, currentMana);
+        this.addManaToAllActiveSlots(attacker);
       }
       return;
     }
 
-    const manaNeeded = meta.activeManaNeeded ?? 0;
+    const activeSlot = this.getActiveManaSlots(attacker)[0];
+    const manaNeeded = activeSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 0);
     const activeDurationTurns = this.getSkillDurationTurns(meta.activeDurationTurns);
-    const currentMana = this.manaByInstance.get(attacker.instanceId) ?? 0;
+    const currentMana = activeSlot ? this.getActiveMana(attacker.instanceId, activeSlot.key) : 0;
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
     if (meta.canSummonImp) {
       if (canCastActive) {
         const imp = this.summonImpForOwner(attacker.ownerId);
         if (imp) {
-          this.manaByInstance.set(attacker.instanceId, 0);
+          this.resetActiveMana(attacker.instanceId, activeSlot?.key);
           this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
         }
       } else if (manaNeeded > 0) {
-        this.addMana(attacker.instanceId, manaNeeded, currentMana);
+        this.addManaToAllActiveSlots(attacker);
       }
       return;
     }
     if (!canCastActive) {
-      if (manaNeeded > 0) this.addMana(attacker.instanceId, manaNeeded, currentMana);
+      if (manaNeeded > 0) this.addManaToAllActiveSlots(attacker);
       return;
     }
     if (meta.hasSpearActive) {
@@ -3325,7 +3563,7 @@ export class ArenaScene extends Phaser.Scene {
           this.handleDefeatedDie(die, pierceHit.defeated);
         });
       }
-      this.manaByInstance.set(attacker.instanceId, 0);
+      this.resetActiveMana(attacker.instanceId, activeSlot?.key);
       return;
     }
     if (meta.activeHeal !== undefined) {
@@ -3414,7 +3652,7 @@ export class ArenaScene extends Phaser.Scene {
       this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: activeDurationTurns });
       if (attacker.typeId === 'Ice') this.animateSkillEffect('ice', attacker, target);
     }
-    this.manaByInstance.set(attacker.instanceId, 0);
+    this.resetActiveMana(attacker.instanceId, activeSlot?.key);
   }
 
   private checkDeathTransformCondition(defeated: DiceInstanceState) {
@@ -3445,7 +3683,7 @@ export class ArenaScene extends Phaser.Scene {
               : die
           )
         };
-        this.manaByInstance.set(deathDie.instanceId, 0);
+        this.resetActiveMana(deathDie.instanceId);
         this.combatLog.setText('☠️ Death Dice transforms! Max HP doubled — Instakill Form ACTIVE!');
         this.animateTransformEffect(deathDie);
       }
@@ -3629,12 +3867,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private advanceBossfightStage() {
-    this.bossfightStage += 1;
     this.bossfightCurrentBoss = this.bossfightCurrentBoss === 'Magician' ? 'Leon' : 'Magician';
+    this.bossfightLevel = this.getBossfightHighestUnlockedLevel(this.bossfightCurrentBoss);
     const baseDefinition = this.definitions.get(this.bossfightCurrentBoss);
     if (!baseDefinition) return;
-    const definition = this.applyClassProgress(baseDefinition, this.bossfightStage);
-    const instanceId = `enemy-${this.bossfightCurrentBoss}-stage-${this.bossfightStage}-${Date.now()}`;
+    const definition = this.applyClassProgress(baseDefinition, this.bossfightLevel);
+    const instanceId = `enemy-${this.bossfightCurrentBoss}-level-${this.bossfightLevel}-${Date.now()}`;
     const boss: DiceInstanceState = {
       instanceId,
       ownerId: 'enemy',
@@ -3649,12 +3887,12 @@ export class ArenaScene extends Phaser.Scene {
     };
     this.gameState = { ...this.gameState, dice: [...this.gameState.dice, boss] };
     this.enemyDicePips.set(instanceId, Phaser.Math.Between(1, 6));
-    this.instanceClassLevels.set(instanceId, this.bossfightStage);
+    this.instanceClassLevels.set(instanceId, this.bossfightLevel);
     this.instanceDefinitionOverrides.set(instanceId, definition);
     this.enemyLoadoutRevealed = true;
-    this.enemyDisplayName = `${this.bossfightCurrentBoss} Lv.${this.bossfightStage}`;
+    this.enemyDisplayName = `${this.bossfightCurrentBoss} Lv.${this.bossfightLevel}`;
     this.bossfightBossDefeatedThisTurn = false;
-    this.combatLog.setText(`${this.bossfightCurrentBoss} Lv.${this.bossfightStage} enters the Bossfight!`);
+    this.combatLog.setText(`${this.bossfightCurrentBoss} Lv.${this.bossfightLevel} enters the Bossfight!`);
   }
 
   private healDie(instanceId: string, amount: number) {
@@ -4499,23 +4737,20 @@ export class ArenaScene extends Phaser.Scene {
       ? Math.max(this.attackCapacityByInstance.get(die.instanceId) ?? 1, die.attacksRemaining)
       : this.getPipCount(die.typeId));
     this.attackCapacityByInstance.set(die.instanceId, maxAmmo);
-    const mana = this.manaByInstance.get(die.instanceId) ?? 0;
     this.renderAmmoBar(container, centerX, centerY + 28, ammo, maxAmmo);
     const meta = getRuntimeSkillMeta(definition);
-    const manaSkills = definition.skills.filter((skill) => (skill.manaNeeded ?? 0) > 0);
     const isDeathTransformed = meta.hasDeathTransform && this.deathDiceTransformed.has(die.instanceId);
+    let nextBarY = centerY + 40;
     if (meta.canConjureSouls && !this.deathDiceTransformed.has(die.instanceId)) {
       const souls = this.deathAlliesDefeatedCount.get(die.instanceId) ?? 0;
       const soulCap = Math.max(1, meta.maxSouls ?? 2);
-      this.renderManaBar(container, centerX, centerY + 34, souls, soulCap, 0xc06bdb);
+      this.renderManaBar(container, centerX, nextBarY, souls, soulCap, 0xc06bdb);
+      nextBarY += 7;
     }
     if (meta.hasDeathInstakill && !isDeathTransformed) return;
-    const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
-    const skillsToRender = meta.hasDeathInstakill
-      ? [{ manaNeeded: meta.deathInstakillMana ?? 12 }]
-      : manaSkills.filter((skill) => !(skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') || classLevel >= 6);
-    skillsToRender.forEach((skill, index) => {
-      this.renderManaBar(container, centerX, centerY + 40 + (index * 6), mana, Math.max(1, skill.manaNeeded ?? 1), 0x6fa8ff);
+    this.getActiveManaSlots(die).forEach((skill, index) => {
+      const barColor = index === 0 ? 0x6fa8ff : 0x9ed0ff;
+      this.renderManaBar(container, centerX, nextBarY + (index * 7), this.getActiveMana(die.instanceId, skill.key), skill.manaNeeded, barColor);
     });
   }
 
@@ -4541,7 +4776,7 @@ export class ArenaScene extends Phaser.Scene {
       fontSize: '13px',
       color: PALETTE.text
     }).setOrigin(0.5);
-    const mana = this.manaByInstance.get(die.instanceId) ?? 0;
+    const mana = this.getActiveMana(die.instanceId);
     const shieldHp = this.shieldHpByInstance.get(die.instanceId) ?? 0;
     const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
@@ -4677,8 +4912,11 @@ export class ArenaScene extends Phaser.Scene {
 
     if (enemyLiving === 0) {
       if (this.activeChallenge === 'bossfight') {
+        if (this.bossfightBossDefeatedThisTurn) return false;
         this.bossfightBossDefeatedThisTurn = true;
-        this.combatLog.setText(`${this.bossfightCurrentBoss} defeated — next boss arrives next turn!`);
+        this.bossfightPendingReward = { boss: this.bossfightCurrentBoss, level: this.bossfightLevel };
+        this.completeBossfightLevel(this.bossfightCurrentBoss, this.bossfightLevel);
+        this.combatLog.setText(`${this.bossfightCurrentBoss} Lv.${this.bossfightLevel} defeated — next boss arrives next turn!`);
         return false;
       }
       if (this.activeChallenge === 'deucifer' && !this.deuciferBossSummoned) {
@@ -4801,10 +5039,11 @@ export class ArenaScene extends Phaser.Scene {
         this.markChallengeRewardClaimed(dopamineClaimKey);
       }
     }
-    if (stage === 'victory' && this.activeChallenge === 'bossfight' && !this.bossfightRewardGiven) {
-      tokenReward += 1000 * Math.max(1, this.bossfightStage);
-      chipReward += 5 * Math.max(1, this.bossfightStage);
-      this.bossfightRewardGiven = true;
+    if (stage === 'victory' && this.activeChallenge === 'bossfight' && this.bossfightPendingReward) {
+      const reward = this.claimBossfightReward(this.bossfightPendingReward.boss, this.bossfightPendingReward.level);
+      tokenReward += reward.tokens;
+      chipReward += reward.chips;
+      this.bossfightPendingReward = null;
     }
     if (stage !== 'victory' && this.activeChallenge === 'daily') {
       const dailyStatus = this.getChallengeStatus('daily');
