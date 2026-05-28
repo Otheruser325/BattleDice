@@ -58,6 +58,7 @@ export interface DiceDefinition {
   attack: number;
   health: number;
   range: number;
+  footprint?: number;
   targetingMode: DiceTargetingMode;
   rarity: DiceRarity;
   skills: DiceSkillDefinition[];

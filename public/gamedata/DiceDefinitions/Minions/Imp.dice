@@ -1,0 +1,12 @@
+{
+  "typeId": "Imp",
+  "title": "Imp Dice",
+  "attack": 30,
+  "health": 1500,
+  "range": 4,
+  "footprint": 1,
+  "rarity": "Common",
+  "skills": [],
+  "accent": "#ff8a3d",
+  "targetingMode": "Nearest"
+}

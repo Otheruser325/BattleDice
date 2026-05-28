@@ -7,6 +7,11 @@ const DICE_FLAGS_PATHS = [
   withBasePath('gamedata/DiceDefinitions/Flags.json')
 ];
 
+export const EXCLUSIVE_DEFINITION_PATHS = {
+  Deucifer: withBasePath('gamedata/DiceDefinitions/Bosses/Deucifer.dice'),
+  Imp: withBasePath('gamedata/DiceDefinitions/Minions/Imp.dice')
+} as const;
+
 function getDefinitionPath(typeId: string) {
   return withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
 }
@@ -70,6 +75,20 @@ export class DiceCatalogLoader {
 
     scene.cache.json.add('dice:flags', { fetchableTypeIds: loadedTypeIds });
     debug.log('Loaded dice definitions.', { requested: fetchableTypeIds.length, loaded: loadedTypeIds.length });
+
+    for (const [typeId, path] of Object.entries(EXCLUSIVE_DEFINITION_PATHS)) {
+      try {
+        const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
+        if (!res.ok) {
+          debug.warn('Exclusive dice definition HTTP error.', { typeId, path, status: res.status });
+          continue;
+        }
+        const definition = await res.json();
+        scene.cache.json.add(`dice:${typeId}`, definition);
+      } catch (error) {
+        debug.warn('Failed to fetch exclusive dice definition.', { typeId, path, error });
+      }
+    }
 
     return { fetchableTypeIds: loadedTypeIds };
   }
