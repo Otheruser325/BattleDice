@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getAllDiceDefinitions, getDiceDefinitions, getDiceProgress, getDiceTokens, getExclusiveDiceDefinitions, setDiceTokens } from '../data/dice';
+import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getExclusiveDiceDefinitions, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
 import {
   createMatchBattleState,
   getAvailableHandDice,
@@ -659,24 +659,43 @@ export class ArenaScene extends Phaser.Scene {
     const today = new Date().toISOString().slice(0, 10);
     const profile = ProfileStore.get(this);
     const reward = profile.loginReward ?? { startDate: today, claimedDays: [] as number[] };
-    const validClaimedDays = [...new Set((reward.claimedDays ?? [])
+    const rawClaimedDays = Array.isArray(reward.claimedDays) ? reward.claimedDays : [];
+    const validClaimedDays = [...new Set(rawClaimedDays
       .map((d) => Math.floor(Number(d)))
       .filter((d) => d >= 1 && d <= 7))]
       .sort((a, b) => a - b);
     const contiguousClaimedDays = validClaimedDays.filter((day, index) => day === index + 1);
     const claimed = new Set(contiguousClaimedDays);
+    const isMalformed = Boolean(profile.loginReward) && rawClaimedDays.length > 0 && (
+      rawClaimedDays.length !== validClaimedDays.length
+      || validClaimedDays.length !== contiguousClaimedDays.length
+      || validClaimedDays.some((day, index) => day !== index + 1)
+    );
+    if (isMalformed) {
+      ProfileStore.set(this, {
+        loginReward: {
+          ...reward,
+          claimedDays: contiguousClaimedDays,
+          lastClaimDate: undefined,
+          lastClaimAt: undefined,
+          day7LegendaryTypeId: contiguousClaimedDays.includes(7) ? reward.day7LegendaryTypeId : undefined,
+          day7LegendaryTitle: contiguousClaimedDays.includes(7) ? reward.day7LegendaryTitle : undefined
+        }
+      });
+    }
     const startMs = new Date(`${reward.startDate}T00:00:00Z`).getTime();
     const todayMs = new Date(`${today}T00:00:00Z`).getTime();
     const elapsedDays = Number.isFinite(startMs) ? Math.max(0, Math.floor((todayMs - startMs) / 86400000)) : 0;
     const unlockedDay = Math.max(1, Math.min(7, elapsedDays + 1));
     const nextSequentialDay = claimed.size + 1;
-    const nextClaimableDay = nextSequentialDay <= unlockedDay && nextSequentialDay <= 7 ? nextSequentialDay : null;
-    const isMalformed = validClaimedDays.length !== contiguousClaimedDays.length || validClaimedDays.some((day, index) => day !== index + 1);
-    return { reward, claimed, unlockedDay, nextClaimableDay, isComplete: claimed.size >= 7, isMalformed };
+    const alreadyClaimedToday = reward.lastClaimDate === today;
+    const nextClaimableDay = !alreadyClaimedToday && nextSequentialDay <= unlockedDay && nextSequentialDay <= 7 ? nextSequentialDay : null;
+    const nextUnlockDay = Math.min(7, Math.max(nextSequentialDay, unlockedDay + 1));
+    return { reward, claimed, unlockedDay, nextClaimableDay, nextUnlockDay, alreadyClaimedToday, isComplete: claimed.size >= 7, isMalformed };
   }
 
   private openLoginRewardModal() {
-    const { reward, claimed, unlockedDay, nextClaimableDay, isComplete, isMalformed } = this.getLoginRewardProgress();
+    const { reward, claimed, unlockedDay, nextClaimableDay, nextUnlockDay, alreadyClaimedToday, isComplete, isMalformed } = this.getLoginRewardProgress();
     
     this.clearModeModal();
     const { width, height } = this.scale;
@@ -723,10 +742,12 @@ export class ArenaScene extends Phaser.Scene {
       if (isClaimed) this.add.text(x + (mediumBtnWidth / 2) - 12, y - (mediumBtnHeight / 2) + 10, '✓', { fontFamily: 'Orbitron', fontSize: '16px', color: '#7dff9f' }).setOrigin(0.5).setDepth(254);
       
       if (!isClaimed && !isComplete && isClaimable) {
-        btn.setInteractive({ useHandCursor: true });
-        btn.on('pointerover', () => { if (!isClaimed) btn.setFillStyle(r.color, 1); });
-        btn.on('pointerout', () => { if (!isClaimed) btn.setFillStyle(r.color, 0.9); });
-        btn.on('pointerdown', () => this.claimDailyReward(r.day));
+        const claimHitArea = this.add.rectangle(x, y, mediumBtnWidth, mediumBtnHeight, 0x000000, 0.001)
+          .setDepth(254)
+          .setInteractive({ useHandCursor: true });
+        claimHitArea.on('pointerover', () => { if (!isClaimed) btn.setFillStyle(r.color, 1); });
+        claimHitArea.on('pointerout', () => { if (!isClaimed) btn.setFillStyle(r.color, 0.9); });
+        claimHitArea.on('pointerdown', () => this.claimDailyReward(r.day));
       }
     }
     
@@ -745,23 +766,31 @@ export class ArenaScene extends Phaser.Scene {
     
     if (isDay7Claimed) this.add.text(day7X + (day7Width / 2) - 14, day7Y - (day7Height / 2) + 12, '✓', { fontFamily: 'Orbitron', fontSize: '18px', color: '#7dff9f' }).setOrigin(0.5).setDepth(254);
     if (!isDay7Claimed && !isComplete && nextClaimableDay === 7) {
-      day7Btn.setInteractive({ useHandCursor: true });
-      day7Btn.on('pointerover', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 1); });
-      day7Btn.on('pointerout', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 0.9); });
-      day7Btn.on('pointerdown', () => this.claimDailyReward(7));
+      const day7HitArea = this.add.rectangle(day7X, day7Y, day7Width, day7Height, 0x000000, 0.001)
+        .setDepth(254)
+        .setInteractive({ useHandCursor: true });
+      day7HitArea.on('pointerover', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 1); });
+      day7HitArea.on('pointerout', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 0.9); });
+      day7HitArea.on('pointerdown', () => this.claimDailyReward(7));
     }
     
     const day7Legendary = reward.day7LegendaryTitle ? ` • Day 7: ${reward.day7LegendaryTitle}` : '';
+    const statusDetail = nextClaimableDay
+      ? `Next claim: Day ${nextClaimableDay}`
+      : alreadyClaimedToday
+        ? `Next unlock: Day ${nextUnlockDay} tomorrow`
+        : `Next unlock: Day ${nextUnlockDay}`;
     const statusText = isComplete 
       ? `🎉 7-DAY CALENDAR COMPLETE!${day7Legendary}` 
-      : `${isMalformed ? 'Fixed malformed claim order • ' : ''}Claimed: ${claimed.size}/7 days • Next claim: Day ${nextClaimableDay ?? Math.min(7, claimed.size + 1)}`;
+      : `${isMalformed ? 'Fixed malformed claim order • ' : ''}Claimed: ${claimed.size}/7 days • ${statusDetail}`;
     const status = this.add.text(cx, cy + 160, statusText, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(253);
     
     const closeBtn = this.add.text(cx, cy + 195, 'CLOSE', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } })
       .setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(254);
     closeBtn.on('pointerdown', () => {
       [overlay, panel, title, ...this.children.getAll()].forEach(node => {
-        if (node.depth >= 250 && node.depth <= 254) node.destroy();
+        const depth = 'depth' in node && typeof node.depth === 'number' ? node.depth : -1;
+        if (depth >= 250 && depth <= 254) node.destroy();
       });
       this.modalContainer = null;
     });
@@ -769,14 +798,15 @@ export class ArenaScene extends Phaser.Scene {
     this.modalContainer = this.add.container(0, 0, [overlay, panel, title, day7Btn, day7Text, status, closeBtn]).setDepth(250);
     this.setModalEsc(() => {
       [overlay, panel, title, ...this.children.getAll()].forEach(node => {
-        if (node.depth >= 250 && node.depth <= 254) node.destroy();
+        const depth = 'depth' in node && typeof node.depth === 'number' ? node.depth : -1;
+        if (depth >= 250 && depth <= 254) node.destroy();
       });
       this.modalContainer = null;
     });
   }
   
   private claimDailyReward(day: number) {
-    const { reward, claimed, nextClaimableDay, unlockedDay } = this.getLoginRewardProgress();
+    const { reward, claimed, nextClaimableDay, unlockedDay, alreadyClaimedToday, nextUnlockDay } = this.getLoginRewardProgress();
     
     if (claimed.has(day)) {
       AlertManager.toast(this, { type: 'warning', message: `Day ${day} already claimed!` });
@@ -784,8 +814,8 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (nextClaimableDay === null || day !== nextClaimableDay) {
       const waitingDay = Math.min(7, unlockedDay + 1);
-      AlertManager.toast(this, { type: 'warning', message: day > unlockedDay ? `Day ${day} is locked. Come back tomorrow.` : `Claim Day ${nextClaimableDay} first.` });
-      if (day > unlockedDay && waitingDay <= 7) AlertManager.toast(this, { type: 'info', message: `Next reward unlocks on Day ${waitingDay}.` });
+      AlertManager.toast(this, { type: 'warning', message: alreadyClaimedToday ? `Day ${nextUnlockDay} unlocks tomorrow.` : day > unlockedDay ? `Day ${day} is locked. Come back tomorrow.` : `Claim Day ${nextClaimableDay} first.` });
+      if (day > unlockedDay && waitingDay <= 7) AlertManager.toast(this, { type: 'warning', message: `Next reward unlocks on Day ${waitingDay}.` });
       return;
     }
     
