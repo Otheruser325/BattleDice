@@ -20,7 +20,7 @@
     {
       "type": "Passive",
       "title": "Temporal Dilation",
-      "description": "During combat, foe dice matching this die's rolled pip count lose 1 attack count, never below 1.",
+      "description": "During combat, foe dice matching this die's rolled pip count lose 1 attack count, down to 0.",
       "modifiers": {
         "pipMatchFoeAttackDelta": -1,
         "notes": [

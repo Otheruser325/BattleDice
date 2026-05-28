@@ -23,6 +23,20 @@ export function getCombatDistance(attacker: DiceInstanceState, target: DiceInsta
   return lateralOffset + 1;
 }
 
+export function getDisplayedRangeCoverage(attacker: DiceInstanceState, range: number): { columns: number[]; tileCount: number } {
+  if (!attacker.gridPosition) return { columns: [], tileCount: 0 };
+  const columns: number[] = [];
+  for (let col = 0; col < ARENA_GRID_SIZE; col++) {
+    const proxyTarget: DiceInstanceState = {
+      ...attacker,
+      ownerId: attacker.ownerId === 'player' ? 'enemy' : 'player',
+      gridPosition: { row: 0, col }
+    };
+    if (getBoardSideCombatDistance(attacker, proxyTarget) <= Math.max(1, range)) columns.push(col);
+  }
+  return { columns, tileCount: columns.length * ARENA_GRID_SIZE };
+}
+
 export function getBoardSideCombatDistance(
   attacker: DiceInstanceState,
   target: DiceInstanceState,

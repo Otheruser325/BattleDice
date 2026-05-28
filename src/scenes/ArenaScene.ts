@@ -21,7 +21,7 @@ import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/gam
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { applyClassProgression, getClassScaledSkillDescription } from '../systems/ClassProgression';
-import { getCoveredEnemyColumns, getCoveredEnemyTileCount } from '../systems/CombatRange';
+import { getDisplayedRangeCoverage } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
@@ -574,7 +574,7 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns\nReward: 7500 Tokens + 50 Chips`, () => {
+    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 15 Turns\nReward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
@@ -582,7 +582,7 @@ export class ArenaScene extends Phaser.Scene {
       // Keep prior toggle value to avoid visual desync when re-opening this config.
       this.configDifficulty = 'Nightmare';
       this.configUseLevelling = true;
-      this.turnLimit = 10;
+      this.turnLimit = 15;
       this.clearModeModal();
       this.startGame();
     });
@@ -1510,13 +1510,13 @@ export class ArenaScene extends Phaser.Scene {
 
     this.handContainer = this.add.container(0, 0);
 
-    this.rollHelperText = this.add.text(width / 2, handY - 84, 'CLICK ROLL ALL, THEN DRAG DICE TO YOUR GRID', {
+    this.rollHelperText = this.add.text(width / 2, handY - 102, 'CLICK ROLL ALL, THEN DRAG DICE TO YOUR GRID', {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: PALETTE.accent
     }).setOrigin(0.5);
 
-    this.createRollAllButton(width / 2, handY - 58);
+    this.createRollAllButton(width / 2, handY - 38);
 
     this.currentHandOrder.forEach((instanceId, index) => {
       const handDie = this.gameState.dice.find((d) => d.instanceId === instanceId);
@@ -1867,23 +1867,27 @@ export class ArenaScene extends Phaser.Scene {
     const skillMult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
     const comboMult = this.combanityAttackMultiplierByInstance.get(instanceId)?.multiplier ?? 1;
     const permanent = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
-    const adjusted = Math.max(1, basePips + timeDelta + debuff + buff + permanent);
-    return Math.max(1, Math.floor(adjusted * skillMult * comboMult));
+    const adjusted = Math.max(0, basePips + timeDelta + debuff + buff + permanent);
+    return Math.max(0, Math.floor(adjusted * skillMult * comboMult));
   }
 
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
     const playerBoardDice = getBoardDice(this.gameState, 'player');
     const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
-    const playerBonus = playerBoardDice.reduce((sum, die) => {
-      const definition = this.getDefinitionForInstance(die);
-      if (!definition) return sum;
-      return sum + (getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0);
-    }, 0);
-    const enemyBonus = enemyBoardDice.reduce((sum, die) => {
-      const definition = this.getDefinitionForInstance(die);
-      if (!definition) return sum;
-      return sum + (getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0);
-    }, 0);
+    const collectCombatStartAttackAuras = (dice: DiceInstanceState[]) => dice
+      .map((die) => {
+        const definition = this.getDefinitionForInstance(die);
+        if (!definition) return null;
+        const extraAttacks = getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0;
+        return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
+      })
+      .filter((aura): aura is { sourceId: string; extraAttacks: number } => aura !== null);
+    const playerCombatStartAuras = collectCombatStartAttackAuras(playerBoardDice);
+    const enemyCombatStartAuras = collectCombatStartAttackAuras(enemyBoardDice);
+    const combatStartBonusFor = (die: DiceInstanceState) => {
+      const auras = die.ownerId === 'player' ? playerCombatStartAuras : enemyCombatStartAuras;
+      return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
+    };
     const rolledPipsFor = (die: DiceInstanceState) => die.ownerId === 'player'
       ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
       : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
@@ -1916,7 +1920,7 @@ export class ArenaScene extends Phaser.Scene {
         if (definition && getRuntimeSkillMeta(definition).hasTranscendence && basePips === 6) {
           this.transcendenceTransformed.add(die.instanceId);
         }
-        const pips = basePips + (die.ownerId === 'player' ? playerBonus : enemyBonus);
+        const pips = basePips + combatStartBonusFor(die);
         const allyPipAttackAuras = die.ownerId === 'player' ? playerPipAttackAuras : enemyPipAttackAuras;
         const foePipAttackAuras = die.ownerId === 'player' ? enemyPipAttackAuras : playerPipAttackAuras;
         const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, die, 'ally') + sumMatchingDelta(foePipAttackAuras, die, 'foe');
@@ -1925,8 +1929,8 @@ export class ArenaScene extends Phaser.Scene {
 
         return {
           ...die,
-          hasFinishedAttacking: false,
-          attacksRemaining: Math.max(1, withPermanent)
+          hasFinishedAttacking: withPermanent <= 0,
+          attacksRemaining: Math.max(0, withPermanent)
         };
       })
     };
@@ -1934,7 +1938,7 @@ export class ArenaScene extends Phaser.Scene {
       nextState = this.applyCombanityBonuses(nextState);
     }
     nextState.dice.forEach((die) => {
-      if (die.zone === 'board' && !die.isDestroyed) this.attackCapacityByInstance.set(die.instanceId, Math.max(1, die.attacksRemaining));
+      if (die.zone === 'board' && !die.isDestroyed) this.attackCapacityByInstance.set(die.instanceId, Math.max(0, die.attacksRemaining));
     });
     [...playerBoardDice, ...enemyBoardDice].forEach((die) => {
       const definition = this.getDefinitionForInstance(die);
@@ -2195,12 +2199,13 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyAssassinCombatStart() {
-    const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
-    const assassins = boardDice.filter((d) => {
+    const assassins = this.gameState.dice.filter((d) => {
+      if (d.zone !== 'board' || d.isDestroyed || !d.gridPosition) return false;
       const def = this.getDefinitionForInstance(d);
       return def?.skills.some((sk) => (sk.modifiers?.notes ?? []).includes('runtime:assassinBacklineTeleport')) ?? false;
     });
     assassins.forEach((assassin) => {
+      const boardDice = this.gameState.dice.filter((d) => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
       const foes = boardDice.filter((d) => d.ownerId !== assassin.ownerId && d.gridPosition);
       if (foes.length === 0 || !assassin.gridPosition) return;
       const furthest = [...foes].sort((a, b) => this.getDistanceWithBoardSides(assassin, b) - this.getDistanceWithBoardSides(assassin, a))[0];
@@ -2225,7 +2230,7 @@ export class ArenaScene extends Phaser.Scene {
       let chosen: { row: number; col: number } | null = null;
       let bestJumpDistance = Number.POSITIVE_INFINITY;
       neighbors.forEach((tile) => {
-      const proxy: DiceInstanceState = { ...assassin, gridPosition: tile };
+        const proxy: DiceInstanceState = { ...assassin, gridPosition: tile };
         const jumpDistance = this.getDistanceWithBoardSides(assassin, proxy);
         if (jumpRange >= 0 && jumpDistance > jumpRange) return;
         const isBetter = jumpDistance < bestJumpDistance
@@ -2289,6 +2294,12 @@ export class ArenaScene extends Phaser.Scene {
 
   private getAttackDistance(attacker: DiceInstanceState, target: DiceInstanceState): number {
     if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
+    if (this.infiltratedBoardSideByInstance.has(attacker.instanceId)) {
+      const attackerSide = this.getBoardSideForDie(attacker);
+      const targetSide = this.getBoardSideForDie(target);
+      if (attackerSide !== targetSide) return Number.POSITIVE_INFINITY;
+      return Math.abs(attacker.gridPosition.col - target.gridPosition.col) + 1;
+    }
     return this.getDistanceWithBoardSides(attacker, target);
   }
 
@@ -2336,7 +2347,7 @@ export class ArenaScene extends Phaser.Scene {
         const finalDamage = Math.max(1, Math.floor(pool.damage * lavaMultiplier));
         const lavaHit = this.applyDamageWithRevive(die.instanceId, finalDamage);
         this.gameState = lavaHit.state;
-        if (lavaHit.defeated) this.checkDeathTransformCondition(die);
+        this.handleDefeatedDie(die, lavaHit.defeated);
         this.combatLog.setText(`${die.typeId} takes ${finalDamage} lava damage from the pool!`);
       }
     });
@@ -2442,6 +2453,7 @@ export class ArenaScene extends Phaser.Scene {
         this.gameState = hit.state;
         this.showDamageText(target, hit.dealt, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
         this.applyPassiveSkillEffects(assassin, target);
+        this.handleDefeatedDie(target, hit.defeated);
         const rem = this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0;
         if (rem > 0) this.assassinBoostAttacksByInstance.set(assassin.instanceId, rem - 1);
         this.combatLog.setText(`${openingOwner === 'player' ? 'Your' : 'Enemy'} Assassin strikes first for ${hit.dealt}!`);
@@ -2546,7 +2558,7 @@ export class ArenaScene extends Phaser.Scene {
         if (targetDefeated) {
           await this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
-          this.checkDeathTransformCondition(target);
+          this.handleDefeatedDie(target, true);
         }
 
         this.combatLog.setText(
@@ -2698,6 +2710,10 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private resolveTurnLimitResult() {
+    if (this.activeChallenge === 'deucifer' && this.deuciferBossSummoned && this.hasLivingDeuciferForces()) {
+      this.endGame('defeat', 'Turn limit reached! Deucifer and his minions still stand.');
+      return;
+    }
     const playerLiving = getLivingDiceCount(this.gameState, 'player');
     const enemyLiving = getLivingDiceCount(this.gameState, 'enemy');
     if (playerLiving > enemyLiving) {
@@ -2707,6 +2723,14 @@ export class ArenaScene extends Phaser.Scene {
     } else {
       this.endGame('draw', `Turn limit reached — DRAW! Both sides have ${playerLiving} dice.`);
     }
+  }
+
+  private hasLivingDeuciferForces(): boolean {
+    return this.gameState.dice.some((die) =>
+      die.ownerId === 'enemy' &&
+      !die.isDestroyed &&
+      (die.typeId === 'Deucifer' || die.typeId === 'Imp')
+    );
   }
 
   private getWeakestDamagedAlly(ownerId: DiceInstanceState['ownerId'], excludedInstanceId?: string): DiceInstanceState | undefined {
@@ -2865,7 +2889,7 @@ export class ArenaScene extends Phaser.Scene {
         const splashHit = this.applyDamageWithRevive(die.instanceId, dealt);
         this.gameState = splashHit.state;
         this.showDamageText(die, splashHit.dealt, '#ff9f58');
-        if (splashHit.defeated) this.checkDeathTransformCondition(die);
+        this.handleDefeatedDie(die, splashHit.defeated);
         this.animateSkillEffect('fire', attacker, die);
       });
     }
@@ -2882,7 +2906,7 @@ export class ArenaScene extends Phaser.Scene {
         const chainHit = this.applyDamageWithRevive(chainTarget.instanceId, dealt);
         this.gameState = chainHit.state;
         this.showDamageText(chainTarget, chainHit.dealt, '#fff176');
-        if (chainHit.defeated) this.checkDeathTransformCondition(chainTarget);
+        this.handleDefeatedDie(chainTarget, chainHit.defeated);
         this.animateSkillEffect('electric', attacker, chainTarget);
       }
     }
@@ -2894,7 +2918,7 @@ export class ArenaScene extends Phaser.Scene {
         const pierceHit = this.applyDamageWithRevive(die.instanceId, pierceDamage);
         this.gameState = pierceHit.state;
         this.showDamageText(die, pierceHit.dealt, '#c9d6d3');
-        if (pierceHit.defeated) this.checkDeathTransformCondition(die);
+        this.handleDefeatedDie(die, pierceHit.defeated);
       });
     }
   }
@@ -2948,7 +2972,7 @@ export class ArenaScene extends Phaser.Scene {
               if (!victim) return;
               const hit = applyDirectDamage(victim, meteorDamage);
               this.showDamageText(victim, hit.dealt, '#ff9f58');
-              if (hit.defeated) this.checkDeathTransformCondition(victim);
+              this.handleDefeatedDie(victim, hit.defeated);
               hits += 1;
             });
             this.renderLavaPools();
@@ -2976,7 +3000,7 @@ export class ArenaScene extends Phaser.Scene {
           if (instakillHit.defeated) {
             await this.applyOnKillSkillEffects(attacker, freshTarget);
             this.applyOnDeathSkillEffects(freshTarget, attacker);
-            this.checkDeathTransformCondition(freshTarget);
+            this.handleDefeatedDie(freshTarget, true);
           }
         }
         this.manaByInstance.set(attacker.instanceId, 0);
@@ -3015,12 +3039,12 @@ export class ArenaScene extends Phaser.Scene {
         const primaryDamage = Math.max(1, Math.ceil(meta.activeDamage ?? 104));
         const hit = applyDirectDamage(freshTarget, primaryDamage);
         this.showDamageText(freshTarget, hit.dealt, '#dbe7e4');
-        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
+        this.handleDefeatedDie(freshTarget, hit.defeated);
         this.getPierceBehindTargets(attacker, freshTarget, 2).forEach((die) => {
           const pierceDamage = Math.max(1, Math.ceil(meta.pierceBehindDamage ?? 208));
           const pierceHit = applyDirectDamage(die, pierceDamage);
           this.showDamageText(die, pierceHit.dealt, '#b58cff');
-          if (pierceHit.defeated) this.checkDeathTransformCondition(die);
+          this.handleDefeatedDie(die, pierceHit.defeated);
         });
       }
       this.manaByInstance.set(attacker.instanceId, 0);
@@ -3062,7 +3086,7 @@ export class ArenaScene extends Phaser.Scene {
             return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
           })
         };
-        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
+        this.handleDefeatedDie(freshTarget, hit.defeated);
         this.animateSkillEffect('ice', attacker, freshTarget);
       }
     }
@@ -3074,7 +3098,7 @@ export class ArenaScene extends Phaser.Scene {
         const activePoisonDamage = Math.max(1, this.getDefinitionForInstance(attacker)?.attack ?? 1);
         const hit = applyDirectDamage(freshTarget, activePoisonDamage);
         this.showDamageText(freshTarget, hit.dealt, '#89f57a');
-        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
+        this.handleDefeatedDie(freshTarget, hit.defeated);
       }
       const existing = this.poisonByInstance.get(target.instanceId);
       this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
@@ -3087,7 +3111,7 @@ export class ArenaScene extends Phaser.Scene {
       if (freshTarget && !freshTarget.isDestroyed) {
         const hit = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 1)));
         this.showDamageText(freshTarget, hit.dealt, '#ffbf80');
-        if (hit.defeated) this.checkDeathTransformCondition(freshTarget);
+        this.handleDefeatedDie(freshTarget, hit.defeated);
       }
     }
 
@@ -3158,6 +3182,10 @@ export class ArenaScene extends Phaser.Scene {
         this.animateTransformEffect(deathDie);
       }
     });
+  }
+
+  private handleDefeatedDie(defeated: DiceInstanceState, wasDefeated: boolean) {
+    if (wasDefeated) this.checkDeathTransformCondition(defeated);
   }
 
   private applyCombatEndSkills() {
@@ -3300,6 +3328,7 @@ export class ArenaScene extends Phaser.Scene {
     this.instanceClassLevels.set(instanceId, 1);
     this.deuciferBossPending = false;
     this.deuciferBossSummoned = true;
+    if (this.activeChallenge === 'deucifer') this.turnLimit = Math.max(this.turnLimit, this.gameState.turn + 5);
     this.enemyLoadoutRevealed = true;
     this.combatLog.setText('Deucifer is waiting in hand...');
   }
@@ -3350,7 +3379,7 @@ export class ArenaScene extends Phaser.Scene {
       this.armorShredByInstance.set(instanceId, { ...effect, turns: effect.turns - 1 });
       if (effect.turns - 1 <= 0) this.armorShredByInstance.delete(instanceId);
     });
-    newlyDefeated.forEach((die) => this.checkDeathTransformCondition(die));
+    newlyDefeated.forEach((die) => this.handleDefeatedDie(die, true));
     if (newlyDefeated.length > 0) AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
   }
 
@@ -3816,7 +3845,7 @@ export class ArenaScene extends Phaser.Scene {
       this.showDamageText(die, hammerHit.dealt, '#ffd36f');
       if (hammerHit.defeated) {
         defeatedByHammer.push(die);
-        this.checkDeathTransformCondition(die);
+        this.handleDefeatedDie(die, hammerHit.defeated);
       }
     });
     if (defeatedByHammer.length > 0 && chainGuard.size < 10) {
@@ -3867,7 +3896,7 @@ export class ArenaScene extends Phaser.Scene {
       const beamHit = this.applyDamageWithRevive(die.instanceId, dealt);
       this.gameState = beamHit.state;
       this.showDamageText(die, beamHit.dealt, '#9ff8ff');
-      if (beamHit.defeated && die.instanceId !== target.instanceId) this.checkDeathTransformCondition(die);
+      if (die.instanceId !== target.instanceId) this.handleDefeatedDie(die, beamHit.defeated);
       if (die.instanceId === target.instanceId) primaryDefeated = beamHit.defeated;
     });
 
@@ -3922,9 +3951,10 @@ export class ArenaScene extends Phaser.Scene {
   private getRangeCoverageText(die: DiceInstanceState): string {
     const definition = this.getDefinitionForInstance(die);
     if (!definition || !die.gridPosition) return `${die.typeId} range unavailable.`;
-    const coveredColumns = getCoveredEnemyColumns(die, definition.range);
+    const coverage = getDisplayedRangeCoverage(die, definition.range);
+    const coveredColumns = coverage.columns;
     const columnText = coveredColumns.length > 0 ? coveredColumns.map((col) => col + 1).join(', ') : 'none';
-    const tileCount = getCoveredEnemyTileCount(die, definition.range);
+    const tileCount = coverage.tileCount;
     const tintName = die.ownerId === 'player' ? 'blue' : 'red';
     return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${definition.range}: ${tintName} coverage hits ${tileCount}/25 enemy tiles (columns ${columnText}, all rows).`;
   }
@@ -3989,7 +4019,7 @@ export class ArenaScene extends Phaser.Scene {
       for (let row = 0; row < GRID_SIZE; row++) {
         for (let col = 0; col < GRID_SIZE; col++) {
           const proxyTarget: DiceInstanceState = { ...die, ownerId: targetOwner, gridPosition: { row, col } };
-          if (this.getDistanceWithBoardSides(die, proxyTarget) > Math.max(1, definition.range)) continue;
+          if (targetOwner !== die.ownerId && this.getDistanceWithBoardSides(die, proxyTarget) > Math.max(1, definition.range)) continue;
           const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, targetOwner === die.ownerId ? 0.16 : 0.24)
