@@ -665,13 +665,25 @@ export class ArenaScene extends Phaser.Scene {
       .sort((a, b) => a - b);
     const contiguousClaimedDays = validClaimedDays.filter((day, index) => day === index + 1);
     const claimed = new Set(contiguousClaimedDays);
+    const isMalformed = validClaimedDays.length !== contiguousClaimedDays.length || validClaimedDays.some((day, index) => day !== index + 1);
+    if (isMalformed) {
+      ProfileStore.set(this, {
+        loginReward: {
+          ...reward,
+          claimedDays: contiguousClaimedDays,
+          lastClaimDate: undefined,
+          lastClaimAt: undefined,
+          day7LegendaryTypeId: contiguousClaimedDays.includes(7) ? reward.day7LegendaryTypeId : undefined,
+          day7LegendaryTitle: contiguousClaimedDays.includes(7) ? reward.day7LegendaryTitle : undefined
+        }
+      });
+    }
     const startMs = new Date(`${reward.startDate}T00:00:00Z`).getTime();
     const todayMs = new Date(`${today}T00:00:00Z`).getTime();
     const elapsedDays = Number.isFinite(startMs) ? Math.max(0, Math.floor((todayMs - startMs) / 86400000)) : 0;
     const unlockedDay = Math.max(1, Math.min(7, elapsedDays + 1));
     const nextSequentialDay = claimed.size + 1;
     const nextClaimableDay = nextSequentialDay <= unlockedDay && nextSequentialDay <= 7 ? nextSequentialDay : null;
-    const isMalformed = validClaimedDays.length !== contiguousClaimedDays.length || validClaimedDays.some((day, index) => day !== index + 1);
     return { reward, claimed, unlockedDay, nextClaimableDay, isComplete: claimed.size >= 7, isMalformed };
   }
 

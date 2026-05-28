@@ -179,7 +179,12 @@ export class MenuScene extends Phaser.Scene {
     const now = Date.now();
     const lastClaimAtMs = reward.lastClaimAt ? new Date(reward.lastClaimAt).getTime() : NaN;
     if (Number.isFinite(lastClaimAtMs) && now - lastClaimAtMs < 24 * 60 * 60 * 1000) return;
-    const claimed = new Set(reward.claimedDays);
+    const validClaimedDays = [...new Set((reward.claimedDays ?? [])
+      .map((d) => Math.floor(Number(d)))
+      .filter((d) => d >= 1 && d <= 7))]
+      .sort((a, b) => a - b);
+    const contiguousClaimedDays = validClaimedDays.filter((day, index) => day === index + 1);
+    const claimed = new Set(contiguousClaimedDays);
     const day = Math.max(1, Math.min(7, claimed.size + 1));
     if (claimed.has(day)) return;
 
