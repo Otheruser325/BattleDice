@@ -65,6 +65,7 @@ const BOSSFIGHT_PROGRESS_KEY = 'arena:bossfightProgress';
 type BossfightBossType = 'Magician' | 'Leon';
 const BOSSFIGHT_BOSSES: BossfightBossType[] = ['Magician', 'Leon'];
 const MAX_BOSSFIGHT_LEVEL = 15;
+const TRANSCENDENCE_GRID_WIDE_RANGE = GRID_SIZE * 2 - 1;
 
 interface BossfightProgress {
   unlockedLevels: Record<BossfightBossType, number>;
@@ -2748,11 +2749,12 @@ export class ArenaScene extends Phaser.Scene {
     const attackerDef = this.getDefinitionForInstance(attacker);
     if (!attackerDef || !attacker.gridPosition) return undefined;
     const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
+    const effectiveRange = this.getEffectiveAttackRange(attacker, attackerDef);
     const candidates = this.gameState.dice
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
         die.ownerId === enemyOwner && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition))
       .map((die) => ({ die, distance: this.getAttackDistance(attacker, die) }))
-      .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));
+      .filter(({ distance }) => distance <= Math.max(1, effectiveRange));
     if (candidates.length === 0) return undefined;
     const byNear = [...candidates].sort((a, b) => a.distance - b.distance || a.die.gridPosition.row - b.die.gridPosition.row || a.die.gridPosition.col - b.die.gridPosition.col);
     const byFar = [...candidates].sort((a, b) => b.distance - a.distance || b.die.gridPosition.row - a.die.gridPosition.row || b.die.gridPosition.col - a.die.gridPosition.col);
@@ -2946,9 +2948,9 @@ export class ArenaScene extends Phaser.Scene {
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
-        const beamLine = this.findTranscendenceBeamTarget(attacker);
-        const beamTarget = beamLine?.target;
         const forcedTarget = this.resolveTauntForcedTarget(attacker);
+        const beamLine = this.findTranscendenceBeamTarget(attacker, forcedTarget);
+        const beamTarget = beamLine?.target;
         const target = forcedTarget ?? beamTarget ?? this.findAttackTargetForArena(attacker);
         if (!target) {
           const attackerDef = this.getDefinitionForInstance(attacker);
@@ -4537,14 +4539,14 @@ export class ArenaScene extends Phaser.Scene {
     return target.row - source.row === source.col - target.col;
   }
 
-  private getTranscendencePatternPriority(attacker: DiceInstanceState, target: DiceInstanceState): TranscendenceBeamPattern | null {
+  private getTranscendenceBeamPattern(attacker: DiceInstanceState, target: DiceInstanceState): TranscendenceBeamPattern | null {
     if (!attacker.gridPosition || !target.gridPosition) return null;
-    if (target.gridPosition.row === attacker.gridPosition.row) return 'row';
-    if (target.gridPosition.col === attacker.gridPosition.col) return 'column';
     const rowDiff = target.gridPosition.row - attacker.gridPosition.row;
     const colDiff = target.gridPosition.col - attacker.gridPosition.col;
-    if (Math.abs(rowDiff) === Math.abs(colDiff)) return rowDiff === colDiff ? 'diagonalDown' : 'diagonalUp';
-    return null;
+    if (rowDiff === 0) return 'column';
+    if (colDiff === 0) return 'row';
+    if (Math.abs(rowDiff) === Math.abs(colDiff)) return rowDiff === colDiff ? 'diagonalUp' : 'diagonalDown';
+    return Math.abs(colDiff) >= Math.abs(rowDiff) ? 'column' : 'row';
   }
 
   private executeTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState, pattern: TranscendenceBeamPattern): { damage: number; targetDestroyed: boolean } {
@@ -4588,32 +4590,42 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private findTranscendenceBeamTarget(attacker: DiceInstanceState): TranscendenceBeamLine | undefined {
+  private findTranscendenceBeamTarget(attacker: DiceInstanceState, preferredTarget?: DiceInstanceState): TranscendenceBeamLine | undefined {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return undefined;
     const meta = getRuntimeSkillMeta(definition);
     const basePips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 0) : (this.enemyDicePips.get(attacker.instanceId) ?? 0);
     if (meta.hasTranscendence && basePips === 6) this.transcendenceTransformed.add(attacker.instanceId);
     if (!meta.hasTranscendence || basePips !== 6 || !attacker.gridPosition || attacker.attacksRemaining <= 0) return undefined;
+
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const attackerSide = this.getBoardSideForDie(attacker);
-    const isForwardTarget = (die: DiceInstanceState) => {
-      if (!die.gridPosition || !attacker.gridPosition) return false;
-      const targetSide = this.getBoardSideForDie(die);
-      if (targetSide !== attackerSide) return true;
-      return attackerSide === 'player'
-        ? die.gridPosition.col > attacker.gridPosition.col
-        : die.gridPosition.col < attacker.gridPosition.col;
-    };
-    return getBoardDice(this.gameState, enemyOwner)
-      .map((die) => ({ die, pattern: this.getTranscendencePatternPriority(attacker, die), distance: this.getAttackDistance(attacker, die) }))
-      .filter((entry): entry is { die: DiceInstanceState; pattern: TranscendenceBeamPattern; distance: number } => entry.pattern !== null)
-      .filter(({ die }) => isForwardTarget(die))
-      .sort((a, b) => {
-        const priority: Record<TranscendenceBeamPattern, number> = { row: 0, column: 1, diagonalDown: 2, diagonalUp: 2 };
-        return priority[a.pattern] - priority[b.pattern] || a.distance - b.distance || a.die.gridPosition!.row - b.die.gridPosition!.row || a.die.gridPosition!.col - b.die.gridPosition!.col;
-      })
-      .map(({ die, pattern }) => ({ target: die, pattern }))[0];
+    const candidates = getBoardDice(this.gameState, enemyOwner)
+      .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } => Boolean(die.gridPosition))
+      .map((die) => ({ die, pattern: this.getTranscendenceBeamPattern(attacker, die), distance: this.getAttackDistance(attacker, die) }))
+      .filter((entry): entry is { die: DiceInstanceState & { gridPosition: { row: number; col: number } }; pattern: TranscendenceBeamPattern; distance: number } => entry.pattern !== null);
+
+    if (preferredTarget?.gridPosition && preferredTarget.ownerId === enemyOwner && !preferredTarget.isDestroyed) {
+      const forced = candidates.find((entry) => entry.die.instanceId === preferredTarget.instanceId);
+      if (forced) return { target: forced.die, pattern: forced.pattern };
+    }
+
+    const mode = meta.targetingMode ?? definition.targetingMode ?? 'Nearest';
+    const byNear = [...candidates].sort((a, b) => a.distance - b.distance || a.die.gridPosition.row - b.die.gridPosition.row || a.die.gridPosition.col - b.die.gridPosition.col);
+    const byFar = [...candidates].sort((a, b) => b.distance - a.distance || b.die.gridPosition.row - a.die.gridPosition.row || b.die.gridPosition.col - a.die.gridPosition.col);
+    if (mode === 'Furthest') return byFar[0] ? { target: byFar[0].die, pattern: byFar[0].pattern } : undefined;
+    if (mode === 'Strongest') {
+      const strongest = [...candidates].sort((a, b) => b.die.currentHealth - a.die.currentHealth || b.die.maxHealth - a.die.maxHealth || a.distance - b.distance)[0];
+      return strongest ? { target: strongest.die, pattern: strongest.pattern } : undefined;
+    }
+    if (mode === 'Weakest') {
+      const weakest = [...candidates].sort((a, b) => a.die.currentHealth - b.die.currentHealth || a.die.maxHealth - b.die.maxHealth || a.distance - b.distance)[0];
+      return weakest ? { target: weakest.die, pattern: weakest.pattern } : undefined;
+    }
+    if (mode === 'Random') {
+      const random = candidates[Math.floor(Math.random() * candidates.length)];
+      return random ? { target: random.die, pattern: random.pattern } : undefined;
+    }
+    return byNear[0] ? { target: byNear[0].die, pattern: byNear[0].pattern } : undefined;
   }
 
 
@@ -4632,6 +4644,14 @@ export class ArenaScene extends Phaser.Scene {
     };
   }
 
+  private getEffectiveAttackRange(die: DiceInstanceState, definition = this.getDefinitionForInstance(die)): number {
+    if (!definition) return 0;
+    const meta = getRuntimeSkillMeta(definition);
+    const pip = die.ownerId === 'player' ? (this.dicePips.get(die.instanceId) ?? 0) : (this.enemyDicePips.get(die.instanceId) ?? 0);
+    const isTranscendenceSixForm = meta.hasTranscendence && (pip === 6 || this.transcendenceTransformed.has(die.instanceId));
+    return isTranscendenceSixForm ? TRANSCENDENCE_GRID_WIDE_RANGE : definition.range;
+  }
+
   private getRangeCoverageText(die: DiceInstanceState): string {
     const definition = this.getDefinitionForInstance(die);
     if (!definition || !die.gridPosition) return `${die.typeId} range unavailable.`;
@@ -4644,12 +4664,12 @@ export class ArenaScene extends Phaser.Scene {
         ownerId: targetOwner,
         gridPosition: { row: 0, col }
       };
-      if (this.getAttackDistance(die, proxyTarget) <= Math.max(1, definition.range)) coveredColumns.push(col);
+      if (this.getAttackDistance(die, proxyTarget) <= Math.max(1, this.getEffectiveAttackRange(die, definition))) coveredColumns.push(col);
     }
     const columnText = coveredColumns.length > 0 ? coveredColumns.map((col) => col + 1).join(', ') : 'none';
     const tileCount = coveredColumns.length * GRID_SIZE;
     const tintName = die.ownerId === 'player' ? 'blue' : 'red';
-    return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${definition.range}: ${tintName} coverage hits ${tileCount}/25 enemy tiles (columns ${columnText}, all rows).`;
+    return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${this.getEffectiveAttackRange(die, definition)}: ${tintName} coverage hits ${tileCount}/25 enemy tiles (columns ${columnText}, all rows).`;
   }
 
   private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a', textOverride?: string) {
@@ -4717,7 +4737,7 @@ export class ArenaScene extends Phaser.Scene {
             ownerId: targetOwner,
             gridPosition: { row, col }
           };
-          if (this.getAttackDistance(die, proxyTarget) > Math.max(1, definition.range)) continue;
+          if (this.getAttackDistance(die, proxyTarget) > Math.max(1, this.getEffectiveAttackRange(die, definition))) continue;
           const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, targetOwner === die.ownerId ? 0.16 : 0.24)
