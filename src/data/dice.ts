@@ -15,20 +15,20 @@ const SHOP_STATE_KEY = 'shop:state';
 
 const MAX_CLASS_LEVEL = 15;
 const CLASS_COPY_COSTS_BY_RARITY: Record<number, Record<string, number>> = {
-  2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1 },
-  3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1 },
-  4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 2 },
-  5: { Common: 80, Uncommon: 50, Rare: 25, Epic: 8, Legendary: 2 },
-  6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 3 },
-  7: { Common: 200, Uncommon: 150, Rare: 75, Epic: 15, Legendary: 3 },
-  8: { Common: 400, Uncommon: 250, Rare: 120, Epic: 20, Legendary: 4 },
-  9: { Common: 700, Uncommon: 425, Rare: 200, Epic: 30, Legendary: 5 },
-  10: { Common: 1000, Uncommon: 750, Rare: 500, Epic: 60, Legendary: 6 },
-  11: { Common: 1500, Uncommon: 1000, Rare: 750, Epic: 100, Legendary: 8 },
-  12: { Common: 2500, Uncommon: 1750, Rare: 1000, Epic: 200, Legendary: 10 },
-  13: { Common: 5000, Uncommon: 3000, Rare: 2000, Epic: 400, Legendary: 12 },
-  14: { Common: 7500, Uncommon: 5000, Rare: 3250, Epic: 650, Legendary: 15 },
-  15: { Common: 10000, Uncommon: 7500, Rare: 5000, Epic: 1000, Legendary: 20 }
+  2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1, Mythic: 1 },
+  3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1, Mythic: 1 },
+  4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 2, Mythic: 1 },
+  5: { Common: 80, Uncommon: 50, Rare: 25, Epic: 8, Legendary: 2, Mythic: 1 },
+  6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 3, Mythic: 1 },
+  7: { Common: 200, Uncommon: 150, Rare: 75, Epic: 15, Legendary: 3, Mythic: 2 },
+  8: { Common: 400, Uncommon: 250, Rare: 120, Epic: 20, Legendary: 4, Mythic: 2 },
+  9: { Common: 700, Uncommon: 425, Rare: 200, Epic: 30, Legendary: 5, Mythic: 2 },
+  10: { Common: 1000, Uncommon: 750, Rare: 500, Epic: 60, Legendary: 6, Mythic: 3 },
+  11: { Common: 1500, Uncommon: 1000, Rare: 750, Epic: 100, Legendary: 8, Mythic: 3 },
+  12: { Common: 2500, Uncommon: 1750, Rare: 1000, Epic: 200, Legendary: 10, Mythic: 3 },
+  13: { Common: 5000, Uncommon: 3000, Rare: 2000, Epic: 400, Legendary: 12, Mythic: 4 },
+  14: { Common: 7500, Uncommon: 5000, Rare: 3250, Epic: 650, Legendary: 15, Mythic: 4 },
+  15: { Common: 10000, Uncommon: 7500, Rare: 5000, Epic: 1000, Legendary: 20, Mythic: 5 }
 };
 
 
@@ -37,7 +37,8 @@ const MAX_STORED_COPIES_BY_RARITY: Record<string, number> = {
   Uncommon: 20008,
   Rare: 12990,
   Epic: 2505,
-  Legendary: 92
+  Legendary: 92,
+  Mythic: 31
 };
 
 function getMaxStoredCopiesForType(scene: Phaser.Scene, typeId: DiceTypeId): number {
@@ -339,7 +340,8 @@ const DIAMOND_COST_BY_RARITY: Record<string, number> = {
   Uncommon: 20,
   Rare: 50,
   Epic: 150,
-  Legendary: 250
+  Legendary: 250,
+  Mythic: 500
 };
 
 const COPIES_BY_RARITY: Record<string, number> = {
@@ -347,7 +349,8 @@ const COPIES_BY_RARITY: Record<string, number> = {
   Uncommon: 15,
   Rare: 10,
   Epic: 3,
-  Legendary: 1
+  Legendary: 1,
+  Mythic: 1
 };
 
 export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {

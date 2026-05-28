@@ -1,0 +1,51 @@
+{
+  "typeId": "Magician",
+  "title": "Magician Dice",
+  "attack": 50,
+  "health": 2000,
+  "range": 6,
+  "footprint": 2,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Mana Manipulator",
+      "description": "Steals 1 mana from all enemy charging actives. Steal increases by 1 every 5 class levels.",
+      "modifiers": {
+        "attackDelta": 1,
+        "notes": [
+          "runtime:manaManipulator"
+        ]
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Spell Strike",
+      "description": "Summons 3 magic meteors on random enemy tiles, causing 200 damage in plus patterns. Leaves lava on each epicentre for 4 turns that deals 100 damage.",
+      "manaNeeded": 12,
+      "modifiers": {
+        "meteorDamage": 200,
+        "lavaDamage": 100,
+        "durationTurns": 4,
+        "notes": [
+          "runtime:meteorStrike",
+          "runtime:tripleMeteor"
+        ]
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Wizard Royale",
+      "description": "Summons a friendly Wizard Dice. Unlocks at Magician Boss Level 6.",
+      "manaNeeded": 18,
+      "modifiers": {
+        "notes": [
+          "runtime:magicianSummonWizard",
+          "runtime:unlockAtClass6"
+        ]
+      }
+    }
+  ],
+  "accent": "#b073ff",
+  "targetingMode": "Nearest"
+}

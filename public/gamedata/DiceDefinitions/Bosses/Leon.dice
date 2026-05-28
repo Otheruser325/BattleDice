@@ -1,0 +1,45 @@
+{
+  "typeId": "Leon",
+  "title": "Leon Dice",
+  "attack": 40,
+  "health": 3000,
+  "range": 5,
+  "footprint": 2,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Furious Claw",
+      "description": "Enemy dice 2 tiles closer to Leon will be attacked doubly, with a 20% chance to cause critical damage.",
+      "modifiers": {
+        "notes": [
+          "runtime:leonFuriousClaw"
+        ]
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Mighty Roar",
+      "description": "If no dice are in range, charges to the nearest enemy die and immediately executes Furious Claw, stunning its target for 1 turn.",
+      "modifiers": {
+        "notes": [
+          "runtime:leonMightyRoar"
+        ]
+      }
+    },
+    {
+      "type": "OnKill",
+      "title": "Rage Or Nothing",
+      "description": "Leon gains +20% basic attack damage for each fallen foe. Bonus increases by 2% per class level. Unlocks at Leon Boss Level 6.",
+      "modifiers": {
+        "targetMaxHpBonusRate": 0.2,
+        "notes": [
+          "runtime:leonRage",
+          "runtime:unlockAtClass6"
+        ]
+      }
+    }
+  ],
+  "accent": "#ffbf4a",
+  "targetingMode": "Nearest"
+}

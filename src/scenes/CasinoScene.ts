@@ -72,7 +72,7 @@ const CHEST_DROP_RATES: Record<ChestType, ChestDropRateEntry[]> = {
   ]
 };
 
-const RARITY_RANK: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4 };
+const RARITY_RANK: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4, Mythic: 5 };
 
 export class CasinoScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Casino;

@@ -211,7 +211,7 @@ export class ShopScene extends Phaser.Scene {
 
     const headerLabel = this.getOfferHeaderLabel(offer);
     const rarityColors: Record<string, string> = {
-      Common: '#aaaaaa', Uncommon: '#3dc45d', Rare: '#5ba3ff', Epic: '#c06bdb', Legendary: '#f4b860', Diamond: '#7ec8e3', Casino: '#f4b860'
+      Common: '#aaaaaa', Uncommon: '#3dc45d', Rare: '#5ba3ff', Epic: '#c06bdb', Legendary: '#f4b860', Mythic: '#ff73e8', Diamond: '#7ec8e3', Casino: '#f4b860'
     };
     const headerTag = this.add.text(x + CARD_W / 2, y + 10, headerLabel, {
       fontFamily: 'Orbitron', fontSize: offer.isFreebie ? '13px' : '12px', color: effectivelyClaimed ? PALETTE.textMuted : (rarityColors[offer.rarity] ?? PALETTE.accentSoft)

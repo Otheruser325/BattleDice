@@ -5,7 +5,7 @@
   "health": 5000,
   "range": 5,
   "footprint": 2,
-  "rarity": "Legendary",
+  "rarity": "Mythic",
   "skills": [
     {
       "type": "Passive",

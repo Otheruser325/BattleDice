@@ -34,6 +34,18 @@
     {
       "typeId": "Imp",
       "path": "Minions/Imp.dice"
+    },
+    {
+      "typeId": "Magician",
+      "path": "Bosses/Magician.dice"
+    },
+    {
+      "typeId": "Wizard",
+      "path": "Minions/Wizard.dice"
+    },
+    {
+      "typeId": "Leon",
+      "path": "Bosses/Leon.dice"
     }
   ]
 }

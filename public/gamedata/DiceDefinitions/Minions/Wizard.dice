@@ -1,0 +1,33 @@
+{
+  "typeId": "Wizard",
+  "title": "Wizard Dice",
+  "attack": 30,
+  "health": 750,
+  "range": 5,
+  "footprint": 1,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Spellcast",
+      "description": "Feeds the Magician +2 mana. Mana gain increases by 1 every 4 class levels.",
+      "modifiers": {
+        "manaGain": 2,
+        "notes": [
+          "runtime:wizardSpellcast"
+        ]
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Fireballer",
+      "description": "Tosses a powerful fireball that deals 400 damage onto a targeted foe.",
+      "manaNeeded": 10,
+      "modifiers": {
+        "activeDamage": 400
+      }
+    }
+  ],
+  "accent": "#7fd7ff",
+  "targetingMode": "Nearest"
+}
