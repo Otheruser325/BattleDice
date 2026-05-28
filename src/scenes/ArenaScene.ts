@@ -659,13 +659,18 @@ export class ArenaScene extends Phaser.Scene {
     const today = new Date().toISOString().slice(0, 10);
     const profile = ProfileStore.get(this);
     const reward = profile.loginReward ?? { startDate: today, claimedDays: [] as number[] };
-    const validClaimedDays = [...new Set((reward.claimedDays ?? [])
+    const rawClaimedDays = Array.isArray(reward.claimedDays) ? reward.claimedDays : [];
+    const validClaimedDays = [...new Set(rawClaimedDays
       .map((d) => Math.floor(Number(d)))
       .filter((d) => d >= 1 && d <= 7))]
       .sort((a, b) => a - b);
     const contiguousClaimedDays = validClaimedDays.filter((day, index) => day === index + 1);
     const claimed = new Set(contiguousClaimedDays);
-    const isMalformed = validClaimedDays.length !== contiguousClaimedDays.length || validClaimedDays.some((day, index) => day !== index + 1);
+    const isMalformed = Boolean(profile.loginReward) && rawClaimedDays.length > 0 && (
+      rawClaimedDays.length !== validClaimedDays.length
+      || validClaimedDays.length !== contiguousClaimedDays.length
+      || validClaimedDays.some((day, index) => day !== index + 1)
+    );
     if (isMalformed) {
       ProfileStore.set(this, {
         loginReward: {
