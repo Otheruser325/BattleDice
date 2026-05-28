@@ -3059,10 +3059,6 @@ export class ArenaScene extends Phaser.Scene {
 
     this.gameState = endTurn(this.gameState);
     if (this.deuciferBossPending) this.summonDeuciferBoss();
-    if (this.activeChallenge === 'bossfight' && this.bossfightBossDefeatedThisTurn) {
-      this.awardBossfightPendingReward();
-      this.advanceBossfightStage();
-    }
     await this.maybeRunDiceCardDraft();
     if (this.configRandomMode && this.activeRandomModifier === 'Necromancy' && this.gameState.turn > 1) {
       this.applyNecromancyTurnEffect();
@@ -3157,19 +3153,6 @@ export class ArenaScene extends Phaser.Scene {
       `Some hand dice perished from poison between turns. ${this.currentHandOrder.length} dice remain.`
     );
     this.updateCombatButtonState();
-  }
-
-  private awardBossfightPendingReward() {
-    if (!this.bossfightPendingReward) return;
-    const reward = this.claimBossfightReward(this.bossfightPendingReward.boss, this.bossfightPendingReward.level);
-    if (reward.tokens <= 0 && reward.chips <= 0) {
-      this.bossfightPendingReward = null;
-      return;
-    }
-    setDiceTokens(this, getDiceTokens(this) + reward.tokens);
-    if (reward.chips > 0) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + reward.chips }));
-    this.bossfightPendingReward = null;
-    this.combatLog.setText(`Bossfight clear reward: +${reward.tokens.toLocaleString()} Dice Tokens +${reward.chips} Casino Chips!`);
   }
 
   private resolveTurnLimitResult() {
@@ -3456,45 +3439,38 @@ export class ArenaScene extends Phaser.Scene {
       if (currentMana >= manaNeeded) {
         const attackerBoardSide = this.getBoardSideForDie(attacker);
         const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
-        const enemies = this.gameState.dice.filter((die) =>
-          die.zone === 'board' && !die.isDestroyed && die.gridPosition && this.getBoardSideForDie(die) === targetBoardSide);
-        if (enemies.length > 0) {
-          const meteorCount = definition.typeId === 'Magician' ? 3 : 1;
-          let totalHits = 0;
-          for (let meteorIndex = 0; meteorIndex < meteorCount; meteorIndex++) {
-            const meteorTarget = enemies[Math.floor(Math.random() * enemies.length)];
-            const freshTarget = this.gameState.dice.find(d => d.instanceId === meteorTarget.instanceId);
-            if (freshTarget && !freshTarget.isDestroyed) {
-              const meteorDamage = meta.meteorDamage ?? 60;
-              const lavaDamage = meta.lavaDamage ?? 25;
-              const lavaTurns = meta.activeDurationTurns ?? (definition.typeId === 'Magician' ? 4 : 3);
-              this.animateMeteorStrike(freshTarget);
-              await this.delayCombatVisualPaced(1000);
-              if (freshTarget.gridPosition) {
-                const origin = freshTarget.gridPosition;
-                const lavaKey = `${targetBoardSide}:${origin.row},${origin.col}`;
-                this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: lavaTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
-              }
-              const origin = freshTarget.gridPosition!;
-              const plusTiles = [origin, { row: origin.row - 1, col: origin.col }, { row: origin.row + 1, col: origin.col }, { row: origin.row, col: origin.col - 1 }, { row: origin.row, col: origin.col + 1 }]
-                .filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE);
-              let hits = 0;
-              plusTiles.forEach((tile) => {
-                const victim = this.gameState.dice.find((d) =>
-                  d.zone === 'board' && !d.isDestroyed && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
-                  && this.getBoardSideForDie(d) === targetBoardSide);
-                if (!victim) return;
-                const hit = applyDirectDamage(victim, meteorDamage);
-                this.showDamageText(victim, hit.dealt, '#ff9f58');
-                this.handleDefeatedDie(victim, hit.defeated);
-                hits += 1;
-              });
-              totalHits += hits;
-              this.renderLavaPools();
-              this.combatLog.setText(`☄️ ${attacker.typeId} meteor scorches ${totalHits} foe${totalHits === 1 ? '' : 's'} in + patterns for ${meteorDamage} damage and leaves lava!`);
-            }
-          }
+        const isMagicianMeteor = definition.typeId === 'Magician';
+        const meteorCount = isMagicianMeteor ? 3 : 1;
+        const meteorDamage = meta.meteorDamage ?? 60;
+        const lavaDamage = meta.lavaDamage ?? 25;
+        const lavaTurns = this.getSkillDurationTurns(meta.activeDurationTurns) ?? (isMagicianMeteor ? 4 : 3);
+        let totalHits = 0;
+        for (let meteorIndex = 0; meteorIndex < meteorCount; meteorIndex++) {
+          const origin = isMagicianMeteor
+            ? this.pickRandomGridTile()
+            : this.pickRandomOccupiedTile(targetBoardSide);
+          if (!origin) break;
+          this.animateMeteorImpact(targetBoardSide, origin);
+          await this.delayCombatVisualPaced(1000);
+          const impactTiles = this.getPlusPatternTiles(origin);
+          const lavaTiles = isMagicianMeteor ? [origin] : impactTiles;
+          lavaTiles.forEach((tile) => {
+            const lavaKey = `${targetBoardSide}:${tile.row},${tile.col}`;
+            this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: lavaTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
+          });
+          impactTiles.forEach((tile) => {
+            const victim = this.gameState.dice.find((d) =>
+              d.zone === 'board' && !d.isDestroyed && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
+              && this.getBoardSideForDie(d) === targetBoardSide);
+            if (!victim) return;
+            const hit = applyDirectDamage(victim, meteorDamage);
+            this.showDamageText(victim, hit.dealt, '#ff9f58');
+            this.handleDefeatedDie(victim, hit.defeated);
+            totalHits += 1;
+          });
+          this.renderLavaPools();
         }
+        this.combatLog.setText(`☄️ ${attacker.typeId} meteor scorches ${totalHits} foe${totalHits === 1 ? '' : 's'} in + patterns for ${meteorDamage} damage and leaves lava!`);
         this.resetActiveMana(attacker.instanceId, meteorSlot?.key);
       } else {
         this.addManaToAllActiveSlots(attacker);
@@ -3866,35 +3842,6 @@ export class ArenaScene extends Phaser.Scene {
     this.combatLog.setText('Deucifer is waiting in hand...');
   }
 
-  private advanceBossfightStage() {
-    this.bossfightCurrentBoss = this.bossfightCurrentBoss === 'Magician' ? 'Leon' : 'Magician';
-    this.bossfightLevel = this.getBossfightHighestUnlockedLevel(this.bossfightCurrentBoss);
-    const baseDefinition = this.definitions.get(this.bossfightCurrentBoss);
-    if (!baseDefinition) return;
-    const definition = this.applyClassProgress(baseDefinition, this.bossfightLevel);
-    const instanceId = `enemy-${this.bossfightCurrentBoss}-level-${this.bossfightLevel}-${Date.now()}`;
-    const boss: DiceInstanceState = {
-      instanceId,
-      ownerId: 'enemy',
-      typeId: this.bossfightCurrentBoss,
-      currentHealth: definition.health,
-      maxHealth: definition.health,
-      attacksRemaining: 0,
-      hasFinishedAttacking: false,
-      isDestroyed: false,
-      zone: 'hand',
-      gridPosition: undefined
-    };
-    this.gameState = { ...this.gameState, dice: [...this.gameState.dice, boss] };
-    this.enemyDicePips.set(instanceId, Phaser.Math.Between(1, 6));
-    this.instanceClassLevels.set(instanceId, this.bossfightLevel);
-    this.instanceDefinitionOverrides.set(instanceId, definition);
-    this.enemyLoadoutRevealed = true;
-    this.enemyDisplayName = `${this.bossfightCurrentBoss} Lv.${this.bossfightLevel}`;
-    this.bossfightBossDefeatedThisTurn = false;
-    this.combatLog.setText(`${this.bossfightCurrentBoss} Lv.${this.bossfightLevel} enters the Bossfight!`);
-  }
-
   private healDie(instanceId: string, amount: number) {
     const target = this.gameState.dice.find((die) => die.instanceId === instanceId && !die.isDestroyed);
     if (!target || amount <= 0) return;
@@ -4032,11 +3979,33 @@ export class ArenaScene extends Phaser.Scene {
     this.tweens.add({ targets: g, alpha: 0, duration: 420, onComplete: () => g.destroy() });
   }
 
-  private animateMeteorStrike(target: DiceInstanceState) {
-    if (!target.gridPosition) return;
-    const targetGrid = this.getGridContainerForDie(target);
-    const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+  private pickRandomGridTile(): { row: number; col: number } {
+    return { row: Phaser.Math.Between(0, GRID_SIZE - 1), col: Phaser.Math.Between(0, GRID_SIZE - 1) };
+  }
+
+  private pickRandomOccupiedTile(boardSide: 'player' | 'enemy'): { row: number; col: number } | null {
+    const candidates = this.gameState.dice.filter((die) =>
+      die.zone === 'board' && !die.isDestroyed && die.gridPosition && this.getBoardSideForDie(die) === boardSide
+    );
+    if (candidates.length === 0) return null;
+    const picked = candidates[Phaser.Math.Between(0, candidates.length - 1)]!;
+    return picked.gridPosition ? { row: picked.gridPosition.row, col: picked.gridPosition.col } : null;
+  }
+
+  private getPlusPatternTiles(origin: { row: number; col: number }): Array<{ row: number; col: number }> {
+    return [
+      origin,
+      { row: origin.row - 1, col: origin.col },
+      { row: origin.row + 1, col: origin.col },
+      { row: origin.row, col: origin.col - 1 },
+      { row: origin.row, col: origin.col + 1 }
+    ].filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE);
+  }
+
+  private animateMeteorImpact(boardSide: 'player' | 'enemy', tile: { row: number; col: number }) {
+    const targetGrid = boardSide === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const tx = targetGrid.x + tile.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ty = targetGrid.y + tile.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const meteor = this.add.circle(tx - 110, ty - 140, 8, 0xff8f4d, 0.95).setDepth(2000);
     const trail = this.add.graphics().setDepth(1999);
     this.tweens.add({
@@ -4054,7 +4023,12 @@ export class ArenaScene extends Phaser.Scene {
         trail.destroy();
         meteor.destroy();
         const burst = this.add.circle(tx, ty, 10, 0xffb366, 0.65).setDepth(2001);
+        const plus = this.add.graphics().setDepth(2002);
+        plus.lineStyle(5, 0xffd08a, 0.78);
+        plus.lineBetween(tx - TILE_SIZE * 0.58, ty, tx + TILE_SIZE * 0.58, ty);
+        plus.lineBetween(tx, ty - TILE_SIZE * 0.58, tx, ty + TILE_SIZE * 0.58);
         this.tweens.add({ targets: burst, scale: 3.2, alpha: 0, duration: 220, onComplete: () => burst.destroy() });
+        this.tweens.add({ targets: plus, alpha: 0, duration: 260, onComplete: () => plus.destroy() });
       }
     });
   }
@@ -4916,8 +4890,8 @@ export class ArenaScene extends Phaser.Scene {
         this.bossfightBossDefeatedThisTurn = true;
         this.bossfightPendingReward = { boss: this.bossfightCurrentBoss, level: this.bossfightLevel };
         this.completeBossfightLevel(this.bossfightCurrentBoss, this.bossfightLevel);
-        this.combatLog.setText(`${this.bossfightCurrentBoss} Lv.${this.bossfightLevel} defeated — next boss arrives next turn!`);
-        return false;
+        this.endGame('victory', `${this.bossfightCurrentBoss} Lv.${this.bossfightLevel} defeated! Next stage unlocked.`);
+        return true;
       }
       if (this.activeChallenge === 'deucifer' && !this.deuciferBossSummoned) {
         this.deuciferBossPending = true;
@@ -4999,7 +4973,7 @@ export class ArenaScene extends Phaser.Scene {
     if (this.gamePhase.stage === 'victory' || this.gamePhase.stage === 'defeat' || this.gamePhase.stage === 'draw') return;
     this.gamePhase = { stage };
 
-    const baseTokenReward = MATCH_TOKEN_REWARDS[stage];
+    const baseTokenReward = stage === 'victory' && this.activeChallenge === 'bossfight' ? 0 : MATCH_TOKEN_REWARDS[stage];
     let tokenReward = baseTokenReward;
     let chipReward = 0;
     if (stage === 'victory' && this.activeChallenge === null && !this.hasClaimedBotFirstWin(this.configDifficulty)) {
