@@ -136,6 +136,7 @@ export class ArenaScene extends Phaser.Scene {
   private deathDiceTransformed: Set<string> = new Set();
   private deathAlliesDefeatedCount: Map<string, number> = new Map();
   private permanentAttackBonusByInstance: Map<string, number> = new Map();
+  private basicAttackDamageBonusByInstance: Map<string, number> = new Map();
   private instanceDefinitionOverrides: Map<string, DiceDefinition> = new Map();
   private instanceClassLevels: Map<string, number> = new Map();
   private enemyLoadoutRevealed = false;
@@ -234,6 +235,7 @@ export class ArenaScene extends Phaser.Scene {
     this.deathDiceTransformed.clear();
     this.deathAlliesDefeatedCount.clear();
     this.permanentAttackBonusByInstance.clear();
+    this.basicAttackDamageBonusByInstance.clear();
     this.instanceDefinitionOverrides.clear();
     this.instanceClassLevels.clear();
     this.clearModeModal();
@@ -1729,10 +1731,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private findRandomBossPosition(die: DiceInstanceState, footprint: number, usedCells: Set<string>): { row: number; col: number } | undefined {
     const maxCol = GRID_SIZE - footprint;
-    return this.findRandomFootprintPosition(footprint, usedCells, () => {
-      if (die.typeId === 'Deucifer' && Math.random() < 0.7) return Math.min(2, maxCol);
-      return Phaser.Math.Between(0, maxCol);
-    });
+    return this.findRandomFootprintPosition(footprint, usedCells, () => Phaser.Math.Between(0, maxCol));
   }
 
   private isBossDie(die: DiceInstanceState): boolean {
@@ -2123,8 +2122,8 @@ export class ArenaScene extends Phaser.Scene {
     const buff = this.extraAttackTurnsByInstance.get(instanceId)?.extra ?? 0;
     const skillMult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
     const comboMult = this.combanityAttackMultiplierByInstance.get(instanceId)?.multiplier ?? 1;
-    const permanent = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
-    const adjusted = Math.max(0, basePips + timeDelta + debuff + buff + permanent);
+    const permanentAttackCount = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
+    const adjusted = Math.max(0, basePips + timeDelta + debuff + buff + permanentAttackCount);
     return Math.max(0, Math.floor(adjusted * skillMult * comboMult));
   }
 
@@ -2604,6 +2603,10 @@ export class ArenaScene extends Phaser.Scene {
     return this.getOffenseMultiplier(attacker);
   }
 
+  private getBasicAttackDamageBonus(attacker: DiceInstanceState): number {
+    return Math.max(0, this.basicAttackDamageBonusByInstance.get(attacker.instanceId) ?? 0);
+  }
+
   private getGiantHunterBonus(ownerId: 'player' | 'enemy', target: DiceInstanceState): number {
     const rate = this.giantHunterRateByOwner[ownerId];
     if (rate <= 0) return 0;
@@ -2617,12 +2620,13 @@ export class ArenaScene extends Phaser.Scene {
     const buffs: string[] = [];
     const typeBonus = this.diceTypeUpgradeBonus.get(`${owner}:${die.typeId}`) ?? 0;
     if (typeBonus > 0) buffs.push(`${die.typeId} Upgrade +${pct(typeBonus)} dmg/HP`);
+    const effectivePip = this.getEffectivePipForInvestment(die);
     const spotlight = this.spotlightByInstance.get(die.instanceId);
-    if (spotlight) buffs.push(`Spotlight +${pct(spotlight.reduction)} dmg & DR (3-pip)`);
+    if (spotlight && effectivePip === 3) buffs.push(`Spotlight +${pct(spotlight.reduction)} dmg & DR (3-pip)`);
     const odd = this.oddInvestmentByOwner[owner];
-    if (odd.damage > 0 || odd.reduction > 0) buffs.push(`Odd Investment +${pct(odd.damage)} dmg / ${pct(odd.reduction)} DR (odd pips)`);
+    if (effectivePip % 2 === 1 && (odd.damage > 0 || odd.reduction > 0)) buffs.push(`Odd Investment +${pct(odd.damage)} dmg / ${pct(odd.reduction)} DR (odd pips)`);
     const even = this.evenInvestmentByOwner[owner];
-    if (even.damage > 0 || even.reduction > 0) buffs.push(`Even Investment +${pct(even.damage)} dmg / ${pct(even.reduction)} DR (even pips)`);
+    if (effectivePip % 2 === 0 && (even.damage > 0 || even.reduction > 0)) buffs.push(`Even Investment +${pct(even.damage)} dmg / ${pct(even.reduction)} DR (even pips)`);
     if (this.fountainHealRateByOwner[owner] > 0) buffs.push(`Fountain of Love ${pct(this.fountainHealRateByOwner[owner])} heal`);
     if (this.manaPotionGainByOwner[owner] > 0) buffs.push(`Mana Potion +${this.manaPotionGainByOwner[owner]} mana`);
     if (this.giantHunterRateByOwner[owner] > 0) buffs.push(`Giant Hunter ${pct(this.giantHunterRateByOwner[owner])} max HP (50% vs bosses)`);
@@ -2909,9 +2913,10 @@ export class ArenaScene extends Phaser.Scene {
         const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.5) : ironBaseBonus;
         const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
         const scaledNonProportional = Math.floor(nonProportional * multiplier);
+        const basicDamageBonus = this.getBasicAttackDamageBonus(assassin);
         const giantHunter = this.getGiantHunterBonus(assassin.ownerId, target);
         const assassinBoost = (this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0) > 0 ? 2 : 1;
-        const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
+        const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + basicDamageBonus + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
         this.gameState = spendAttack(this.gameState, assassin.instanceId);
         const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
         this.gameState = hit.state;
@@ -3018,11 +3023,12 @@ export class ArenaScene extends Phaser.Scene {
             const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.5) : ironBaseBonus;
             const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
             const scaledNonProportional = Math.floor(nonProportional * multiplier);
+            const basicDamageBonus = this.getBasicAttackDamageBonus(attacker);
             const giantHunter = this.getGiantHunterBonus(attacker.ownerId, target);
             const assassinBoost = (this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0) > 0 ? 2 : 1;
             const pips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 1) : (this.enemyDicePips.get(attacker.instanceId) ?? 1);
             const deuciferEvenMult = pips % 2 === 0 ? 1 + (attackerMeta?.deuciferEvenDamageRate ?? 0) : 1;
-            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult));
+            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + basicDamageBonus + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult));
             if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
             const followUpBasicAttack = this.spendBasicAttack(attacker);
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
@@ -3291,16 +3297,16 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private applyDamageWithRevive(instanceId: string, damage: number): { state: MatchBattleState; dealt: number; defeated: boolean } {
-    let reduction = this.damageReductionByInstance.get(instanceId) ?? 0;
+  private applyDamageWithRevive(instanceId: string, damage: number, options: { ignoreDamageReduction?: boolean; ignoreShield?: boolean } = {}): { state: MatchBattleState; dealt: number; defeated: boolean } {
+    let reduction = options.ignoreDamageReduction ? 0 : (this.damageReductionByInstance.get(instanceId) ?? 0);
     const die = this.gameState.dice.find((d) => d.instanceId === instanceId);
-    if (die) reduction += this.getSpotlightScale(die);
-    if (die) reduction += this.getEffectivePipForInvestment(die) % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].reduction : this.oddInvestmentByOwner[die.ownerId].reduction;
+    if (!options.ignoreDamageReduction && die) reduction += this.getSpotlightScale(die);
+    if (!options.ignoreDamageReduction && die) reduction += this.getEffectivePipForInvestment(die) % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].reduction : this.oddInvestmentByOwner[die.ownerId].reduction;
     reduction = Phaser.Math.Clamp(reduction, 0, 0.95);
     if (reduction > 0) damage = Math.max(0, Math.floor(damage * (1 - reduction)));
     const armorShred = this.armorShredByInstance.get(instanceId);
     if (armorShred && armorShred.rate > 0) damage = Math.max(1, Math.floor(damage * (1 + armorShred.rate)));
-    const shieldHp = this.shieldHpByInstance.get(instanceId) ?? 0;
+    const shieldHp = options.ignoreShield ? 0 : (this.shieldHpByInstance.get(instanceId) ?? 0);
     if (shieldHp > 0) {
       const absorbed = Math.min(shieldHp, Math.max(0, damage));
       const remaining = Math.max(0, damage - absorbed);
@@ -3389,11 +3395,11 @@ export class ArenaScene extends Phaser.Scene {
     return Math.max(1, Math.floor(definition.attack * this.getOffenseMultiplier(attacker) * this.getDiceCardSkillDamageMultiplier(attacker) * crit));
   }
 
-  private async executeLeonFuriousClaw(attacker: DiceInstanceState, target: DiceInstanceState) {
+  private async executeLeonFuriousClaw(attacker: DiceInstanceState, target: DiceInstanceState, hitCount = 2) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !target.gridPosition || target.isDestroyed) return;
     this.playSkillSfxForDie(attacker, getRuntimeSkillMeta(definition));
-    for (let hitIndex = 0; hitIndex < 2; hitIndex++) {
+    for (let hitIndex = 0; hitIndex < hitCount; hitIndex++) {
       const freshTarget = this.gameState.dice.find((die) => die.instanceId === target.instanceId && !die.isDestroyed);
       if (!freshTarget) return;
       const damage = this.getLeonFuriousClawDamage(attacker, freshTarget);
@@ -3459,7 +3465,7 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (meta.hasLeonFuriousClaw && this.getAttackDistance(attacker, target) <= 2) {
-      void this.executeLeonFuriousClaw(attacker, target);
+      void this.executeLeonFuriousClaw(attacker, target, 1);
     }
   }
 
@@ -3544,10 +3550,16 @@ export class ArenaScene extends Phaser.Scene {
         const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
         if (freshTarget && !freshTarget.isDestroyed) {
           AudioManager.playSfx(this, AUDIO_KEYS.deathInstakill);
-          const instakillHit = this.applyDamageWithRevive(freshTarget.instanceId, freshTarget.currentHealth);
+          const targetIsBoss = this.isBossDie(freshTarget);
+          const reaperDamage = targetIsBoss
+            ? Math.max(1, Math.floor(definition.attack * 10 * this.getDiceCardSkillDamageMultiplier(attacker)))
+            : freshTarget.currentHealth;
+          const instakillHit = this.applyDamageWithRevive(freshTarget.instanceId, reaperDamage, targetIsBoss ? {} : { ignoreDamageReduction: true, ignoreShield: true });
           this.gameState = instakillHit.state;
           this.showDamageText(freshTarget, instakillHit.dealt, '#c57cff');
-          this.combatLog.setText(`☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
+          this.combatLog.setText(targetIsBoss
+            ? `☠️ Death Dice's Reaper's Touch carves ${freshTarget.typeId} for ${instakillHit.dealt} damage!`
+            : `☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
           if (instakillHit.defeated) {
             await this.applyOnKillSkillEffects(attacker, freshTarget);
             this.applyOnDeathSkillEffects(freshTarget, attacker);
@@ -4452,9 +4464,9 @@ export class ArenaScene extends Phaser.Scene {
     if ((meta.leonRageRate ?? 0) > 0 && (this.instanceClassLevels.get(attacker.instanceId) ?? 1) >= 6) {
       const definition = this.getDefinitionForInstance(attacker);
       if (definition) {
-        const current = this.permanentAttackBonusByInstance.get(attacker.instanceId) ?? 0;
+        const current = this.basicAttackDamageBonusByInstance.get(attacker.instanceId) ?? 0;
         const bonus = Math.max(1, Math.floor(definition.attack * (meta.leonRageRate ?? 0)));
-        this.permanentAttackBonusByInstance.set(attacker.instanceId, current + bonus);
+        this.basicAttackDamageBonusByInstance.set(attacker.instanceId, current + bonus);
       }
       this.playSkillSfxForDie(attacker, meta);
     }
@@ -5240,7 +5252,7 @@ export class ArenaScene extends Phaser.Scene {
     g.fillStyle(0x1f2f3d, 0.95);
     g.fillRoundedRect(x - 18, y - 3, 36, 5, 2);
     g.fillStyle(fillColor, 1);
-    g.fillRoundedRect(x - 18, y - 3, 36 * ratio, 5, 2);
+    if (ratio > 0) g.fillRoundedRect(x - 18, y - 2, 36 * ratio, 4, 2);
     container.add(g);
   }
 
