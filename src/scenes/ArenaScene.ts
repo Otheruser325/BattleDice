@@ -726,19 +726,21 @@ export class ArenaScene extends Phaser.Scene {
       const isUnlocked = r.day <= unlockedDay;
       const isClaimable = nextClaimableDay === r.day;
       
-      const btn = this.add.rectangle(x, y, mediumBtnWidth, mediumBtnHeight, isClaimed ? 0x2c3e50 : r.color, 0.9)
+      const tile = this.add.container(x, y).setSize(mediumBtnWidth, mediumBtnHeight).setDepth(252);
+      const btn = this.add.rectangle(0, 0, mediumBtnWidth, mediumBtnHeight, isClaimed ? 0x2c3e50 : r.color, 0.9)
         .setStrokeStyle(2, isClaimed ? 0x7f8c8d : 0xffffff)
         .setDepth(252);
       
-      const dayText = this.add.text(x, y - 18, `DAY ${r.day}`, { fontFamily: 'Orbitron', fontSize: '11px', color: (isClaimed || !isUnlocked) ? '#7f8c8d' : '#ffffff' }).setOrigin(0.5).setDepth(253);
-      const rewardText = this.add.text(x, y + 8, r.label, { fontFamily: 'Orbitron', fontSize: '10px', color: (isClaimed || !isUnlocked) ? '#7f8c8d' : '#ffffff', align: 'center' }).setOrigin(0.5).setDepth(253);
-      if (isClaimed) this.add.text(x + (mediumBtnWidth / 2) - 12, y - (mediumBtnHeight / 2) + 10, '✓', { fontFamily: 'Orbitron', fontSize: '16px', color: '#7dff9f' }).setOrigin(0.5).setDepth(254);
+      const dayText = this.add.text(0, -18, `DAY ${r.day}`, { fontFamily: 'Orbitron', fontSize: '11px', color: (isClaimed || !isUnlocked) ? '#7f8c8d' : '#ffffff' }).setOrigin(0.5).setDepth(253);
+      const rewardText = this.add.text(0, 8, r.label, { fontFamily: 'Orbitron', fontSize: '10px', color: (isClaimed || !isUnlocked) ? '#7f8c8d' : '#ffffff', align: 'center' }).setOrigin(0.5).setDepth(253);
+      tile.add([btn, dayText, rewardText]);
+      if (isClaimed) tile.add(this.add.text((mediumBtnWidth / 2) - 12, -(mediumBtnHeight / 2) + 10, '✓', { fontFamily: 'Orbitron', fontSize: '16px', color: '#7dff9f' }).setOrigin(0.5).setDepth(254));
       
       if (!isClaimed && !isComplete && isClaimable) {
-        btn.setInteractive({ useHandCursor: true });
-        btn.on('pointerover', () => { if (!isClaimed) btn.setFillStyle(r.color, 1); });
-        btn.on('pointerout', () => { if (!isClaimed) btn.setFillStyle(r.color, 0.9); });
-        btn.on('pointerdown', () => this.claimDailyReward(r.day));
+        tile.setInteractive({ useHandCursor: true });
+        tile.on('pointerover', () => { if (!isClaimed) btn.setFillStyle(r.color, 1); });
+        tile.on('pointerout', () => { if (!isClaimed) btn.setFillStyle(r.color, 0.9); });
+        tile.on('pointerdown', () => this.claimDailyReward(r.day));
       }
     }
     
