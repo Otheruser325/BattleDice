@@ -21,7 +21,6 @@ import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/gam
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { applyClassProgression, getClassScaledSkillDescription } from '../systems/ClassProgression';
-import { getDisplayedRangeCoverage } from '../systems/CombatRange';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
@@ -762,7 +761,7 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 15 Turns\nReward: 7500 Tokens + 50 Chips`, () => {
+    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns (+5 vs boss)\nReward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
@@ -770,7 +769,7 @@ export class ArenaScene extends Phaser.Scene {
       // Keep prior toggle value to avoid visual desync when re-opening this config.
       this.configDifficulty = 'Nightmare';
       this.configUseLevelling = true;
-      this.turnLimit = 15;
+      this.turnLimit = 10;
       this.clearModeModal();
       this.startGame();
     });
@@ -1724,6 +1723,18 @@ export class ArenaScene extends Phaser.Scene {
     return undefined;
   }
 
+  private findRandomBossPosition(die: DiceInstanceState, footprint: number, usedCells: Set<string>): { row: number; col: number } | undefined {
+    const maxCol = GRID_SIZE - footprint;
+    return this.findRandomFootprintPosition(footprint, usedCells, () => {
+      if (die.typeId === 'Deucifer' && Math.random() < 0.7) return Math.min(2, maxCol);
+      return Phaser.Math.Between(0, maxCol);
+    });
+  }
+
+  private isBossDie(die: DiceInstanceState): boolean {
+    return die.typeId === 'Deucifer' || BOSSFIGHT_BOSSES.includes(die.typeId as BossfightBossType);
+  }
+
   private getDefinitionsForCombat(...dice: DiceInstanceState[]): Map<string, DiceDefinition> {
     const modified = new Map(this.definitions);
     dice.forEach((die) => {
@@ -2173,6 +2184,12 @@ export class ArenaScene extends Phaser.Scene {
     return this.getActiveManaSlots(die)
       .map((slot) => ({ ...slot, mana: this.getActiveMana(die.instanceId, slot.key) }))
       .find((slot) => slot.title === title);
+  }
+
+  private getMeteorManaSlot(die: DiceInstanceState): { key: string; title: string; manaNeeded: number; mana: number } | undefined {
+    return this.getActiveManaSlots(die)
+      .map((slot) => ({ ...slot, mana: this.getActiveMana(die.instanceId, slot.key) }))
+      .find((slot) => slot.title === 'Spell Strike' || slot.title === 'Meteor Strike' || slot.title === 'Meteor');
   }
 
   private shouldCastWizardRoyale(attacker: DiceInstanceState, currentMana: number): boolean {
@@ -2839,12 +2856,13 @@ export class ArenaScene extends Phaser.Scene {
         const offenseMult = this.getOffenseMultiplier(assassin);
         const attackerMeta = getRuntimeSkillMeta(this.getDefinitionForInstance(assassin)!);
         const ironRate = attackerMeta?.targetCurrentHpBonusRate ?? 0;
-        const proportional = Math.max(0, Math.floor(target.currentHealth * ironRate * (this.isBossOrMinion(target) ? 0.5 : 1)));
-        const nonProportional = Math.max(1, rawResult.damage - proportional);
+        const ironBaseBonus = Math.max(0, Math.floor(target.currentHealth * ironRate));
+        const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.5) : ironBaseBonus;
+        const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
         const scaledNonProportional = Math.floor(nonProportional * multiplier);
         const giantHunter = this.giantHunterRateByOwner[assassin.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[assassin.ownerId])) : 0;
         const assassinBoost = (this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0) > 0 ? 2 : 1;
-        const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
+        const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
         this.gameState = spendAttack(this.gameState, assassin.instanceId);
         const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
         this.gameState = hit.state;
@@ -2915,7 +2933,7 @@ export class ArenaScene extends Phaser.Scene {
         const attackerDef = this.getDefinitionForInstance(attacker);
         const attackerMeta = attackerDef ? getRuntimeSkillMeta(attackerDef) : undefined;
         const wizardSlot = this.getActiveManaSlot(attacker, 'Wizard Royale');
-        const meteorSlot = this.getActiveManaSlot(attacker, 'Spell Strike') ?? this.getActiveManaSlot(attacker, 'Meteor');
+        const meteorSlot = this.getMeteorManaSlot(attacker);
         const deathSlot = this.getActiveManaSlot(attacker, `Reaper's Touch`);
         const primarySlot = this.getActiveManaSlots(attacker)
           .map((slot) => ({ ...slot, mana: this.getActiveMana(attacker.instanceId, slot.key) }))
@@ -2947,14 +2965,15 @@ export class ArenaScene extends Phaser.Scene {
             const solitudeBonus = this.getSolitudeBasicAttackBonus(attacker, target);
             const offenseMult = this.getOffenseMultiplier(attacker);
             const ironRate = attackerMeta?.targetCurrentHpBonusRate ?? 0;
-            const proportional = Math.max(0, Math.floor(target.currentHealth * ironRate * (this.isBossOrMinion(target) ? 0.5 : 1)));
-            const nonProportional = Math.max(1, rawResult.damage - proportional);
+            const ironBaseBonus = Math.max(0, Math.floor(target.currentHealth * ironRate));
+            const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.5) : ironBaseBonus;
+            const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
             const scaledNonProportional = Math.floor(nonProportional * multiplier);
             const giantHunter = this.giantHunterRateByOwner[attacker.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[attacker.ownerId])) : 0;
             const assassinBoost = (this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0) > 0 ? 2 : 1;
             const pips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 1) : (this.enemyDicePips.get(attacker.instanceId) ?? 1);
             const deuciferEvenMult = pips % 2 === 0 ? 1 + (attackerMeta?.deuciferEvenDamageRate ?? 0) : 1;
-            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult));
+            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult));
             if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
             const followUpBasicAttack = this.spendBasicAttack(attacker);
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
@@ -3156,12 +3175,14 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private resolveTurnLimitResult() {
-    if (this.activeChallenge === 'deucifer' && this.deuciferBossSummoned && this.hasLivingDeuciferForces()) {
-      this.endGame('defeat', 'Turn limit reached! Deucifer and his minions still stand.');
-      return;
-    }
     const playerLiving = getLivingDiceCount(this.gameState, 'player');
     const enemyLiving = getLivingDiceCount(this.gameState, 'enemy');
+    if (this.activeChallenge === 'deucifer' && enemyLiving > 0) {
+      this.endGame('defeat', this.deuciferBossSummoned
+        ? 'Turn limit reached! Deucifer and his minions still stand.'
+        : "Turn limit reached! Deucifer's dice still stand.");
+      return;
+    }
     if (playerLiving > enemyLiving) {
       this.endGame('victory', `Turn limit reached! You have ${playerLiving} dice vs opponent's ${enemyLiving}.`);
     } else if (enemyLiving > playerLiving) {
@@ -3169,14 +3190,6 @@ export class ArenaScene extends Phaser.Scene {
     } else {
       this.endGame('draw', `Turn limit reached — DRAW! Both sides have ${playerLiving} dice.`);
     }
-  }
-
-  private hasLivingDeuciferForces(): boolean {
-    return this.gameState.dice.some((die) =>
-      die.ownerId === 'enemy' &&
-      !die.isDestroyed &&
-      (die.typeId === 'Deucifer' || die.typeId === 'Imp')
-    );
   }
 
   private getWeakestDamagedAlly(ownerId: DiceInstanceState['ownerId'], excludedInstanceId?: string): DiceInstanceState | undefined {
@@ -3316,7 +3329,7 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition);
     if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined) return 0;
     if (!this.isSolitudeIsolated(attacker)) return 0;
-    const bossMitigation = this.isBossOrMinion(target) ? 0.5 : 1;
+    const bossMitigation = this.isBossDie(target) ? 0.5 : 1;
     return Math.max(1, Math.floor(target.maxHealth * meta.targetMaxHpBonusRate * bossMitigation));
   }
 
@@ -3433,7 +3446,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     if (meta.hasMeteorStrike) {
-      const meteorSlot = this.getActiveManaSlot(attacker, 'Spell Strike') ?? this.getActiveManaSlot(attacker, 'Meteor');
+      const meteorSlot = this.getMeteorManaSlot(attacker);
       const manaNeeded = meteorSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 7);
       const currentMana = meteorSlot?.mana ?? 0;
       if (currentMana >= manaNeeded) {
@@ -3837,7 +3850,7 @@ export class ArenaScene extends Phaser.Scene {
     this.instanceClassLevels.set(instanceId, 1);
     this.deuciferBossPending = false;
     this.deuciferBossSummoned = true;
-    if (this.activeChallenge === 'deucifer') this.turnLimit = Math.max(this.turnLimit, this.gameState.turn + 5);
+    if (this.activeChallenge === 'deucifer') this.turnLimit = Math.max(this.turnLimit, 15);
     this.enemyLoadoutRevealed = true;
     this.combatLog.setText('Deucifer is waiting in hand...');
   }
@@ -4178,7 +4191,9 @@ export class ArenaScene extends Phaser.Scene {
       const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
       const range = definition?.range ?? 4;
       const footprint = this.getFootprintForDefinition(definition);
-      const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
+      const position = this.isBossDie(die)
+        ? this.findRandomBossPosition(die, footprint, usedCells)
+        : this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
       if (!position) continue;
       this.markFootprint(position.row, position.col, footprint, usedCells);
       this.gameState = placeDieOnBoard(this.gameState, die.instanceId, position.row, position.col);
@@ -4559,10 +4574,19 @@ export class ArenaScene extends Phaser.Scene {
   private getRangeCoverageText(die: DiceInstanceState): string {
     const definition = this.getDefinitionForInstance(die);
     if (!definition || !die.gridPosition) return `${die.typeId} range unavailable.`;
-    const coverage = getDisplayedRangeCoverage(die, definition.range);
-    const coveredColumns = coverage.columns;
+    const targetOwner = die.ownerId === 'player' ? 'enemy' : 'player';
+    const coveredColumns: number[] = [];
+    for (let col = 0; col < GRID_SIZE; col++) {
+      const proxyTarget: DiceInstanceState = {
+        ...die,
+        instanceId: `${die.instanceId}:range-proxy:${targetOwner}:${col}`,
+        ownerId: targetOwner,
+        gridPosition: { row: 0, col }
+      };
+      if (this.getAttackDistance(die, proxyTarget) <= Math.max(1, definition.range)) coveredColumns.push(col);
+    }
     const columnText = coveredColumns.length > 0 ? coveredColumns.map((col) => col + 1).join(', ') : 'none';
-    const tileCount = coverage.tileCount;
+    const tileCount = coveredColumns.length * GRID_SIZE;
     const tintName = die.ownerId === 'player' ? 'blue' : 'red';
     return `${die.typeId} C${this.instanceClassLevels.get(die.instanceId) ?? 1} range ${definition.range}: ${tintName} coverage hits ${tileCount}/25 enemy tiles (columns ${columnText}, all rows).`;
   }
@@ -4626,8 +4650,13 @@ export class ArenaScene extends Phaser.Scene {
       const targetGrid = targetOwner === 'enemy' ? this.enemyGridContainer : this.playerGridContainer;
       for (let row = 0; row < GRID_SIZE; row++) {
         for (let col = 0; col < GRID_SIZE; col++) {
-          const proxyTarget: DiceInstanceState = { ...die, ownerId: targetOwner, gridPosition: { row, col } };
-          if (this.getDistanceWithBoardSides(die, proxyTarget) > Math.max(1, definition.range)) continue;
+          const proxyTarget: DiceInstanceState = {
+            ...die,
+            instanceId: `${die.instanceId}:range-proxy:${targetOwner}:${row}:${col}`,
+            ownerId: targetOwner,
+            gridPosition: { row, col }
+          };
+          if (this.getAttackDistance(die, proxyTarget) > Math.max(1, definition.range)) continue;
           const x = col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const y = row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           const highlight = this.add.rectangle(x, y, TILE_SIZE - 6, TILE_SIZE - 6, color, targetOwner === die.ownerId ? 0.16 : 0.24)
@@ -4895,6 +4924,7 @@ export class ArenaScene extends Phaser.Scene {
       }
       if (this.activeChallenge === 'deucifer' && !this.deuciferBossSummoned) {
         this.deuciferBossPending = true;
+        this.turnLimit = Math.max(this.turnLimit, 15);
         this.combatLog.setText('Deucifer rises next turn...');
         return false;
       }
@@ -5157,7 +5187,9 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
     const range = definition?.range ?? 4;
     const footprint = this.getFootprintForDefinition(definition);
-    const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
+    const position = this.isBossDie(die)
+      ? this.findRandomBossPosition(die, footprint, usedCells)
+      : this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
     if (!position) return;
     this.markFootprint(position.row, position.col, footprint, usedCells);
     this.gameState = placeDieOnBoard(this.gameState, die.instanceId, position.row, position.col);
