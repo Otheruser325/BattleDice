@@ -37,9 +37,15 @@ type MatchResultStage = 'victory' | 'defeat' | 'draw';
 type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy' | 'DiceCard';
 type ChallengeKey = 'daily' | 'deucifer' | 'dopamine' | null;
 type ChallengeStatus = 'not-started' | 'started' | 'completed' | 'failed';
+type TranscendenceBeamPattern = 'row' | 'column' | 'diagonalDown' | 'diagonalUp';
 
 interface GamePhase {
   stage: 'lobby' | 'placement' | 'combat' | 'resolved' | MatchResultStage;
+}
+
+interface TranscendenceBeamLine {
+  target: DiceInstanceState;
+  pattern: TranscendenceBeamPattern;
 }
 
 const GRID_SIZE = 5;
@@ -103,6 +109,7 @@ export class ArenaScene extends Phaser.Scene {
   private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
+  private basicAttacksPerAttackByInstance: Map<string, { count: number; turns: number }> = new Map();
   private manaPausedTurnsByInstance: Map<string, number> = new Map();
   private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
@@ -186,6 +193,7 @@ export class ArenaScene extends Phaser.Scene {
     this.attackDeltaByInstance.clear();
     this.extraAttackTurnsByInstance.clear();
     this.attackMultiplierTurnsByInstance.clear();
+    this.basicAttacksPerAttackByInstance.clear();
     this.manaPausedTurnsByInstance.clear();
     this.combanityAttackMultiplierByInstance.clear();
     this.damageReductionByInstance.clear();
@@ -651,20 +659,24 @@ export class ArenaScene extends Phaser.Scene {
     const today = new Date().toISOString().slice(0, 10);
     const profile = ProfileStore.get(this);
     const reward = profile.loginReward ?? { startDate: today, claimedDays: [] as number[] };
-    const claimed = new Set((reward.claimedDays ?? []).filter((d) => d >= 1 && d <= 7));
+    const validClaimedDays = [...new Set((reward.claimedDays ?? [])
+      .map((d) => Math.floor(Number(d)))
+      .filter((d) => d >= 1 && d <= 7))]
+      .sort((a, b) => a - b);
+    const contiguousClaimedDays = validClaimedDays.filter((day, index) => day === index + 1);
+    const claimed = new Set(contiguousClaimedDays);
     const startMs = new Date(`${reward.startDate}T00:00:00Z`).getTime();
     const todayMs = new Date(`${today}T00:00:00Z`).getTime();
     const elapsedDays = Number.isFinite(startMs) ? Math.max(0, Math.floor((todayMs - startMs) / 86400000)) : 0;
     const unlockedDay = Math.max(1, Math.min(7, elapsedDays + 1));
-    let nextClaimableDay: number | null = null;
-    for (let day = 1; day <= unlockedDay; day++) {
-      if (!claimed.has(day)) { nextClaimableDay = day; break; }
-    }
-    return { reward, claimed, unlockedDay, nextClaimableDay, isComplete: claimed.size >= 7 };
+    const nextSequentialDay = claimed.size + 1;
+    const nextClaimableDay = nextSequentialDay <= unlockedDay && nextSequentialDay <= 7 ? nextSequentialDay : null;
+    const isMalformed = validClaimedDays.length !== contiguousClaimedDays.length || validClaimedDays.some((day, index) => day !== index + 1);
+    return { reward, claimed, unlockedDay, nextClaimableDay, isComplete: claimed.size >= 7, isMalformed };
   }
 
   private openLoginRewardModal() {
-    const { reward, claimed, unlockedDay, nextClaimableDay, isComplete } = this.getLoginRewardProgress();
+    const { reward, claimed, unlockedDay, nextClaimableDay, isComplete, isMalformed } = this.getLoginRewardProgress();
     
     this.clearModeModal();
     const { width, height } = this.scale;
@@ -742,7 +754,7 @@ export class ArenaScene extends Phaser.Scene {
     const day7Legendary = reward.day7LegendaryTitle ? ` • Day 7: ${reward.day7LegendaryTitle}` : '';
     const statusText = isComplete 
       ? `🎉 7-DAY CALENDAR COMPLETE!${day7Legendary}` 
-      : `Claimed: ${claimed.size}/7 days • Next unlock: Day ${Math.min(7, unlockedDay + 1)}`;
+      : `${isMalformed ? 'Fixed malformed claim order • ' : ''}Claimed: ${claimed.size}/7 days • Next claim: Day ${nextClaimableDay ?? Math.min(7, claimed.size + 1)}`;
     const status = this.add.text(cx, cy + 160, statusText, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(253);
     
     const closeBtn = this.add.text(cx, cy + 195, 'CLOSE', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } })
@@ -790,7 +802,7 @@ export class ArenaScene extends Phaser.Scene {
       const legendaries = getAllDiceDefinitions(this)
         .filter((d) => d.rarity === 'Legendary')
         .filter((d) => canReceiveUsefulCopies(this, d.typeId));
-      const pick = legendaries[Math.floor(Math.random() * legendaries.length)];
+      const pick = legendaries.length > 0 ? legendaries[Math.floor(Math.random() * legendaries.length)] : undefined;
       if (pick) {
         grantDiceCopies(this, pick.typeId, 1);
         message = `Legendary Dice: ${pick.title}`;
@@ -798,7 +810,7 @@ export class ArenaScene extends Phaser.Scene {
         claimedDay7LegendaryTitle = pick.title;
       } else {
         setDiceTokens(this, getDiceTokens(this) + 5000);
-        message = 'Legendary pool full → +5,000 Dice Tokens';
+        message = 'Legendary pool full: +5,000 Dice Tokens';
         claimedDay7LegendaryTypeId = undefined;
         claimedDay7LegendaryTitle = 'Legendary pool full (+5,000 Dice Tokens)';
       }
@@ -1080,6 +1092,10 @@ export class ArenaScene extends Phaser.Scene {
       backgroundColor: '#2ecc71', padding: { left: 16, right: 16, top: 7, bottom: 7 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     closeBtn.on('pointerdown', () => {
+      if (this.multiplayerClient.configured) {
+        AlertManager.toast(this, { type: 'warning', message: 'Waiting for Rivalis lobby match; local fallback is disabled.' });
+        return;
+      }
       this.clearModeModal();
       this.startGame();
     });
@@ -1091,7 +1107,7 @@ export class ArenaScene extends Phaser.Scene {
       this.add.text(cx, cy + 12, 'Share this code with your friend.\nWaiting for Rivalis to match the lobby...', {
         fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center'
       }).setOrigin(0.5),
-      closeBtn
+      ...(this.multiplayerClient.configured ? [] : [closeBtn])
     ]).setDepth(250);
     this.setModalEsc(() => this.openMultiplayerCreateModal());
   }
@@ -1116,6 +1132,7 @@ export class ArenaScene extends Phaser.Scene {
     this.activeDailyKey = '';
     this.configRandomMode = options.randomMode;
     this.configRandomizeLoadoutAndClassUps = false;
+    const multiplayerUsesLevelling = options.mode === 'matchmaking' ? true : this.configUseLevelling;
     const setStatus = (status: ArenaMultiplayerStatus) => {
       this.multiplayerStatus = status;
       AlertManager.toast(this, {
@@ -1128,22 +1145,23 @@ export class ArenaScene extends Phaser.Scene {
           lobbyAction: options.lobbyAction,
           lobbyCode: options.lobbyCode,
           playerName: this.playerDisplayName,
-          useLevelling: this.configUseLevelling,
+          ruleset: 'classic',
+          useLevelling: multiplayerUsesLevelling,
           turnLimit: this.turnLimit,
           randomMode: this.configRandomMode,
           loadoutTypeIds
         });
       }
     };
+    if (!this.multiplayerClient.configured) {
+      AlertManager.toast(this, { type: 'warning', message: this.multiplayerClient.getStatus().message });
+      return;
+    }
     this.multiplayerClient.connect(setStatus);
     this.multiplayerStatus = this.multiplayerClient.getStatus();
     if (this.multiplayerStatus.state === 'disabled') {
       AlertManager.toast(this, { type: 'warning', message: this.multiplayerStatus.message });
       return;
-    }
-    if (options.mode === 'matchmaking' || options.lobbyAction === 'join') {
-      this.clearModeModal();
-      this.startGame();
     }
   }
 
@@ -1878,6 +1896,20 @@ export class ArenaScene extends Phaser.Scene {
     this.manaByInstance.set(instanceId, Math.min(manaNeeded, currentMana + gain));
   }
 
+  private spendBasicAttack(attacker: DiceInstanceState): boolean {
+    const chainedAttacks = Math.max(1, this.basicAttacksPerAttackByInstance.get(attacker.instanceId)?.count ?? 1);
+    const remaining = attacker.attacksRemaining ?? 0;
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => {
+        if (die.instanceId !== attacker.instanceId || die.isDestroyed || die.zone !== 'board') return die;
+        const attacksRemaining = Math.max(0, die.attacksRemaining - 1);
+        return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
+      })
+    };
+    return chainedAttacks > 1 && remaining > 0;
+  }
+
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
     const playerBoardDice = getBoardDice(this.gameState, 'player');
     const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
@@ -2484,7 +2516,8 @@ export class ArenaScene extends Phaser.Scene {
         const attacker = getNextAttacker(this.gameState, owner);
         if (!attacker) break;
 
-        const beamTarget = this.findTranscendenceBeamTarget(attacker);
+        const beamLine = this.findTranscendenceBeamTarget(attacker);
+        const beamTarget = beamLine?.target;
         const forcedTarget = this.resolveTauntForcedTarget(attacker);
         const target = forcedTarget ?? beamTarget ?? this.findAttackTargetForArena(attacker);
         if (!target) {
@@ -2513,9 +2546,9 @@ export class ArenaScene extends Phaser.Scene {
         let targetDefeated = false;
 
         if (!skipBasicAttack) {
-          if (beamTarget && (!forcedTarget || forcedTarget.instanceId === beamTarget.instanceId)) {
+          if (beamLine && (!forcedTarget || forcedTarget.instanceId === beamLine.target.instanceId)) {
             this.playAttackSfx(attacker, attackerMeta);
-            const result = this.executeTranscendenceBeam(attacker, target);
+            const result = this.executeTranscendenceBeam(attacker, target, beamLine.pattern);
             damage = result.damage;
             targetDefeated = result.targetDestroyed;
           } else {
@@ -2538,7 +2571,7 @@ export class ArenaScene extends Phaser.Scene {
             const deuciferEvenMult = pips % 2 === 0 ? 1 + (attackerMeta?.deuciferEvenDamageRate ?? 0) : 1;
             const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + proportional + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult));
             if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
-            this.gameState = spendAttack(this.gameState, attacker.instanceId);
+            const followUpBasicAttack = this.spendBasicAttack(attacker);
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
             this.gameState = hit.state;
             damage = hit.dealt;
@@ -2546,8 +2579,29 @@ export class ArenaScene extends Phaser.Scene {
             this.showDamageText(target, damage, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
             if (pips % 2 === 1 && (attackerMeta?.deuciferOddSiphonRate ?? 0) > 0) this.healDie(attacker.instanceId, Math.floor(damage * (attackerMeta?.deuciferOddSiphonRate ?? 0)));
             this.applyPassiveSkillEffects(attacker, target);
+            if (targetDefeated) {
+              await this.applyOnKillSkillEffects(attacker, target);
+              this.applyOnDeathSkillEffects(target, attacker);
+              this.handleDefeatedDie(target, true);
+            }
             const rem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
             if (rem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, rem - 1);
+            if (followUpBasicAttack && !targetDefeated) {
+              const followUp = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
+              this.gameState = followUp.state;
+              damage += followUp.dealt;
+              if (damage > 200) AchievementStore.unlock(this, 'lotta_damage');
+              targetDefeated = followUp.defeated;
+              this.showDamageText(target, followUp.dealt, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
+              this.applyPassiveSkillEffects(attacker, target);
+              if (targetDefeated) {
+                await this.applyOnKillSkillEffects(attacker, target);
+                this.applyOnDeathSkillEffects(target, attacker);
+                this.handleDefeatedDie(target, true);
+              }
+              const nextRem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
+              if (nextRem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, nextRem - 1);
+            }
           }
         } else {
           this.gameState = spendAttack(this.gameState, attacker.instanceId);
@@ -2562,7 +2616,7 @@ export class ArenaScene extends Phaser.Scene {
           timedOut = true;
           break;
         }
-        if (targetDefeated) {
+        if (targetDefeated && (beamTarget || skipBasicAttack)) {
           await this.applyOnKillSkillEffects(attacker, target);
           this.applyOnDeathSkillEffects(target, attacker);
           this.handleDefeatedDie(target, true);
@@ -3128,7 +3182,7 @@ export class ArenaScene extends Phaser.Scene {
           const y = g.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
           AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
         }
-        this.attackMultiplierTurnsByInstance.set(attacker.instanceId, { multiplier: 2, turns: activeDurationTurns });
+        this.basicAttacksPerAttackByInstance.set(attacker.instanceId, { count: 2, turns: activeDurationTurns });
         this.manaPausedTurnsByInstance.set(attacker.instanceId, activeDurationTurns);
       } else {
         this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: activeDurationTurns });
@@ -3231,6 +3285,14 @@ export class ArenaScene extends Phaser.Scene {
         this.attackMultiplierTurnsByInstance.delete(key);
       } else {
         this.attackMultiplierTurnsByInstance.set(key, { ...value, turns: nextTurns });
+      }
+    });
+    this.basicAttacksPerAttackByInstance.forEach((value, key) => {
+      const nextTurns = value.turns - 1;
+      if (nextTurns <= 0) {
+        this.basicAttacksPerAttackByInstance.delete(key);
+      } else {
+        this.basicAttacksPerAttackByInstance.set(key, { ...value, turns: nextTurns });
       }
     });
     this.manaPausedTurnsByInstance.forEach((turns, key) => {
@@ -3548,7 +3610,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
-  private animateTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState) {
+  private animateTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState, pattern: TranscendenceBeamPattern) {
     if (!attacker.gridPosition || !target.gridPosition) return;
 
     const isPlayerAttacker = attacker.ownerId === 'player';
@@ -3560,9 +3622,41 @@ export class ArenaScene extends Phaser.Scene {
     const targetX = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const targetY = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
-    const rowY = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const cellPitch = TILE_SIZE + TILE_GAP;
+    const targetCenterX = target.gridPosition.col * cellPitch + TILE_SIZE / 2;
+    const targetCenterY = target.gridPosition.row * cellPitch + TILE_SIZE / 2;
+    const lineStartX = pattern === 'column'
+      ? targetGrid.x + targetCenterX
+      : pattern === 'diagonalDown'
+      ? targetGrid.x + targetCenterX - Math.min(target.gridPosition.row, target.gridPosition.col) * cellPitch
+      : pattern === 'diagonalUp'
+      ? targetGrid.x + targetCenterX - Math.min(GRID_SIZE - 1 - target.gridPosition.row, target.gridPosition.col) * cellPitch
+      : targetGrid.x;
+    const lineStartY = pattern === 'column'
+      ? targetGrid.y
+      : pattern === 'diagonalDown'
+      ? targetGrid.y + targetCenterY - Math.min(target.gridPosition.row, target.gridPosition.col) * cellPitch
+      : pattern === 'diagonalUp'
+      ? targetGrid.y + targetCenterY + Math.min(GRID_SIZE - 1 - target.gridPosition.row, target.gridPosition.col) * cellPitch
+      : targetGrid.y + targetCenterY;
+    const lineEndX = pattern === 'column'
+      ? lineStartX
+      : pattern === 'diagonalDown'
+      ? targetGrid.x + targetCenterX + Math.min(GRID_SIZE - 1 - target.gridPosition.row, GRID_SIZE - 1 - target.gridPosition.col) * cellPitch
+      : pattern === 'diagonalUp'
+      ? targetGrid.x + targetCenterX + Math.min(target.gridPosition.row, GRID_SIZE - 1 - target.gridPosition.col) * cellPitch
+      : targetGrid.x + boardWidth;
+    const lineEndY = pattern === 'column'
+      ? targetGrid.y + boardWidth
+      : pattern === 'diagonalDown'
+      ? targetGrid.y + targetCenterY + Math.min(GRID_SIZE - 1 - target.gridPosition.row, GRID_SIZE - 1 - target.gridPosition.col) * cellPitch
+      : pattern === 'diagonalUp'
+      ? targetGrid.y + targetCenterY - Math.min(target.gridPosition.row, GRID_SIZE - 1 - target.gridPosition.col) * cellPitch
+      : targetGrid.y + targetCenterY;
     
-    AnimationManager.animateTranscendenceBeamFx(this, attackerX, attackerY, targetGrid.x, rowY, targetX, targetY, boardWidth);
+    AnimationManager.animateTranscendenceBeamFx(this, attackerX, attackerY, lineStartX, lineStartY, lineEndX, lineEndY, Phaser.Math.Distance.Between(lineStartX, lineStartY, lineEndX, lineEndY));
+    void targetX;
+    void targetY;
   }
 
 
@@ -3878,7 +3972,24 @@ export class ArenaScene extends Phaser.Scene {
     AudioManager.playSfx(this, meta.skillSfxKey ?? AUDIO_KEYS.skillTrigger);
   }
 
-  private executeTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState): { damage: number; targetDestroyed: boolean } {
+  private isOnTranscendencePattern(source: { row: number; col: number }, target: { row: number; col: number }, pattern: TranscendenceBeamPattern): boolean {
+    if (pattern === 'row') return target.row === source.row;
+    if (pattern === 'column') return target.col === source.col;
+    if (pattern === 'diagonalDown') return target.row - source.row === target.col - source.col;
+    return target.row - source.row === source.col - target.col;
+  }
+
+  private getTranscendencePatternPriority(attacker: DiceInstanceState, target: DiceInstanceState): TranscendenceBeamPattern | null {
+    if (!attacker.gridPosition || !target.gridPosition) return null;
+    if (target.gridPosition.row === attacker.gridPosition.row) return 'row';
+    if (target.gridPosition.col === attacker.gridPosition.col) return 'column';
+    const rowDiff = target.gridPosition.row - attacker.gridPosition.row;
+    const colDiff = target.gridPosition.col - attacker.gridPosition.col;
+    if (Math.abs(rowDiff) === Math.abs(colDiff)) return rowDiff === colDiff ? 'diagonalDown' : 'diagonalUp';
+    return null;
+  }
+
+  private executeTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState, pattern: TranscendenceBeamPattern): { damage: number; targetDestroyed: boolean } {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !attacker.gridPosition || !target.gridPosition) {
       return { damage: 0, targetDestroyed: false };
@@ -3890,7 +4001,7 @@ export class ArenaScene extends Phaser.Scene {
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
       die.gridPosition &&
-      (die.instanceId === target.instanceId || die.gridPosition.row === targetPos.row)
+      (die.instanceId === target.instanceId || this.isOnTranscendencePattern(targetPos, die.gridPosition, pattern))
     );
 
     let primaryDefeated = false;
@@ -3914,12 +4025,12 @@ export class ArenaScene extends Phaser.Scene {
         };
       })
     };
-    this.animateTranscendenceBeam(attacker, target);
+    this.animateTranscendenceBeam(attacker, target, pattern);
     return { damage, targetDestroyed: primaryDefeated };
   }
 
 
-  private findTranscendenceBeamTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
+  private findTranscendenceBeamTarget(attacker: DiceInstanceState): TranscendenceBeamLine | undefined {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return undefined;
     const meta = getRuntimeSkillMeta(definition);
@@ -3936,12 +4047,16 @@ export class ArenaScene extends Phaser.Scene {
         ? die.gridPosition.col > attacker.gridPosition.col
         : die.gridPosition.col < attacker.gridPosition.col;
     };
-    const rowTargets = getBoardDice(this.gameState, enemyOwner).filter((die) =>
-      die.gridPosition?.row === attacker.gridPosition?.row && isForwardTarget(die));
-    return rowTargets
-      .map((die) => ({ die, distance: this.getAttackDistance(attacker, die) }))
+    return getBoardDice(this.gameState, enemyOwner)
+      .map((die) => ({ die, pattern: this.getTranscendencePatternPriority(attacker, die), distance: this.getAttackDistance(attacker, die) }))
+      .filter((entry): entry is { die: DiceInstanceState; pattern: TranscendenceBeamPattern; distance: number } => entry.pattern !== null)
+      .filter(({ die }) => isForwardTarget(die))
       .filter(({ distance }) => distance <= Math.max(1, definition.range))
-      .sort((a, b) => a.distance - b.distance)[0]?.die;
+      .sort((a, b) => {
+        const priority: Record<TranscendenceBeamPattern, number> = { row: 0, column: 1, diagonalDown: 2, diagonalUp: 2 };
+        return priority[a.pattern] - priority[b.pattern] || a.distance - b.distance || a.die.gridPosition!.row - b.die.gridPosition!.row || a.die.gridPosition!.col - b.die.gridPosition!.col;
+      })
+      .map(({ die, pattern }) => ({ target: die, pattern }))[0];
   }
 
 
