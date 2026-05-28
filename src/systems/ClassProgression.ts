@@ -153,7 +153,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Basic attacks also stab ${modifiers.pierceBehindRange} tile behind the target.`;
   }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
-    return `Deals ${scaleSkillDamage(modifiers.activeDamage)} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, never below 1.`;
+    return `Deals ${scaleSkillDamage(modifiers.activeDamage)} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, down to 0.`;
   }
   if (definition.typeId === 'Crack' && modifiers.activeDamage !== undefined) {
     const shredNote = (modifiers.notes ?? []).find((note) => note.startsWith('runtime:armorShredRate='));
