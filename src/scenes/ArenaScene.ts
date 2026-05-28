@@ -683,12 +683,14 @@ export class ArenaScene extends Phaser.Scene {
     const elapsedDays = Number.isFinite(startMs) ? Math.max(0, Math.floor((todayMs - startMs) / 86400000)) : 0;
     const unlockedDay = Math.max(1, Math.min(7, elapsedDays + 1));
     const nextSequentialDay = claimed.size + 1;
-    const nextClaimableDay = nextSequentialDay <= unlockedDay && nextSequentialDay <= 7 ? nextSequentialDay : null;
-    return { reward, claimed, unlockedDay, nextClaimableDay, isComplete: claimed.size >= 7, isMalformed };
+    const alreadyClaimedToday = reward.lastClaimDate === today;
+    const nextClaimableDay = !alreadyClaimedToday && nextSequentialDay <= unlockedDay && nextSequentialDay <= 7 ? nextSequentialDay : null;
+    const nextUnlockDay = Math.min(7, Math.max(nextSequentialDay, unlockedDay + 1));
+    return { reward, claimed, unlockedDay, nextClaimableDay, nextUnlockDay, alreadyClaimedToday, isComplete: claimed.size >= 7, isMalformed };
   }
 
   private openLoginRewardModal() {
-    const { reward, claimed, unlockedDay, nextClaimableDay, isComplete, isMalformed } = this.getLoginRewardProgress();
+    const { reward, claimed, unlockedDay, nextClaimableDay, nextUnlockDay, alreadyClaimedToday, isComplete, isMalformed } = this.getLoginRewardProgress();
     
     this.clearModeModal();
     const { width, height } = this.scale;
@@ -768,9 +770,14 @@ export class ArenaScene extends Phaser.Scene {
     }
     
     const day7Legendary = reward.day7LegendaryTitle ? ` • Day 7: ${reward.day7LegendaryTitle}` : '';
+    const statusDetail = nextClaimableDay
+      ? `Next claim: Day ${nextClaimableDay}`
+      : alreadyClaimedToday
+        ? `Next unlock: Day ${nextUnlockDay} tomorrow`
+        : `Next unlock: Day ${nextUnlockDay}`;
     const statusText = isComplete 
       ? `🎉 7-DAY CALENDAR COMPLETE!${day7Legendary}` 
-      : `${isMalformed ? 'Fixed malformed claim order • ' : ''}Claimed: ${claimed.size}/7 days • Next claim: Day ${nextClaimableDay ?? Math.min(7, claimed.size + 1)}`;
+      : `${isMalformed ? 'Fixed malformed claim order • ' : ''}Claimed: ${claimed.size}/7 days • ${statusDetail}`;
     const status = this.add.text(cx, cy + 160, statusText, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(253);
     
     const closeBtn = this.add.text(cx, cy + 195, 'CLOSE', { fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#173247', padding: { left: 12, right: 12, top: 7, bottom: 7 } })
@@ -794,7 +801,7 @@ export class ArenaScene extends Phaser.Scene {
   }
   
   private claimDailyReward(day: number) {
-    const { reward, claimed, nextClaimableDay, unlockedDay } = this.getLoginRewardProgress();
+    const { reward, claimed, nextClaimableDay, unlockedDay, alreadyClaimedToday, nextUnlockDay } = this.getLoginRewardProgress();
     
     if (claimed.has(day)) {
       AlertManager.toast(this, { type: 'warning', message: `Day ${day} already claimed!` });
@@ -802,7 +809,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (nextClaimableDay === null || day !== nextClaimableDay) {
       const waitingDay = Math.min(7, unlockedDay + 1);
-      AlertManager.toast(this, { type: 'warning', message: day > unlockedDay ? `Day ${day} is locked. Come back tomorrow.` : `Claim Day ${nextClaimableDay} first.` });
+      AlertManager.toast(this, { type: 'warning', message: alreadyClaimedToday ? `Day ${nextUnlockDay} unlocks tomorrow.` : day > unlockedDay ? `Day ${day} is locked. Come back tomorrow.` : `Claim Day ${nextClaimableDay} first.` });
       if (day > unlockedDay && waitingDay <= 7) AlertManager.toast(this, { type: 'warning', message: `Next reward unlocks on Day ${waitingDay}.` });
       return;
     }
