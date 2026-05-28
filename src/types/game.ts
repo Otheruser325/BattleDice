@@ -64,6 +64,7 @@ export interface DiceDefinition {
   skills: DiceSkillDefinition[];
   accent: string;
   transformDescriptions?: string[];
+  isBoss?: boolean;
 }
 
 

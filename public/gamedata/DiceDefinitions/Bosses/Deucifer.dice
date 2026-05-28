@@ -40,5 +40,6 @@
     }
   ],
   "accent": "#ff4d2e",
-  "targetingMode": "Nearest"
+  "targetingMode": "Nearest",
+  "isBoss": true
 }

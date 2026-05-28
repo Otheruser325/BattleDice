@@ -25,8 +25,8 @@ export function getBossClassMultiplier(classLevel: number): number {
   return BOSS_CLASS_STAT_MULTIPLIER ** Math.max(0, Math.min(MAX_CLASS_LEVEL, classLevel) - 1);
 }
 
-function isBossOrMinionDefinition(definition: DiceDefinition): boolean {
-  return ['Deucifer', 'Imp', 'Magician', 'Wizard', 'Leon'].includes(definition.typeId);
+function isBossDefinition(definition: DiceDefinition): boolean {
+  return definition.isBoss === true;
 }
 
 function formatPercent(rate: number): string {
@@ -52,7 +52,7 @@ function getCombinedModifiers(definition: DiceDefinition): DiceSkillModifier {
 
 export function applyClassProgression(definition: DiceDefinition, classLevel: number): DiceDefinition {
   const boundedClassLevel = Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(classLevel)));
-  const multiplier = isBossOrMinionDefinition(definition)
+  const multiplier = isBossDefinition(definition)
     ? getBossClassMultiplier(boundedClassLevel)
     : getClassMultiplier(boundedClassLevel);
   const classUps = boundedClassLevel - 1;

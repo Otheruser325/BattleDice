@@ -1736,7 +1736,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private isBossDie(die: DiceInstanceState): boolean {
-    return die.typeId === 'Deucifer' || BOSSFIGHT_BOSSES.includes(die.typeId as BossfightBossType);
+    const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
+    return definition?.isBoss === true;
   }
 
   private getDefinitionsForCombat(...dice: DiceInstanceState[]): Map<string, DiceDefinition> {
@@ -2603,6 +2604,36 @@ export class ArenaScene extends Phaser.Scene {
     return this.getOffenseMultiplier(attacker);
   }
 
+  private getGiantHunterBonus(ownerId: 'player' | 'enemy', target: DiceInstanceState): number {
+    const rate = this.giantHunterRateByOwner[ownerId];
+    if (rate <= 0) return 0;
+    const bonus = Math.max(0, Math.floor(target.maxHealth * rate));
+    return this.isBossDie(target) ? Math.floor(bonus * 0.5) : bonus;
+  }
+
+  private getActiveBuffSummaryForDie(die: DiceInstanceState): string[] {
+    const owner = die.ownerId;
+    const pct = (rate: number) => `${Math.round(rate * 100)}%`;
+    const buffs: string[] = [];
+    const typeBonus = this.diceTypeUpgradeBonus.get(`${owner}:${die.typeId}`) ?? 0;
+    if (typeBonus > 0) buffs.push(`${die.typeId} Upgrade +${pct(typeBonus)} dmg/HP`);
+    const spotlight = this.spotlightByInstance.get(die.instanceId);
+    if (spotlight) buffs.push(`Spotlight +${pct(spotlight.reduction)} dmg & DR (3-pip)`);
+    const odd = this.oddInvestmentByOwner[owner];
+    if (odd.damage > 0 || odd.reduction > 0) buffs.push(`Odd Investment +${pct(odd.damage)} dmg / ${pct(odd.reduction)} DR (odd pips)`);
+    const even = this.evenInvestmentByOwner[owner];
+    if (even.damage > 0 || even.reduction > 0) buffs.push(`Even Investment +${pct(even.damage)} dmg / ${pct(even.reduction)} DR (even pips)`);
+    if (this.fountainHealRateByOwner[owner] > 0) buffs.push(`Fountain of Love ${pct(this.fountainHealRateByOwner[owner])} heal`);
+    if (this.manaPotionGainByOwner[owner] > 0) buffs.push(`Mana Potion +${this.manaPotionGainByOwner[owner]} mana`);
+    if (this.giantHunterRateByOwner[owner] > 0) buffs.push(`Giant Hunter ${pct(this.giantHunterRateByOwner[owner])} max HP (50% vs bosses)`);
+    if (this.configRandomMode && this.activeRandomModifier === 'Combanity') {
+      const combo = this.getRollComboBonus(owner);
+      const drNote = combo.reduction > 0 ? ` / ${pct(combo.reduction)} DR` : '';
+      buffs.push(`Combanity: ${combo.label} (${combo.multiplier}x dmg${drNote})`);
+    }
+    return buffs;
+  }
+
   private applyAssassinCombatStart() {
     const assassins = this.gameState.dice.filter((d) => {
       if (d.zone !== 'board' || d.isDestroyed || !d.gridPosition) return false;
@@ -2878,7 +2909,7 @@ export class ArenaScene extends Phaser.Scene {
         const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.5) : ironBaseBonus;
         const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
         const scaledNonProportional = Math.floor(nonProportional * multiplier);
-        const giantHunter = this.giantHunterRateByOwner[assassin.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[assassin.ownerId])) : 0;
+        const giantHunter = this.getGiantHunterBonus(assassin.ownerId, target);
         const assassinBoost = (this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0) > 0 ? 2 : 1;
         const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost));
         this.gameState = spendAttack(this.gameState, assassin.instanceId);
@@ -2987,7 +3018,7 @@ export class ArenaScene extends Phaser.Scene {
             const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.5) : ironBaseBonus;
             const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
             const scaledNonProportional = Math.floor(nonProportional * multiplier);
-            const giantHunter = this.giantHunterRateByOwner[attacker.ownerId] > 0 ? Math.max(0, Math.floor(target.maxHealth * this.giantHunterRateByOwner[attacker.ownerId])) : 0;
+            const giantHunter = this.getGiantHunterBonus(attacker.ownerId, target);
             const assassinBoost = (this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0) > 0 ? 2 : 1;
             const pips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 1) : (this.enemyDicePips.get(attacker.instanceId) ?? 1);
             const deuciferEvenMult = pips % 2 === 0 ? 1 + (attackerMeta?.deuciferEvenDamageRate ?? 0) : 1;
@@ -3351,10 +3382,6 @@ export class ArenaScene extends Phaser.Scene {
     return Math.max(1, Math.floor(target.maxHealth * meta.targetMaxHpBonusRate * bossMitigation));
   }
 
-  private isBossOrMinion(die: DiceInstanceState): boolean {
-    return ['Deucifer', 'Imp', 'Magician', 'Wizard', 'Leon'].includes(die.typeId);
-  }
-
   private getLeonFuriousClawDamage(attacker: DiceInstanceState, target: DiceInstanceState): number {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return 0;
@@ -3439,7 +3466,7 @@ export class ArenaScene extends Phaser.Scene {
   private async applyActiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
     const applyDirectDamage = (victim: DiceInstanceState, baseDamage: number): { dealt: number; defeated: boolean } => {
       const multiplier = this.getCombanityDamageMultiplier(attacker, victim);
-      const giantHunter = this.giantHunterRateByOwner[attacker.ownerId] > 0 ? Math.max(0, Math.floor(victim.maxHealth * this.giantHunterRateByOwner[attacker.ownerId])) : 0;
+      const giantHunter = this.getGiantHunterBonus(attacker.ownerId, victim);
       const adjustedDamage = Math.max(1, Math.floor((baseDamage + giantHunter) * multiplier * this.getDiceCardSkillDamageMultiplier(attacker)));
       const directHit = this.applyDamageWithRevive(victim.instanceId, adjustedDamage);
       this.gameState = directHit.state;
@@ -4248,8 +4275,9 @@ export class ArenaScene extends Phaser.Scene {
       const pct = [0, 50, 75, 100][mag];
       const typeName = name.replace(' Upgrade', '');
       const dieFaceByRarity: Record<string, string> = { Bronze: '⚃', Silver: '⚄', Gold: '⚅' };
+      const colorByRarity: Record<string, string> = { Bronze: '#cd7f32', Silver: '#c0c0c0', Gold: '#ffd700' };
       const icon = dieFaceByRarity[rarity] ?? '⚅';
-      const color = this.definitions.get(typeName)?.accent ?? '#9ed0ff';
+      const color = colorByRarity[rarity] ?? '#ffd700';
       return { icon, color, title: name, rarity, desc: `${typeName} gets +${pct}% basic+skill damage and max HP.` };
     }
     if (name === 'Fountain of Love') {
@@ -4791,7 +4819,9 @@ export class ArenaScene extends Phaser.Scene {
     this.dieInfoPopupTimer?.remove(false);
     this.dieInfoPopup?.destroy(true);
     const { width } = this.scale;
-    const panel = this.add.rectangle(width / 2, 76, 560, 112, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
+    const activeBuffs = this.getActiveBuffSummaryForDie(die);
+    const panelHeight = activeBuffs.length > 0 ? 156 : 112;
+    const panel = this.add.rectangle(width / 2, 76, 560, panelHeight, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
     const typeUpgradeMult = this.getTypeUpgradeMultiplier(die);
     const effectiveAtk = Math.max(1, Math.floor(definition.attack * typeUpgradeMult));
     const footprintNote = this.getFootprintForDefinition(definition) > 1 ? ` • ${this.getFootprintForDefinition(definition)}x${this.getFootprintForDefinition(definition)}` : '';
@@ -4814,7 +4844,18 @@ export class ArenaScene extends Phaser.Scene {
       color: PALETTE.textMuted,
       wordWrap: { width: 530 }
     }).setOrigin(0.5);
-    this.dieInfoPopup = this.add.container(0, 0, [panel, stats, desc]).setDepth(330).setScale(0.96).setAlpha(0);
+    const popupElements: Phaser.GameObjects.GameObject[] = [panel, stats, desc];
+    if (activeBuffs.length > 0) {
+      const buffs = this.add.text(width / 2, 122, `Active Buffs: ${activeBuffs.join('  •  ')}`, {
+        fontFamily: 'Orbitron',
+        fontSize: '10px',
+        color: '#f0c36a',
+        align: 'center',
+        wordWrap: { width: 530 }
+      }).setOrigin(0.5, 0);
+      popupElements.push(buffs);
+    }
+    this.dieInfoPopup = this.add.container(0, 0, popupElements).setDepth(330).setScale(0.96).setAlpha(0);
     this.dieInfoPopupInstanceId = die.instanceId;
     this.tweens.add({ targets: this.dieInfoPopup, alpha: 1, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.Out' });
     this.dieInfoPopupTimer = this.time.delayedCall(2200, () => {
