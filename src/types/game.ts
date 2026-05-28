@@ -69,6 +69,7 @@ export interface DiceDefinition {
 
 export interface DiceFlags {
   fetchableTypeIds: DiceTypeId[];
+  exclusiveTypeIds?: Array<DiceTypeId | { typeId: DiceTypeId; path?: string }>;
 }
 
 export type DiceOwnerId = 'player' | 'enemy';

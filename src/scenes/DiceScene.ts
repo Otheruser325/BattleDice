@@ -12,7 +12,7 @@ import {
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
-import { applyClassProgression, getClassProgressionPreview } from '../systems/ClassProgression';
+import { applyClassProgression, getClassProgressionPreview, getClassScaledSkillDescription } from '../systems/ClassProgression';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
@@ -24,16 +24,17 @@ function formatSkillType(type: string | undefined): string {
   return type.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number): string {
+function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number, definition?: DiceDefinition, skillDamageMultiplier = 1): string {
   const prefix = total > 1 ? `${index + 1}. ` : '';
   const manaLine = skill.type === 'Active' && (skill.manaNeeded ?? 0) > 0 ? `\nMana needed: ${skill.manaNeeded}` : '';
-  return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${skill.description}`;
+  const description = definition ? getClassScaledSkillDescription(definition, skill, skillDamageMultiplier) : skill.description;
+  return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${description}`;
 }
 
-function formatSkillInfo(definition: DiceDefinition, locked = false): string {
+function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
   if (definition.skills.length === 0) return 'No skill';
-  return definition.skills.map((skill, index) => formatSkillEntry(skill, index, definition.skills.length)).join('\n\n');
+  return definition.skills.map((skill, index) => formatSkillEntry(skill, index, definition.skills.length, definition, skillDamageMultiplier)).join('\n\n');
 }
 
 
