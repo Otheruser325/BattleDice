@@ -1,6 +1,22 @@
 {
   "entries": [
     {
+      "version": "v0.7.0-beta",
+      "date": "2026-05-28",
+      "notes": [
+        "New bosses: Magician and Leon, each with class-level scaling skills and a 3rd skill unlocked at Boss Level 6.",
+        "New challenge: Dopamine Challenge, a Dice Card random-mode gauntlet.",
+        "New achievements: Magical Cycle, Boss Slayer, Boss Ripper, Boss Hunter, Hooked and Stacked Up.",
+        "Dice Card: type upgrade icons are now dicelike and coloured by their rarity (Bronze, Silver, Gold).",
+        "Dice info panel now lists active Dice Card buffs (Spotlight, Investments, etc.) and Combanity roll details.",
+        "Giant Hunter Dice Card now inflicts only 50% of its bonus damage against bosses.",
+        "Bosses now summon minions 5 class levels lower (min. Class 1) than the parent; minions now scale like general dice while bosses keep their own exceptions.",
+        "Dice descriptions now react to class levels, and Transcendence/boss skill text was clarified.",
+        "Fixed newly-spawned minions hanging the return-to-sender process during battle.",
+        "Fixed Transcendence Dice 6-pip form not having grid-wide (infinite) range."
+      ]
+    },
+    {
       "version": "v0.5.0-beta",
       "date": "2026-05-14",
       "notes": [

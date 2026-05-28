@@ -25,8 +25,8 @@ export function getBossClassMultiplier(classLevel: number): number {
   return BOSS_CLASS_STAT_MULTIPLIER ** Math.max(0, Math.min(MAX_CLASS_LEVEL, classLevel) - 1);
 }
 
-function isBossOrMinionDefinition(definition: DiceDefinition): boolean {
-  return ['Deucifer', 'Imp', 'Magician', 'Wizard', 'Leon'].includes(definition.typeId);
+function isBossDefinition(definition: DiceDefinition): boolean {
+  return definition.isBoss === true;
 }
 
 function formatPercent(rate: number): string {
@@ -52,7 +52,7 @@ function getCombinedModifiers(definition: DiceDefinition): DiceSkillModifier {
 
 export function applyClassProgression(definition: DiceDefinition, classLevel: number): DiceDefinition {
   const boundedClassLevel = Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(classLevel)));
-  const multiplier = isBossOrMinionDefinition(definition)
+  const multiplier = isBossDefinition(definition)
     ? getBossClassMultiplier(boundedClassLevel)
     : getClassMultiplier(boundedClassLevel);
   const classUps = boundedClassLevel - 1;
@@ -194,7 +194,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Throws striking meteors at random foes, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Drops lava pools on each epicentre lasting ${modifiers.durationTurns ?? 3} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
-    return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
+    return `If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
   }
   if (notes.some((note) => note.startsWith('runtime:deuciferOddSiphon='))) {
     return skill?.description ?? '';
@@ -217,8 +217,8 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (notes.includes('runtime:leonMightyRoar')) {
     return skill?.description ?? '';
   }
-  if (notes.includes('runtime:leonRage')) {
-    return skill?.description ?? '';
+  if (notes.includes('runtime:leonRage') && modifiers.targetMaxHpBonusRate !== undefined) {
+    return `On Kill: Leon gains +${formatPercent(modifiers.targetMaxHpBonusRate)} basic attack damage for each fallen foe.`;
   }
   if (notes.includes('runtime:deuciferSummonImp')) {
     return skill?.description ?? '';

@@ -18,9 +18,9 @@ export class AchievementsScene extends Phaser.Scene {
 
     const unlocked = AchievementStore.get(this).unlocked;
     const columns: Array<{ title: string; items: Array<{ id: AchievementId; label: string }> }> = [
-      { title: 'Combat', items: [{ id: 'winner', label: 'Winner: Win your first match.' }, { id: 'veteran', label: 'Veteran: Win 10 matches.' }, { id: 'master', label: 'Master: Win 50 matches.' }, { id: 'lotta_damage', label: 'Lotta Damage: Deal over 200 damage to an enemy dice.' }] },
+      { title: 'Combat', items: [{ id: 'winner', label: 'Winner: Win your first match.' }, { id: 'veteran', label: 'Veteran: Win 10 matches.' }, { id: 'master', label: 'Master: Win 50 matches.' }, { id: 'lotta_damage', label: 'Lotta Damage: Deal over 200 damage to an enemy dice.' }, { id: 'magical_cycle', label: 'Magical Cycle: Charge a total of 100 mana on dice actives in all battles.' }, { id: 'stacked_up', label: 'Stacked Up: Have all bronze/silver/gold cards on the same type in Dice Card random mode.' }] },
       { title: 'Progression', items: [{ id: 'getting_stronger', label: 'Getting Stronger: Bring a Dice to Class 6.' }, { id: 'augmented', label: 'Augmented: Bring a Dice to Class 11.' }, { id: 'maximum_power', label: 'Maximum Power: Bring a Dice to Class 15.' }, { id: 'darkest_hour', label: 'In Our Darkest Hour...: Obtain a Legendary Dice.' }] },
-      { title: 'Challenges', items: [{ id: 'challenger', label: 'Challenger: Win a daily challenge.' }, { id: 'problem_solver', label: 'Problem Solver: Win 10 daily challenges.' }, { id: 'demonic_torment', label: "Demonic Torment: Defeat Deucifer in Deucifer's Challenge." }, { id: 'jackpot', label: 'Jackpot: Roll a Five-of-a-kind in Fives/Combanity.' }] },
+      { title: 'Challenges', items: [{ id: 'challenger', label: 'Challenger: Win a daily challenge.' }, { id: 'problem_solver', label: 'Problem Solver: Win 10 daily challenges.' }, { id: 'demonic_torment', label: "Demonic Torment: Defeat Deucifer in Deucifer's Challenge." }, { id: 'jackpot', label: 'Jackpot: Roll a Five-of-a-kind in Fives/Combanity.' }, { id: 'hooked', label: 'Hooked: Beat the Dopamine Challenge.' }, { id: 'boss_slayer', label: 'Boss Slayer: Defeat a Tier 1 boss.' }, { id: 'boss_ripper', label: 'Boss Ripper: Defeat a Tier 5 boss.' }, { id: 'boss_hunter', label: 'Boss Hunter: Defeat a Tier 10 boss.' }] },
       { title: 'Time/Casino', items: [{ id: 'sweatin_it', label: "Sweatin' It: Play Battle Dice for 1 hour total." }, { id: 'cant_keep_up', label: "Can't Keep Up: Play Battle Dice for 12 hours total." }, { id: 'diceaholic', label: 'Diceaholic: Play Battle Dice for 24 hours total.' }, { id: 'vegas_boy', label: 'Vegas Boy: First time playing a casino table.' }, { id: 'gambolic', label: 'Gambolic: Play 10 casino tables total.' }, { id: 'risksino', label: 'Risksino: Play 50 casino tables total.' }] }
     ];
 
@@ -60,7 +60,7 @@ export class AchievementsScene extends Phaser.Scene {
     const viewWidth = panel.width - 32;
     const maskRect = this.add.rectangle(viewLeft, viewTop, viewWidth, viewHeight, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
     content.setMask(maskRect.createGeometryMask());
-    const maxScroll = 120;
+    const maxScroll = 360;
     let scroll = 0;
     this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       const within = pointer.worldX >= viewLeft && pointer.worldX <= viewLeft + viewWidth && pointer.worldY >= viewTop && pointer.worldY <= viewTop + viewHeight;
