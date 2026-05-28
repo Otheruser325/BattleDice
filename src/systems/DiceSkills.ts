@@ -57,6 +57,13 @@ export interface DiceSkillRuntimeMeta {
   deuciferOddSiphonRate?: number;
   deuciferEvenDamageRate?: number;
   canSummonImp?: boolean;
+  manaSteal?: number;
+  spellcastManaGain?: number;
+  canSummonWizard?: boolean;
+  hasLeonFuriousClaw?: boolean;
+  hasLeonMightyRoar?: boolean;
+  leonRageRate?: number;
+  isLockedUntilClass6?: boolean;
 }
 
 
@@ -149,7 +156,14 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls,
     deuciferOddSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
     deuciferEvenDamageRate: Number.isFinite(evenDamageRate) ? evenDamageRate : undefined,
-    canSummonImp: allNotes.includes('runtime:deuciferSummonImp')
+    canSummonImp: allNotes.includes('runtime:deuciferSummonImp'),
+    manaSteal: allNotes.includes('runtime:manaManipulator') ? ((modifiers as { attackDelta?: number } | undefined)?.attackDelta ?? 1) : undefined,
+    spellcastManaGain: allNotes.includes('runtime:wizardSpellcast') ? ((modifiers as { manaGain?: number } | undefined)?.manaGain ?? 2) : undefined,
+    canSummonWizard: allNotes.includes('runtime:magicianSummonWizard'),
+    hasLeonFuriousClaw: allNotes.includes('runtime:leonFuriousClaw'),
+    hasLeonMightyRoar: allNotes.includes('runtime:leonMightyRoar'),
+    leonRageRate: allNotes.includes('runtime:leonRage') ? ((modifiers as { targetMaxHpBonusRate?: number } | undefined)?.targetMaxHpBonusRate ?? 0.2) : undefined,
+    isLockedUntilClass6: allNotes.includes('runtime:unlockAtClass6')
   };
 }
 

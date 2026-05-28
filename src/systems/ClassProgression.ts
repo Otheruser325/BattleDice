@@ -2,6 +2,7 @@ import type { DiceDefinition, DiceSkillDefinition, DiceSkillModifier } from '../
 
 export const MAX_CLASS_LEVEL = 15;
 export const CLASS_UP_STAT_MULTIPLIER = 1.1;
+export const BOSS_CLASS_STAT_MULTIPLIER = 1.2;
 export const SKULL_REVIVE_CHANCE_PER_CLASS = 0.01;
 export const SNIPER_DISTANCE_RATE_PER_CLASS = 0.005;
 export const IRON_CURRENT_HP_RATE_PER_CLASS = 0.005;
@@ -18,6 +19,14 @@ export interface ClassProgressionPreview {
 
 export function getClassMultiplier(classLevel: number): number {
   return CLASS_UP_STAT_MULTIPLIER ** Math.max(0, Math.min(MAX_CLASS_LEVEL, classLevel) - 1);
+}
+
+export function getBossClassMultiplier(classLevel: number): number {
+  return BOSS_CLASS_STAT_MULTIPLIER ** Math.max(0, Math.min(MAX_CLASS_LEVEL, classLevel) - 1);
+}
+
+function isBossOrMinionDefinition(definition: DiceDefinition): boolean {
+  return ['Deucifer', 'Imp', 'Magician', 'Wizard', 'Leon'].includes(definition.typeId);
 }
 
 function formatPercent(rate: number): string {
@@ -43,7 +52,9 @@ function getCombinedModifiers(definition: DiceDefinition): DiceSkillModifier {
 
 export function applyClassProgression(definition: DiceDefinition, classLevel: number): DiceDefinition {
   const boundedClassLevel = Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(classLevel)));
-  const multiplier = getClassMultiplier(boundedClassLevel);
+  const multiplier = isBossOrMinionDefinition(definition)
+    ? getBossClassMultiplier(boundedClassLevel)
+    : getClassMultiplier(boundedClassLevel);
   const classUps = boundedClassLevel - 1;
 
   const skills = definition.skills.map((skill) => {
@@ -100,6 +111,22 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     if (definition.typeId === 'Battery' && source.manaGain !== undefined) {
       modifiers.manaGain = source.manaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
+    }
+
+    if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && source.manaGain !== undefined) {
+      modifiers.manaGain = source.manaGain + Math.floor(classUps / 4);
+    }
+
+    if (definition.typeId === 'Magician' && source.attackDelta !== undefined) {
+      modifiers.attackDelta = source.attackDelta + Math.floor(classUps / 5);
+    }
+
+    if (definition.typeId === 'Magician' && source.durationTurns !== undefined) {
+      modifiers.durationTurns = source.durationTurns + Math.floor(classUps / 4);
+    }
+
+    if (definition.typeId === 'Leon' && source.targetMaxHpBonusRate !== undefined) {
+      modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + 0.02 * classUps;
     }
 
     return { ...skill, modifiers };
@@ -164,7 +191,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deals direct toxic damage, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
   if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
-    return `Throws a striking meteor at a random foe, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a + pattern. Drops lava pools on the hit tile and adjacent tiles (+ pattern) lasting 3 turns. Foes standing on a lava tile take ${scaleSkillDamage(modifiers.lavaDamage)} damage at the start of combat.`;
+    return `Throws striking meteors at random foes, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Drops lava pools on each epicentre lasting ${modifiers.durationTurns ?? 3} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
     return `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
@@ -173,6 +200,24 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return skill?.description ?? '';
   }
   if (notes.some((note) => note.startsWith('runtime:deuciferEvenDamage='))) {
+    return skill?.description ?? '';
+  }
+  if (notes.includes('runtime:manaManipulator') && modifiers.attackDelta !== undefined) {
+    return `Combat Start: steals ${Math.abs(modifiers.attackDelta)} mana from all enemy charging actives.`;
+  }
+  if (notes.includes('runtime:wizardSpellcast') && modifiers.manaGain !== undefined) {
+    return `Combat Start: feeds the Magician +${modifiers.manaGain} mana.`;
+  }
+  if (notes.includes('runtime:magicianSummonWizard')) {
+    return skill?.description ?? '';
+  }
+  if (notes.includes('runtime:leonFuriousClaw') && modifiers.targetMaxHpBonusRate !== undefined) {
+    return `Nearby enemies trigger double claw attacks with a 20% chance to crit for 100% bonus damage. Rage gains +${formatPercent(modifiers.targetMaxHpBonusRate)} basic attack damage per fallen foe.`;
+  }
+  if (notes.includes('runtime:leonMightyRoar')) {
+    return skill?.description ?? '';
+  }
+  if (notes.includes('runtime:leonRage')) {
     return skill?.description ?? '';
   }
   if (notes.includes('runtime:deuciferSummonImp')) {
