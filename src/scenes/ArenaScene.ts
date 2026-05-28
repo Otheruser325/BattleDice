@@ -762,7 +762,7 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 15 Turns\nReward: 7500 Tokens + 50 Chips`, () => {
+    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns (+5 vs boss)\nReward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
@@ -770,7 +770,7 @@ export class ArenaScene extends Phaser.Scene {
       // Keep prior toggle value to avoid visual desync when re-opening this config.
       this.configDifficulty = 'Nightmare';
       this.configUseLevelling = true;
-      this.turnLimit = 15;
+      this.turnLimit = 10;
       this.clearModeModal();
       this.startGame();
     });
@@ -1722,6 +1722,18 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     return undefined;
+  }
+
+  private findRandomBossPosition(die: DiceInstanceState, footprint: number, usedCells: Set<string>): { row: number; col: number } | undefined {
+    const maxCol = GRID_SIZE - footprint;
+    return this.findRandomFootprintPosition(footprint, usedCells, () => {
+      if (die.typeId === 'Deucifer' && Math.random() < 0.7) return Math.min(2, maxCol);
+      return Phaser.Math.Between(0, maxCol);
+    });
+  }
+
+  private isBossDie(die: DiceInstanceState): boolean {
+    return die.typeId === 'Deucifer' || BOSSFIGHT_BOSSES.includes(die.typeId as BossfightBossType);
   }
 
   private getDefinitionsForCombat(...dice: DiceInstanceState[]): Map<string, DiceDefinition> {
@@ -3156,12 +3168,14 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private resolveTurnLimitResult() {
-    if (this.activeChallenge === 'deucifer' && this.deuciferBossSummoned && this.hasLivingDeuciferForces()) {
-      this.endGame('defeat', 'Turn limit reached! Deucifer and his minions still stand.');
-      return;
-    }
     const playerLiving = getLivingDiceCount(this.gameState, 'player');
     const enemyLiving = getLivingDiceCount(this.gameState, 'enemy');
+    if (this.activeChallenge === 'deucifer' && enemyLiving > 0) {
+      this.endGame('defeat', this.deuciferBossSummoned
+        ? 'Turn limit reached! Deucifer and his minions still stand.'
+        : "Turn limit reached! Deucifer's dice still stand.");
+      return;
+    }
     if (playerLiving > enemyLiving) {
       this.endGame('victory', `Turn limit reached! You have ${playerLiving} dice vs opponent's ${enemyLiving}.`);
     } else if (enemyLiving > playerLiving) {
@@ -3169,14 +3183,6 @@ export class ArenaScene extends Phaser.Scene {
     } else {
       this.endGame('draw', `Turn limit reached — DRAW! Both sides have ${playerLiving} dice.`);
     }
-  }
-
-  private hasLivingDeuciferForces(): boolean {
-    return this.gameState.dice.some((die) =>
-      die.ownerId === 'enemy' &&
-      !die.isDestroyed &&
-      (die.typeId === 'Deucifer' || die.typeId === 'Imp')
-    );
   }
 
   private getWeakestDamagedAlly(ownerId: DiceInstanceState['ownerId'], excludedInstanceId?: string): DiceInstanceState | undefined {
@@ -3837,7 +3843,7 @@ export class ArenaScene extends Phaser.Scene {
     this.instanceClassLevels.set(instanceId, 1);
     this.deuciferBossPending = false;
     this.deuciferBossSummoned = true;
-    if (this.activeChallenge === 'deucifer') this.turnLimit = Math.max(this.turnLimit, this.gameState.turn + 5);
+    if (this.activeChallenge === 'deucifer') this.turnLimit = Math.max(this.turnLimit, 15);
     this.enemyLoadoutRevealed = true;
     this.combatLog.setText('Deucifer is waiting in hand...');
   }
@@ -4178,7 +4184,9 @@ export class ArenaScene extends Phaser.Scene {
       const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
       const range = definition?.range ?? 4;
       const footprint = this.getFootprintForDefinition(definition);
-      const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
+      const position = this.isBossDie(die)
+        ? this.findRandomBossPosition(die, footprint, usedCells)
+        : this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
       if (!position) continue;
       this.markFootprint(position.row, position.col, footprint, usedCells);
       this.gameState = placeDieOnBoard(this.gameState, die.instanceId, position.row, position.col);
@@ -4895,6 +4903,7 @@ export class ArenaScene extends Phaser.Scene {
       }
       if (this.activeChallenge === 'deucifer' && !this.deuciferBossSummoned) {
         this.deuciferBossPending = true;
+        this.turnLimit = Math.max(this.turnLimit, 15);
         this.combatLog.setText('Deucifer rises next turn...');
         return false;
       }
@@ -5157,7 +5166,9 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(die) ?? this.definitions.get(die.typeId);
     const range = definition?.range ?? 4;
     const footprint = this.getFootprintForDefinition(definition);
-    const position = this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
+    const position = this.isBossDie(die)
+      ? this.findRandomBossPosition(die, footprint, usedCells)
+      : this.findRandomFootprintPosition(footprint, usedCells, () => this.pickEnemyColumn(range));
     if (!position) return;
     this.markFootprint(position.row, position.col, footprint, usedCells);
     this.gameState = placeDieOnBoard(this.gameState, die.instanceId, position.row, position.col);
