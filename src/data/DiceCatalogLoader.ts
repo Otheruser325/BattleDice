@@ -24,9 +24,14 @@ function normalizeTypeId(typeId: unknown): string | undefined {
   return /^[A-Za-z][A-Za-z0-9_-]{1,31}$/.test(trimmed) ? trimmed : undefined;
 }
 
-function normalizeExclusiveEntries(flags: DiceFlags): Array<{ typeId: string; path?: string }> {
+interface ExclusiveDiceEntry {
+  typeId: string;
+  path?: string;
+}
+
+function normalizeExclusiveEntries(flags: DiceFlags): ExclusiveDiceEntry[] {
   return (flags.exclusiveTypeIds ?? [])
-    .map((entry) => {
+    .map((entry): ExclusiveDiceEntry | undefined => {
       if (typeof entry === 'string') {
         const typeId = normalizeTypeId(entry);
         return typeId ? { typeId } : undefined;
@@ -35,7 +40,7 @@ function normalizeExclusiveEntries(flags: DiceFlags): Array<{ typeId: string; pa
       if (!typeId) return undefined;
       return { typeId, path: typeof entry.path === 'string' ? entry.path : undefined };
     })
-    .filter((entry): entry is { typeId: string; path?: string } => Boolean(entry));
+    .filter((entry): entry is ExclusiveDiceEntry => Boolean(entry));
 }
 
 export class DiceCatalogLoader {

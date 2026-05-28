@@ -165,7 +165,7 @@ export class ShopScene extends Phaser.Scene {
   private getOfferHeaderLabel(offer: ShopOffer): string {
     if (offer.isDiceTokenOffer) return 'DICE TOKEN VAULT';
     if (offer.isCasinoChipOffer) return 'CASINO CHIP STACK';
-    if (offer.isFreebie) return `★ DAILY FREEBIE — ${offer.rarity.toUpperCase()}`;
+    if (offer.isFreebie) return offer.typeId ? `★ DAILY FREEBIE — ${offer.rarity.toUpperCase()}` : '★ DAILY FREEBIE';
     return offer.rarity.toUpperCase();
   }
 

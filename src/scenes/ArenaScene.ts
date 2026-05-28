@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getAllDiceDefinitions, getDiceDefinitions, getDiceProgress, getDiceTokens, getExclusiveDiceDefinitions, setDiceTokens } from '../data/dice';
+import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getExclusiveDiceDefinitions, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
 import {
   createMatchBattleState,
   getAvailableHandDice,
@@ -759,10 +759,12 @@ export class ArenaScene extends Phaser.Scene {
     
     if (isDay7Claimed) this.add.text(day7X + (day7Width / 2) - 14, day7Y - (day7Height / 2) + 12, '✓', { fontFamily: 'Orbitron', fontSize: '18px', color: '#7dff9f' }).setOrigin(0.5).setDepth(254);
     if (!isDay7Claimed && !isComplete && nextClaimableDay === 7) {
-      day7Btn.setInteractive({ useHandCursor: true });
-      day7Btn.on('pointerover', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 1); });
-      day7Btn.on('pointerout', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 0.9); });
-      day7Btn.on('pointerdown', () => this.claimDailyReward(7));
+      const day7HitArea = this.add.rectangle(day7X, day7Y, day7Width, day7Height, 0x000000, 0.001)
+        .setDepth(254)
+        .setInteractive({ useHandCursor: true });
+      day7HitArea.on('pointerover', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 1); });
+      day7HitArea.on('pointerout', () => { if (!isDay7Claimed) day7Btn.setFillStyle(day7.color, 0.9); });
+      day7HitArea.on('pointerdown', () => this.claimDailyReward(7));
     }
     
     const day7Legendary = reward.day7LegendaryTitle ? ` • Day 7: ${reward.day7LegendaryTitle}` : '';
@@ -775,7 +777,8 @@ export class ArenaScene extends Phaser.Scene {
       .setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(254);
     closeBtn.on('pointerdown', () => {
       [overlay, panel, title, ...this.children.getAll()].forEach(node => {
-        if (node.depth >= 250 && node.depth <= 254) node.destroy();
+        const depth = 'depth' in node && typeof node.depth === 'number' ? node.depth : -1;
+        if (depth >= 250 && depth <= 254) node.destroy();
       });
       this.modalContainer = null;
     });
@@ -783,7 +786,8 @@ export class ArenaScene extends Phaser.Scene {
     this.modalContainer = this.add.container(0, 0, [overlay, panel, title, day7Btn, day7Text, status, closeBtn]).setDepth(250);
     this.setModalEsc(() => {
       [overlay, panel, title, ...this.children.getAll()].forEach(node => {
-        if (node.depth >= 250 && node.depth <= 254) node.destroy();
+        const depth = 'depth' in node && typeof node.depth === 'number' ? node.depth : -1;
+        if (depth >= 250 && depth <= 254) node.destroy();
       });
       this.modalContainer = null;
     });
@@ -799,7 +803,7 @@ export class ArenaScene extends Phaser.Scene {
     if (nextClaimableDay === null || day !== nextClaimableDay) {
       const waitingDay = Math.min(7, unlockedDay + 1);
       AlertManager.toast(this, { type: 'warning', message: day > unlockedDay ? `Day ${day} is locked. Come back tomorrow.` : `Claim Day ${nextClaimableDay} first.` });
-      if (day > unlockedDay && waitingDay <= 7) AlertManager.toast(this, { type: 'info', message: `Next reward unlocks on Day ${waitingDay}.` });
+      if (day > unlockedDay && waitingDay <= 7) AlertManager.toast(this, { type: 'warning', message: `Next reward unlocks on Day ${waitingDay}.` });
       return;
     }
     
