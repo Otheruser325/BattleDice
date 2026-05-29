@@ -5,15 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:launcher": "npm run launcher:prepare && vite",
-    "build": "tsc --noEmit && npm run launcher:prepare && vite build && npm run launcher:clean",
+    "dev:launcher": "npm run launcher:prepare && vite --host 127.0.0.1",
+    "build": "node scripts/build-with-playtest-cleanup.mjs",
     "preview": "vite preview",
     "launcher:prepare": "npm run bundle:playtest && npm run copy:playtest-assets",
     "launcher:clean": "node scripts/clean-playtest-assets.mjs",
     "bundle:playtest": "node scripts/build-playtest-bundle.mjs",
     "copy:playtest-assets": "node scripts/sync-playtest-assets.mjs",
     "clean:playtest-assets": "npm run launcher:clean",
-    "dev:clean": "npm run launcher:clean"
+    "dev:clean": "npm run launcher:clean",
+    "preview:launcher": "npm run launcher:prepare && vite --host 127.0.0.1"
   },
   "dependencies": {
     "@rivalis/browser": "^6.0.0",
