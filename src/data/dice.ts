@@ -356,21 +356,32 @@ const COPIES_BY_RARITY: Record<string, number> = {
 export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const existing = getShopState(scene);
   const currentDay = getDayNumber();
-  const existingFreebie = existing.offers.find((offer) => offer.isFreebie);
-  const freebieCopiesByRarity: Record<string, number> = { Common: 20, Uncommon: 10, Rare: 5 };
-  const existingFreebieUsesCurrentRules = Boolean(
-    existingFreebie &&
-    !existingFreebie.isCoinOffer &&
-    existingFreebie.rarity in freebieCopiesByRarity &&
-    existingFreebie.copies === freebieCopiesByRarity[existingFreebie.rarity]
-  );
-
-  if (existing.generatedDay === currentDay && existingFreebieUsesCurrentRules && existing.offers.some((offer) => offer.isDiceTokenOffer) && existing.offers.some((offer) => offer.isCasinoChipOffer)) {
-    return existing;
-  }
-
   const allDefs = getAllDiceDefinitions(scene);
   const eligible = allDefs.filter((d) => canReceiveUsefulCopies(scene, d.typeId));
+  const freebieCopiesByRarity: Record<string, number> = { Common: 20, Uncommon: 10, Rare: 5 };
+  const sanitizedExistingOffers = existing.offers.filter((offer) => {
+    if (offer.isDiceTokenOffer || offer.isCasinoChipOffer) return true;
+    if (!offer.typeId || !isTypeIdFetchable(scene, offer.typeId)) return false;
+    return offer.purchased || canReceiveUsefulCopies(scene, offer.typeId);
+  });
+  const sanitizedExisting: ShopState = sanitizedExistingOffers.length === existing.offers.length
+    ? existing
+    : { ...existing, offers: sanitizedExistingOffers };
+  if (sanitizedExisting !== existing) setShopState(scene, sanitizedExisting);
+
+  const existingFreebie = sanitizedExisting.offers.find((offer) => offer.isFreebie);
+  const existingFreebieUsesCurrentRules = eligible.length === 0
+    ? !existingFreebie
+    : Boolean(
+      existingFreebie &&
+      !existingFreebie.isCoinOffer &&
+      existingFreebie.rarity in freebieCopiesByRarity &&
+      existingFreebie.copies === freebieCopiesByRarity[existingFreebie.rarity]
+    );
+
+  if (sanitizedExisting.generatedDay === currentDay && existingFreebieUsesCurrentRules && sanitizedExisting.offers.some((offer) => offer.isDiceTokenOffer) && sanitizedExisting.offers.some((offer) => offer.isCasinoChipOffer)) {
+    return sanitizedExisting;
+  }
 
   const seed = currentDay;
   const seededRandom = (() => {
@@ -388,19 +399,21 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const freebieRoll = seededRandom();
   const freebieRarity = freebieRoll < 0.45 ? 'Common' : (freebieRoll < 0.75 ? 'Uncommon' : 'Rare');
   const freebieDef = shuffled.find((def) => def.rarity === freebieRarity) ?? shuffled.find((def) => ['Common', 'Uncommon', 'Rare'].includes(def.rarity));
-  offers.push({
-    id: 'freebie',
-    typeId: freebieDef?.typeId ?? '',
-    isCoinOffer: false,
-    copies: freebieCopiesByRarity[freebieDef?.rarity ?? freebieRarity] ?? 20,
-    coinAmount: 0,
-    diamondCost: 0,
-    rarity: freebieDef?.rarity ?? freebieRarity,
-    isFreebie: true,
-    purchased: false
-  });
+  if (freebieDef) {
+    offers.push({
+      id: 'freebie',
+      typeId: freebieDef.typeId,
+      isCoinOffer: false,
+      copies: freebieCopiesByRarity[freebieDef.rarity] ?? 20,
+      coinAmount: 0,
+      diamondCost: 0,
+      rarity: freebieDef.rarity,
+      isFreebie: true,
+      purchased: false
+    });
+  }
 
-  const slotDefs = shuffled.slice(1, 6);
+  const slotDefs = shuffled.filter((def) => def.typeId !== freebieDef?.typeId).slice(0, 5);
   while (slotDefs.length < 5) {
     const fallback = shuffled[Math.floor(seededRandom() * shuffled.length)];
     if (fallback) slotDefs.push(fallback);
