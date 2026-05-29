@@ -36,6 +36,10 @@ jobs:
       - name: Build Project
         env:
           REPO_FIX: ${{ vars.REPO_FIX }}
+          VITE_RIVALIS_WS_URL: ${{ vars.VITE_RIVALIS_WS_URL }}
+          VITE_RIVALIS_TICKET: ${{ secrets.VITE_RIVALIS_TICKET }}
+          VITE_RIVALIS_TICKET_SOURCE: ${{ vars.VITE_RIVALIS_TICKET_SOURCE }}
+          VITE_RIVALIS_RECONNECT_MAX: ${{ vars.VITE_RIVALIS_RECONNECT_MAX }}
         run: npm run build
 
       - name: Upload Build Artifacts
