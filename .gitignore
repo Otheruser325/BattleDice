@@ -21,3 +21,8 @@ pnpm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+# Generated Phaser Launcher playtest bundle
+/main.js
+/main.js.map
+/assets/
+/gamedata/

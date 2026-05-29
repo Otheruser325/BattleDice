@@ -1,0 +1,30 @@
+# Dependencies and local caches
+node_modules/
+.playtest/
+
+# Build outputs
+dist/
+
+# Generated Phaser Launcher playtest artifacts. These are created locally by
+# npm run launcher:prepare and should not be accidentally packed after playtesting.
+/main.js
+/main.js.map
+/assets/
+/gamedata/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
