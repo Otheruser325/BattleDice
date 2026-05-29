@@ -15,6 +15,26 @@ type ConnectionState = 'disabled' | 'connecting' | 'connected' | 'queued' | 'lob
 const RIVALIS_TICKET_SOURCES = ['query', 'protocol'] as const;
 type RivalisTicketSource = (typeof RIVALIS_TICKET_SOURCES)[number];
 
+function readTrimmedEnv(key: string): string {
+  const value = BUILD_ENV[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function getRivalisEndpointError(endpoint: string): string {
+  if (!endpoint) return 'Rivalis endpoint must be configured for multiplayer.';
+
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+      return 'Rivalis endpoint must start with ws:// or wss://.';
+    }
+  } catch {
+    return 'Rivalis endpoint is not a valid WebSocket URL.';
+  }
+
+  return '';
+}
+
 export interface ArenaMultiplayerStatus {
   state: ConnectionState;
   message: string;
@@ -46,20 +66,20 @@ export class ArenaMultiplayerClient {
   private readonly debug = DebugManager.scope('ArenaMultiplayer');
   private readonly encoder = new TextEncoder();
   private readonly decoder = new TextDecoder();
-  private readonly endpoint = typeof BUILD_ENV.VITE_RIVALIS_WS_URL === 'string' ? BUILD_ENV.VITE_RIVALIS_WS_URL.trim() : '';
-  private readonly ticket = typeof BUILD_ENV.VITE_RIVALIS_TICKET === 'string' ? BUILD_ENV.VITE_RIVALIS_TICKET.trim() : '';
+  private readonly endpoint = readTrimmedEnv('VITE_RIVALIS_WS_URL');
+  private readonly ticket = readTrimmedEnv('VITE_RIVALIS_TICKET');
+  private readonly endpointError = getRivalisEndpointError(this.endpoint);
   private readonly ticketSource: RivalisTicketSource = RIVALIS_TICKET_SOURCES.find((source) => source === BUILD_ENV.VITE_RIVALIS_TICKET_SOURCE) ?? 'query';
   private client: WSClient<ArenaMultiplayerTopic> | null = null;
+  private socketOpen = false;
   private pendingJoin: ArenaMultiplayerJoinOptions | null = null;
   private status: ArenaMultiplayerStatus = {
-    state: this.endpoint && this.ticket ? 'disconnected' : 'disabled',
-    message: this.endpoint && this.ticket
-      ? 'Rivalis ready.'
-      : 'Rivalis endpoint and ticket must be configured for multiplayer.'
+    state: this.configured ? 'disconnected' : 'disabled',
+    message: this.configured ? 'Rivalis ready.' : this.getConfigurationMessage()
   };
 
   get configured(): boolean {
-    return Boolean(this.endpoint && this.ticket);
+    return Boolean(!this.endpointError && this.ticket);
   }
 
   getStatus(): ArenaMultiplayerStatus {
@@ -68,12 +88,17 @@ export class ArenaMultiplayerClient {
 
   connect(onStatus?: (status: ArenaMultiplayerStatus) => void) {
     if (!this.configured) {
-      this.setStatus('disabled', 'Rivalis endpoint and ticket must be configured for multiplayer.', onStatus);
+      this.setStatus('disabled', this.getConfigurationMessage(), onStatus);
       return;
     }
 
-    if (this.client?.connected) {
+    if (this.socketOpen) {
       this.setStatus('connected', 'Connected to Rivalis.', onStatus);
+      return;
+    }
+
+    if (this.client) {
+      this.setStatus('connecting', 'Connecting to Rivalis...', onStatus);
       return;
     }
 
@@ -81,37 +106,70 @@ export class ArenaMultiplayerClient {
       reconnect: { maxAttempts: this.getReconnectMaxAttempts(), baseDelayMs: 500, maxDelayMs: 5000 },
       ticketSource: this.ticketSource
     });
-    this.client.on('client:connect', () => this.setStatus('connected', 'Connected to Rivalis.', onStatus));
+    this.client.on('client:connect', () => {
+      const pendingJoin = this.pendingJoin;
+      this.socketOpen = true;
+      this.setStatus('connected', 'Connected to Rivalis.', onStatus);
+      if (pendingJoin) this.sendJoin(pendingJoin);
+    });
     this.client.on('client:disconnect', (payload) => {
+      this.socketOpen = false;
       const reason = this.decoder.decode(payload);
       this.setStatus('disconnected', reason ? `Rivalis disconnected: ${reason}` : 'Rivalis disconnected.', onStatus);
     });
-    this.client.on('client:kicked', (info) => this.setStatus('failed', `Rivalis rejected the room: ${info.reason || info.code}`, onStatus));
+    this.client.on('client:kicked', (info) => {
+      this.socketOpen = false;
+      this.client = null;
+      this.setStatus('failed', `Rivalis rejected the room: ${info.reason || info.code}`, onStatus);
+    });
     this.client.on('client:reconnecting', (payload) => this.setStatus('connecting', `Reconnecting to Rivalis (${this.decoder.decode(payload)})...`, onStatus));
-    this.client.on('client:reconnect_failed', () => this.setStatus('failed', 'Rivalis reconnect failed.', onStatus));
+    this.client.on('client:reconnect_failed', () => {
+      this.socketOpen = false;
+      this.client = null;
+      this.setStatus('failed', 'Rivalis reconnect failed.', onStatus);
+    });
     this.client.on('arena:matchmaking:state', (payload) => this.handleServerState(payload, onStatus));
     this.client.on('arena:multiplayer:state', (payload) => this.handleServerState(payload, onStatus));
     this.client.on('arena:turn:state', () => this.debug.log('Received Rivalis turn state.'));
     this.setStatus('connecting', 'Connecting to Rivalis...', onStatus);
-    this.client.connect(this.ticket);
+    try {
+      this.client.connect(this.ticket);
+    } catch (error) {
+      this.socketOpen = false;
+      this.client = null;
+      const message = error instanceof Error ? error.message : 'Unable to start Rivalis connection.';
+      this.setStatus('failed', message, onStatus);
+    }
   }
 
   disconnect() {
     this.client?.disconnect();
     this.client = null;
+    this.socketOpen = false;
     this.pendingJoin = null;
     this.status = {
       state: this.configured ? 'disconnected' : 'disabled',
-      message: this.configured ? 'Rivalis disconnected.' : 'Rivalis endpoint and ticket must be configured for multiplayer.'
+      message: this.configured ? 'Rivalis disconnected.' : this.getConfigurationMessage()
     };
   }
 
   join(options: ArenaMultiplayerJoinOptions) {
     this.pendingJoin = options;
-    if (!this.client?.connected) {
-      this.debug.warn('Join skipped because Rivalis is not connected.', options);
+    if (!this.socketOpen) {
+      this.debug.warn('Join deferred because Rivalis is not connected yet.', options);
       return;
     }
+    this.sendJoin(options);
+  }
+
+  syncTurn(payload: unknown) {
+    if (!this.socketOpen || !this.client) return;
+    this.client.send('arena:turn:sync', this.encodeJson(payload));
+  }
+
+  private sendJoin(options: ArenaMultiplayerJoinOptions) {
+    if (!this.client || !this.socketOpen) return;
+
     const topic: ArenaMultiplayerTopic = options.mode === 'matchmaking'
       ? 'arena:matchmaking:join'
       : options.lobbyAction === 'create'
@@ -127,11 +185,6 @@ export class ArenaMultiplayerClient {
     this.debug.log(status.message);
   }
 
-  syncTurn(payload: unknown) {
-    if (!this.client?.connected) return;
-    this.client.send('arena:turn:sync', this.encodeJson(payload));
-  }
-
   private encodeJson(value: unknown): Uint8Array {
     return this.encoder.encode(JSON.stringify(value));
   }
@@ -139,6 +192,12 @@ export class ArenaMultiplayerClient {
   private getReconnectMaxAttempts(): number {
     const configured = Number(BUILD_ENV.VITE_RIVALIS_RECONNECT_MAX ?? 4);
     return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 4;
+  }
+
+  private getConfigurationMessage(): string {
+    if (this.endpointError) return this.endpointError;
+    if (!this.ticket) return 'Rivalis ticket must be configured for multiplayer.';
+    return 'Rivalis endpoint and ticket must be configured for multiplayer.';
   }
 
   private handleServerState(payload: Uint8Array, onStatus?: (status: ArenaMultiplayerStatus) => void) {
