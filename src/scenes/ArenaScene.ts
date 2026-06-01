@@ -2135,24 +2135,21 @@ export class ArenaScene extends Phaser.Scene {
     const seen = this.attackCountEffectSeenByInstance.get(die.instanceId);
     if (!seen) return [];
 
-    const hasPositive =
-      (this.combatAttackCountDeltaByInstance.get(die.instanceId) ?? 0) > 0 ||
-      (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0) > 0 ||
-      (this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0) > 0 ||
-      (this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1) > 1 ||
-      (this.combanityAttackMultiplierByInstance.get(die.instanceId)?.multiplier ?? 1) > 1 ||
-      (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) > 1 ||
-      (this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0) > 0;
-    const hasNegative =
-      (this.combatAttackCountDeltaByInstance.get(die.instanceId) ?? 0) < 0 ||
-      (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0) < 0 ||
-      (this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1) < 1 ||
-      (this.combanityAttackMultiplierByInstance.get(die.instanceId)?.multiplier ?? 1) < 1;
+    const basePips = die.ownerId === 'player'
+      ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
+      : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
+    const combatDelta = this.combatAttackCountDeltaByInstance.get(die.instanceId);
+    const additiveDelta = (combatDelta ?? (this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0))
+      + (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0)
+      + (this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0)
+      + Math.max(0, (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) - 1);
+    const multiplier = this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1;
+    const multiplierDelta = multiplier === 1 ? 0 : Math.floor(Math.max(0, basePips + additiveDelta) * multiplier) - Math.max(0, basePips + additiveDelta);
+    const attackCountDelta = additiveDelta + multiplierDelta;
 
-    const lines: Array<{ text: string; color: string }> = [];
-    if (seen.positive && hasPositive) lines.push({ text: 'Attack Count +', color: '#6dff8f' });
-    if (seen.negative && hasNegative) lines.push({ text: 'Attack Count -', color: '#ff6b6b' });
-    return lines;
+    if (attackCountDelta > 0 && seen.positive) return [{ text: `Attack Count +${attackCountDelta}`, color: '#6dff8f' }];
+    if (attackCountDelta < 0 && seen.negative) return [{ text: `Attack Count ${attackCountDelta}`, color: '#ff6b6b' }];
+    return [];
   }
 
   private computeAttackCount(instanceId: string, basePips: number, timeDelta = 0): number {
@@ -4969,10 +4966,9 @@ export class ArenaScene extends Phaser.Scene {
     const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const dmgNote = typeUpgradeMult > 1 ? ` • ${die.typeId} Upgrade DMG x${typeUpgradeMult.toFixed(2)}` : '';
     const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
     const visibleSkills = definition.skills.filter((skill) => !(skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') || classLevel >= 6);
-    const desc = this.add.text(width / 2, 86, `${visibleSkills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}${manaNote}${dmgNote}`, {
+    const desc = this.add.text(width / 2, 86, `${visibleSkills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}${manaNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
