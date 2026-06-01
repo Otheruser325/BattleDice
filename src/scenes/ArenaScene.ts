@@ -3376,7 +3376,8 @@ export class ArenaScene extends Phaser.Scene {
       !other.isDestroyed &&
       other.ownerId === die.ownerId &&
       other.instanceId !== die.instanceId &&
-      other.gridPosition
+      other.gridPosition &&
+      this.areDiceOnSameBoardSide(other, die)
     );
     return !allies.some((other) => {
       const dr = Math.abs(other.gridPosition!.row - die.gridPosition!.row);
@@ -3426,6 +3427,8 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
+    const targetBoardSide = this.getBoardSideForDie(target);
+    const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide);
     if (meta.splashDamage) {
       const targetBoardSide = this.getBoardSideForDie(target);
       const splashTargets = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).filter((die) =>
@@ -4164,9 +4167,8 @@ export class ArenaScene extends Phaser.Scene {
   private animateTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState, pattern: TranscendenceBeamPattern) {
     if (!attacker.gridPosition || !target.gridPosition) return;
 
-    const isPlayerAttacker = attacker.ownerId === 'player';
-    const attackerGrid = isPlayerAttacker ? this.playerGridContainer : this.enemyGridContainer;
-    const targetGrid = isPlayerAttacker ? this.enemyGridContainer : this.playerGridContainer;
+    const attackerGrid = this.getGridContainerForDie(attacker);
+    const targetGrid = this.getGridContainerForDie(target);
 
     const attackerX = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const attackerY = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
@@ -4565,6 +4567,7 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition);
     const damage = meta.beamDamage ?? 300;
     const targetPos = target.gridPosition;
+    const targetBoardSide = this.getBoardSideForDie(target);
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
     const targetBoardSide = this.getBoardSideForDie(target);
     const victims = this.getBoardDiceOnSide(enemyOwner, targetBoardSide).filter((die) =>

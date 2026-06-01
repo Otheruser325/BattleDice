@@ -9,7 +9,7 @@
     {
       "type": "Active",
       "title": "Meteor Strike",
-      "description": "Throws a striking meteor at a random foe, causing 120 damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern, lasting 3 turns. Foes standing on a lava tile take 50 damage at the start of combat.",
+      "description": "Throws a striking meteor at a random foe on the opposing board, causing 120 damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern for 3 turns. Foes standing on a lava tile take 50 damage at the start of combat.",
       "manaNeeded": 7,
       "modifiers": {
         "durationTurns": 3,
