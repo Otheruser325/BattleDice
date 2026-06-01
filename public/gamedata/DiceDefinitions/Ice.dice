@@ -8,7 +8,7 @@
     {
       "type": "Active",
       "title": "Chill Lock",
-      "description": "Deals 32 damage and immediately reduces the target's current attack count by 1 for 2 turns, down to 0.",
+      "description": "Deals 32 damage and immediately reduces the target's current attack count by 1 for 2 turns.",
       "manaNeeded": 6,
       "modifiers": {
         "attackDelta": -1,

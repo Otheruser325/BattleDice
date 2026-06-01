@@ -30,7 +30,7 @@
     {
       "type": "OnKill",
       "title": "Rage Or Nothing",
-      "description": "Leon gains +20% basic attack damage for each fallen foe. Bonus increases by 2% per class level. Unlocks at Leon Boss Level 6.",
+      "description": "Leon gains +20% basic attack damage for each fallen foe.",
       "modifiers": {
         "targetMaxHpBonusRate": 0.2,
         "notes": [

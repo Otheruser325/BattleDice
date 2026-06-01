@@ -2394,6 +2394,7 @@ export class ArenaScene extends Phaser.Scene {
         if (die.zone !== 'board' || die.isDestroyed) return die;
         const bonus = die.ownerId === 'player' ? player : enemy;
         this.combanityAttackMultiplierByInstance.set(die.instanceId, { multiplier: bonus.multiplier, turns: 1 });
+        this.recordAttackCountEffect(die.instanceId, bonus.multiplier - 1);
         this.damageReductionByInstance.set(die.instanceId, Phaser.Math.Clamp(bonus.reduction, 0, 0.95));
         return die;
       })
@@ -4409,8 +4410,8 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderDiceCardInfoPanel() {
     this.diceCardInfoContainer?.destroy(true);
-    const playerKeys = [...this.activeDiceCardKeysByOwner.player];
-    const enemyKeys = [...this.activeDiceCardKeysByOwner.enemy];
+    const playerKeys = [...this.activeDiceCardKeysByOwner.player].filter((key) => !this.isDiceCardTypeUpgradeKey(key));
+    const enemyKeys = [...this.activeDiceCardKeysByOwner.enemy].filter((key) => !this.isDiceCardTypeUpgradeKey(key));
     if (playerKeys.length === 0 && enemyKeys.length === 0) return;
     const y = this.scale.height - 30;
     const c = this.add.container(0, 0).setDepth(350);
