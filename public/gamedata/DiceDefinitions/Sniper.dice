@@ -8,7 +8,7 @@
     {
       "type": "Passive",
       "title": "Distance Mark",
-      "description": "Deal +20% damage for each tile of distance to the target (+0.5% per Class UP).",
+      "description": "Deal +20% damage for each tile of distance to the target.",
       "modifiers": {
         "distanceDamageBonusRatePerTile": 0.2
       }
