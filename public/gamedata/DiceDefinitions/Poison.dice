@@ -8,7 +8,7 @@
     {
       "type": "Active",
       "title": "Toxic Mark",
-      "description": "Applies 20 poison damage per turn for 3 turns (stacks).",
+      "description": "Deals direct toxic damage equal to its attack, then applies 20 poison damage per turn for 3 turns (stacks).",
       "manaNeeded": 5,
       "modifiers": {
         "durationTurns": 3,

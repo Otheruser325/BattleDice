@@ -177,7 +177,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `When isolated from adjacent allies, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
   }
   if (notes.includes('runtime:pierceBehind=1') && modifiers.pierceBehindRange !== undefined) {
-    return `Basic attacks also stab ${modifiers.pierceBehindRange} tile behind the target.`;
+    return `Basic attacks also stab ${modifiers.pierceBehindRange} ${modifiers.pierceBehindRange === 1 ? 'tile' : 'tiles'} behind the target.`;
   }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
     return `Deals ${scaleSkillDamage(modifiers.activeDamage)} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, down to 0.`;
@@ -188,10 +188,14 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deal ${scaleSkillDamage(modifiers.activeDamage)} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
   }
   if (modifiers.poisonDamage !== undefined) {
-    return `Deals direct toxic damage, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
+    return `Deals direct toxic damage equal to its attack, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
   if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
-    return `Throws striking meteors at random foes, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Drops lava pools on each epicentre lasting ${modifiers.durationTurns ?? 3} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
+    const turns = modifiers.durationTurns ?? (notes.includes('runtime:tripleMeteor') ? 4 : 3);
+    if (notes.includes('runtime:tripleMeteor')) {
+      return `Summons 3 magic meteors on random enemy-grid tiles, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Leaves lava on each epicentre for ${turns} turns that deals ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
+    }
+    return `Throws a striking meteor at a random foe, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern, lasting ${turns} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
     return `If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
