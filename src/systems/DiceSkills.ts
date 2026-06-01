@@ -64,6 +64,7 @@ export interface DiceSkillRuntimeMeta {
   hasLeonMightyRoar?: boolean;
   leonRageRate?: number;
   isLockedUntilClass6?: boolean;
+  disableManaGain?: boolean;
 }
 
 
@@ -163,7 +164,8 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     hasLeonFuriousClaw: allNotes.includes('runtime:leonFuriousClaw'),
     hasLeonMightyRoar: allNotes.includes('runtime:leonMightyRoar'),
     leonRageRate: allNotes.includes('runtime:leonRage') ? ((modifiers as { targetMaxHpBonusRate?: number } | undefined)?.targetMaxHpBonusRate ?? 0.2) : undefined,
-    isLockedUntilClass6: allNotes.includes('runtime:unlockAtClass6')
+    isLockedUntilClass6: allNotes.includes('runtime:unlockAtClass6'),
+    disableManaGain: Boolean((activeModifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain ?? (modifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain)
   };
 }
 
