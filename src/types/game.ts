@@ -41,6 +41,7 @@ export interface DiceSkillModifier {
   numAttacksBoosted?: number;
   numAttacksDamageMult?: number;
   manaGain?: number;
+  disableManaGain?: boolean;
 }
 
 
