@@ -8,7 +8,7 @@
     {
       "type": "Passive",
       "title": "Chain Spark",
-      "description": "Attacks chain onto a nearby target in a 2-tile radius for 16 bonus damage.",
+      "description": "Attacks chain onto another foe on the target's board within 2 tiles for 16 bonus damage.",
       "modifiers": {
         "chainDamage": 16,
         "notes": [

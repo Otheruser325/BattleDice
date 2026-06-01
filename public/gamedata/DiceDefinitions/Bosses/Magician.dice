@@ -21,7 +21,7 @@
     {
       "type": "Active",
       "title": "Spell Strike",
-      "description": "Summons 3 magic meteors on random player-grid tiles, causing 200 damage in plus patterns. Leaves lava on each epicentre for 4 turns that deals 100 damage.",
+      "description": "Summons 3 magic meteors on random opposing-board tiles, causing 200 damage in plus patterns. Leaves lava on each epicentre for 4 turns. Foes standing on lava take 100 damage at combat start.",
       "manaNeeded": 12,
       "modifiers": {
         "meteorDamage": 200,
