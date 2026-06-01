@@ -2713,6 +2713,20 @@ export class ArenaScene extends Phaser.Scene {
   private getBoardDiceOnSide(ownerId: 'player' | 'enemy', boardSide: 'player' | 'enemy'): DiceInstanceState[] {
     return getBoardDice(this.gameState, ownerId).filter((die) => this.getBoardSideForDie(die) === boardSide);
   }
+
+  private getLivingDiceOnBoardSide(boardSide: 'player' | 'enemy'): DiceInstanceState[] {
+    return this.gameState.dice.filter((die) =>
+      die.zone === 'board' &&
+      !die.isDestroyed &&
+      die.gridPosition &&
+      this.getBoardSideForDie(die) === boardSide
+    );
+  }
+
+  private areDiceOnSameBoardSide(first: DiceInstanceState, second: DiceInstanceState): boolean {
+    return this.getBoardSideForDie(first) === this.getBoardSideForDie(second);
+  }
+
   private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
     if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
     const attackerSide = this.getBoardSideForDie(attacker);
@@ -2815,6 +2829,7 @@ export class ArenaScene extends Phaser.Scene {
       const tileKey = `${boardSide}:${die.gridPosition!.row},${die.gridPosition!.col}`;
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
+        if (pool.sourceOwnerId && die.ownerId === pool.sourceOwnerId) return;
         const sourceProxy: DiceInstanceState = { ...die, ownerId: pool.sourceOwnerId ?? die.ownerId, typeId: pool.sourceTypeId ?? die.typeId };
         const lavaMultiplier = this.getCombanityDamageMultiplier(sourceProxy, die) * this.getDiceCardSkillDamageMultiplier(sourceProxy);
         const finalDamage = Math.max(1, Math.floor(pool.damage * lavaMultiplier));
@@ -3428,10 +3443,9 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
     const targetBoardSide = this.getBoardSideForDie(target);
-    const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide);
+    const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.ownerId === target.ownerId);
     if (meta.splashDamage) {
-      const targetBoardSide = this.getBoardSideForDie(target);
-      const splashTargets = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).filter((die) =>
+      const splashTargets = boardSideTargets.filter((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
@@ -3448,8 +3462,7 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (meta.chainDamage) {
-      const targetBoardSide = this.getBoardSideForDie(target);
-      const chainTarget = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).find((die) =>
+      const chainTarget = boardSideTargets.find((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 2 &&
@@ -3499,7 +3512,7 @@ export class ArenaScene extends Phaser.Scene {
       const wizardMana = wizardSlot?.manaNeeded ?? 18;
       const currentMana = wizardSlot?.mana ?? 0;
       if (currentMana >= wizardMana) {
-        const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getBossMinionClassLevel(attacker));
+        const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getSummonedMinionClassLevel(attacker));
         if (wizard) {
           this.resetActiveMana(attacker.instanceId, wizardSlot?.key);
           this.combatLog.setText(`🪄 ${attacker.typeId} summons a Wizard Dice!`);
@@ -3515,6 +3528,7 @@ export class ArenaScene extends Phaser.Scene {
       if (currentMana >= manaNeeded) {
         const attackerBoardSide = this.getBoardSideForDie(attacker);
         const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
+        const enemyOwner: 'player' | 'enemy' = attacker.ownerId === 'player' ? 'enemy' : 'player';
         const isMagicianMeteor = definition.typeId === 'Magician';
         const meteorCount = isMagicianMeteor ? 3 : 1;
         const meteorDamage = meta.meteorDamage ?? 60;
@@ -3524,7 +3538,7 @@ export class ArenaScene extends Phaser.Scene {
         for (let meteorIndex = 0; meteorIndex < meteorCount; meteorIndex++) {
           const origin = isMagicianMeteor
             ? this.pickRandomGridTile()
-            : this.pickRandomOccupiedTile(targetBoardSide);
+            : this.pickRandomOccupiedTile(targetBoardSide, enemyOwner);
           if (!origin) break;
           this.animateMeteorImpact(targetBoardSide, origin);
           await this.delayCombatVisualPaced(1000);
@@ -3536,7 +3550,7 @@ export class ArenaScene extends Phaser.Scene {
           });
           impactTiles.forEach((tile) => {
             const victim = this.gameState.dice.find((d) =>
-              d.zone === 'board' && !d.isDestroyed && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
+              d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
               && this.getBoardSideForDie(d) === targetBoardSide);
             if (!victim) return;
             const hit = applyDirectDamage(victim, meteorDamage);
@@ -3592,7 +3606,7 @@ export class ArenaScene extends Phaser.Scene {
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
     if (meta.canSummonImp) {
       if (canCastActive) {
-        const imp = this.summonMinionForOwner(attacker.ownerId, 'Imp', this.getBossMinionClassLevel(attacker));
+        const imp = this.summonMinionForOwner(attacker.ownerId, 'Imp', this.getSummonedMinionClassLevel(attacker));
         if (imp) {
           this.resetActiveMana(attacker.instanceId, activeSlot?.key);
           this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
@@ -3894,9 +3908,8 @@ export class ArenaScene extends Phaser.Scene {
     return minion;
   }
 
-  private getBossMinionClassLevel(parent: DiceInstanceState): number {
-    const parentClassLevel = this.instanceClassLevels.get(parent.instanceId) ?? 1;
-    return Math.max(1, parentClassLevel - 5);
+  private getSummonedMinionClassLevel(parent: DiceInstanceState): number {
+    return this.instanceClassLevels.get(parent.instanceId) ?? 1;
   }
 
   private summonDeuciferBoss() {
@@ -4066,9 +4079,13 @@ export class ArenaScene extends Phaser.Scene {
     return { row: Phaser.Math.Between(0, GRID_SIZE - 1), col: Phaser.Math.Between(0, GRID_SIZE - 1) };
   }
 
-  private pickRandomOccupiedTile(boardSide: 'player' | 'enemy'): { row: number; col: number } | null {
+  private pickRandomOccupiedTile(boardSide: 'player' | 'enemy', ownerId?: 'player' | 'enemy'): { row: number; col: number } | null {
     const candidates = this.gameState.dice.filter((die) =>
-      die.zone === 'board' && !die.isDestroyed && die.gridPosition && this.getBoardSideForDie(die) === boardSide
+      die.zone === 'board' &&
+      !die.isDestroyed &&
+      die.gridPosition &&
+      this.getBoardSideForDie(die) === boardSide &&
+      (ownerId === undefined || die.ownerId === ownerId)
     );
     if (candidates.length === 0) return null;
     const picked = candidates[Phaser.Math.Between(0, candidates.length - 1)]!;
@@ -4331,10 +4348,14 @@ export class ArenaScene extends Phaser.Scene {
     return { icon: '🎴', title: name, rarity, desc: '' };
   }
 
+  private isDiceCardTypeUpgradeKey(key: string): boolean {
+    return (key.split(':')[0] ?? '').endsWith(' Upgrade');
+  }
+
   private renderDiceCardInfoPanel() {
     this.diceCardInfoContainer?.destroy(true);
-    const playerKeys = [...this.activeDiceCardKeysByOwner.player];
-    const enemyKeys = [...this.activeDiceCardKeysByOwner.enemy];
+    const playerKeys = [...this.activeDiceCardKeysByOwner.player].filter((key) => !this.isDiceCardTypeUpgradeKey(key));
+    const enemyKeys = [...this.activeDiceCardKeysByOwner.enemy].filter((key) => !this.isDiceCardTypeUpgradeKey(key));
     if (playerKeys.length === 0 && enemyKeys.length === 0) return;
     const y = this.scale.height - 30;
     const c = this.add.container(0, 0).setDepth(350);
@@ -4392,7 +4413,8 @@ export class ArenaScene extends Phaser.Scene {
       const shieldHp = this.shieldHpByInstance.get(diceUnit.instanceId) ?? 0;
       const shieldTag = shieldHp > 0 ? ` | SH ${shieldHp}` : '';
       const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${shieldTag}${visual ? ` ${visual.symbol}` : ''}`;
-      panel.add(this.add.text(0, 36 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
+      const classLabel = this.isBossDie(diceUnit) ? '' : ` C${classLevel}/15`;
+      panel.add(this.add.text(0, 36 + index * 16, `${diceUnit.typeId}${classLabel}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
     });
   }
 

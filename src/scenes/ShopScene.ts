@@ -15,7 +15,6 @@ import {
   setShopState,
   getShopState,
   getAllDiceDefinitions,
-  canReceiveUsefulCopies,
   type ShopOffer,
   type ShopState
 } from '../data/dice';
