@@ -121,6 +121,8 @@ export class ArenaScene extends Phaser.Scene {
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private basicAttacksPerAttackByInstance: Map<string, { count: number; turns: number }> = new Map();
+  private combatAttackCountDeltaByInstance: Map<string, number> = new Map();
+  private attackCountEffectSeenByInstance: Map<string, { positive: boolean; negative: boolean }> = new Map();
   private manaPausedTurnsByInstance: Map<string, number> = new Map();
   private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
@@ -214,6 +216,8 @@ export class ArenaScene extends Phaser.Scene {
     this.extraAttackTurnsByInstance.clear();
     this.attackMultiplierTurnsByInstance.clear();
     this.basicAttacksPerAttackByInstance.clear();
+    this.combatAttackCountDeltaByInstance.clear();
+    this.attackCountEffectSeenByInstance.clear();
     this.manaPausedTurnsByInstance.clear();
     this.combanityAttackMultiplierByInstance.clear();
     this.damageReductionByInstance.clear();
@@ -2118,6 +2122,36 @@ export class ArenaScene extends Phaser.Scene {
   }
 
 
+  private recordAttackCountEffect(instanceId: string, delta: number) {
+    if (delta === 0) return;
+    const seen = this.attackCountEffectSeenByInstance.get(instanceId) ?? { positive: false, negative: false };
+    this.attackCountEffectSeenByInstance.set(instanceId, {
+      positive: seen.positive || delta > 0,
+      negative: seen.negative || delta < 0
+    });
+  }
+
+  private getAttackCountBuffLines(die: DiceInstanceState): Array<{ text: string; color: string }> {
+    const seen = this.attackCountEffectSeenByInstance.get(die.instanceId);
+    if (!seen) return [];
+
+    const basePips = die.ownerId === 'player'
+      ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
+      : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
+    const combatDelta = this.combatAttackCountDeltaByInstance.get(die.instanceId);
+    const additiveDelta = (combatDelta ?? (this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0))
+      + (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0)
+      + (this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0)
+      + Math.max(0, (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) - 1);
+    const multiplier = this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1;
+    const multiplierDelta = multiplier === 1 ? 0 : Math.floor(Math.max(0, basePips + additiveDelta) * multiplier) - Math.max(0, basePips + additiveDelta);
+    const attackCountDelta = additiveDelta + multiplierDelta;
+
+    if (attackCountDelta > 0 && seen.positive) return [{ text: `Attack Count +${attackCountDelta}`, color: '#6dff8f' }];
+    if (attackCountDelta < 0 && seen.negative) return [{ text: `Attack Count ${attackCountDelta}`, color: '#ff6b6b' }];
+    return [];
+  }
+
   private computeAttackCount(instanceId: string, basePips: number, timeDelta = 0): number {
     const debuff = this.attackDeltaByInstance.get(instanceId)?.delta ?? 0;
     const buff = this.extraAttackTurnsByInstance.get(instanceId)?.extra ?? 0;
@@ -2282,11 +2316,16 @@ export class ArenaScene extends Phaser.Scene {
         if (definition && getRuntimeSkillMeta(definition).hasTranscendence && basePips === 6) {
           this.transcendenceTransformed.add(die.instanceId);
         }
-        const pips = basePips + combatStartBonusFor(die);
+        const combatStartBonus = combatStartBonusFor(die);
+        const pips = basePips + combatStartBonus;
         const allyPipAttackAuras = die.ownerId === 'player' ? playerPipAttackAuras : enemyPipAttackAuras;
         const foePipAttackAuras = die.ownerId === 'player' ? enemyPipAttackAuras : playerPipAttackAuras;
         const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, die, 'ally') + sumMatchingDelta(foePipAttackAuras, die, 'foe');
         if (pipAuraDelta !== 0) this.animateTimeMark(die, pipAuraDelta > 0 ? 0x8fd5ff : 0xff6b6b);
+        const permanentAttackCount = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
+        const combatAttackCountDelta = combatStartBonus + pipAuraDelta + permanentAttackCount;
+        this.combatAttackCountDeltaByInstance.set(die.instanceId, combatAttackCountDelta);
+        this.recordAttackCountEffect(die.instanceId, combatAttackCountDelta);
         const withPermanent = this.computeAttackCount(die.instanceId, pips, pipAuraDelta);
         const stunned = this.stunnedByInstance.has(die.instanceId);
         const mightyRoar = shouldMightyRoar(die);
@@ -2713,6 +2752,20 @@ export class ArenaScene extends Phaser.Scene {
   private getBoardDiceOnSide(ownerId: 'player' | 'enemy', boardSide: 'player' | 'enemy'): DiceInstanceState[] {
     return getBoardDice(this.gameState, ownerId).filter((die) => this.getBoardSideForDie(die) === boardSide);
   }
+
+  private getLivingDiceOnBoardSide(boardSide: 'player' | 'enemy'): DiceInstanceState[] {
+    return this.gameState.dice.filter((die) =>
+      die.zone === 'board' &&
+      !die.isDestroyed &&
+      die.gridPosition &&
+      this.getBoardSideForDie(die) === boardSide
+    );
+  }
+
+  private areDiceOnSameBoardSide(first: DiceInstanceState, second: DiceInstanceState): boolean {
+    return this.getBoardSideForDie(first) === this.getBoardSideForDie(second);
+  }
+
   private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
     if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
     const attackerSide = this.getBoardSideForDie(attacker);
@@ -2815,6 +2868,7 @@ export class ArenaScene extends Phaser.Scene {
       const tileKey = `${boardSide}:${die.gridPosition!.row},${die.gridPosition!.col}`;
       const pool = this.lavaPoolsByTile.get(tileKey);
       if (pool) {
+        if (pool.sourceOwnerId && die.ownerId === pool.sourceOwnerId) return;
         const sourceProxy: DiceInstanceState = { ...die, ownerId: pool.sourceOwnerId ?? die.ownerId, typeId: pool.sourceTypeId ?? die.typeId };
         const lavaMultiplier = this.getCombanityDamageMultiplier(sourceProxy, die) * this.getDiceCardSkillDamageMultiplier(sourceProxy);
         const finalDamage = Math.max(1, Math.floor(pool.damage * lavaMultiplier));
@@ -3007,6 +3061,7 @@ export class ArenaScene extends Phaser.Scene {
 
         let damage = 0;
         let targetDefeated = false;
+        let basicAttackVisualCount = 1;
 
         if (!skipBasicAttack) {
           if (beamLine && (!forcedTarget || forcedTarget.instanceId === beamLine.target.instanceId)) {
@@ -3064,6 +3119,7 @@ export class ArenaScene extends Phaser.Scene {
                 this.applyOnDeathSkillEffects(target, attacker);
                 this.handleDefeatedDie(target, true);
               }
+              basicAttackVisualCount = Math.max(basicAttackVisualCount, 2);
               const nextRem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
               if (nextRem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, nextRem - 1);
             }
@@ -3093,7 +3149,7 @@ export class ArenaScene extends Phaser.Scene {
             : `${ownerName} ${attacker.typeId} attacks ${target.typeId} for ${damage} damage!${targetDefeated ? ' DESTROYED!' : ''}`
         );
 
-        if (!beamTarget && !skipBasicAttack) this.animateAttack(attacker, target);
+        if (!beamTarget && !skipBasicAttack) this.animateBasicAttackSequence(attacker, target, basicAttackVisualCount);
         this.renderDice();
         this.renderEnemyDice();
         this.syncBerserkSfxState();
@@ -3123,6 +3179,7 @@ export class ArenaScene extends Phaser.Scene {
     this.applyFountainOfLoveCombatEndHealing();
     this.applyTimedSkillDecay();
     this.gameState = resolveCombatPhase(this.gameState);
+    this.combatAttackCountDeltaByInstance.clear();
     this.applyTurnBasedEffects();
     this.renderDice();
     this.renderEnemyDice();
@@ -3428,10 +3485,9 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
     const targetBoardSide = this.getBoardSideForDie(target);
-    const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide);
+    const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.ownerId === target.ownerId);
     if (meta.splashDamage) {
-      const targetBoardSide = this.getBoardSideForDie(target);
-      const splashTargets = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).filter((die) =>
+      const splashTargets = boardSideTargets.filter((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
@@ -3448,8 +3504,7 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (meta.chainDamage) {
-      const targetBoardSide = this.getBoardSideForDie(target);
-      const chainTarget = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).find((die) =>
+      const chainTarget = boardSideTargets.find((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 2 &&
@@ -3499,7 +3554,7 @@ export class ArenaScene extends Phaser.Scene {
       const wizardMana = wizardSlot?.manaNeeded ?? 18;
       const currentMana = wizardSlot?.mana ?? 0;
       if (currentMana >= wizardMana) {
-        const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getBossMinionClassLevel(attacker));
+        const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getSummonedMinionClassLevel(attacker));
         if (wizard) {
           this.resetActiveMana(attacker.instanceId, wizardSlot?.key);
           this.combatLog.setText(`🪄 ${attacker.typeId} summons a Wizard Dice!`);
@@ -3515,6 +3570,7 @@ export class ArenaScene extends Phaser.Scene {
       if (currentMana >= manaNeeded) {
         const attackerBoardSide = this.getBoardSideForDie(attacker);
         const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
+        const enemyOwner: 'player' | 'enemy' = attacker.ownerId === 'player' ? 'enemy' : 'player';
         const isMagicianMeteor = definition.typeId === 'Magician';
         const meteorCount = isMagicianMeteor ? 3 : 1;
         const meteorDamage = meta.meteorDamage ?? 60;
@@ -3524,7 +3580,7 @@ export class ArenaScene extends Phaser.Scene {
         for (let meteorIndex = 0; meteorIndex < meteorCount; meteorIndex++) {
           const origin = isMagicianMeteor
             ? this.pickRandomGridTile()
-            : this.pickRandomOccupiedTile(targetBoardSide);
+            : this.pickRandomOccupiedTile(targetBoardSide, enemyOwner);
           if (!origin) break;
           this.animateMeteorImpact(targetBoardSide, origin);
           await this.delayCombatVisualPaced(1000);
@@ -3536,7 +3592,7 @@ export class ArenaScene extends Phaser.Scene {
           });
           impactTiles.forEach((tile) => {
             const victim = this.gameState.dice.find((d) =>
-              d.zone === 'board' && !d.isDestroyed && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
+              d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
               && this.getBoardSideForDie(d) === targetBoardSide);
             if (!victim) return;
             const hit = applyDirectDamage(victim, meteorDamage);
@@ -3592,7 +3648,7 @@ export class ArenaScene extends Phaser.Scene {
     const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
     if (meta.canSummonImp) {
       if (canCastActive) {
-        const imp = this.summonMinionForOwner(attacker.ownerId, 'Imp', this.getBossMinionClassLevel(attacker));
+        const imp = this.summonMinionForOwner(attacker.ownerId, 'Imp', this.getSummonedMinionClassLevel(attacker));
         if (imp) {
           this.resetActiveMana(attacker.instanceId, activeSlot?.key);
           this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
@@ -3657,6 +3713,7 @@ export class ArenaScene extends Phaser.Scene {
           dice: this.gameState.dice.map((die) => {
             if (die.instanceId !== freshTarget.instanceId || die.isDestroyed || die.attacksRemaining <= 0) return die;
             const attacksRemaining = Math.max(0, die.attacksRemaining - 1);
+            this.recordAttackCountEffect(die.instanceId, -1);
             return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
           })
         };
@@ -3698,9 +3755,11 @@ export class ArenaScene extends Phaser.Scene {
           AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
         }
         this.basicAttacksPerAttackByInstance.set(attacker.instanceId, { count: 2, turns: activeDurationTurns });
-        this.manaPausedTurnsByInstance.set(attacker.instanceId, activeDurationTurns);
+        this.recordAttackCountEffect(attacker.instanceId, 1);
+        if (meta.disableManaGain) this.manaPausedTurnsByInstance.set(attacker.instanceId, activeDurationTurns);
       } else {
         this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: activeDurationTurns });
+        this.recordAttackCountEffect(attacker.instanceId, meta.activeExtraAttacks!);
       }
     }
     if ((meta.armorShredRate ?? 0) > 0 && activeDurationTurns !== undefined) {
@@ -3708,6 +3767,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     if ((meta.activeAttackDelta ?? 0) !== 0 && activeDurationTurns !== undefined) {
       this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: activeDurationTurns });
+      this.recordAttackCountEffect(target.instanceId, meta.activeAttackDelta!);
       if (attacker.typeId === 'Ice') this.animateSkillEffect('ice', attacker, target);
     }
     this.resetActiveMana(attacker.instanceId, activeSlot?.key);
@@ -3765,8 +3825,10 @@ export class ArenaScene extends Phaser.Scene {
         if (meta.hasGrowthPermanent) {
           const current = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
           this.permanentAttackBonusByInstance.set(die.instanceId, current + 1);
+          this.recordAttackCountEffect(die.instanceId, 1);
         }
 
+        if (bonus > 0) this.recordAttackCountEffect(die.instanceId, bonus);
         return bonus > 0 ? { ...die, attacksRemaining: Math.max(0, die.attacksRemaining + bonus) } : die;
       })
     };
@@ -3894,9 +3956,8 @@ export class ArenaScene extends Phaser.Scene {
     return minion;
   }
 
-  private getBossMinionClassLevel(parent: DiceInstanceState): number {
-    const parentClassLevel = this.instanceClassLevels.get(parent.instanceId) ?? 1;
-    return Math.max(1, parentClassLevel - 5);
+  private getSummonedMinionClassLevel(parent: DiceInstanceState): number {
+    return this.instanceClassLevels.get(parent.instanceId) ?? 1;
   }
 
   private summonDeuciferBoss() {
@@ -4066,9 +4127,13 @@ export class ArenaScene extends Phaser.Scene {
     return { row: Phaser.Math.Between(0, GRID_SIZE - 1), col: Phaser.Math.Between(0, GRID_SIZE - 1) };
   }
 
-  private pickRandomOccupiedTile(boardSide: 'player' | 'enemy'): { row: number; col: number } | null {
+  private pickRandomOccupiedTile(boardSide: 'player' | 'enemy', ownerId?: 'player' | 'enemy'): { row: number; col: number } | null {
     const candidates = this.gameState.dice.filter((die) =>
-      die.zone === 'board' && !die.isDestroyed && die.gridPosition && this.getBoardSideForDie(die) === boardSide
+      die.zone === 'board' &&
+      !die.isDestroyed &&
+      die.gridPosition &&
+      this.getBoardSideForDie(die) === boardSide &&
+      (ownerId === undefined || die.ownerId === ownerId)
     );
     if (candidates.length === 0) return null;
     const picked = candidates[Phaser.Math.Between(0, candidates.length - 1)]!;
@@ -4130,6 +4195,13 @@ export class ArenaScene extends Phaser.Scene {
     const x = grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     const y = grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
     AnimationManager.animateDeathTransform(this, x, y);
+  }
+
+  private animateBasicAttackSequence(attacker: DiceInstanceState, target: DiceInstanceState, count = 1) {
+    const attackCount = Math.max(1, Math.floor(count));
+    for (let index = 0; index < attackCount; index++) {
+      this.time.delayedCall(index * 120, () => this.animateAttack(attacker, target));
+    }
   }
 
   private animateAttack(attacker: DiceInstanceState, target: DiceInstanceState) {
@@ -4331,6 +4403,10 @@ export class ArenaScene extends Phaser.Scene {
     return { icon: '🎴', title: name, rarity, desc: '' };
   }
 
+  private isDiceCardTypeUpgradeKey(key: string): boolean {
+    return (key.split(':')[0] ?? '').endsWith(' Upgrade');
+  }
+
   private renderDiceCardInfoPanel() {
     this.diceCardInfoContainer?.destroy(true);
     const playerKeys = [...this.activeDiceCardKeysByOwner.player];
@@ -4392,7 +4468,8 @@ export class ArenaScene extends Phaser.Scene {
       const shieldHp = this.shieldHpByInstance.get(diceUnit.instanceId) ?? 0;
       const shieldTag = shieldHp > 0 ? ` | SH ${shieldHp}` : '';
       const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${shieldTag}${visual ? ` ${visual.symbol}` : ''}`;
-      panel.add(this.add.text(0, 36 + index * 16, `${diceUnit.typeId} C${classLevel}/15: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
+      const classLabel = this.isBossDie(diceUnit) ? '' : ` C${classLevel}/15`;
+      panel.add(this.add.text(0, 36 + index * 16, `${diceUnit.typeId}${classLabel}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
     });
   }
 
@@ -4465,7 +4542,11 @@ export class ArenaScene extends Phaser.Scene {
       this.playSkillSfxForDie(attacker, meta);
       this.gameState = {
         ...this.gameState,
-        dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
+        dice: this.gameState.dice.map((die) => {
+          if (die.instanceId !== attacker.instanceId) return die;
+          this.recordAttackCountEffect(die.instanceId, bonus);
+          return { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false };
+        })
       };
     }
     if (meta.hasJudgmentHammer) {
@@ -4530,7 +4611,11 @@ export class ArenaScene extends Phaser.Scene {
     if (!ally) return;
     this.gameState = {
       ...this.gameState,
-      dice: this.gameState.dice.map((die) => die.instanceId === ally.instanceId ? { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false } : die)
+      dice: this.gameState.dice.map((die) => {
+        if (die.instanceId !== ally.instanceId) return die;
+        this.recordAttackCountEffect(die.instanceId, bonus);
+        return { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false };
+      })
     };
   }
 
@@ -4864,7 +4949,8 @@ export class ArenaScene extends Phaser.Scene {
     this.dieInfoPopup?.destroy(true);
     const { width } = this.scale;
     const activeBuffs = this.getActiveBuffSummaryForDie(die);
-    const panelHeight = activeBuffs.length > 0 ? 156 : 112;
+    const attackCountBuffs = this.getAttackCountBuffLines(die);
+    const panelHeight = activeBuffs.length > 0 || attackCountBuffs.length > 0 ? 156 + Math.max(0, attackCountBuffs.length - 1) * 14 : 112;
     const panel = this.add.rectangle(width / 2, 76, 560, panelHeight, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
     const typeUpgradeMult = this.getTypeUpgradeMultiplier(die);
     const effectiveAtk = Math.max(1, Math.floor(definition.attack * typeUpgradeMult));
@@ -4879,18 +4965,18 @@ export class ArenaScene extends Phaser.Scene {
     const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
     const manaNote = definition.skills.some((skill) => (skill.manaNeeded ?? 0) > 0) ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const dmgNote = typeUpgradeMult > 1 ? ` • ${die.typeId} Upgrade DMG x${typeUpgradeMult.toFixed(2)}` : '';
     const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
     const visibleSkills = definition.skills.filter((skill) => !(skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') || classLevel >= 6);
-    const desc = this.add.text(width / 2, 86, `${visibleSkills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}${manaNote}${dmgNote}`, {
+    const desc = this.add.text(width / 2, 86, `${visibleSkills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}${manaNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
       wordWrap: { width: 530 }
     }).setOrigin(0.5);
     const popupElements: Phaser.GameObjects.GameObject[] = [panel, stats, desc];
+    let nextBuffY = 122;
     if (activeBuffs.length > 0) {
-      const buffs = this.add.text(width / 2, 122, `Active Buffs: ${activeBuffs.join('  •  ')}`, {
+      const buffs = this.add.text(width / 2, nextBuffY, `Active Buffs: ${activeBuffs.join('  •  ')}`, {
         fontFamily: 'Orbitron',
         fontSize: '10px',
         color: '#f0c36a',
@@ -4898,7 +4984,17 @@ export class ArenaScene extends Phaser.Scene {
         wordWrap: { width: 530 }
       }).setOrigin(0.5, 0);
       popupElements.push(buffs);
+      nextBuffY += 16;
     }
+    attackCountBuffs.forEach((buff, index) => {
+      const label = this.add.text(width / 2, nextBuffY + index * 14, buff.text, {
+        fontFamily: 'Orbitron',
+        fontSize: '10px',
+        color: buff.color,
+        align: 'center'
+      }).setOrigin(0.5, 0);
+      popupElements.push(label);
+    });
     this.dieInfoPopup = this.add.container(0, 0, popupElements).setDepth(330).setScale(0.96).setAlpha(0);
     this.dieInfoPopupInstanceId = die.instanceId;
     this.tweens.add({ targets: this.dieInfoPopup, alpha: 1, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.Out' });

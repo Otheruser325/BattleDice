@@ -13,6 +13,7 @@
       "modifiers": {
         "extraAttacks": 2,
         "durationTurns": 2,
+        "disableManaGain": true,
         "notes": [
           "runtime:skillSfx=dice_wind_skill"
         ]
