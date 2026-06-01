@@ -10,6 +10,7 @@ import {
   setDiceTokens,
   getDiceProgress,
   grantDiceCopies,
+  canReceiveUsefulCopies,
   generateOrGetShopOffers,
   setShopState,
   getShopState,
@@ -110,7 +111,7 @@ export class ShopScene extends Phaser.Scene {
           const targetOffer = shopState.offers[offerIdx];
           if (targetOffer.purchased && !this.isInfiniteCurrencyOffer(offer)) return;
           if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
-          if (offer.isFreebie && !this.isClaimableDiceCopyFreebie(offer)) return;
+          if (offer.isFreebie && (offer.isCoinOffer || offer.isDiceTokenOffer || offer.isCasinoChipOffer || !offer.typeId || !canReceiveUsefulCopies(this, offer.typeId))) return;
 
           const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
           const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);

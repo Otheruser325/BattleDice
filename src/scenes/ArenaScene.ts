@@ -2710,23 +2710,9 @@ export class ArenaScene extends Phaser.Scene {
     return this.getBoardSideForDie(die) === 'player' ? this.playerGridContainer : this.enemyGridContainer;
   }
 
-  private areDiceOnSameBoardSide(a: DiceInstanceState, b: DiceInstanceState): boolean {
-    return this.getBoardSideForDie(a) === this.getBoardSideForDie(b);
+  private getBoardDiceOnSide(ownerId: 'player' | 'enemy', boardSide: 'player' | 'enemy'): DiceInstanceState[] {
+    return getBoardDice(this.gameState, ownerId).filter((die) => this.getBoardSideForDie(die) === boardSide);
   }
-
-  private getLivingDiceOnBoardSide(boardSide: 'player' | 'enemy'): DiceInstanceState[] {
-    return this.gameState.dice.filter((die) =>
-      die.zone === 'board' &&
-      !die.isDestroyed &&
-      die.gridPosition &&
-      this.getBoardSideForDie(die) === boardSide
-    );
-  }
-
-  private getBossProportionalDamageMultiplier(target: DiceInstanceState): number {
-    return this.isBossDie(target) ? 0.25 : 1;
-  }
-
   private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
     if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
     const attackerSide = this.getBoardSideForDie(attacker);
@@ -2930,7 +2916,7 @@ export class ArenaScene extends Phaser.Scene {
         const attackerMeta = getRuntimeSkillMeta(this.getDefinitionForInstance(assassin)!);
         const ironRate = attackerMeta?.targetCurrentHpBonusRate ?? 0;
         const ironBaseBonus = Math.max(0, Math.floor(target.currentHealth * ironRate));
-        const ironBonus = Math.floor(ironBaseBonus * this.getBossProportionalDamageMultiplier(target));
+        const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.25) : ironBaseBonus;
         const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
         const scaledNonProportional = Math.floor(nonProportional * multiplier);
         const basicDamageBonus = this.getBasicAttackDamageBonus(assassin);
@@ -3040,7 +3026,7 @@ export class ArenaScene extends Phaser.Scene {
             const offenseMult = this.getOffenseMultiplier(attacker);
             const ironRate = attackerMeta?.targetCurrentHpBonusRate ?? 0;
             const ironBaseBonus = Math.max(0, Math.floor(target.currentHealth * ironRate));
-            const ironBonus = Math.floor(ironBaseBonus * this.getBossProportionalDamageMultiplier(target));
+            const ironBonus = this.isBossDie(target) ? Math.floor(ironBaseBonus * 0.25) : ironBaseBonus;
             const nonProportional = Math.max(1, rawResult.damage - ironBaseBonus);
             const scaledNonProportional = Math.floor(nonProportional * multiplier);
             const basicDamageBonus = this.getBasicAttackDamageBonus(attacker);
@@ -3370,12 +3356,9 @@ export class ArenaScene extends Phaser.Scene {
   private getPierceBehindTargets(attacker: DiceInstanceState, target: DiceInstanceState, range: number): DiceInstanceState[] {
     if (!attacker.gridPosition || !target.gridPosition || range <= 0) return [];
     const rowStep = Math.sign(target.gridPosition.row - attacker.gridPosition.row);
-    const attackerSide = this.getBoardSideForDie(attacker);
-    const targetSide = this.getBoardSideForDie(target);
-    const colStep = attackerSide === targetSide
-      ? Math.sign(target.gridPosition.col - attacker.gridPosition.col) || (attacker.ownerId === 'player' ? 1 : -1)
-      : (targetSide === 'enemy' ? 1 : -1);
-    const enemies = this.getLivingDiceOnBoardSide(targetSide).filter((die) => die.ownerId === target.ownerId);
+    const colStep = this.getBoardSideForDie(attacker) === 'player' ? 1 : -1;
+    const targetBoardSide = this.getBoardSideForDie(target);
+    const enemies = this.getBoardDiceOnSide(target.ownerId, targetBoardSide);
     const targets: DiceInstanceState[] = [];
     for (let i = 1; i <= range; i++) {
       const row = target.gridPosition.row + rowStep * i;
@@ -3409,7 +3392,8 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition);
     if (!meta.hasSolitudePreCombat || meta.targetMaxHpBonusRate === undefined) return 0;
     if (!this.isSolitudeIsolated(attacker)) return 0;
-    return Math.max(1, Math.floor(target.maxHealth * meta.targetMaxHpBonusRate * this.getBossProportionalDamageMultiplier(target)));
+    const bossMitigation = this.isBossDie(target) ? 0.25 : 1;
+    return Math.max(1, Math.floor(target.maxHealth * meta.targetMaxHpBonusRate * bossMitigation));
   }
 
   private getLeonFuriousClawDamage(attacker: DiceInstanceState, target: DiceInstanceState): number {
@@ -3446,7 +3430,8 @@ export class ArenaScene extends Phaser.Scene {
     const targetBoardSide = this.getBoardSideForDie(target);
     const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide);
     if (meta.splashDamage) {
-      const splashTargets = boardSideTargets.filter((die) =>
+      const targetBoardSide = this.getBoardSideForDie(target);
+      const splashTargets = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).filter((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
@@ -3463,7 +3448,8 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (meta.chainDamage) {
-      const chainTarget = boardSideTargets.find((die) =>
+      const targetBoardSide = this.getBoardSideForDie(target);
+      const chainTarget = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).find((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 2 &&
@@ -4583,8 +4569,8 @@ export class ArenaScene extends Phaser.Scene {
     const targetPos = target.gridPosition;
     const targetBoardSide = this.getBoardSideForDie(target);
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const victims = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) =>
-      die.ownerId === enemyOwner &&
+    const targetBoardSide = this.getBoardSideForDie(target);
+    const victims = this.getBoardDiceOnSide(enemyOwner, targetBoardSide).filter((die) =>
       die.gridPosition &&
       (die.instanceId === target.instanceId || this.isOnTranscendencePattern(targetPos, die.gridPosition, pattern))
     );
@@ -4624,7 +4610,9 @@ export class ArenaScene extends Phaser.Scene {
     if (!meta.hasTranscendence || basePips !== 6 || !attacker.gridPosition || attacker.attacksRemaining <= 0) return undefined;
 
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const candidates = getBoardDice(this.gameState, enemyOwner)
+    const attackerBoardSide = this.getBoardSideForDie(attacker);
+    const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
+    const candidates = this.getBoardDiceOnSide(enemyOwner, targetBoardSide)
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } => Boolean(die.gridPosition))
       .map((die) => ({ die, pattern: this.getTranscendenceBeamPattern(attacker, die), distance: this.getAttackDistance(attacker, die) }))
       .filter((entry): entry is { die: DiceInstanceState & { gridPosition: { row: number; col: number } }; pattern: TranscendenceBeamPattern; distance: number } => entry.pattern !== null);

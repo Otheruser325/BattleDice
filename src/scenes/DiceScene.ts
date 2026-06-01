@@ -310,7 +310,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
         skills: [{
           type: 'Active' as const,
           title: "Reaper's Touch",
-          description: `At ${meta.deathInstakillMana ?? 12} soul mana, instantly kills a target. Death transforms into this form after 2 allies are defeated.`,
+          description: `At ${meta.deathInstakillMana ?? 12} soul mana, instantly kills a target; bosses take heavy damage instead. Death transforms into this form after 2 allies are defeated.`,
           manaNeeded: meta.deathInstakillMana ?? 12,
           modifiers: { notes: ['runtime:deathInstakill'] }
         }]

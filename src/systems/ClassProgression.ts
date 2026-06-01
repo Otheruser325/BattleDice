@@ -174,13 +174,13 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Summons a judge hammer on the weakest foe for ${scaleSkillDamage(modifiers.hammerDamage)} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
   }
   if (notes.includes('runtime:solitudePreCombat') && modifiers.targetMaxHpBonusRate !== undefined) {
-    return `When isolated from adjacent allies on the same board, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP (25% effective against bosses).`;
+    return `When isolated from adjacent allies on the same board, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
   }
   if (notes.includes('runtime:pierceBehind=1') && modifiers.pierceBehindRange !== undefined) {
-    return `Basic attacks also stab ${modifiers.pierceBehindRange} tile behind the target.`;
+    return `Basic attacks also stab ${modifiers.pierceBehindRange} ${modifiers.pierceBehindRange === 1 ? 'tile' : 'tiles'} behind the target.`;
   }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
-    return `Deals ${scaleSkillDamage(modifiers.activeDamage)} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns, down to 0.`;
+    return `Deals ${scaleSkillDamage(modifiers.activeDamage)} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns.`;
   }
   if (definition.typeId === 'Crack' && modifiers.activeDamage !== undefined) {
     const shredNote = (modifiers.notes ?? []).find((note) => note.startsWith('runtime:armorShredRate='));
@@ -188,12 +188,14 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deal ${scaleSkillDamage(modifiers.activeDamage)} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
   }
   if (modifiers.poisonDamage !== undefined) {
-    return `Deals direct toxic damage, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
+    return `Deals direct toxic damage equal to its attack, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 3} turns (stacks).`;
   }
   if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
-    return definition.typeId === 'Magician'
-      ? `Summons 3 magic meteors on random opposing-board tiles, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Leaves lava on each epicentre for ${modifiers.durationTurns ?? 4} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`
-      : `Throws a striking meteor at a random foe on the opposing board, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a + pattern. Drops lava pools on the hit tile and adjacent + tiles for ${modifiers.durationTurns ?? 3} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
+    const turns = modifiers.durationTurns ?? (notes.includes('runtime:tripleMeteor') ? 4 : 3);
+    if (notes.includes('runtime:tripleMeteor')) {
+      return `Summons 3 magic meteors on random enemy-grid tiles, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a plus pattern. Leaves lava on each epicentre for ${turns} turns that deals ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
+    }
+    return `Throws a striking meteor at a random foe, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern, lasting ${turns} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
     return `If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
@@ -205,10 +207,10 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return skill?.description ?? '';
   }
   if (notes.includes('runtime:manaManipulator') && modifiers.attackDelta !== undefined) {
-    return `Combat Start: steals ${Math.abs(modifiers.attackDelta)} mana from all enemy charging actives.`;
+    return `Steals ${Math.abs(modifiers.attackDelta)} mana from all enemy charging actives.`;
   }
   if (notes.includes('runtime:wizardSpellcast') && modifiers.manaGain !== undefined) {
-    return `Combat Start: feeds the Magician +${modifiers.manaGain} mana.`;
+    return `Feeds the Magician +${modifiers.manaGain} mana.`;
   }
   if (notes.includes('runtime:magicianSummonWizard')) {
     return skill?.description ?? '';
@@ -220,7 +222,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return skill?.description ?? '';
   }
   if (notes.includes('runtime:leonRage') && modifiers.targetMaxHpBonusRate !== undefined) {
-    return `On Kill: Leon gains +${formatPercent(modifiers.targetMaxHpBonusRate)} basic attack damage for each fallen foe.`;
+    return `Leon gains +${formatPercent(modifiers.targetMaxHpBonusRate)} basic attack damage for each fallen foe.`;
   }
   if (notes.includes('runtime:deuciferSummonImp')) {
     return skill?.description ?? '';
@@ -230,7 +232,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   }
 
   if (modifiers.shield !== undefined) {
-    return `Gain +${scaleSkillDamage(modifiers.shield)} shield for ${modifiers.durationTurns ?? 1} turn.`;
+    return `Gain +${scaleSkillDamage(modifiers.shield)} shield for ${modifiers.durationTurns ?? 2} turns.`;
   }
 
   if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {
@@ -238,11 +240,11 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   }
 
   if (modifiers.targetMaxHpBonusRate !== undefined) {
-    return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP (25% effective against bosses).`;
+    return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
   }
 
   if (modifiers.targetCurrentHpBonusRate !== undefined) {
-    return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP (25% effective against bosses).`;
+    return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP.`;
   }
   if (modifiers.distanceDamageBonusRatePerTile !== undefined) {
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
@@ -282,7 +284,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
   pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
   pushNumericDelta('Mana gain', currentModifiers.manaGain, nextModifiers.manaGain);
-  pushNumericDelta('Empowered attack count', currentModifiers.numAttacksBoosted, nextModifiers.numAttacksBoosted);
+  pushNumericDelta('Attack count', currentModifiers.numAttacksBoosted, nextModifiers.numAttacksBoosted);
 
   if (currentModifiers.damageRange && nextModifiers.damageRange) {
     const minDelta = nextModifiers.damageRange[0] - currentModifiers.damageRange[0];
