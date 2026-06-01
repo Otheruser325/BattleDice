@@ -4569,7 +4569,6 @@ export class ArenaScene extends Phaser.Scene {
     const targetPos = target.gridPosition;
     const targetBoardSide = this.getBoardSideForDie(target);
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const targetBoardSide = this.getBoardSideForDie(target);
     const victims = this.getBoardDiceOnSide(enemyOwner, targetBoardSide).filter((die) =>
       die.gridPosition &&
       (die.instanceId === target.instanceId || this.isOnTranscendencePattern(targetPos, die.gridPosition, pattern))
