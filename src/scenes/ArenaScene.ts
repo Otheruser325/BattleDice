@@ -2713,6 +2713,20 @@ export class ArenaScene extends Phaser.Scene {
   private getBoardDiceOnSide(ownerId: 'player' | 'enemy', boardSide: 'player' | 'enemy'): DiceInstanceState[] {
     return getBoardDice(this.gameState, ownerId).filter((die) => this.getBoardSideForDie(die) === boardSide);
   }
+
+  private getLivingDiceOnBoardSide(boardSide: 'player' | 'enemy'): DiceInstanceState[] {
+    return this.gameState.dice.filter((die) =>
+      die.zone === 'board' &&
+      !die.isDestroyed &&
+      die.gridPosition &&
+      this.getBoardSideForDie(die) === boardSide
+    );
+  }
+
+  private areDiceOnSameBoardSide(first: DiceInstanceState, second: DiceInstanceState): boolean {
+    return this.getBoardSideForDie(first) === this.getBoardSideForDie(second);
+  }
+
   private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
     if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
     const attackerSide = this.getBoardSideForDie(attacker);
@@ -3428,10 +3442,9 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
     const targetBoardSide = this.getBoardSideForDie(target);
-    const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide);
+    const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.ownerId === target.ownerId);
     if (meta.splashDamage) {
-      const targetBoardSide = this.getBoardSideForDie(target);
-      const splashTargets = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).filter((die) =>
+      const splashTargets = boardSideTargets.filter((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
@@ -3448,8 +3461,7 @@ export class ArenaScene extends Phaser.Scene {
       });
     }
     if (meta.chainDamage) {
-      const targetBoardSide = this.getBoardSideForDie(target);
-      const chainTarget = this.getBoardDiceOnSide(target.ownerId, targetBoardSide).find((die) =>
+      const chainTarget = boardSideTargets.find((die) =>
         die.instanceId !== target.instanceId &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 2 &&
