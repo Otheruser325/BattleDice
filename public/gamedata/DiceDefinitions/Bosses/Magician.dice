@@ -10,7 +10,7 @@
     {
       "type": "CombatStart",
       "title": "Mana Manipulator",
-      "description": "Steals 1 mana from all enemy charging actives. Steal increases by 1 every 5 class levels.",
+      "description": "Steals 1 mana from all enemy charging actives.",
       "modifiers": {
         "attackDelta": 1,
         "notes": [
@@ -37,7 +37,7 @@
     {
       "type": "Active",
       "title": "Wizard Royale",
-      "description": "Summons a friendly Wizard Dice 5 class levels lower (min. Class 1). Unlocks at Magician Boss Level 6.",
+      "description": "Summons a friendly Wizard Dice 5 class levels lower (min. Class 1).",
       "manaNeeded": 18,
       "modifiers": {
         "notes": [
