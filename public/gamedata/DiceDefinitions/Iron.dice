@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Crush Armor",
-      "description": "Deals bonus damage equal to 15% of the target's current HP.",
+      "description": "Deals bonus damage equal to 15% of the target's current HP (25% effective against bosses).",
       "modifiers": {
         "notes": [
           "runtime:targetCurrentHpBonusRate=0.15"

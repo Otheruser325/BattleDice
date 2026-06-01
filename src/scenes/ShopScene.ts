@@ -14,6 +14,7 @@ import {
   setShopState,
   getShopState,
   getAllDiceDefinitions,
+  canReceiveUsefulCopies,
   type ShopOffer,
   type ShopState
 } from '../data/dice';
@@ -109,6 +110,7 @@ export class ShopScene extends Phaser.Scene {
           const targetOffer = shopState.offers[offerIdx];
           if (targetOffer.purchased && !this.isInfiniteCurrencyOffer(offer)) return;
           if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
+          if (offer.isFreebie && !this.isClaimableDiceCopyFreebie(offer)) return;
 
           const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
           const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
@@ -160,6 +162,17 @@ export class ShopScene extends Phaser.Scene {
 
   private isInfiniteCurrencyOffer(offer: ShopOffer): boolean {
     return Boolean(offer.isDiceTokenOffer || offer.isCasinoChipOffer);
+  }
+
+  private isClaimableDiceCopyFreebie(offer: ShopOffer): boolean {
+    return Boolean(
+      !offer.isCoinOffer &&
+      !offer.isDiceTokenOffer &&
+      !offer.isCasinoChipOffer &&
+      offer.typeId &&
+      offer.copies > 0 &&
+      canReceiveUsefulCopies(this, offer.typeId)
+    );
   }
 
   private getOfferHeaderLabel(offer: ShopOffer): string {

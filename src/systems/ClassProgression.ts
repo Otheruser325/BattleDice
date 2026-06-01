@@ -159,10 +159,10 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deals random damage from ${min} to ${max} to a foe.`;
   }
   if (modifiers.splashDamage !== undefined) {
-    return `Attacks cause ${scaleSkillDamage(modifiers.splashDamage)} splash damage to adjacent foes.`;
+    return `Attacks cause ${scaleSkillDamage(modifiers.splashDamage)} splash damage to adjacent foes on the target's board.`;
   }
   if (modifiers.chainDamage !== undefined) {
-    return `Attacks chain onto a nearby target in a 2-tile radius for ${scaleSkillDamage(modifiers.chainDamage)} bonus damage.`;
+    return `Attacks chain onto another foe on the target's board within 2 tiles for ${scaleSkillDamage(modifiers.chainDamage)} bonus damage.`;
   }
   if (modifiers.activeHeal !== undefined) {
     return `Heals the weakest ally for ${scaleSkillDamage(modifiers.activeHeal)} HP.`;
@@ -174,7 +174,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Summons a judge hammer on the weakest foe for ${scaleSkillDamage(modifiers.hammerDamage)} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
   }
   if (notes.includes('runtime:solitudePreCombat') && modifiers.targetMaxHpBonusRate !== undefined) {
-    return `When isolated from adjacent allies, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
+    return `When isolated from adjacent allies on the same board, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP (25% effective against bosses).`;
   }
   if (notes.includes('runtime:pierceBehind=1') && modifiers.pierceBehindRange !== undefined) {
     return `Basic attacks also stab ${modifiers.pierceBehindRange} tile behind the target.`;
@@ -191,7 +191,9 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deals direct toxic damage, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 2} turns (stacks).`;
   }
   if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
-    return `Throws striking meteors at random foes, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Drops lava pools on each epicentre lasting ${modifiers.durationTurns ?? 3} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
+    return definition.typeId === 'Magician'
+      ? `Summons 3 magic meteors on random opposing-board tiles, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in + patterns. Leaves lava on each epicentre for ${modifiers.durationTurns ?? 4} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`
+      : `Throws a striking meteor at a random foe on the opposing board, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a + pattern. Drops lava pools on the hit tile and adjacent + tiles for ${modifiers.durationTurns ?? 3} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
   }
   if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
     return `If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
@@ -236,11 +238,11 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   }
 
   if (modifiers.targetMaxHpBonusRate !== undefined) {
-    return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
+    return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP (25% effective against bosses).`;
   }
 
   if (modifiers.targetCurrentHpBonusRate !== undefined) {
-    return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP.`;
+    return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP (25% effective against bosses).`;
   }
   if (modifiers.distanceDamageBonusRatePerTile !== undefined) {
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
