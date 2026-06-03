@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
+import { getAllDiceDefinitions, getDiceProgress, setDiceProgress, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { AlertManager } from '../utils/AlertManager';
@@ -43,8 +43,8 @@ export class DevScene extends Phaser.Scene {
       wordWrap: { width: panel.width - 60 }
     });
 
-    this.drawDiceGrantPanel(panel.x + 38, panel.y + 142, panel.width * 0.56, 300);
-    this.drawCurrencyGrantPanel(panel.x + panel.width * 0.64, panel.y + 142, panel.width * 0.30, 300);
+    this.drawDiceGrantPanel(panel.x + 38, panel.y + 142, panel.width * 0.56, 360);
+    this.drawCurrencyGrantPanel(panel.x + panel.width * 0.64, panel.y + 142, panel.width * 0.30, 360);
     this.refresh();
   }
 
@@ -74,9 +74,10 @@ export class DevScene extends Phaser.Scene {
     this.makeButton(x + 70, y + 82, '◀ PREV', () => this.stepDice(-1));
     this.makeButton(x + width - 70, y + 82, 'NEXT ▶', () => this.stepDice(1));
 
-    this.makeButton(x + 96, y + 190, '+10 CARDS', () => this.grantDiceCards(10));
-    this.makeButton(x + 236, y + 190, '+100 CARDS', () => this.grantDiceCards(100));
-    this.makeButton(x + 390, y + 190, '+1000 CARDS', () => this.grantDiceCards(1000));
+    this.makeButton(x + 64, y + 190, '+10 CARDS', () => this.grantDiceCards(10));
+    this.makeButton(x + 164, y + 190, '+100 CARDS', () => this.grantDiceCards(100));
+    this.makeButton(x + 274, y + 190, '+1000 CARDS', () => this.grantDiceCards(1000));
+    this.makeButton(x + 390, y + 190, 'CLASS UP', () => this.classUpSelectedDie());
     this.makeButton(x + width / 2, y + 244, 'UNLOCK / MAX SELECTED DIE', () => this.grantDiceCardsToMaxClass());
   }
 
@@ -123,6 +124,14 @@ export class DevScene extends Phaser.Scene {
     this.makeButton(x + 52, y + 263, '+10', () => this.grantChips(10));
     this.makeButton(x + 116, y + 263, '+100', () => this.grantChips(100));
     this.makeButton(x + 188, y + 263, '+1,000', () => this.grantChips(1_000));
+
+    this.add.text(x + 18, y + 284, 'Fives Gauge', {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.text
+    });
+    this.makeButton(x + 52, y + 323, '+100', () => this.grantGauge(100));
+    this.makeButton(x + 128, y + 323, 'Set 1k', () => this.setGauge(1000));
   }
 
   private makeButton(x: number, y: number, label: string, onClick: () => void) {
@@ -205,6 +214,23 @@ export class DevScene extends Phaser.Scene {
     return additional;
   }
 
+  private classUpSelectedDie() {
+    const definition = this.getSelectedDefinition();
+    if (!definition) return;
+    const progress = getDiceProgress(this, definition.typeId);
+    if (progress.classLevel >= 15) {
+      AlertManager.toast(this, { type: 'warning', message: `${definition.title} is already at max class.` });
+      return;
+    }
+    const nextLevel = progress.classLevel + 1;
+    setDiceProgress(this, definition.typeId, {
+      ...progress,
+      classLevel: nextLevel
+    });
+    AlertManager.toast(this, { type: 'success', message: `Upgraded ${definition.title} to Class ${nextLevel}.` });
+    this.refresh();
+  }
+
   private grantChips(amount: number) {
     CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + amount }));
     AlertManager.toast(this, { type: 'success', message: `Granted ${amount} casino chips.` });
@@ -223,6 +249,18 @@ export class DevScene extends Phaser.Scene {
     this.refresh();
   }
 
+  private grantGauge(amount: number) {
+    CasinoProgressStore.mutate(this, (progress) => ({ ...progress, fivesGauge: progress.fivesGauge + amount }));
+    AlertManager.toast(this, { type: 'success', message: `Granted ${amount} to Fives gauge.` });
+    this.refresh();
+  }
+
+  private setGauge(amount: number) {
+    CasinoProgressStore.mutate(this, (progress) => ({ ...progress, fivesGauge: amount }));
+    AlertManager.toast(this, { type: 'success', message: `Set Fives gauge to ${amount}.` });
+    this.refresh();
+  }
+
   private refresh() {
     const definition = this.getSelectedDefinition();
     if (definition) {
@@ -238,7 +276,8 @@ export class DevScene extends Phaser.Scene {
     this.walletText.setText([
       `Casino Chips: ${casino.chips}`,
       `Dice Tokens: ${getDiceTokens(this)}`,
-      `Diamonds: ${getDiamonds(this)}`
+      `Diamonds: ${getDiamonds(this)}`,
+      `Fives Gauge: ${casino.fivesGauge}/1000`
     ].join('\n'));
   }
 }
