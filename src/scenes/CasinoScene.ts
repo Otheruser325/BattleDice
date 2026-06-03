@@ -32,7 +32,7 @@ const CHEST_TOKEN_REWARDS: Record<ChestType, [number, number]> = {
   Master: [500, 1500]
 };
 
-type RewardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
+type RewardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
 
 interface ChestDropRateEntry {
   rarity: RewardRarity;
