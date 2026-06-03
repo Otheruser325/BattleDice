@@ -4,6 +4,10 @@ import {
   getRangeLabel,
   getSelectedLoadout,
   setSelectedLoadout,
+  getActiveLoadoutSlot,
+  setActiveLoadoutSlot,
+  LOADOUT_SLOT_COUNT,
+  RARITY_TEXT_COLORS,
   getDiceTokens,
   getDiceProgress,
   setDiceProgress,
@@ -91,14 +95,14 @@ export class DiceScene extends Phaser.Scene {
   }
 
   create() {
-    const panel = drawPanel(this, 'DICE', 'Loadout  |  Non-defaults unlock with copies');
+    const panel = drawPanel(this, 'DICE', 'Deck slots 1-3 save separate loadouts  |  Non-defaults unlock with copies');
     const rarityRank: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4, Mythic: 5 };
     const definitions = [...getAllDiceDefinitions(this)].sort((a, b) => (rarityRank[a.rarity] ?? 99) - (rarityRank[b.rarity] ?? 99) || a.title.localeCompare(b.title));
     let loadout = getSelectedLoadout(this);
     this.debug.log('Dice scene rendered.', { diceCount: definitions.length });
 
     let tokens = getDiceTokens(this);
-    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`, {
+    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Pick deck 1-3, then click cards to assign selected slot`, {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft
     });
     const slotText = this.add.text(panel.x + 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text });
@@ -106,10 +110,27 @@ export class DiceScene extends Phaser.Scene {
     const slotBoxes: Phaser.GameObjects.Rectangle[] = [];
     const slotLabels: Phaser.GameObjects.Text[] = [];
     let selectedSlot = 0;
-    const slotStartX = panel.centerX - 260;
+    let selectedDeckSlot = getActiveLoadoutSlot(this);
+    const deckBoxes: Phaser.GameObjects.Rectangle[] = [];
+    for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
+      const x = panel.right - 212 + i * 58;
+      const box = this.add.rectangle(x, panel.y + 116, 46, 34, 0x1b4058, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
+      const lbl = this.add.text(x, panel.y + 116, `${i + 1}`, { fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text }).setOrigin(0.5);
+      box.on('pointerdown', () => {
+        setActiveLoadoutSlot(this, i);
+        selectedDeckSlot = i;
+        loadout = getSelectedLoadout(this);
+        selectedSlot = 0;
+        refreshSlots();
+      });
+      deckBoxes.push(box);
+      slotLabels.push(lbl);
+    }
+    const deckLabel = this.add.text(panel.right - 212, panel.y + 90, 'DECK', { fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted }).setOrigin(0.5);
+    const slotStartX = panel.centerX - 312;
     for (let i = 0; i < 5; i++) {
-      const x = slotStartX + i * 130;
-      const box = this.add.rectangle(x, panel.y + 118, 118, 46, 0x173247, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
+      const x = slotStartX + i * 112;
+      const box = this.add.rectangle(x, panel.y + 118, 104, 46, 0x173247, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
       const lbl = this.add.text(x, panel.y + 118, loadout[i]?.slice(0, 4).toUpperCase() ?? '-', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5);
       box.on('pointerdown', () => {
         selectedSlot = i;
@@ -120,11 +141,16 @@ export class DiceScene extends Phaser.Scene {
     }
 
     const refreshSlots = () => {
-      slotText.setText(`LOADOUT VIEW (top-mid): ${loadout.join(' | ')}  •  Active slot: ${selectedSlot + 1}`);
+      slotText.setText(`DECK ${selectedDeckSlot + 1}: ${loadout.join(' | ')}  •  Editing dice slot: ${selectedSlot + 1}`);
       const owned = definitions.filter((d)=>!this.isDiceLocked(d.typeId)).length;
       ownedCountText.setText(`OWNED ${owned}/${definitions.length}`);
       slotBoxes.forEach((box, i) => box.setStrokeStyle(2, i === selectedSlot ? 0xf4b860 : 0x406987));
-      slotLabels.forEach((lbl, i) => lbl.setText(loadout[i]?.slice(0, 4).toUpperCase() ?? '-'));
+      deckBoxes.forEach((box, i) => box.setStrokeStyle(2, i === selectedDeckSlot ? 0xf4b860 : 0x406987));
+      slotLabels.forEach((lbl, i) => {
+        if (i < LOADOUT_SLOT_COUNT) return;
+        const loadoutIndex = i - LOADOUT_SLOT_COUNT;
+        lbl.setText(loadout[loadoutIndex]?.slice(0, 4).toUpperCase() ?? '-');
+      });
     };
     refreshSlots();
 
@@ -162,7 +188,12 @@ export class DiceScene extends Phaser.Scene {
         color: locked ? PALETTE.danger : PALETTE.accentSoft
       }).setOrigin(1, 0);
 
-      const statLine = this.add.text(x + 20, y + 52, `${die.rarity.toUpperCase()}  |  ATK ${displayedDie.attack}  |  HP ${displayedDie.health}
+      const rarityLine = this.add.text(x + 20, y + 52, die.rarity.toUpperCase(), {
+        fontFamily: 'Orbitron',
+        fontSize: '12px',
+        color: locked ? PALETTE.textMuted : (RARITY_TEXT_COLORS[die.rarity] ?? PALETTE.text)
+      });
+      const statLine = this.add.text(x + 106, y + 52, `ATK ${displayedDie.attack}  |  HP ${displayedDie.health}
 RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
@@ -190,7 +221,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         const nextCls = getDiceProgress(this, die.typeId).classLevel;
         const nextDisplayedDie = applyClassProgression(die, nextCls);
         classTag.setText(this.isDiceLocked(die.typeId) ? 'LOCKED' : `C${nextCls}`);
-        statLine.setText(`${die.rarity.toUpperCase()}  |  ATK ${nextDisplayedDie.attack}  |  HP ${nextDisplayedDie.health}
+        statLine.setText(`ATK ${nextDisplayedDie.attack}  |  HP ${nextDisplayedDie.health}
 RANGE ${die.range} (${getRangeLabel(die.range)})`);
         skillTypeLine.setText(nextDisplayedDie.skills.length === 1 ? formatSkillType(nextDisplayedDie.skills[0]?.type).toUpperCase() : `${nextDisplayedDie.skills.length} SKILLS`);
         skillDesc.setText(formatSkillInfo(nextDisplayedDie, this.isDiceLocked(die.typeId)));
@@ -210,7 +241,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
           loadout = getSelectedLoadout(this);
           refreshSlots();
           tokens = getDiceTokens(this);
-          tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
+          tokenText.setText(`DICE TOKENS: ${tokens}  •  Pick deck 1-3, then click cards to assign selected slot`);
           refreshCardStats.forEach((refresh) => refresh());
           refreshVisibleCardInteractivity();
         }, selectedSlot);
@@ -221,7 +252,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       });
       card.on('pointerout', () => card.setFillStyle(this.isDiceLocked(die.typeId) ? 0x111e28 : 0x173247, 0.98));
 
-      cardsContainer.add([card, header, title, classTag, statLine, skillTypeLine, skillDesc]);
+      cardsContainer.add([card, header, title, classTag, rarityLine, statLine, skillTypeLine, skillDesc]);
       card.setDepth(0); header.setDepth(1);
 
       if (locked) {
@@ -357,7 +388,10 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const atk = displayDie.attack;
     const isMaxed = cls >= 15;
     const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: displayDie.accent }).setOrigin(0.5);
-    const stats = this.add.text(width / 2, height / 2 - 110, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})\nRARITY ${displayDie.rarity}  |  TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const stats = this.add.text(width / 2, height / 2 - 116, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const rarityLabel = this.add.text(width / 2 - 126, height / 2 - 94, 'RARITY', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const rarityStats = this.add.text(width / 2 - 74, height / 2 - 94, displayDie.rarity, { fontFamily: 'Orbitron', fontSize: '12px', color: RARITY_TEXT_COLORS[displayDie.rarity] ?? PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const targetStats = this.add.text(width / 2 + 104, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;
@@ -443,7 +477,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
         if (newClassLevel >= 6) AchievementStore.unlock(this, 'getting_stronger');
         if (newClassLevel >= 11) AchievementStore.unlock(this, 'augmented');
         if (newClassLevel >= 15) AchievementStore.unlock(this, 'maximum_power');
-        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click cards to assign selected slot`);
+        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Pick deck 1-3, then click cards to assign selected slot`);
         onUpdate();
         this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot, showAlternate);
       });
@@ -476,7 +510,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     close.on('pointerdown', closeModal);
     this.modalEscHandler = () => closeModal();
     this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
-    this.modalElements = [overlay, panel, title, stats, skillContainer, skillMaskShape, skillScrollHint, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
+    this.modalElements = [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, skillContainer, skillMaskShape, skillScrollHint, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
   }
 }

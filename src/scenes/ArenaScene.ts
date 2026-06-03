@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getExclusiveDiceDefinitions, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
+import { canReceiveUsefulCopies, getActiveLoadoutSlot, getAllDiceDefinitions, getDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getExclusiveDiceDefinitions, grantDiceCopies, LOADOUT_SLOT_COUNT, RARITY_TEXT_COLORS, setActiveLoadoutSlot, setDiceTokens, setDiamonds } from '../data/dice';
 import {
   createMatchBattleState,
   getAvailableHandDice,
@@ -382,19 +382,105 @@ export class ArenaScene extends Phaser.Scene {
       loginRewardBtn.on('pointerdown', () => this.openLoginRewardModal());
     }
 
-    const rules = this.add.text(centerX, centerY + 120, [
+    const lineupObjects = this.buildLobbyLineupPreview(centerX, centerY + 98);
+
+    const rules = this.add.text(centerX, centerY + 192, [
       'Win: Defeat all enemy dice',
       'Lose: All your dice are defeated',
       '',
       '5x5 Grid • Turn-based Combat'
     ].join('\n'), {
       fontFamily: 'Orbitron',
-      fontSize: '14px',
+      fontSize: '12px',
       color: PALETTE.textMuted,
       align: 'center'
     }).setOrigin(0.5);
 
-    this.uiContainer.add([wipBadge, playerHeader, title, subtitle, playButton, rules, loginRewardBtn, loginRewardLabel, loginRewardSub]);
+    this.uiContainer.add([wipBadge, playerHeader, title, subtitle, playButton, ...lineupObjects, rules, loginRewardBtn, loginRewardLabel, loginRewardSub]);
+  }
+
+  private buildLobbyLineupPreview(centerX: number, startY: number): Phaser.GameObjects.GameObject[] {
+    const objects: Phaser.GameObjects.GameObject[] = [];
+    const activeDeckSlot = getActiveLoadoutSlot(this);
+    const definitions = getDiceDefinitions(this);
+
+    objects.push(this.add.text(centerX, startY - 22, 'CURRENT LINEUP — click dice for stats', {
+      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
+    }).setOrigin(0.5));
+
+    for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
+      const x = centerX - 234 + i * 42;
+      const deckBtn = this.add.rectangle(x, startY + 22, 32, 28, 0x173247, 0.96)
+        .setStrokeStyle(2, i === activeDeckSlot ? 0xf4b860 : 0x406987)
+        .setInteractive({ useHandCursor: true });
+      const deckText = this.add.text(x, startY + 22, `${i + 1}`, {
+        fontFamily: 'Orbitron', fontSize: '12px', color: i === activeDeckSlot ? '#ffd84d' : PALETTE.text
+      }).setOrigin(0.5);
+      deckBtn.on('pointerdown', () => {
+        setActiveLoadoutSlot(this, i);
+        this.scene.restart();
+      });
+      objects.push(deckBtn, deckText);
+    }
+
+    definitions.forEach((definition, index) => {
+      const x = centerX - 132 + index * 66;
+      const progress = getDiceProgress(this, definition.typeId);
+      const rarityColor = RARITY_TEXT_COLORS[definition.rarity] ?? PALETTE.text;
+      const accent = Phaser.Display.Color.HexStringToColor(definition.accent).color;
+      const card = this.add.rectangle(x, startY + 22, 54, 46, 0x173247, 0.96)
+        .setStrokeStyle(2, accent)
+        .setInteractive({ useHandCursor: true });
+      const label = this.add.text(x, startY + 12, definition.typeId.slice(0, 4).toUpperCase(), {
+        fontFamily: 'Orbitron', fontSize: '10px', color: definition.accent
+      }).setOrigin(0.5);
+      const classCircle = this.add.circle(x + 17, startY + 33, 11, Phaser.Display.Color.HexStringToColor(rarityColor).color, 0.95)
+        .setStrokeStyle(1, 0xffffff, 0.55);
+      const classText = this.add.text(x + 17, startY + 33, `${progress.classLevel}`, {
+        fontFamily: 'Orbitron', fontSize: '9px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff'
+      }).setOrigin(0.5);
+      card.on('pointerdown', () => this.openArenaDiceStatsModal(definition.typeId));
+      objects.push(card, label, classCircle, classText);
+    });
+
+    return objects;
+  }
+
+  private openArenaDiceStatsModal(typeId: DiceTypeId) {
+    this.clearModeModal();
+    const definition = getAllDiceDefinitions(this).find((die) => die.typeId === typeId);
+    if (!definition) return;
+    const progress = getDiceProgress(this, typeId);
+    const scaled = applyClassProgression(definition, progress.classLevel);
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const rarityColor = RARITY_TEXT_COLORS[definition.rarity] ?? PALETTE.text;
+    const rarityFill = Phaser.Display.Color.HexStringToColor(rarityColor).color;
+    const skillText = scaled.skills.length > 0
+      ? scaled.skills.map((skill) => `${skill.title}: ${getClassScaledSkillDescription(scaled, skill)}`).join('\n\n')
+      : 'No skill';
+
+    const closeBtn = this.add.text(cx, cy + 146, 'CLOSE', {
+      fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted,
+      backgroundColor: '#173247', padding: { left: 12, right: 12, top: 6, bottom: 6 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerdown', () => this.clearModeModal());
+
+    this.modalContainer = this.add.container(0, 0, [
+      this.add.rectangle(cx, cy, width, height, 0x000000, 0.58).setInteractive(),
+      this.add.rectangle(cx, cy, 560, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
+      this.add.text(cx, cy - 142, scaled.title.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '22px', color: definition.accent }).setOrigin(0.5),
+      this.add.text(cx - 46, cy - 104, `ATK ${scaled.attack}  |  HP ${scaled.health}  |  RANGE ${scaled.range}`, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5),
+      this.add.text(cx - 130, cy - 78, definition.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor }).setOrigin(0.5),
+      this.add.text(cx - 4, cy - 78, `TARGET ${scaled.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text }).setOrigin(0.5),
+      this.add.circle(cx + 220, cy - 92, 28, rarityFill, 0.95).setStrokeStyle(2, 0xffffff, 0.55),
+      this.add.text(cx + 220, cy - 100, 'CLASS', { fontFamily: 'Orbitron', fontSize: '9px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff' }).setOrigin(0.5),
+      this.add.text(cx + 220, cy - 84, `${progress.classLevel}`, { fontFamily: 'Orbitron', fontSize: '18px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff' }).setOrigin(0.5),
+      this.add.text(cx, cy + 24, skillText, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 500 } }).setOrigin(0.5),
+      closeBtn
+    ]).setDepth(250);
+    this.setModalEsc(() => this.clearModeModal());
   }
 
   // ── MATCH MODE MODAL ────────────────────────────────────────────────────────
@@ -1012,10 +1098,10 @@ export class ArenaScene extends Phaser.Scene {
     let claimedDay7LegendaryTitle = reward.day7LegendaryTitle;
     if (day === 1) { setDiamonds(this, getDiamonds(this) + 50); message = '+50 Diamonds'; }
     if (day === 2) { setDiceTokens(this, getDiceTokens(this) + 1000); message = '+1,000 Dice Tokens'; }
-    if (day === 3) { message = '+20 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 20 })); this.registry.events.emit('casino:grantChips', 20); }
+    if (day === 3) { message = '+20 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 20 })); }
     if (day === 4) { setDiamonds(this, getDiamonds(this) + 100); message = '+100 Diamonds'; }
     if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
-    if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); this.registry.events.emit('casino:grantChips', 50); }
+    if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); }
     if (day === 7) {
       const legendaries = getAllDiceDefinitions(this)
         .filter((d) => d.rarity === 'Legendary')

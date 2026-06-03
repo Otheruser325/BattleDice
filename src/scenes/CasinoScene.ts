@@ -73,6 +73,7 @@ const CHEST_DROP_RATES: Record<ChestType, ChestDropRateEntry[]> = {
 };
 
 const RARITY_RANK: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4, Mythic: 5 };
+const FIVES_GAUGE_MAX = 100;
 
 export class CasinoScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Casino;
@@ -95,13 +96,21 @@ export class CasinoScene extends Phaser.Scene {
   private chipText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
+  private fivesGaugeFill!: Phaser.GameObjects.Rectangle;
+  private fivesGaugeText!: Phaser.GameObjects.Text;
+  private rollButton!: Phaser.GameObjects.Text;
   private activeRewardDetailClose: (() => void) | null = null;
+  private casinoGrantChipsHandler: (() => void) | null = null;
 
   create() {
-    this.registry.events.off('casino:grantChips');
-    this.registry.events.on('casino:grantChips', (amount: number) => {
-      CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + Math.max(0, Math.floor(amount)) }));
-      this.render();
+    if (this.casinoGrantChipsHandler) this.registry.events.off('casino:grantChips', this.casinoGrantChipsHandler);
+    this.casinoGrantChipsHandler = () => {
+      if (this.chipText?.scene) this.render();
+    };
+    this.registry.events.on('casino:grantChips', this.casinoGrantChipsHandler);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.casinoGrantChipsHandler) this.registry.events.off('casino:grantChips', this.casinoGrantChipsHandler);
+      this.casinoGrantChipsHandler = null;
     });
     this.resetRuntimeUiState();
 
@@ -118,22 +127,30 @@ export class CasinoScene extends Phaser.Scene {
       color: PALETTE.accentSoft
     }).setOrigin(0.5);
 
-    this.statusText = this.add.text(panel.centerX, panel.y + 88, '', {
+    this.add.rectangle(panel.centerX, panel.y + 84, 180, 10, 0x0d2231, 0.95).setStrokeStyle(1, 0xf4b860);
+    this.fivesGaugeFill = this.add.rectangle(panel.centerX - 89, panel.y + 84, 0, 8, 0xf4b860, 0.95).setOrigin(0, 0.5);
+    this.fivesGaugeText = this.add.text(panel.centerX, panel.y + 98, '', {
+      fontFamily: 'Orbitron',
+      fontSize: '10px',
+      color: PALETTE.textMuted
+    }).setOrigin(0.5);
+
+    this.statusText = this.add.text(panel.centerX, panel.y + 112, '', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted
     }).setOrigin(0.5);
 
-    this.drawDiceRow(panel.centerX, panel.centerY - 72);
+    this.drawDiceRow(panel.centerX, panel.centerY - 60);
 
-    this.comboText = this.add.text(panel.centerX, panel.centerY - 18, '', {
+    this.comboText = this.add.text(panel.centerX, panel.centerY - 6, '', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.success,
       align: 'center'
     }).setOrigin(0.5);
 
-    this.drawButtons(panel.centerX, panel.centerY + 18);
+    this.drawButtons(panel.centerX, panel.centerY + 32);
     this.drawChestSidebar(panel.right - 145, panel.y + 112);
     this.render();
   }
@@ -223,12 +240,25 @@ export class CasinoScene extends Phaser.Scene {
         padding: { left: 10, right: 10, top: 6, bottom: 6 }
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       button.on('pointerdown', onClick);
+      return button;
     };
 
     makeButton(cx - 180, 'START FIVES (10)', () => this.startFives());
-    makeButton(cx - 40, 'ROLL', () => this.rollDice());
+    this.rollButton = makeButton(cx - 40, 'ROLL', () => this.rollDice());
     makeButton(cx + 70, 'CASH OUT', () => this.cashOut());
     makeButton(cx + 190, 'CRAPS (2)', () => this.playCraps());
+  }
+
+  private getLockedDiceCount(): number {
+    return this.locks.filter(Boolean).length;
+  }
+
+  private getLockedDiceRerollCost(): number {
+    return this.getLockedDiceCount() * 5;
+  }
+
+  private canRollFives(progress = CasinoProgressStore.get(this)): boolean {
+    return this.tableActive && this.rollsLeft > 0 && !this.isRolling && this.getLockedDiceCount() < 5 && progress.chips >= this.getLockedDiceRerollCost();
   }
 
   private drawChestSidebar(x: number, y: number) {
@@ -284,7 +314,12 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private async rollDice() {
+    const lockedCost = this.getLockedDiceRerollCost();
+    const progress = CasinoProgressStore.get(this);
     if (!this.tableActive || this.rollsLeft <= 0 || this.isRolling) return;
+    if (this.getLockedDiceCount() >= 5) return AlertManager.toast(this, { type: 'warning', message: 'Unlock at least one die before re-rolling.' });
+    if (progress.chips < lockedCost) return AlertManager.toast(this, { type: 'warning', message: `Need ${lockedCost} chips to re-roll with locked dice.` });
+    if (lockedCost > 0) CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - lockedCost }));
     this.isRolling = true;
     AudioManager.playSfx(this, 'chest-open');
     this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
@@ -306,6 +341,7 @@ export class CasinoScene extends Phaser.Scene {
     const payout = evaluateFivesCombo(this.dice);
     CasinoProgressStore.mutate(this, (current) => ({
       ...current,
+      fivesGauge: payout.combo === 'Five-of-a-kind' ? 0 : Math.min(FIVES_GAUGE_MAX, current.fivesGauge + payout.pipSum),
       chests: { ...current.chests, [payout.chestType]: current.chests[payout.chestType] + payout.chestCount }
     }));
     this.clearFivesHandRuntime();
@@ -730,6 +766,16 @@ export class CasinoScene extends Phaser.Scene {
     });
     const progress = CasinoProgressStore.get(this);
     this.chipText.setText(`CHIPS: ${progress.chips}`);
+    const gaugeWidth = Math.round(178 * Phaser.Math.Clamp(progress.fivesGauge / FIVES_GAUGE_MAX, 0, 1));
+    this.fivesGaugeFill.setDisplaySize(gaugeWidth, 8);
+    this.fivesGaugeText.setText(`FIVES GAUGE: ${progress.fivesGauge}/${FIVES_GAUGE_MAX}`);
+    const lockedCost = this.getLockedDiceRerollCost();
+    const canRoll = this.canRollFives(progress);
+    this.rollButton.setText(lockedCost > 0 ? `ROLL (-${lockedCost})` : 'ROLL');
+    this.rollButton.setColor(canRoll ? '#000000' : PALETTE.textMuted);
+    this.rollButton.setBackgroundColor(canRoll ? '#f4b860' : '#3e4f5c');
+    if (canRoll && !this.rollButton.input?.enabled) this.rollButton.setInteractive({ useHandCursor: true });
+    else if (!canRoll && this.rollButton.input?.enabled) this.rollButton.disableInteractive();
     if (this.tableActive) {
       const currentCombo = evaluateFivesCombo(this.dice);
       this.comboText.setText(
@@ -742,7 +788,7 @@ export class CasinoScene extends Phaser.Scene {
     }
     this.statusText.setText(crapsSummary
       ? `Craps: ${crapsSummary} • ${crapsChestText}`
-      : (this.tableActive ? `Rolls left: ${this.rollsLeft}` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
+      : (this.tableActive ? `Rolls left: ${this.rollsLeft}  •  Locked dice reroll cost: ${lockedCost} chips` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
   }
 

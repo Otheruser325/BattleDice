@@ -4,9 +4,20 @@ import { AchievementStore } from '../systems/AchievementStore';
 
 export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'] as const;
 export const DEFAULT_LOADOUT_IDS = new Set<string>(['Fire', 'Ice', 'Poison', 'Electric', 'Wind']);
+export const LOADOUT_SLOT_COUNT = 3;
+export const RARITY_TEXT_COLORS: Record<string, string> = {
+  Common: '#ffffff',
+  Uncommon: '#3dc45d',
+  Rare: '#5ba3ff',
+  Epic: '#b96cff',
+  Legendary: '#ffd84d',
+  Mythic: '#ff4d4d'
+};
 
 export const DICE_FLAGS_CACHE_KEY = 'dice:flags';
 const LOADOUT_KEY = 'dice:loadout';
+const LOADOUT_SLOTS_KEY = 'dice:loadoutSlots';
+const ACTIVE_LOADOUT_SLOT_KEY = 'dice:activeLoadoutSlot';
 const DICE_PROGRESS_KEY = 'dice:progress';
 const DICE_TOKENS_KEY = 'dice:tokens';
 const DIAMONDS_KEY = 'shop:diamonds';
@@ -114,25 +125,85 @@ export function getExclusiveDiceDefinitions(scene: Phaser.Scene): DiceDefinition
     .filter((definition): definition is DiceDefinition => Boolean(definition));
 }
 
-export function getSelectedLoadout(scene: Phaser.Scene): DiceTypeId[] {
-  const stored = scene.registry.get(LOADOUT_KEY) as DiceTypeId[] | undefined;
-  if (stored?.length === 5) {
-    const loadout = stored.filter((typeId) => isTypeIdFetchable(scene, typeId));
-    if (loadout.length === 5) return loadout;
-  }
-  const saved = readStored<DiceTypeId[]>(LOADOUT_KEY);
-  if (saved?.length === 5) {
-    const loadout = saved.filter((typeId) => isTypeIdFetchable(scene, typeId));
-    if (loadout.length === 5) {
-      scene.registry.set(LOADOUT_KEY, loadout);
-      return loadout;
-    }
+function sanitizeLoadout(scene: Phaser.Scene, loadout: unknown): DiceTypeId[] {
+  if (Array.isArray(loadout) && loadout.length === 5) {
+    const sanitized = loadout.filter((typeId): typeId is DiceTypeId => typeof typeId === 'string' && isTypeIdFetchable(scene, typeId));
+    if (sanitized.length === 5) return sanitized;
   }
   return [...DEFAULT_LOADOUT];
 }
 
+function getStoredActiveLoadout(scene: Phaser.Scene): DiceTypeId[] {
+  const stored = scene.registry.get(LOADOUT_KEY) as DiceTypeId[] | undefined;
+  const storedLoadout = sanitizeLoadout(scene, stored);
+  if (stored?.length === 5 && storedLoadout.length === 5) return storedLoadout;
+
+  const saved = readStored<DiceTypeId[]>(LOADOUT_KEY);
+  const savedLoadout = sanitizeLoadout(scene, saved);
+  if (saved?.length === 5 && savedLoadout.length === 5) {
+    scene.registry.set(LOADOUT_KEY, savedLoadout);
+    return savedLoadout;
+  }
+  return [...DEFAULT_LOADOUT];
+}
+
+export function getActiveLoadoutSlot(scene: Phaser.Scene): number {
+  const stored = scene.registry.get(ACTIVE_LOADOUT_SLOT_KEY) as number | undefined;
+  if (Number.isInteger(stored) && stored >= 0 && stored < LOADOUT_SLOT_COUNT) return stored;
+  const saved = readStored<number>(ACTIVE_LOADOUT_SLOT_KEY);
+  const slot = Number.isInteger(saved) && (saved as number) >= 0 && (saved as number) < LOADOUT_SLOT_COUNT ? saved as number : 0;
+  scene.registry.set(ACTIVE_LOADOUT_SLOT_KEY, slot);
+  writeStored(ACTIVE_LOADOUT_SLOT_KEY, slot);
+  return slot;
+}
+
+export function getLoadoutSlots(scene: Phaser.Scene): DiceTypeId[][] {
+  const fallback = Array.from({ length: LOADOUT_SLOT_COUNT }, () => [...DEFAULT_LOADOUT] as DiceTypeId[]);
+  const hydrate = (value: unknown): DiceTypeId[][] | null => {
+    if (!Array.isArray(value) || value.length !== LOADOUT_SLOT_COUNT) return null;
+    return value.map((slot) => sanitizeLoadout(scene, slot));
+  };
+
+  const stored = hydrate(scene.registry.get(LOADOUT_SLOTS_KEY));
+  if (stored) return stored;
+
+  const saved = hydrate(readStored<unknown>(LOADOUT_SLOTS_KEY));
+  const slots = saved ?? fallback;
+
+  if (!saved) {
+    const legacyLoadout = getStoredActiveLoadout(scene);
+    slots[getActiveLoadoutSlot(scene)] = legacyLoadout;
+  }
+
+  scene.registry.set(LOADOUT_SLOTS_KEY, slots);
+  writeStored(LOADOUT_SLOTS_KEY, slots);
+  return slots;
+}
+
+export function setActiveLoadoutSlot(scene: Phaser.Scene, slot: number) {
+  const bounded = Math.max(0, Math.min(LOADOUT_SLOT_COUNT - 1, Math.floor(slot)));
+  scene.registry.set(ACTIVE_LOADOUT_SLOT_KEY, bounded);
+  writeStored(ACTIVE_LOADOUT_SLOT_KEY, bounded);
+  const activeLoadout = getLoadoutSlots(scene)[bounded] ?? [...DEFAULT_LOADOUT];
+  scene.registry.set(LOADOUT_KEY, activeLoadout);
+  writeStored(LOADOUT_KEY, activeLoadout);
+}
+
+export function getSelectedLoadout(scene: Phaser.Scene): DiceTypeId[] {
+  const slots = getLoadoutSlots(scene);
+  const activeSlot = getActiveLoadoutSlot(scene);
+  const loadout = sanitizeLoadout(scene, slots[activeSlot]);
+  scene.registry.set(LOADOUT_KEY, loadout);
+  writeStored(LOADOUT_KEY, loadout);
+  return loadout;
+}
+
 export function setSelectedLoadout(scene: Phaser.Scene, loadout: DiceTypeId[]) {
-  const next = loadout.filter((typeId) => isTypeIdFetchable(scene, typeId)).slice(0, 5);
+  const next = sanitizeLoadout(scene, loadout);
+  const slots = getLoadoutSlots(scene);
+  slots[getActiveLoadoutSlot(scene)] = next;
+  scene.registry.set(LOADOUT_SLOTS_KEY, slots);
+  writeStored(LOADOUT_SLOTS_KEY, slots);
   scene.registry.set(LOADOUT_KEY, next);
   writeStored(LOADOUT_KEY, next);
 }
@@ -359,6 +430,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const allDefs = getAllDiceDefinitions(scene);
   const eligible = allDefs.filter((d) => canReceiveUsefulCopies(scene, d.typeId));
   const freebieCopiesByRarity: Record<string, number> = { Common: 20, Uncommon: 10, Rare: 5 };
+  const fallbackFreebieTokenAmount = 1_000;
   const isCurrentDiceFreebie = (offer: ShopOffer) => Boolean(
     offer.isFreebie &&
     !offer.isCoinOffer &&
@@ -367,10 +439,19 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
     offer.typeId &&
     isTypeIdFetchable(scene, offer.typeId) &&
     offer.rarity in freebieCopiesByRarity &&
-    offer.copies === freebieCopiesByRarity[offer.rarity]
+    offer.copies > 0 &&
+    offer.copies <= freebieCopiesByRarity[offer.rarity]
+  );
+  const isCurrentTokenFreebie = (offer: ShopOffer) => Boolean(
+    offer.isFreebie &&
+    offer.isCoinOffer &&
+    !offer.isDiceTokenOffer &&
+    !offer.isCasinoChipOffer &&
+    !offer.typeId &&
+    offer.coinAmount === fallbackFreebieTokenAmount
   );
   const sanitizedExistingOffers = existing.offers.filter((offer) => {
-    if (offer.isFreebie) return isCurrentDiceFreebie(offer) && (offer.purchased || canReceiveUsefulCopies(scene, offer.typeId));
+    if (offer.isFreebie) return isCurrentTokenFreebie(offer) || (isCurrentDiceFreebie(offer) && (offer.purchased || canReceiveUsefulCopies(scene, offer.typeId)));
     if (offer.isDiceTokenOffer || offer.isCasinoChipOffer) return true;
     if (!offer.typeId || !isTypeIdFetchable(scene, offer.typeId)) return false;
     return offer.purchased || canReceiveUsefulCopies(scene, offer.typeId);
@@ -382,7 +463,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
 
   const existingFreebie = sanitizedExisting.offers.find((offer) => offer.isFreebie);
   const existingFreebieUsesCurrentRules = eligible.length === 0
-    ? !existingFreebie
+    ? Boolean(existingFreebie && isCurrentTokenFreebie(existingFreebie))
     : Boolean(existingFreebie && isCurrentDiceFreebie(existingFreebie));
 
   if (sanitizedExisting.generatedDay === currentDay && existingFreebieUsesCurrentRules && sanitizedExisting.offers.some((offer) => offer.isDiceTokenOffer) && sanitizedExisting.offers.some((offer) => offer.isCasinoChipOffer)) {
@@ -410,19 +491,31 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
       id: 'freebie',
       typeId: freebieDef.typeId,
       isCoinOffer: false,
-      copies: freebieCopiesByRarity[freebieDef.rarity] ?? 20,
+      copies: Math.min(freebieCopiesByRarity[freebieDef.rarity] ?? 20, getRemainingUsefulCopies(scene, freebieDef.typeId)),
       coinAmount: 0,
       diamondCost: 0,
       rarity: freebieDef.rarity,
       isFreebie: true,
       purchased: false
     });
+  } else {
+    offers.push({
+      id: 'freebie',
+      typeId: '',
+      isCoinOffer: true,
+      copies: 0,
+      coinAmount: fallbackFreebieTokenAmount,
+      diamondCost: 0,
+      rarity: 'Token',
+      isFreebie: true,
+      purchased: false
+    });
   }
 
   const slotDefs = shuffled.filter((def) => def.typeId !== freebieDef?.typeId).slice(0, 5);
-  while (slotDefs.length < 5) {
+  while (slotDefs.length < 5 && shuffled.length > 0) {
     const fallback = shuffled[Math.floor(seededRandom() * shuffled.length)];
-    if (fallback) slotDefs.push(fallback);
+    if (fallback && !slotDefs.some((def) => def.typeId === fallback.typeId) && fallback.typeId !== freebieDef?.typeId) slotDefs.push(fallback);
     else break;
   }
 
