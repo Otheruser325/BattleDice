@@ -347,8 +347,6 @@ export class CasinoScene extends Phaser.Scene {
     if (lockedCost > 0) CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - lockedCost }));
     this.isRolling = true;
     AudioManager.playSfx(this, 'chest-open');
-
-    const progress = CasinoProgressStore.get(this);
     const isGuaranteed = progress.fivesGauge >= 1000;
     if (isGuaranteed) {
       const guaranteedPip = Phaser.Math.Between(1, 6);
