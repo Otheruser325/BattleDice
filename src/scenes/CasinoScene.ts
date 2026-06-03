@@ -32,7 +32,7 @@ const CHEST_TOKEN_REWARDS: Record<ChestType, [number, number]> = {
   Master: [500, 1500]
 };
 
-type RewardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
+type RewardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
 
 interface ChestDropRateEntry {
   rarity: RewardRarity;
@@ -102,6 +102,10 @@ export class CasinoScene extends Phaser.Scene {
   private activeRewardDetailClose: (() => void) | null = null;
   private casinoGrantChipsHandler: (() => void) | null = null;
 
+  private gaugeBg!: Phaser.GameObjects.Rectangle;
+  private gaugeFill!: Phaser.GameObjects.Rectangle;
+  private gaugeText!: Phaser.GameObjects.Text;
+
   create() {
     if (this.casinoGrantChipsHandler) this.registry.events.off('casino:grantChips', this.casinoGrantChipsHandler);
     this.casinoGrantChipsHandler = () => {
@@ -152,6 +156,27 @@ export class CasinoScene extends Phaser.Scene {
 
     this.drawButtons(panel.centerX, panel.centerY + 32);
     this.drawChestSidebar(panel.right - 145, panel.y + 112);
+
+    const gaugeY = panel.centerY + 85;
+    this.add.text(panel.centerX, gaugeY - 18, 'FIVES GAUGE (1000 = GUARANTEED FIVE-OF-A-KIND)', {
+      fontFamily: 'Orbitron',
+      fontSize: '10px',
+      color: PALETTE.textMuted
+    }).setOrigin(0.5);
+
+    this.gaugeBg = this.add.rectangle(panel.centerX, gaugeY, 400, 16, 0x0d2231, 0.95)
+      .setStrokeStyle(1, 0x3a6688);
+
+    this.gaugeFill = this.add.rectangle(panel.centerX - 200, gaugeY, 0, 14, 0xf4b860, 0.85)
+      .setOrigin(0, 0.5);
+
+    this.gaugeText = this.add.text(panel.centerX, gaugeY, '', {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
     this.render();
   }
 
@@ -322,9 +347,31 @@ export class CasinoScene extends Phaser.Scene {
     if (lockedCost > 0) CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - lockedCost }));
     this.isRolling = true;
     AudioManager.playSfx(this, 'chest-open');
-    this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
+
+    const progress = CasinoProgressStore.get(this);
+    const isGuaranteed = progress.fivesGauge >= 1000;
+    if (isGuaranteed) {
+      const guaranteedPip = Phaser.Math.Between(1, 6);
+      this.dice = [guaranteedPip, guaranteedPip, guaranteedPip, guaranteedPip, guaranteedPip];
+      this.locks = [false, false, false, false, false];
+    } else {
+      this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
+    }
+
     this.rollsLeft -= 1;
-    this.saveFivesHand();
+    const rollSum = this.dice.reduce((a, b) => a + b, 0);
+
+    CasinoProgressStore.mutate(this, (current) => ({
+      ...current,
+      fivesGauge: isGuaranteed ? rollSum : current.fivesGauge + rollSum,
+      fivesHand: {
+        dice: [...this.dice],
+        locks: [...this.locks],
+        rollsLeft: this.rollsLeft,
+        tableActive: this.tableActive
+      }
+    }));
+
     try {
       await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: this.locks, jitter: 8 });
     } finally {
@@ -365,6 +412,7 @@ export class CasinoScene extends Phaser.Scene {
     CasinoProgressStore.mutate(this, (current) => ({
       ...current,
       chips: current.chips - 2,
+      fivesGauge: 0,
       chests: outcome.chestType
         ? { ...current.chests, [outcome.chestType]: current.chests[outcome.chestType] + outcome.chestCount }
         : current.chests
@@ -790,6 +838,31 @@ export class CasinoScene extends Phaser.Scene {
       ? `Craps: ${crapsSummary} • ${crapsChestText}`
       : (this.tableActive ? `Rolls left: ${this.rollsLeft}  •  Locked dice reroll cost: ${lockedCost} chips` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
+
+    // Render Fives Gauge
+    const currentGauge = progress.fivesGauge;
+    const progressPct = Phaser.Math.Clamp(currentGauge / 1000, 0, 1);
+    this.gaugeFill.width = progressPct * 400;
+
+    if (currentGauge >= 1000) {
+      this.gaugeFill.setFillStyle(0x27ae60, 0.9); // Green when ready
+      this.gaugeText.setText(`READY! GUARANTEED 5-OF-A-KIND`);
+      if (!this.tweens.isTweening(this.gaugeFill)) {
+        this.gaugeFill.setAlpha(0.9);
+        this.tweens.add({
+          targets: this.gaugeFill,
+          alpha: 0.5,
+          duration: 600,
+          yoyo: true,
+          repeat: -1
+        });
+      }
+    } else {
+      this.gaugeFill.setFillStyle(0xf4b860, 0.85); // Gold
+      this.gaugeText.setText(`${currentGauge} / 1000`);
+      this.gaugeFill.setAlpha(0.85);
+      this.tweens.killTweensOf(this.gaugeFill);
+    }
   }
 
 }

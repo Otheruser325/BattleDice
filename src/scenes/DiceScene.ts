@@ -197,7 +197,7 @@ export class DiceScene extends Phaser.Scene {
 RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
-        color: locked ? PALETTE.textMuted : PALETTE.text
+        color: locked ? PALETTE.textMuted : (RARITY_TEXT_COLORS[die.rarity] ?? PALETTE.text)
       });
 
       const skillInfo = formatSkillInfo(displayedDie, locked);
