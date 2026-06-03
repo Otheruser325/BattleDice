@@ -15,6 +15,7 @@ import {
   setShopState,
   getShopState,
   getAllDiceDefinitions,
+  RARITY_TEXT_COLORS,
   type ShopOffer,
   type ShopState
 } from '../data/dice';
@@ -224,7 +225,7 @@ export class ShopScene extends Phaser.Scene {
 
     const headerLabel = this.getOfferHeaderLabel(offer);
     const rarityColors: Record<string, string> = {
-      Common: '#aaaaaa', Uncommon: '#3dc45d', Rare: '#5ba3ff', Epic: '#c06bdb', Legendary: '#f4b860', Mythic: '#ff73e8', Diamond: '#7ec8e3', Casino: '#f4b860'
+      ...RARITY_TEXT_COLORS, Diamond: '#7ec8e3', Casino: '#f4b860'
     };
     const headerTag = this.add.text(x + CARD_W / 2, y + 10, headerLabel, {
       fontFamily: 'Orbitron', fontSize: offer.isFreebie ? '13px' : '12px', color: effectivelyClaimed ? PALETTE.textMuted : (rarityColors[offer.rarity] ?? PALETTE.accentSoft)
@@ -257,9 +258,11 @@ export class ShopScene extends Phaser.Scene {
 
     if (!offer.isCoinOffer && offer.typeId) {
       const progress = getDiceProgress(this, offer.typeId);
-      const progressLine = `Current: C${progress.classLevel}/15  •  ${progress.copies} copies`;
+      const progressLine = canReceiveUsefulCopies(this, offer.typeId)
+        ? `Current: C${progress.classLevel}/15  •  ${progress.copies} copies`
+        : 'MAXED OUT';
       const progressText = this.add.text(x + 8, y + 108, progressLine, {
-        fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
+        fontFamily: 'Orbitron', fontSize: '11px', color: progressLine === 'MAXED OUT' ? PALETTE.success : PALETTE.textMuted
       });
       objs.push(progressText);
     }
