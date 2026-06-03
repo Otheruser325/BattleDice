@@ -4,6 +4,10 @@ import {
   getRangeLabel,
   getSelectedLoadout,
   setSelectedLoadout,
+  getActiveLoadoutSlot,
+  setActiveLoadoutSlot,
+  LOADOUT_SLOT_COUNT,
+  RARITY_TEXT_COLORS,
   getDiceTokens,
   getDiceProgress,
   setDiceProgress,
@@ -91,14 +95,14 @@ export class DiceScene extends Phaser.Scene {
   }
 
   create() {
-    const panel = drawPanel(this, 'DICE', 'Loadout  |  Non-defaults unlock with copies');
+    const panel = drawPanel(this, 'DICE', 'Deck slots 1-3 save separate loadouts  |  Non-defaults unlock with copies');
     const rarityRank: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4, Mythic: 5 };
     const definitions = [...getAllDiceDefinitions(this)].sort((a, b) => (rarityRank[a.rarity] ?? 99) - (rarityRank[b.rarity] ?? 99) || a.title.localeCompare(b.title));
     let loadout = getSelectedLoadout(this);
     this.debug.log('Dice scene rendered.', { diceCount: definitions.length });
 
     let tokens = getDiceTokens(this);
-    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`, {
+    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Pick deck 1-3, then click cards to assign selected slot`, {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft
     });
     const slotText = this.add.text(panel.x + 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text });
@@ -106,10 +110,27 @@ export class DiceScene extends Phaser.Scene {
     const slotBoxes: Phaser.GameObjects.Rectangle[] = [];
     const slotLabels: Phaser.GameObjects.Text[] = [];
     let selectedSlot = 0;
-    const slotStartX = panel.centerX - 260;
+    let selectedDeckSlot = getActiveLoadoutSlot(this);
+    const deckBoxes: Phaser.GameObjects.Rectangle[] = [];
+    for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
+      const x = panel.right - 212 + i * 58;
+      const box = this.add.rectangle(x, panel.y + 116, 46, 34, 0x1b4058, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
+      const lbl = this.add.text(x, panel.y + 116, `${i + 1}`, { fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text }).setOrigin(0.5);
+      box.on('pointerdown', () => {
+        setActiveLoadoutSlot(this, i);
+        selectedDeckSlot = i;
+        loadout = getSelectedLoadout(this);
+        selectedSlot = 0;
+        refreshSlots();
+      });
+      deckBoxes.push(box);
+      slotLabels.push(lbl);
+    }
+    const deckLabel = this.add.text(panel.right - 212, panel.y + 90, 'DECK', { fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted }).setOrigin(0.5);
+    const slotStartX = panel.centerX - 312;
     for (let i = 0; i < 5; i++) {
-      const x = slotStartX + i * 130;
-      const box = this.add.rectangle(x, panel.y + 118, 118, 46, 0x173247, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
+      const x = slotStartX + i * 112;
+      const box = this.add.rectangle(x, panel.y + 118, 104, 46, 0x173247, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
       const lbl = this.add.text(x, panel.y + 118, loadout[i]?.slice(0, 4).toUpperCase() ?? '-', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5);
       box.on('pointerdown', () => {
         selectedSlot = i;
@@ -120,11 +141,16 @@ export class DiceScene extends Phaser.Scene {
     }
 
     const refreshSlots = () => {
-      slotText.setText(`LOADOUT VIEW (top-mid): ${loadout.join(' | ')}  •  Active slot: ${selectedSlot + 1}`);
+      slotText.setText(`DECK ${selectedDeckSlot + 1}: ${loadout.join(' | ')}  •  Editing dice slot: ${selectedSlot + 1}`);
       const owned = definitions.filter((d)=>!this.isDiceLocked(d.typeId)).length;
       ownedCountText.setText(`OWNED ${owned}/${definitions.length}`);
       slotBoxes.forEach((box, i) => box.setStrokeStyle(2, i === selectedSlot ? 0xf4b860 : 0x406987));
-      slotLabels.forEach((lbl, i) => lbl.setText(loadout[i]?.slice(0, 4).toUpperCase() ?? '-'));
+      deckBoxes.forEach((box, i) => box.setStrokeStyle(2, i === selectedDeckSlot ? 0xf4b860 : 0x406987));
+      slotLabels.forEach((lbl, i) => {
+        if (i < LOADOUT_SLOT_COUNT) return;
+        const loadoutIndex = i - LOADOUT_SLOT_COUNT;
+        lbl.setText(loadout[loadoutIndex]?.slice(0, 4).toUpperCase() ?? '-');
+      });
     };
     refreshSlots();
 
@@ -166,7 +192,7 @@ export class DiceScene extends Phaser.Scene {
 RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
-        color: locked ? PALETTE.textMuted : PALETTE.text
+        color: locked ? PALETTE.textMuted : (RARITY_TEXT_COLORS[die.rarity] ?? PALETTE.text)
       });
 
       const skillInfo = formatSkillInfo(displayedDie, locked);
@@ -210,7 +236,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
           loadout = getSelectedLoadout(this);
           refreshSlots();
           tokens = getDiceTokens(this);
-          tokenText.setText(`DICE TOKENS: ${tokens}  •  Click cards to assign selected slot`);
+          tokenText.setText(`DICE TOKENS: ${tokens}  •  Pick deck 1-3, then click cards to assign selected slot`);
           refreshCardStats.forEach((refresh) => refresh());
           refreshVisibleCardInteractivity();
         }, selectedSlot);
@@ -443,7 +469,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
         if (newClassLevel >= 6) AchievementStore.unlock(this, 'getting_stronger');
         if (newClassLevel >= 11) AchievementStore.unlock(this, 'augmented');
         if (newClassLevel >= 15) AchievementStore.unlock(this, 'maximum_power');
-        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click cards to assign selected slot`);
+        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Pick deck 1-3, then click cards to assign selected slot`);
         onUpdate();
         this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot, showAlternate);
       });
