@@ -430,6 +430,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const allDefs = getAllDiceDefinitions(scene);
   const eligible = allDefs.filter((d) => canReceiveUsefulCopies(scene, d.typeId));
   const freebieCopiesByRarity: Record<string, number> = { Common: 20, Uncommon: 10, Rare: 5 };
+  const fallbackFreebieTokenAmount = 1_000;
   const isCurrentDiceFreebie = (offer: ShopOffer) => Boolean(
     offer.isFreebie &&
     !offer.isCoinOffer &&
@@ -438,10 +439,19 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
     offer.typeId &&
     isTypeIdFetchable(scene, offer.typeId) &&
     offer.rarity in freebieCopiesByRarity &&
-    offer.copies === freebieCopiesByRarity[offer.rarity]
+    offer.copies > 0 &&
+    offer.copies <= freebieCopiesByRarity[offer.rarity]
+  );
+  const isCurrentTokenFreebie = (offer: ShopOffer) => Boolean(
+    offer.isFreebie &&
+    offer.isCoinOffer &&
+    !offer.isDiceTokenOffer &&
+    !offer.isCasinoChipOffer &&
+    !offer.typeId &&
+    offer.coinAmount === fallbackFreebieTokenAmount
   );
   const sanitizedExistingOffers = existing.offers.filter((offer) => {
-    if (offer.isFreebie) return isCurrentDiceFreebie(offer) && (offer.purchased || canReceiveUsefulCopies(scene, offer.typeId));
+    if (offer.isFreebie) return isCurrentTokenFreebie(offer) || (isCurrentDiceFreebie(offer) && (offer.purchased || canReceiveUsefulCopies(scene, offer.typeId)));
     if (offer.isDiceTokenOffer || offer.isCasinoChipOffer) return true;
     if (!offer.typeId || !isTypeIdFetchable(scene, offer.typeId)) return false;
     return offer.purchased || canReceiveUsefulCopies(scene, offer.typeId);
@@ -453,7 +463,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
 
   const existingFreebie = sanitizedExisting.offers.find((offer) => offer.isFreebie);
   const existingFreebieUsesCurrentRules = eligible.length === 0
-    ? !existingFreebie
+    ? Boolean(existingFreebie && isCurrentTokenFreebie(existingFreebie))
     : Boolean(existingFreebie && isCurrentDiceFreebie(existingFreebie));
 
   if (sanitizedExisting.generatedDay === currentDay && existingFreebieUsesCurrentRules && sanitizedExisting.offers.some((offer) => offer.isDiceTokenOffer) && sanitizedExisting.offers.some((offer) => offer.isCasinoChipOffer)) {
@@ -481,10 +491,22 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
       id: 'freebie',
       typeId: freebieDef.typeId,
       isCoinOffer: false,
-      copies: freebieCopiesByRarity[freebieDef.rarity] ?? 20,
+      copies: Math.min(freebieCopiesByRarity[freebieDef.rarity] ?? 20, getRemainingUsefulCopies(scene, freebieDef.typeId)),
       coinAmount: 0,
       diamondCost: 0,
       rarity: freebieDef.rarity,
+      isFreebie: true,
+      purchased: false
+    });
+  } else {
+    offers.push({
+      id: 'freebie',
+      typeId: '',
+      isCoinOffer: true,
+      copies: 0,
+      coinAmount: fallbackFreebieTokenAmount,
+      diamondCost: 0,
+      rarity: 'Token',
       isFreebie: true,
       purchased: false
     });

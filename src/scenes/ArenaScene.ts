@@ -472,7 +472,8 @@ export class ArenaScene extends Phaser.Scene {
       this.add.rectangle(cx, cy, 560, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 142, scaled.title.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '22px', color: definition.accent }).setOrigin(0.5),
       this.add.text(cx - 46, cy - 104, `ATK ${scaled.attack}  |  HP ${scaled.health}  |  RANGE ${scaled.range}`, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5),
-      this.add.text(cx - 46, cy - 78, `${definition.rarity.toUpperCase()}  |  TARGET ${scaled.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor }).setOrigin(0.5),
+      this.add.text(cx - 130, cy - 78, definition.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor }).setOrigin(0.5),
+      this.add.text(cx - 4, cy - 78, `TARGET ${scaled.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text }).setOrigin(0.5),
       this.add.circle(cx + 220, cy - 92, 28, rarityFill, 0.95).setStrokeStyle(2, 0xffffff, 0.55),
       this.add.text(cx + 220, cy - 100, 'CLASS', { fontFamily: 'Orbitron', fontSize: '9px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff' }).setOrigin(0.5),
       this.add.text(cx + 220, cy - 84, `${progress.classLevel}`, { fontFamily: 'Orbitron', fontSize: '18px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff' }).setOrigin(0.5),
@@ -1097,10 +1098,10 @@ export class ArenaScene extends Phaser.Scene {
     let claimedDay7LegendaryTitle = reward.day7LegendaryTitle;
     if (day === 1) { setDiamonds(this, getDiamonds(this) + 50); message = '+50 Diamonds'; }
     if (day === 2) { setDiceTokens(this, getDiceTokens(this) + 1000); message = '+1,000 Dice Tokens'; }
-    if (day === 3) { message = '+20 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 20 })); this.registry.events.emit('casino:grantChips', 20); }
+    if (day === 3) { message = '+20 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 20 })); }
     if (day === 4) { setDiamonds(this, getDiamonds(this) + 100); message = '+100 Diamonds'; }
     if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
-    if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); this.registry.events.emit('casino:grantChips', 50); }
+    if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); }
     if (day === 7) {
       const legendaries = getAllDiceDefinitions(this)
         .filter((d) => d.rarity === 'Legendary')

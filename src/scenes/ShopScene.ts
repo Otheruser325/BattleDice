@@ -111,7 +111,7 @@ export class ShopScene extends Phaser.Scene {
           const targetOffer = shopState.offers[offerIdx];
           if (targetOffer.purchased && !this.isInfiniteCurrencyOffer(offer)) return;
           if (offer.isFreebie && shopState.freebieClaimedThisSession) return;
-          if (offer.isFreebie && (offer.isCoinOffer || offer.isDiceTokenOffer || offer.isCasinoChipOffer || !offer.typeId || !canReceiveUsefulCopies(this, offer.typeId))) return;
+          if (offer.isFreebie && !offer.isCoinOffer && (!offer.typeId || !canReceiveUsefulCopies(this, offer.typeId))) return;
 
           const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
           const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
@@ -227,10 +227,21 @@ export class ShopScene extends Phaser.Scene {
     const rarityColors: Record<string, string> = {
       ...RARITY_TEXT_COLORS, Diamond: '#7ec8e3', Casino: '#f4b860'
     };
-    const headerTag = this.add.text(x + CARD_W / 2, y + 10, headerLabel, {
-      fontFamily: 'Orbitron', fontSize: offer.isFreebie ? '13px' : '12px', color: effectivelyClaimed ? PALETTE.textMuted : (rarityColors[offer.rarity] ?? PALETTE.accentSoft)
-    }).setOrigin(0.5, 0);
-    objs.push(headerTag);
+    const headerColor = effectivelyClaimed ? PALETTE.textMuted : (rarityColors[offer.rarity] ?? PALETTE.accentSoft);
+    if (offer.isFreebie && offer.typeId) {
+      const prefixTag = this.add.text(x + CARD_W / 2 - 12, y + 10, '★ DAILY FREEBIE —', {
+        fontFamily: 'Orbitron', fontSize: '13px', color: effectivelyClaimed ? PALETTE.textMuted : PALETTE.text
+      }).setOrigin(1, 0);
+      const rarityTag = this.add.text(x + CARD_W / 2 - 6, y + 10, offer.rarity.toUpperCase(), {
+        fontFamily: 'Orbitron', fontSize: '13px', color: headerColor
+      }).setOrigin(0, 0);
+      objs.push(prefixTag, rarityTag);
+    } else {
+      const headerTag = this.add.text(x + CARD_W / 2, y + 10, headerLabel, {
+        fontFamily: 'Orbitron', fontSize: offer.isFreebie ? '13px' : '12px', color: headerColor
+      }).setOrigin(0.5, 0);
+      objs.push(headerTag);
+    }
 
     const nameLine = offer.isCasinoChipOffer
       ? 'Casino Chips'
