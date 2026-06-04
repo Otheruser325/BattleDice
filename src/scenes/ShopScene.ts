@@ -266,7 +266,10 @@ export class ShopScene extends Phaser.Scene {
         ? 'Dice Tokens'
         : (offer.typeId ? (() => {
           const def = getAllDiceDefinitions(this).find(d => d.typeId === offer.typeId);
-          return (def?.title ?? offer.typeId) + ' Dice';
+          const baseName = def?.title ?? offer.typeId;
+          // Remove "Dice" suffix if it's the last word
+          const displayName = baseName.endsWith('Dice') ? baseName.slice(0, -4).trim() : baseName;
+          return displayName + ' Dice';
         })() : '—'));
     const nameText = this.add.text(x + 8, y + 48, nameLine.toUpperCase(), {
       fontFamily: 'Orbitron', fontSize: '17px', color: effectivelyClaimed ? PALETTE.textMuted : (offer.isFreebie ? '#8ae0a1' : accentHex)
