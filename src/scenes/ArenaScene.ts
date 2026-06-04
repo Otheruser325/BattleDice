@@ -20,7 +20,7 @@ import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
-import { applyClassProgression, getClassScaledSkillDescription } from '../systems/ClassProgression';
+import { applyClassProgression, getClassScaledSkillDescription, getClassMultiplier } from '../systems/ClassProgression';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
@@ -3897,14 +3897,20 @@ export class ArenaScene extends Phaser.Scene {
       const currentSouls = this.soulDiceSoulsConjured.get(soulDie.instanceId) ?? 0;
       this.soulDiceSoulsConjured.set(soulDie.instanceId, currentSouls + 1);
       
-      // Use class-scaled soulBoostPercent from scaled definition
+      // Soul boost: apply to BASE stats (before class scaling), then apply class multiplier
+      // This prevents over-scaling where soul boost compounds with class-scaled stats
       if (scaledMeta.soulBoostPercent) {
-        const baseAttack = scaledDef.attack;
-        const baseHealth = scaledDef.health;
+        const classLevel = this.instanceClassLevels.get(soulDie.instanceId) ?? 1;
+        const classMultiplier = getClassMultiplier(classLevel);
+        
+        const baseAttack = baseDefinition.attack;
+        const baseHealth = baseDefinition.health;
         const boostPerSoul = scaledMeta.soulBoostPercent / 100;
         const totalBoost = boostPerSoul * (currentSouls + 1);
-        const newAttack = Math.round(baseAttack * (1 + totalBoost));
-        const newMaxHealth = Math.round(baseHealth * (1 + totalBoost));
+        
+        // Apply soul boost to base stats, then apply class multiplier
+        const newAttack = Math.round((baseAttack * (1 + totalBoost)) * classMultiplier);
+        const newMaxHealth = Math.round((baseHealth * (1 + totalBoost)) * classMultiplier);
         const healthRatio = soulDie.currentHealth / soulDie.maxHealth;
         const newCurrentHealth = Math.round(newMaxHealth * healthRatio);
         
@@ -4572,29 +4578,8 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderDiceCardInfoPanel() {
     this.diceCardInfoContainer?.destroy(true);
-    const y = this.scale.height - 30;
-    const c = this.add.container(0, 0).setDepth(350);
-    this.diceCardInfoContainer = c;
-    const tip = this.add.text(this.scale.width / 2 - 110, y - 70, '', { fontFamily: 'Orbitron', fontSize: '12px', color: '#fff2d8', backgroundColor: '#102030', padding: { x: 8, y: 6 }, wordWrap: { width: 210 } }).setDepth(351).setVisible(false);
-    const renderSide=(keys:string[], right:boolean)=>{
-      keys.slice(-8).forEach((key, idx) => {
-      const info = this.getDiceCardDescription(key);
-      const px = right ? this.scale.width - 24 - (idx*24) : 24 + (idx*24);
-      const icon = this.add.text(px, y, info.icon, { fontSize: '18px', color: info.color ?? '#ffffff' }).setOrigin(right ? 1 : 0, 1).setInteractive({ useHandCursor: true });
-      icon.on('pointerover', () => { tip.setText(`${info.title} (${info.rarity})\n${info.desc}`).setVisible(true); });
-      icon.on('pointerout', () => tip.setVisible(false));
-      c.add(icon);
-    });};
-    // Dice Card upgrades are NOT pre-rendered in the info panel - they appear only via the card picker UI
-    // For all modes, show the dice type icons
-    const playerDiceKeys = this.gameState.dice
-      .filter(d => d.ownerId === 'player')
-      .map(d => d.typeId);
-    const enemyDiceKeys = this.gameState.dice
-      .filter(d => d.ownerId === 'enemy')
-      .map(d => d.typeId);
-    renderSide(playerDiceKeys,false);
-    renderSide(enemyDiceKeys,true);
+    // This panel is intentionally empty - dice card upgrades appear via the card picker UI,
+    // and dice type icons are not needed as permanent placeholders
   }
 
   private renderDice() {
