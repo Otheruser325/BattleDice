@@ -1,0 +1,22 @@
+{
+  "typeId": "BrokenGrowth",
+  "title": "Broken Growth Dice",
+  "attack": 22,
+  "health": 640,
+  "range": 4,
+  "rarity": "Epic",
+  "skills": [
+    {
+      "type": "CombatEnd",
+      "title": "Corrupted Growth",
+      "description": "50% chance to increase or decrease attack count by 1 for the remainder of the match. Works similarly to Growth Dice but with a downside.",
+      "modifiers": {
+        "notes": [
+          "runtime:brokenGrowthPermanent"
+        ]
+      }
+    }
+  ],
+  "accent": "#b86cff",
+  "targetingMode": "Nearest"
+}
