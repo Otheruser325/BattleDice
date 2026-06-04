@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Soul Harvest",
-      "description": "Conjures defeated ally souls. Soul Dice gains +20% damage and health for each soul conjured. Stats increase linearly per soul conjured with no cap.",
+      "description": "Conjures defeated ally souls. Soul Dice gains +20% damage and health for each soul conjured.",
       "modifiers": {
         "canConjureSouls": true,
         "conjureType": "ally",

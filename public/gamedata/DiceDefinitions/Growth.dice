@@ -9,7 +9,7 @@
     {
       "type": "CombatEnd",
       "title": "Exponential Growth",
-      "description": "Permanently gains +1 attack count for the remainder of the match at the end of each combat phase.",
+      "description": "Permanently gains +1 attack count for the remainder of the match.",
       "modifiers": {
         "notes": [
           "runtime:growthPermanent"
