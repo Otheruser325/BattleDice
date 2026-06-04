@@ -3,7 +3,7 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgressStore';
 import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
-import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, DEFAULT_LOADOUT_IDS } from '../data/dice';
+import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, DEFAULT_LOADOUT_IDS, applyClassProgression, formatSkillInfo, getRangeLabel } from '../data/dice';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
@@ -809,8 +809,12 @@ export class CasinoScene extends Phaser.Scene {
     if (!definition) return;
     const progress = getDiceProgress(this, definition.typeId);
     const { width, height } = this.scale;
+    
+    // Get display stats with class progression applied
+    const displayDie = applyClassProgression(definition, progress.classLevel);
+    
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 540, 320, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
+    const panel = this.add.rectangle(width / 2, height / 2, 540, 380, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
     
     const rarityColors: Record<string, string> = {
       Common: '#ffffff',
@@ -821,54 +825,97 @@ export class CasinoScene extends Phaser.Scene {
       Mythic: '#ff4d4d'
     };
     const rarityColor = rarityColors[definition.rarity] ?? PALETTE.text;
-    const accentColor = Phaser.Display.Color.HexStringToColor(rarityColor).color;
-    const accentHex = definition.accent ?? rarityColor;
     
-    const header = this.add.rectangle(width / 2, height / 2 - 128, 540, 46, accentColor, 0.18);
-    const title = this.add.text(width / 2, height / 2 - 130, definition.title.toUpperCase(), {
+    const cls = progress.classLevel;
+    const isMaxed = cls >= 15;
+    
+    // Title with class level
+    const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, {
       fontFamily: 'Orbitron',
       fontSize: '20px',
-      color: accentHex
+      color: definition.accent
     }).setOrigin(0.5);
     
-    const classCircle = this.add.rectangle(width / 2 - 80, height / 2 - 78, 14, 14, accentColor, 0.95);
-    const classText = this.add.text(width / 2 - 60, height / 2 - 82, `CLASS ${progress.classLevel}/15`, {
+    // Stats with class progression
+    const stats = this.add.text(width / 2, height / 2 - 116, `ATK ${displayDie.attack}  |  HP ${displayDie.health}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
-      color: PALETTE.text
-    }).setOrigin(0, 0.5);
-    
-    const rarityCircle = this.add.rectangle(width / 2 + 20, height / 2 - 78, 14, 14, accentColor, 0.95);
-    const rarityText = this.add.text(width / 2 + 42, height / 2 - 82, definition.rarity.toUpperCase(), {
-      fontFamily: 'Orbitron',
-      fontSize: '12px',
-      color: PALETTE.text
-    }).setOrigin(0, 0.5);
-    
-    const copiesCircle = this.add.rectangle(width / 2 + 150, height / 2 - 78, 14, 14, 0x7ec8e3, 0.95);
-    const copiesText = this.add.text(width / 2 + 172, height / 2 - 82, `${progress.copies} copies`, {
-      fontFamily: 'Orbitron',
-      fontSize: '12px',
-      color: PALETTE.text
-    }).setOrigin(0, 0.5);
-    
-    const statsLine = this.add.text(width / 2, height / 2 - 50, `ATK ${definition.attack}  |  HP ${definition.health}  |  RANGE ${definition.range} (${definition.targetingMode.toUpperCase()})`, {
-      fontFamily: 'Orbitron',
-      fontSize: '12px',
-      color: PALETTE.textMuted,
+      color: PALETTE.text,
       align: 'center'
     }).setOrigin(0.5);
     
-    const skillLines = definition.skills.map((skill) => `${skill.title} (${skill.type})`).join('\n') || 'No skill';
-    const skillText = this.add.text(width / 2, height / 2 + 4, skillLines, {
+    // Rarity label and colored rarity text (matching DiceScene style)
+    const rarityLabel = this.add.text(width / 2 - 126, height / 2 - 94, 'RARITY', {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.text,
+      align: 'center'
+    }).setOrigin(0.5);
+    const rarityStats = this.add.text(width / 2 - 100, height / 2 - 94, definition.rarity, {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: rarityColor,
+      align: 'center'
+    }).setOrigin(0, 0.5);
+    
+    // Target and copies (matching DiceScene style)
+    const targetStats = this.add.text(width / 2 + 104, height / 2 - 94, `TARGET ${definition.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.text,
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    // Class circle indicator
+    const classCircle = this.add.circle(width / 2 + 220, height / 2 - 92, 28, Phaser.Display.Color.HexStringToColor(rarityColor).color, 0.95).setStrokeStyle(2, 0xffffff, 0.55);
+    const classLabel = this.add.text(width / 2 + 220, height / 2 - 100, 'CLASS', {
+      fontFamily: 'Orbitron',
+      fontSize: '9px',
+      color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff'
+    }).setOrigin(0.5);
+    const classLevelText = this.add.text(width / 2 + 220, height / 2 - 84, `${cls}`, {
+      fontFamily: 'Orbitron',
+      fontSize: '18px',
+      color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff'
+    }).setOrigin(0.5);
+    
+    // Skill info with scrolling (matching DiceScene style)
+    const skillViewportWidth = 470;
+    const skillViewportHeight = 112;
+    const skillViewportTop = height / 2 - 88;
+    const skillTextContent = formatSkillInfo(displayDie);
+    const skillContainer = this.add.container(width / 2, skillViewportTop);
+    const skill = this.add.text(0, 0, skillTextContent, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted,
       align: 'center',
-      wordWrap: { width: 480 }
+      wordWrap: { width: 440 }
+    }).setOrigin(0.5, 0);
+    skillContainer.add(skill);
+    const skillMaskShape = this.add.rectangle(width / 2 - skillViewportWidth / 2, skillViewportTop, skillViewportWidth, skillViewportHeight, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setVisible(false);
+    skillContainer.setMask(skillMaskShape.createGeometryMask());
+    const maxSkillScroll = Math.max(0, skill.height - skillViewportHeight);
+    const skillScrollHint = this.add.text(width / 2, skillViewportTop + skillViewportHeight + 4, maxSkillScroll > 0 ? 'Scroll for more skill info' : '', {
+      fontFamily: 'Orbitron',
+      fontSize: '10px',
+      color: PALETTE.textMuted
     }).setOrigin(0.5);
     
-    const closeBtn = this.add.text(width / 2, height / 2 + 128, 'Close', {
+    // Scroll handler
+    let skillScrollOffset = 0;
+    const wheelHandler = (pointer: Phaser.Input.Pointer, _go: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      const withinX = pointer.worldX >= width / 2 - skillViewportWidth / 2 && pointer.worldX <= width / 2 + skillViewportWidth / 2;
+      const withinY = pointer.worldY >= skillViewportTop && pointer.worldY <= skillViewportTop + skillViewportHeight;
+      if (!withinX || !withinY || maxSkillScroll <= 0) return;
+      skillScrollOffset = Phaser.Math.Clamp(skillScrollOffset - dy * 0.35, -maxSkillScroll, 0);
+      skillContainer.y = skillViewportTop + skillScrollOffset;
+    };
+    this.input.on('wheel', wheelHandler);
+    
+    const closeBtn = this.add.text(width / 2, height / 2 + 155, 'Close', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted,
@@ -879,13 +926,17 @@ export class CasinoScene extends Phaser.Scene {
     const escHandler = () => close();
     this.input.keyboard?.on('keydown-ESC', escHandler);
     const close = () => {
+      this.input.off('wheel', wheelHandler);
       this.input.keyboard?.off('keydown-ESC', escHandler);
-      [overlay, panel, header, title, classCircle, classText, rarityCircle, rarityText, copiesCircle, copiesText, statsLine, skillText, closeBtn].forEach((obj) => obj.destroy());
+      [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, closeBtn].forEach((obj) => obj.destroy());
       this.activeRewardDetailClose = null;
     };
     this.activeRewardDetailClose = close;
     closeBtn.on('pointerdown', close);
     overlay.on('pointerdown', () => undefined);
+    
+    // Set depth for all elements
+    [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, closeBtn].forEach((el) => (el as any).setDepth?.(450));
   }
 
   private getDiceTextureKey(pip: number) {
