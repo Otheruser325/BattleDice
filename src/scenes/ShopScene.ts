@@ -264,7 +264,10 @@ export class ShopScene extends Phaser.Scene {
       ? 'Casino Chips'
       : (offer.isCoinOffer
         ? 'Dice Tokens'
-        : (offer.typeId ? offer.typeId + ' Dice' : '—'));
+        : (offer.typeId ? (() => {
+          const def = getAllDiceDefinitions(this).find(d => d.typeId === offer.typeId);
+          return (def?.title ?? offer.typeId) + ' Dice';
+        })() : '—'));
     const nameText = this.add.text(x + 8, y + 48, nameLine.toUpperCase(), {
       fontFamily: 'Orbitron', fontSize: '17px', color: effectivelyClaimed ? PALETTE.textMuted : (offer.isFreebie ? '#8ae0a1' : accentHex)
     });
