@@ -57,7 +57,7 @@ npm run dev
 
 **Expected Behavior**:
 - Modal appears with dark overlay
-- Rarity text is neutral color, only the circle has rarity color
+- Rarity text uses colored text matching rarity (no squares/circles needed)
 - Buttons work correctly (Assign adds to loadout, Class Up upgrades)
 
 ### 2. Chest Opening - Reward Display
