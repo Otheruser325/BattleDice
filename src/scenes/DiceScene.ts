@@ -319,7 +319,6 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     });
   }
 
-
   private getAlternateFormLabel(die: ReturnType<typeof getAllDiceDefinitions>[number], showingAlternate: boolean): string | null {
     const meta = getRuntimeSkillMeta(die);
     if (!meta.alternateButton || !meta.baseButton) return null;
@@ -393,7 +392,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const rarityLabel = this.add.text(width / 2 - 140, height / 2 - 94, 'RARITY', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'right' }).setOrigin(1, 0.5);
     const rarityColor = RARITY_TEXT_COLORS[displayDie.rarity] ?? PALETTE.text;
     const rarityStats = this.add.text(width / 2 - 126, height / 2 - 94, displayDie.rarity, { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor, align: 'left' }).setOrigin(0, 0.5);
-    const targetStats = this.add.text(width / 2 + 126, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'left' }).setOrigin(0, 0.5);
+    const targetStats = this.add.text(width / 2 + 12, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'left' }).setOrigin(0, 0.5);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;
