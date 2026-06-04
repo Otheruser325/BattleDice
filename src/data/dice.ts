@@ -378,6 +378,7 @@ export interface ShopState {
   offers: ShopOffer[];
   generatedDay: number;
   freebieClaimedThisSession: boolean;
+  freebieClaimedAt: number | null; // Unix timestamp ms of last freebie claim
   diceTokenFirstPurchaseIds: string[];
   casinoChipFirstPurchaseIds: string[];
 }
@@ -396,6 +397,7 @@ export function getShopState(scene: Phaser.Scene): ShopState {
     offers: state.offers ?? [],
     generatedDay: state.generatedDay ?? -1,
     freebieClaimedThisSession: state.freebieClaimedThisSession ?? false,
+    freebieClaimedAt: state.freebieClaimedAt ?? null,
     diceTokenFirstPurchaseIds: state.diceTokenFirstPurchaseIds ?? [],
     casinoChipFirstPurchaseIds: state.casinoChipFirstPurchaseIds ?? []
   };
@@ -569,9 +571,20 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const newState: ShopState = {
     offers,
     generatedDay: currentDay,
-    freebieClaimedThisSession: false,
-    diceTokenFirstPurchaseIds: existing.diceTokenFirstPurchaseIds,
-    casinoChipFirstPurchaseIds: existing.casinoChipFirstPurchaseIds
+    // Preserve freebie state across days if claimed within 24 hours
+    freebieClaimedThisSession: (() => {
+      // If same day, keep the existing state
+      if (existing.generatedDay === currentDay) return existing.freebieClaimedThisSession;
+      // New day - check if 24+ hours have passed since last claim
+      if (existing.freebieClaimedAt) {
+        const hoursSinceClaim = (Date.now() - existing.freebieClaimedAt) / (1000 * 60 * 60);
+        if (hoursSinceClaim < 24) return true; // Still on cooldown
+      }
+      return false; // Can claim fresh
+    })(),
+    freebieClaimedAt: existing.freebieClaimedAt ?? null,
+    diceTokenFirstPurchaseIds: existing.diceTokenFirstPurchaseIds ?? [],
+    casinoChipFirstPurchaseIds: existing.casinoChipFirstPurchaseIds ?? []
   };
 
   setShopState(scene, newState);
