@@ -363,7 +363,7 @@ export class CasinoScene extends Phaser.Scene {
 
     CasinoProgressStore.mutate(this, (current) => ({
       ...current,
-      fivesGauge: isGuaranteed ? rollSum : current.fivesGauge + rollSum,
+      fivesGauge: isGuaranteed ? 0 : current.fivesGauge, // Only reset when guaranteed, don't charge on re-roll
       fivesHand: {
         dice: [...this.dice],
         locks: [...this.locks],

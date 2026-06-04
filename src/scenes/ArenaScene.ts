@@ -3889,16 +3889,19 @@ export class ArenaScene extends Phaser.Scene {
     soulDice.forEach((soulDie) => {
       const baseDefinition = this.definitions.get(soulDie.typeId);
       if (!baseDefinition) return;
-      const meta = getRuntimeSkillMeta(baseDefinition);
-      if (!meta.hasSoulHarvestPassive) return;
+      // Get the class-scaled definition for proper stats
+      const scaledDef = this.getDefinitionForInstance(soulDie);
+      const scaledMeta = getRuntimeSkillMeta(scaledDef);
+      if (!scaledMeta.hasSoulHarvestPassive) return;
       
       const currentSouls = this.soulDiceSoulsConjured.get(soulDie.instanceId) ?? 0;
       this.soulDiceSoulsConjured.set(soulDie.instanceId, currentSouls + 1);
       
-      if (meta.soulBoostPercent) {
-        const baseAttack = baseDefinition.attack;
-        const baseHealth = baseDefinition.health;
-        const boostPerSoul = meta.soulBoostPercent / 100;
+      // Use class-scaled soulBoostPercent from scaled definition
+      if (scaledMeta.soulBoostPercent) {
+        const baseAttack = scaledDef.attack;
+        const baseHealth = scaledDef.health;
+        const boostPerSoul = scaledMeta.soulBoostPercent / 100;
         const totalBoost = boostPerSoul * (currentSouls + 1);
         const newAttack = Math.round(baseAttack * (1 + totalBoost));
         const newMaxHealth = Math.round(baseHealth * (1 + totalBoost));
@@ -3913,10 +3916,11 @@ export class ArenaScene extends Phaser.Scene {
               : d
           )
         };
-        this.instanceDefinitionOverrides.set(soulDie.instanceId, { ...baseDefinition, attack: newAttack, health: newMaxHealth });
+        this.instanceDefinitionOverrides.set(soulDie.instanceId, { ...scaledDef, attack: newAttack, health: newMaxHealth });
       }
 		
-      this.combatLog.setText(`Soul Dice harvested ally soul! (${currentSouls + 1} souls, +${meta.soulBoostPercent}% stats)`);
+      // Use class-scaled soulBoostPercent for display message
+      this.combatLog.setText(`Soul Dice harvested ally soul! (${currentSouls + 1} souls, +${scaledMeta.soulBoostPercent}% stats)`);
       AudioManager.playSfx(this, AUDIO_KEYS.soulHarvest);
     });
     
@@ -4581,6 +4585,12 @@ export class ArenaScene extends Phaser.Scene {
       icon.on('pointerout', () => tip.setVisible(false));
       c.add(icon);
     });};
+    if (this.activeRandomModifier === 'DiceCard') {
+      const playerCardKeys = [...this.activeDiceCardKeysByOwner.player];
+      const enemyCardKeys = [...this.activeDiceCardKeysByOwner.enemy];
+      renderSide(playerCardKeys, false);
+      renderSide(enemyCardKeys, true);
+    }
     const playerDiceKeys = this.gameState.dice
       .filter(d => d.ownerId === 'player')
       .map(d => d.typeId);
