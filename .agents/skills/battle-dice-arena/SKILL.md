@@ -14,6 +14,8 @@ triggers:
 
 # Battle Dice Arena - UI Testing Skill
 
+> **⚠️ Before committing changes**: Run the `build-validator` skill to catch import/export errors early!
+
 This skill helps you test the Battle Dice game UI flows locally with deterministic browser state. It covers all major game scenes: Menu, Dice, Shop, Arena, Casino, and their interactions.
 
 ## Game Overview
