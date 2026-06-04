@@ -25,7 +25,8 @@ export const AUDIO_KEYS = {
   gameCountdown: 'game_countdown',
   gameTimerTick: 'game_timer',
   uiRound: 'ui_round',
-  deathInstakill: 'dice_death_instakill'
+  deathInstakill: 'dice_death_instakill',
+  soulHarvest: 'dice_soul_skill_01'
 } as const;
 
 const MUSIC_KEYS = new Set<string>([AUDIO_KEYS.menuMusic, AUDIO_KEYS.arenaMusic]);

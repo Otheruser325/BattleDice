@@ -478,8 +478,7 @@ export class ArenaScene extends Phaser.Scene {
       this.add.rectangle(cx, cy, 560, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 142, scaled.title.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '22px', color: definition.accent }).setOrigin(0.5),
       this.add.text(cx - 46, cy - 104, `ATK ${scaled.attack}  |  HP ${scaled.health}  |  RANGE ${scaled.range}`, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5),
-      this.add.rectangle(cx - 148, cy - 76, 16, 16, rarityFill, 0.95),
-      this.add.text(cx - 124, cy - 78, definition.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text }).setOrigin(0, 0.5),
+      this.add.text(cx - 148, cy - 78, definition.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor }).setOrigin(0, 0.5),
       this.add.text(cx - 4, cy - 78, `TARGET ${scaled.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text }).setOrigin(0.5),
       this.add.circle(cx + 220, cy - 92, 28, rarityFill, 0.95).setStrokeStyle(2, 0xffffff, 0.55),
       this.add.text(cx + 220, cy - 100, 'CLASS', { fontFamily: 'Orbitron', fontSize: '9px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff' }).setOrigin(0.5),
@@ -3909,7 +3908,7 @@ export class ArenaScene extends Phaser.Scene {
         const baseHealth = definition.health;
         const newAttack = Math.round(baseAttack * (1 + boostPerSoul * (currentSouls + 1)));
         const newMaxHealth = Math.round(baseHealth * (1 + boostPerSoul * (currentSouls + 1)));
-        const healthRatio = die.currentHealth / die.maxHealth;
+        const healthRatio = soulDie.currentHealth / soulDie.maxHealth;
         const newCurrentHealth = Math.round(newMaxHealth * healthRatio);
         
         this.gameState = {
@@ -3924,6 +3923,9 @@ export class ArenaScene extends Phaser.Scene {
       }
       
       this.combatLog.setText(`Soul Dice harvested ally soul! (${currentSouls + 1} souls, +${meta.soulBoostPercent}% stats)`);
+      
+      // Play soul harvest sound effect
+      AudioManager.playSfx(this, AUDIO_KEYS.soulHarvest);
     });
     
     // Handle Death Dice - transform when 2 ally souls are conjured (requires deathTransform runtime)
