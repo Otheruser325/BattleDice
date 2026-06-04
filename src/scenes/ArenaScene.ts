@@ -862,7 +862,6 @@ export class ArenaScene extends Phaser.Scene {
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
       this.configRandomMode = false;
-      // Keep prior toggle value to avoid visual desync when re-opening this config.
       this.configDifficulty = 'Nightmare';
       this.configUseLevelling = true;
       this.turnLimit = 10;
@@ -4260,7 +4259,6 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-
   private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal', attacker: DiceInstanceState, target: DiceInstanceState) {
     if (!attacker.gridPosition || !target.gridPosition) return;
     const attackerGrid = this.getGridContainerForDie(attacker);
@@ -4390,7 +4388,6 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-
   private animateTranscendenceBeam(attacker: DiceInstanceState, target: DiceInstanceState, pattern: TranscendenceBeamPattern) {
     if (!attacker.gridPosition || !target.gridPosition) return;
 
@@ -4438,7 +4435,6 @@ export class ArenaScene extends Phaser.Scene {
     void targetX;
     void targetY;
   }
-
 
   private animateJudgmentHammer(boardSide: 'player' | 'enemy', row: number, col: number) {
     const grid = boardSide === 'player' ? this.playerGridContainer : this.enemyGridContainer;
@@ -4585,7 +4581,6 @@ export class ArenaScene extends Phaser.Scene {
       icon.on('pointerout', () => tip.setVisible(false));
       c.add(icon);
     });};
-    // Derive player and enemy dice type IDs from gameState
     const playerDiceKeys = this.gameState.dice
       .filter(d => d.ownerId === 'player')
       .map(d => d.typeId);
