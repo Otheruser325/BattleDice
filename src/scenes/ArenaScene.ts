@@ -147,6 +147,10 @@ export class ArenaScene extends Phaser.Scene {
   private infiltratedBoardSideByInstance: Map<string, 'player' | 'enemy'> = new Map();
   private rangeHighlightObjects: Phaser.GameObjects.GameObject[] = [];
   private highlightedRangeInstanceId: string | null = null;
+  // Soul Dice tracking
+  private soulDiceSoulsConjured: Map<string, number> = new Map();
+  // Broken Growth Dice tracking
+  private brokenGrowthDeltaByInstance: Map<string, number> = new Map();
 
   private modalContainer: Phaser.GameObjects.Container | null = null;
   private modalEscHandler: (() => void) | null = null;
@@ -241,6 +245,8 @@ export class ArenaScene extends Phaser.Scene {
     this.deathAlliesDefeatedCount.clear();
     this.permanentAttackBonusByInstance.clear();
     this.basicAttackDamageBonusByInstance.clear();
+    this.soulDiceSoulsConjured.clear();
+    this.brokenGrowthDeltaByInstance.clear();
     this.instanceDefinitionOverrides.clear();
     this.instanceClassLevels.clear();
     this.clearModeModal();
@@ -472,7 +478,7 @@ export class ArenaScene extends Phaser.Scene {
       this.add.rectangle(cx, cy, 560, 360, 0x102434, 0.98).setStrokeStyle(2, 0x335770),
       this.add.text(cx, cy - 142, scaled.title.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '22px', color: definition.accent }).setOrigin(0.5),
       this.add.text(cx - 46, cy - 104, `ATK ${scaled.attack}  |  HP ${scaled.health}  |  RANGE ${scaled.range}`, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5),
-      this.add.text(cx - 130, cy - 78, definition.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor }).setOrigin(0.5),
+      this.add.text(cx - 148, cy - 78, definition.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor }).setOrigin(0, 0.5),
       this.add.text(cx - 4, cy - 78, `TARGET ${scaled.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text }).setOrigin(0.5),
       this.add.circle(cx + 220, cy - 92, 28, rarityFill, 0.95).setStrokeStyle(2, 0xffffff, 0.55),
       this.add.text(cx + 220, cy - 100, 'CLASS', { fontFamily: 'Orbitron', fontSize: '9px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff' }).setOrigin(0.5),
@@ -838,7 +844,8 @@ export class ArenaScene extends Phaser.Scene {
       this.activeChallenge = 'daily';
       if (this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'started');
       this.configRandomMode = true;
-      this.configRandomizeLoadoutAndClassUps = true;
+      // 50% chance to use mirror loadouts (different class-ups), otherwise random loadouts
+      this.configRandomizeLoadoutAndClassUps = this.getDailySeededIndex('daily-mirror-mode', 2) === 0;
       this.configUseLevelling = true;
       this.configDifficulty = this.dailyHard ? 'Nightmare' : 'Medium';
       this.turnLimit = 10;
@@ -1103,6 +1110,17 @@ export class ArenaScene extends Phaser.Scene {
     if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
     if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); }
     if (day === 7) {
+      // Check if enough time has passed to allow re-attempting (24+ hours since last claim)
+      const lastClaimMs = reward.lastClaimAt ? new Date(reward.lastClaimAt).getTime() : 0;
+      const nowMs = Date.now();
+      const hoursSinceLastClaim = lastClaimMs > 0 ? (nowMs - lastClaimMs) / (1000 * 60 * 60) : 0;
+      const canReattemptDay7 = hoursSinceLastClaim >= 24;
+      
+      if (canReattemptDay7) {
+        // Clear day 7 from claimed set to allow re-attempting after 24+ hours
+        claimed.delete(7);
+      }
+      
       const legendaries = getAllDiceDefinitions(this)
         .filter((d) => d.rarity === 'Legendary')
         .filter((d) => canReceiveUsefulCopies(this, d.typeId));
@@ -1112,11 +1130,16 @@ export class ArenaScene extends Phaser.Scene {
         message = `Legendary Dice: ${pick.title}`;
         claimedDay7LegendaryTypeId = pick.typeId;
         claimedDay7LegendaryTitle = pick.title;
-      } else {
+      } else if (canReattemptDay7) {
+        // Only give fallback tokens if 24+ hours have passed since last attempt
         setDiceTokens(this, getDiceTokens(this) + 5000);
-        message = 'Legendary pool full: +5,000 Dice Tokens';
+        message = 'Legendary pool full: +5,000 Dice Tokens (retry tomorrow)';
         claimedDay7LegendaryTypeId = undefined;
         claimedDay7LegendaryTitle = 'Legendary pool full (+5,000 Dice Tokens)';
+      } else {
+        // Within 24 hours of last attempt - day 7 already claimed, block re-attempt
+        AlertManager.toast(this, { type: 'warning', message: 'Day 7 already claimed! Come back tomorrow for the next reward cycle.' });
+        return;
       }
       AchievementStore.unlock(this, 'darkest_hour');
     }
@@ -1663,16 +1686,23 @@ export class ArenaScene extends Phaser.Scene {
     const effectiveLevel = (raw: number) => this.configUseLevelling ? raw : 1;
 
     const playerClassLevels = new Map<DiceTypeId, number>();
+    // For hard dailies: cap player class at 11 max, enemy gets +3 above player's best
+    const hardDaily = this.activeChallenge === 'daily' && this.dailyHard;
+    const playerMaxClass = hardDaily ? Math.min(11, this.getDailySeededIndex('player-class-cap', 11) + 1) : 15;
     const playerDefs = playerLoadoutDefinitions
       .map((definition) => {
         const classLevel = shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
           ? (this.activeChallenge === 'daily'
-            ? this.getDailySeededIndex(`player-class-${definition.typeId}-${playerClassLevels.size}`, 15) + 1
+            ? Math.min(playerMaxClass, this.getDailySeededIndex(`player-class-${definition.typeId}-${playerClassLevels.size}`, playerMaxClass) + 1)
             : Phaser.Math.Between(1, 15))
           : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
         playerClassLevels.set(definition.typeId, classLevel);
         return this.applyClassProgress(definition, classLevel);
       });
+
+    // Calculate player best class for hard daily scaling
+    const playerBestClass = [...playerClassLevels.values()].reduce((max, lvl) => Math.max(max, lvl), 1);
+    const enemyBonusClass = hardDaily ? 3 : 0;
 
     const enemyRawDefs = this.activeChallenge === 'bossfight'
       ? [this.bossfightCurrentBoss]
@@ -1696,7 +1726,7 @@ export class ArenaScene extends Phaser.Scene {
         ? 7
         : shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
         ? (this.activeChallenge === 'daily'
-          ? this.getDailySeededIndex(`enemy-class-${definition.typeId}-${this.enemyClassLevels.size}`, 15) + 1
+          ? Math.min(15, this.getDailySeededIndex(`enemy-class-${definition.typeId}-${this.enemyClassLevels.size}`, 15) + 1 + enemyBonusClass)
           : Phaser.Math.Between(1, 15))
         : effectiveLevel(this.rollEnemyClassLevel());
       this.enemyClassLevels.set(definition.typeId, classLevel);
@@ -2228,13 +2258,16 @@ export class ArenaScene extends Phaser.Scene {
     const additiveDelta = (combatDelta ?? (this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0))
       + (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0)
       + (this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0)
+      + (this.brokenGrowthDeltaByInstance.get(die.instanceId) ?? 0)
       + Math.max(0, (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) - 1);
     const multiplier = this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1;
     const multiplierDelta = multiplier === 1 ? 0 : Math.floor(Math.max(0, basePips + additiveDelta) * multiplier) - Math.max(0, basePips + additiveDelta);
     const attackCountDelta = additiveDelta + multiplierDelta;
 
-    if (attackCountDelta > 0 && seen.positive) return [{ text: `Attack Count +${attackCountDelta}`, color: '#6dff8f' }];
-    if (attackCountDelta < 0 && seen.negative) return [{ text: `Attack Count ${attackCountDelta}`, color: '#ff6b6b' }];
+    if (attackCountDelta !== 0 && seen) {
+      if (attackCountDelta > 0 && seen.positive) return [{ text: `Attack Count +${attackCountDelta}`, color: '#6dff8f' }];
+      if (attackCountDelta < 0 && seen.negative) return [{ text: `Attack Count ${attackCountDelta}`, color: '#ff6b6b' }];
+    }
     return [];
   }
 
@@ -2244,7 +2277,8 @@ export class ArenaScene extends Phaser.Scene {
     const skillMult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
     const comboMult = this.combanityAttackMultiplierByInstance.get(instanceId)?.multiplier ?? 1;
     const permanentAttackCount = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
-    const adjusted = Math.max(0, basePips + timeDelta + debuff + buff + permanentAttackCount);
+    const brokenGrowthDelta = this.brokenGrowthDeltaByInstance.get(instanceId) ?? 0;
+    const adjusted = Math.max(0, basePips + timeDelta + debuff + buff + permanentAttackCount + brokenGrowthDelta);
     return Math.max(0, Math.floor(adjusted * skillMult * comboMult));
   }
 
@@ -3862,11 +3896,62 @@ export class ArenaScene extends Phaser.Scene {
 
   private checkDeathTransformCondition(defeated: DiceInstanceState) {
     const owner = defeated.ownerId;
-    const deathDice = this.gameState.dice.filter((die) =>
-      die.ownerId === owner &&
-      !die.isDestroyed &&
-      die.typeId === 'Death'
-    );
+    
+    // Handle Soul Dice - conjure ally souls when allies are defeated
+    const soulDice = this.gameState.dice.filter((die) => {
+      if (die.ownerId !== owner || die.isDestroyed) return false;
+      const def = this.getDefinitionForInstance(die);
+      if (!def) return false;
+      const meta = getRuntimeSkillMeta(def);
+      return meta.canConjureSouls && meta.hasSoulHarvestPassive;
+    });
+    
+    soulDice.forEach((soulDie) => {
+      const definition = this.getDefinitionForInstance(soulDie);
+      if (!definition) return;
+      const meta = getRuntimeSkillMeta(definition);
+      if (!meta.hasSoulHarvestPassive) return;
+      
+      // Increment soul count (no cap for Soul Dice)
+      const currentSouls = this.soulDiceSoulsConjured.get(soulDie.instanceId) ?? 0;
+      this.soulDiceSoulsConjured.set(soulDie.instanceId, currentSouls + 1);
+      
+      // Apply damage and health boost per soul (20% of base stats per soul, added to max)
+      // Matches Dice Type Upgrade behavior - add to max, then adjust current proportionally
+      if (meta.soulBoostPercent) {
+        const boostPerSoul = meta.soulBoostPercent / 100;
+        const baseAttack = definition.attack;
+        const baseHealth = definition.health;
+        const newAttack = Math.round(baseAttack * (1 + boostPerSoul * (currentSouls + 1)));
+        const newMaxHealth = Math.round(baseHealth * (1 + boostPerSoul * (currentSouls + 1)));
+        const healthRatio = soulDie.currentHealth / soulDie.maxHealth;
+        const newCurrentHealth = Math.round(newMaxHealth * healthRatio);
+        
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.map((d) =>
+            d.instanceId === soulDie.instanceId
+              ? { ...d, attack: newAttack, maxHealth: newMaxHealth, currentHealth: newCurrentHealth }
+              : d
+          )
+        };
+        this.instanceDefinitionOverrides.set(soulDie.instanceId, { ...definition, attack: newAttack, health: newMaxHealth });
+      }
+      
+      this.combatLog.setText(`Soul Dice harvested ally soul! (${currentSouls + 1} souls, +${meta.soulBoostPercent}% stats)`);
+      
+      // Play soul harvest sound effect
+      AudioManager.playSfx(this, AUDIO_KEYS.soulHarvest);
+    });
+    
+    // Handle Death Dice - transform when 2 ally souls are conjured (requires deathTransform runtime)
+    const deathDice = this.gameState.dice.filter((die) => {
+      if (die.ownerId !== owner || die.isDestroyed) return false;
+      const def = this.getDefinitionForInstance(die);
+      if (!def) return false;
+      const meta = getRuntimeSkillMeta(def);
+      return meta.hasDeathTransform;
+    });
 
     deathDice.forEach((deathDie) => {
       if (this.deathDiceTransformed.has(deathDie.instanceId)) return;
@@ -3913,6 +3998,16 @@ export class ArenaScene extends Phaser.Scene {
           const current = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
           this.permanentAttackBonusByInstance.set(die.instanceId, current + 1);
           this.recordAttackCountEffect(die.instanceId, 1);
+        }
+
+        // Handle Broken Growth Dice - 50/50 chance to increase or decrease attack count
+        if (meta.hasBrokenGrowthPermanent) {
+          const delta = Math.random() < 0.5 ? -1 : 1;
+          const currentDelta = this.brokenGrowthDeltaByInstance.get(die.instanceId) ?? 0;
+          const newDelta = currentDelta + delta;
+          this.brokenGrowthDeltaByInstance.set(die.instanceId, newDelta);
+          this.recordAttackCountEffect(die.instanceId, delta);
+          this.combatLog.setText(`Broken Growth Dice: ${delta > 0 ? '+1' : '-1'} attack count (total: ${newDelta > 0 ? '+' : ''}${newDelta})`);
         }
 
         if (bonus > 0) this.recordAttackCountEffect(die.instanceId, bonus);

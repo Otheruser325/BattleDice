@@ -1,0 +1,26 @@
+{
+  "typeId": "Soul",
+  "title": "Soul Dice",
+  "attack": 20,
+  "health": 640,
+  "range": 6,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Soul Harvest",
+      "description": "Conjures defeated ally souls. Soul Dice gains +20% damage and health for each soul conjured. Stats increase linearly per soul conjured with no cap.",
+      "modifiers": {
+        "canConjureSouls": true,
+        "conjureType": "ally",
+        "noMaxSouls": true,
+        "soulBoostPercent": 20,
+        "notes": [
+          "runtime:soulHarvestPassive"
+        ]
+      }
+    }
+  ],
+  "accent": "#2a5fff",
+  "targetingMode": "Nearest"
+}

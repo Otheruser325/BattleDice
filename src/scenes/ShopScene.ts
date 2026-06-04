@@ -3,6 +3,7 @@ import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
+import { AlertManager } from '../utils/AlertManager';
 import {
   getDiamonds,
   setDiamonds,
@@ -106,6 +107,21 @@ export class ShopScene extends Phaser.Scene {
           if (!canAfford) return;
 
           const shopState = getShopState(this);
+          
+          // Check 24-hour time gate for freebie
+          if (offer.isFreebie) {
+            const lastClaimMs = shopState.freebieClaimedAt ?? 0;
+            const nowMs = Date.now();
+            const hoursSinceLastClaim = lastClaimMs > 0 ? (nowMs - lastClaimMs) / (1000 * 60 * 60) : 0;
+            
+            // Only block if within 24 hours of last claim
+            if (shopState.freebieClaimedThisSession && hoursSinceLastClaim < 24) {
+              const remainingHours = Math.ceil(24 - hoursSinceLastClaim);
+              AlertManager.toast(this, { type: 'warning', message: `Freebie on cooldown. Please wait ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}.` });
+              return;
+            }
+          }
+          
           const offerIdx = shopState.offers.findIndex((o) => o.id === offer.id);
           if (offerIdx < 0) return;
           const targetOffer = shopState.offers[offerIdx];
@@ -131,6 +147,7 @@ export class ShopScene extends Phaser.Scene {
             ...shopState,
             offers: updatedOffers,
             freebieClaimedThisSession: offer.isFreebie ? true : shopState.freebieClaimedThisSession,
+            freebieClaimedAt: offer.isFreebie ? Date.now() : shopState.freebieClaimedAt,
             diceTokenFirstPurchaseIds: firstTokenPurchase ? [...shopState.diceTokenFirstPurchaseIds, offer.id] : shopState.diceTokenFirstPurchaseIds,
             casinoChipFirstPurchaseIds: firstChipPurchase ? [...shopState.casinoChipFirstPurchaseIds, offer.id] : shopState.casinoChipFirstPurchaseIds
           });

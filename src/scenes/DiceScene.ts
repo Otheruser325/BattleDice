@@ -188,16 +188,17 @@ export class DiceScene extends Phaser.Scene {
         color: locked ? PALETTE.danger : PALETTE.accentSoft
       }).setOrigin(1, 0);
 
+      const rarityColor = locked ? PALETTE.textMuted : (RARITY_TEXT_COLORS[die.rarity] ?? PALETTE.text);
       const rarityLine = this.add.text(x + 20, y + 52, die.rarity.toUpperCase(), {
         fontFamily: 'Orbitron',
         fontSize: '12px',
-        color: locked ? PALETTE.textMuted : (RARITY_TEXT_COLORS[die.rarity] ?? PALETTE.text)
+        color: rarityColor
       });
       const statLine = this.add.text(x + 106, y + 52, `ATK ${displayedDie.attack}  |  HP ${displayedDie.health}
 RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
-        color: locked ? PALETTE.textMuted : (RARITY_TEXT_COLORS[die.rarity] ?? PALETTE.text)
+        color: PALETTE.textMuted
       });
 
       const skillInfo = formatSkillInfo(displayedDie, locked);
@@ -390,7 +391,8 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: displayDie.accent }).setOrigin(0.5);
     const stats = this.add.text(width / 2, height / 2 - 116, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
     const rarityLabel = this.add.text(width / 2 - 126, height / 2 - 94, 'RARITY', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
-    const rarityStats = this.add.text(width / 2 - 74, height / 2 - 94, displayDie.rarity, { fontFamily: 'Orbitron', fontSize: '12px', color: RARITY_TEXT_COLORS[displayDie.rarity] ?? PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const rarityColor = RARITY_TEXT_COLORS[displayDie.rarity] ?? PALETTE.text;
+    const rarityStats = this.add.text(width / 2 - 100, height / 2 - 94, displayDie.rarity, { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor, align: 'center' }).setOrigin(0, 0.5);
     const targetStats = this.add.text(width / 2 + 104, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
