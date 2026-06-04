@@ -407,7 +407,7 @@ export class ArenaScene extends Phaser.Scene {
     const definitions = getDiceDefinitions(this);
 
     for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
-      const x = centerX - 66 + i * 42;
+      const x = centerX - 54 + i * 42;
       const deckBtn = this.add.rectangle(x, startY - 22, 32, 28, 0x173247, 0.96)
         .setStrokeStyle(2, i === activeDeckSlot ? 0xf4b860 : 0x406987)
         .setInteractive({ useHandCursor: true });
@@ -2210,14 +2210,12 @@ export class ArenaScene extends Phaser.Scene {
     this.applyWizardSpellcastAtCombatStart();
     await this.applyBatteryManaAtCombatStart();
     this.applyManaPotionAtCombatStart();
-
     this.applyLavaPoolDamageAtCombatStart();
     this.renderDice();
     this.renderEnemyDice();
     this.renderLavaPools();
 
     if (this.checkWinConditions()) return;
-
     await this.runCombatLoop();
   }
 
