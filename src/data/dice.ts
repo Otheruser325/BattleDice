@@ -85,9 +85,7 @@ function readStored<T>(key: string): T | undefined {
 function writeStored<T>(key: string, value: T) {
   try {
     if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Registry state still keeps the session playable when localStorage is unavailable.
-  }
+  } catch {}
 }
 
 export type DefaultLoadoutTypeId = (typeof DEFAULT_LOADOUT)[number];
@@ -110,7 +108,6 @@ export function getDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
     if (definition) {
       definitions.push(definition);
     } else {
-      // Fallback: try to load from default loadout if not available
       const fallback = scene.cache.json.get(`dice:${DEFAULT_LOADOUT[definitions.length % DEFAULT_LOADOUT.length]}`) as DiceDefinition | undefined;
       if (fallback) {
         definitions.push(fallback);
@@ -129,7 +126,6 @@ export function getAllDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
     .map((typeId) => {
       const cached = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
       if (!cached) {
-        // Attempt to reload definition if missing
         return reloadDiceDefinition(scene, typeId);
       }
       return cached;
@@ -141,7 +137,7 @@ function reloadDiceDefinition(scene: Phaser.Scene, typeId: DiceTypeId): DiceDefi
   try {
     const path = withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', path, false); // Synchronous request for reload
+    xhr.open('GET', path, false);
     xhr.send(null);
     if (xhr.status === 200) {
       const definition = JSON.parse(xhr.responseText) as DiceDefinition;
@@ -415,7 +411,7 @@ export interface ShopState {
   offers: ShopOffer[];
   generatedDay: number;
   freebieClaimedThisSession: boolean;
-  freebieClaimedAt: number | null; // Unix timestamp ms of last freebie claim
+  freebieClaimedAt: number | null;
   diceTokenFirstPurchaseIds: string[];
   casinoChipFirstPurchaseIds: string[];
 }
