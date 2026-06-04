@@ -847,26 +847,26 @@ export class CasinoScene extends Phaser.Scene {
     }).setOrigin(0.5);
     
     // Rarity label and colored rarity text (matching DiceScene style)
-    const rarityLabel = this.add.text(width / 2 - 126, height / 2 - 94, 'RARITY', {
+    const rarityLabel = this.add.text(width / 2 - 140, height / 2 - 94, 'RARITY', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
-      align: 'center'
-    }).setOrigin(0.5);
-    const rarityStats = this.add.text(width / 2 - 100, height / 2 - 94, definition.rarity, {
+      align: 'right'
+    }).setOrigin(1, 0.5);
+    const rarityStats = this.add.text(width / 2 - 126, height / 2 - 94, definition.rarity, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: rarityColor,
-      align: 'center'
+      align: 'left'
     }).setOrigin(0, 0.5);
     
     // Target and copies (matching DiceScene style)
-    const targetStats = this.add.text(width / 2 + 104, height / 2 - 94, `TARGET ${definition.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
+    const targetStats = this.add.text(width / 2 + 126, height / 2 - 94, `TARGET ${definition.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
-      align: 'center'
-    }).setOrigin(0.5);
+      align: 'left'
+    }).setOrigin(0, 0.5);
     
     // Class circle indicator
     const classCircle = this.add.circle(width / 2 + 220, height / 2 - 92, 28, Phaser.Display.Color.HexStringToColor(rarityColor).color, 0.95).setStrokeStyle(2, 0xffffff, 0.55);

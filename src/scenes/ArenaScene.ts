@@ -4646,12 +4646,14 @@ export class ArenaScene extends Phaser.Scene {
     panel.add(this.add.text(0, 16, title, { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft }).setOrigin(centered ? 0.5 : 0, 0));
     dice.forEach((diceUnit, index) => {
       const visual = this.getTransformedVisual(diceUnit);
+      const def = this.getDefinitionForInstance(diceUnit);
+      const dieTitle = def?.title ?? diceUnit.typeId;
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
       const shieldHp = this.shieldHpByInstance.get(diceUnit.instanceId) ?? 0;
       const shieldTag = shieldHp > 0 ? ` | SH ${shieldHp}` : '';
       const status = diceUnit.isDestroyed ? 'DEFEATED' : `${diceUnit.currentHealth}/${diceUnit.maxHealth} HP${shieldTag}${visual ? ` ${visual.symbol}` : ''}`;
       const classLabel = this.isBossDie(diceUnit) ? '' : ` C${classLevel}/15`;
-      panel.add(this.add.text(0, 36 + index * 16, `${diceUnit.typeId}${classLabel}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
+      panel.add(this.add.text(0, 36 + index * 16, `${dieTitle}${classLabel}: ${status}`, { fontFamily: 'Orbitron', fontSize: '11px', color: diceUnit.isDestroyed ? PALETTE.danger : (visual?.accent ?? PALETTE.textMuted) }).setOrigin(centered ? 0.5 : 0, 0));
     });
   }
 
