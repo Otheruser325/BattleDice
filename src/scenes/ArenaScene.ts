@@ -1110,6 +1110,17 @@ export class ArenaScene extends Phaser.Scene {
     if (day === 5) { setDiceTokens(this, getDiceTokens(this) + 2500); message = '+2,500 Dice Tokens'; }
     if (day === 6) { message = '+50 Casino Chips'; CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + 50 })); }
     if (day === 7) {
+      // Check if enough time has passed to allow re-attempting (24+ hours since last claim)
+      const lastClaimMs = reward.lastClaimAt ? new Date(reward.lastClaimAt).getTime() : 0;
+      const nowMs = Date.now();
+      const hoursSinceLastClaim = lastClaimMs > 0 ? (nowMs - lastClaimMs) / (1000 * 60 * 60) : 0;
+      const canReattemptDay7 = hoursSinceLastClaim >= 24;
+      
+      if (canReattemptDay7) {
+        // Clear day 7 from claimed set to allow re-attempting after 24+ hours
+        claimed.delete(7);
+      }
+      
       const legendaries = getAllDiceDefinitions(this)
         .filter((d) => d.rarity === 'Legendary')
         .filter((d) => canReceiveUsefulCopies(this, d.typeId));
@@ -1119,11 +1130,16 @@ export class ArenaScene extends Phaser.Scene {
         message = `Legendary Dice: ${pick.title}`;
         claimedDay7LegendaryTypeId = pick.typeId;
         claimedDay7LegendaryTitle = pick.title;
-      } else {
+      } else if (canReattemptDay7) {
+        // Only give fallback tokens if 24+ hours have passed since last attempt
         setDiceTokens(this, getDiceTokens(this) + 5000);
-        message = 'Legendary pool full: +5,000 Dice Tokens';
+        message = 'Legendary pool full: +5,000 Dice Tokens (retry tomorrow)';
         claimedDay7LegendaryTypeId = undefined;
         claimedDay7LegendaryTitle = 'Legendary pool full (+5,000 Dice Tokens)';
+      } else {
+        // Within 24 hours of last attempt - day 7 already claimed, block re-attempt
+        AlertManager.toast(this, { type: 'warning', message: 'Day 7 already claimed! Come back tomorrow for the next reward cycle.' });
+        return;
       }
       AchievementStore.unlock(this, 'darkest_hour');
     }

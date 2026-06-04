@@ -253,7 +253,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       });
       card.on('pointerout', () => card.setFillStyle(this.isDiceLocked(die.typeId) ? 0x111e28 : 0x173247, 0.98));
 
-      cardsContainer.add([card, header, title, classTag, rarityCircle, rarityLine, statLine, skillTypeLine, skillDesc]);
+      cardsContainer.add([card, header, title, classTag, rarityLine, statLine, skillTypeLine, skillDesc]);
       card.setDepth(0); header.setDepth(1);
 
       if (locked) {
@@ -512,7 +512,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     close.on('pointerdown', closeModal);
     this.modalEscHandler = () => closeModal();
     this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
-    this.modalElements = [overlay, panel, title, stats, rarityLabel, rarityCircle, rarityStats, targetStats, skillContainer, skillMaskShape, skillScrollHint, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
+    this.modalElements = [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, skillContainer, skillMaskShape, skillScrollHint, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
   }
 }
