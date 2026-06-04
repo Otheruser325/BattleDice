@@ -10,6 +10,7 @@ export const BERSERK_THRESHOLD_RATE_PER_CLASS = 0.01;
 export const SOLITUDE_MAX_HP_RATE_PER_CLASS = 0.0025;
 export const CRACK_ARMOR_SHRED_RATE_PER_CLASS = 0.01;
 export const BATTERY_MANA_GAIN_PER_5_CLASS = 1;
+export const SOUL_BOOST_RATIO_PER_CLASS = 0.005;
 
 export interface ClassProgressionPreview {
   attackDelta: number;
@@ -111,6 +112,10 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     if (definition.typeId === 'Battery' && source.manaGain !== undefined) {
       modifiers.manaGain = source.manaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
+    }
+
+    if (definition.typeId === 'Soul' && source.soulBoostPercent !== undefined) {
+      modifiers.soulBoostPercent = source.manaGain + Math.floor(classUps / 5) * SOUL_BOOST_RATIO_PER_CLASS;
     }
 
     if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && source.manaGain !== undefined) {
@@ -238,16 +243,17 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {
     return `The next ${modifiers.numAttacksBoosted} basic attacks deal ${formatPercent(modifiers.numAttacksDamageMult - 1)} more damage.`;
   }
-
   if (modifiers.targetMaxHpBonusRate !== undefined) {
     return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
   }
-
   if (modifiers.targetCurrentHpBonusRate !== undefined) {
     return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP.`;
   }
   if (modifiers.distanceDamageBonusRatePerTile !== undefined) {
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
+  }
+  if (modifiers.soulBoostPercent !== undefined) {
+    return `Conjures defeated ally souls. Soul Dice gains +${formatPercent(modifiers.soulBoostPercent)} damage and health for each soul conjured.`;
   }
   if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
     return `All friendly charging active skills gain +${modifiers.manaGain} mana.`;
@@ -306,6 +312,10 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   if (currentModifiers.targetCurrentHpBonusRate !== undefined && nextModifiers.targetCurrentHpBonusRate !== undefined) {
     const delta = nextModifiers.targetCurrentHpBonusRate - currentModifiers.targetCurrentHpBonusRate;
     if (delta > 0) skillDeltas.push(`Current HP damage +${formatPercent(delta)}`);
+  }
+  if (currentModifiers.soulBoostPercent !== undefined && nextModifiers.soulBoostPercent !== undefined) {
+    const delta = nextModifiers.soulBoostPercent - currentModifiers.soulBoostPercent;
+    if (delta > 0) skillDeltas.push(`Soul health/damage boost +${formatPercent(delta)}`);
   }
 
   const runtimeRateNotes: Array<{ key: string; label: string }> = [
