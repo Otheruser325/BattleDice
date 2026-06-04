@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import type { DiceDefinition, DiceTypeId, DiceFlags } from '../types/game';
 import { AchievementStore } from '../systems/AchievementStore';
+import { withBasePath } from '../utils/BuildEnv';
 
 export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'] as const;
 export const DEFAULT_LOADOUT_IDS = new Set<string>(['Fire', 'Ice', 'Poison', 'Electric', 'Wind']);
@@ -102,21 +103,57 @@ export function getDiceFlags(scene: Phaser.Scene): DiceFlags {
 }
 
 export function getDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
-  return getSelectedLoadout(scene).map((typeId) => {
+  const loadout = getSelectedLoadout(scene);
+  const definitions: DiceDefinition[] = [];
+  for (const typeId of loadout) {
     const definition = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
-
-    if (!definition) {
-      throw new Error(`Missing dice definition for ${typeId}.`);
+    if (definition) {
+      definitions.push(definition);
+    } else {
+      // Fallback: try to load from default loadout if not available
+      const fallback = scene.cache.json.get(`dice:${DEFAULT_LOADOUT[definitions.length % DEFAULT_LOADOUT.length]}`) as DiceDefinition | undefined;
+      if (fallback) {
+        definitions.push(fallback);
+      }
     }
-
-    return definition;
-  });
+  }
+  if (definitions.length === 0) {
+    throw new Error('No valid dice definitions available for the selected loadout.');
+  }
+  return definitions;
 }
 
 export function getAllDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
-  return getDiceFlags(scene).fetchableTypeIds
-    .map((typeId) => scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined)
+  const flags = getDiceFlags(scene);
+  return flags.fetchableTypeIds
+    .map((typeId) => {
+      const cached = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
+      if (!cached) {
+        // Attempt to reload definition if missing
+        return reloadDiceDefinition(scene, typeId);
+      }
+      return cached;
+    })
     .filter((definition): definition is DiceDefinition => Boolean(definition));
+}
+
+function reloadDiceDefinition(scene: Phaser.Scene, typeId: DiceTypeId): DiceDefinition | undefined {
+  try {
+    const path = withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', path, false); // Synchronous request for reload
+    xhr.send(null);
+    if (xhr.status === 200) {
+      const definition = JSON.parse(xhr.responseText) as DiceDefinition;
+      if (definition && definition.typeId === typeId) {
+        scene.cache.json.add(`dice:${typeId}`, definition);
+        return definition;
+      }
+    }
+  } catch {
+    // Silently fail reload attempt
+  }
+  return undefined;
 }
 
 export function getExclusiveDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {

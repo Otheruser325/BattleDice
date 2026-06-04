@@ -4585,8 +4585,15 @@ export class ArenaScene extends Phaser.Scene {
       icon.on('pointerout', () => tip.setVisible(false));
       c.add(icon);
     });};
-    renderSide(playerKeys,false);
-    renderSide(enemyKeys,true);
+    // Derive player and enemy dice type IDs from gameState
+    const playerDiceKeys = this.gameState.dice
+      .filter(d => d.ownerId === 'player')
+      .map(d => d.typeId);
+    const enemyDiceKeys = this.gameState.dice
+      .filter(d => d.ownerId === 'enemy')
+      .map(d => d.typeId);
+    renderSide(playerDiceKeys,false);
+    renderSide(enemyDiceKeys,true);
   }
 
   private renderDice() {
