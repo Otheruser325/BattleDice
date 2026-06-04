@@ -315,7 +315,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   }
   if (currentModifiers.soulBoostPercent !== undefined && nextModifiers.soulBoostPercent !== undefined) {
     const delta = nextModifiers.soulBoostPercent - currentModifiers.soulBoostPercent;
-    if (delta > 0) skillDeltas.push(`Soul health/damage boost +${formatPercent(delta)}`);
+    if (delta > 0) skillDeltas.push(`Soul health/damage boost +${Number.isInteger(delta) ? delta : delta.toFixed(1)}%`);
   }
 
   const runtimeRateNotes: Array<{ key: string; label: string }> = [

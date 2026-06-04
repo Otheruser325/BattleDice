@@ -4585,12 +4585,8 @@ export class ArenaScene extends Phaser.Scene {
       icon.on('pointerout', () => tip.setVisible(false));
       c.add(icon);
     });};
-    if (this.activeRandomModifier === 'DiceCard') {
-      const playerCardKeys = [...this.activeDiceCardKeysByOwner.player];
-      const enemyCardKeys = [...this.activeDiceCardKeysByOwner.enemy];
-      renderSide(playerCardKeys, false);
-      renderSide(enemyCardKeys, true);
-    }
+    // Dice Card upgrades are NOT pre-rendered in the info panel - they appear only via the card picker UI
+    // For all modes, show the dice type icons
     const playerDiceKeys = this.gameState.dice
       .filter(d => d.ownerId === 'player')
       .map(d => d.typeId);
@@ -4637,7 +4633,9 @@ export class ArenaScene extends Phaser.Scene {
     dice.forEach((diceUnit, index) => {
       const visual = this.getTransformedVisual(diceUnit);
       const def = this.getDefinitionForInstance(diceUnit);
-      const dieTitle = def?.title ?? diceUnit.typeId;
+      const baseTitle = def?.title ?? diceUnit.typeId;
+      // Remove "Dice" suffix if it's the last word for cleaner display
+      const dieTitle = baseTitle.endsWith('Dice') ? baseTitle.slice(0, -4).trim() : baseTitle;
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
       const shieldHp = this.shieldHpByInstance.get(diceUnit.instanceId) ?? 0;
       const shieldTag = shieldHp > 0 ? ` | SH ${shieldHp}` : '';
