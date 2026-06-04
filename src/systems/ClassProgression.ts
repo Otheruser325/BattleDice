@@ -115,7 +115,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     }
 
     if (definition.typeId === 'Soul' && source.soulBoostPercent !== undefined) {
-      modifiers.soulBoostPercent = source.manaGain + Math.floor(classUps / 5) * SOUL_BOOST_RATIO_PER_CLASS;
+      modifiers.soulBoostPercent = source.soulBoostPercent + Math.floor(classUps / 5) * SOUL_BOOST_RATIO_PER_CLASS;
     }
 
     if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && source.manaGain !== undefined) {
