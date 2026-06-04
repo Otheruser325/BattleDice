@@ -108,13 +108,10 @@ export class ShopScene extends Phaser.Scene {
 
           const shopState = getShopState(this);
           
-          // Check 24-hour time gate for freebie
           if (offer.isFreebie) {
             const lastClaimMs = shopState.freebieClaimedAt ?? 0;
             const nowMs = Date.now();
             const hoursSinceLastClaim = lastClaimMs > 0 ? (nowMs - lastClaimMs) / (1000 * 60 * 60) : 0;
-            
-            // Only block if within 24 hours of last claim
             if (shopState.freebieClaimedThisSession && hoursSinceLastClaim < 24) {
               const remainingHours = Math.ceil(24 - hoursSinceLastClaim);
               AlertManager.toast(this, { type: 'warning', message: `Freebie on cooldown. Please wait ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}.` });
@@ -266,10 +263,7 @@ export class ShopScene extends Phaser.Scene {
         ? 'Dice Tokens'
         : (offer.typeId ? (() => {
           const def = getAllDiceDefinitions(this).find(d => d.typeId === offer.typeId);
-          const baseName = def?.title ?? offer.typeId;
-          // Remove "Dice" suffix if it's the last word
-          const displayName = baseName.endsWith('Dice') ? baseName.slice(0, -4).trim() : baseName;
-          return displayName + ' Dice';
+          return (def?.title ?? offer.typeId);
         })() : '—'));
     const nameText = this.add.text(x + 8, y + 48, nameLine.toUpperCase(), {
       fontFamily: 'Orbitron', fontSize: '17px', color: effectivelyClaimed ? PALETTE.textMuted : (offer.isFreebie ? '#8ae0a1' : accentHex)
