@@ -34,6 +34,7 @@ export interface DiceSkillModifier {
   canConjureSouls?: boolean;
   conjureType?: 'ally' | 'enemy';
   maxSouls?: number;
+  soulBoostPercent?: number;
   shield?: number;
   tauntDuration?: number;
   tauntRange?: number;
