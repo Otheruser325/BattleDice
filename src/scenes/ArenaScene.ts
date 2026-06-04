@@ -410,16 +410,13 @@ export class ArenaScene extends Phaser.Scene {
     const activeDeckSlot = getActiveLoadoutSlot(this);
     const definitions = getDiceDefinitions(this);
 
-    objects.push(this.add.text(centerX, startY - 22, 'CURRENT LINEUP — click dice for stats', {
-      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
-    }).setOrigin(0.5));
-
+    // Deck selector buttons at top (replacing "CURRENT LINEUP" text)
     for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
       const x = centerX - 234 + i * 42;
-      const deckBtn = this.add.rectangle(x, startY + 22, 32, 28, 0x173247, 0.96)
+      const deckBtn = this.add.rectangle(x, startY - 22, 32, 28, 0x173247, 0.96)
         .setStrokeStyle(2, i === activeDeckSlot ? 0xf4b860 : 0x406987)
         .setInteractive({ useHandCursor: true });
-      const deckText = this.add.text(x, startY + 22, `${i + 1}`, {
+      const deckText = this.add.text(x, startY - 22, `${i + 1}`, {
         fontFamily: 'Orbitron', fontSize: '12px', color: i === activeDeckSlot ? '#ffd84d' : PALETTE.text
       }).setOrigin(0.5);
       deckBtn.on('pointerdown', () => {
@@ -429,10 +426,10 @@ export class ArenaScene extends Phaser.Scene {
       objects.push(deckBtn, deckText);
     }
 
+    // Dice cards below deck buttons
     definitions.forEach((definition, index) => {
       const x = centerX - 132 + index * 66;
       const progress = getDiceProgress(this, definition.typeId);
-      const rarityColor = RARITY_TEXT_COLORS[definition.rarity] ?? PALETTE.text;
       const accent = Phaser.Display.Color.HexStringToColor(definition.accent).color;
       const card = this.add.rectangle(x, startY + 22, 54, 46, 0x173247, 0.96)
         .setStrokeStyle(2, accent)
@@ -440,7 +437,9 @@ export class ArenaScene extends Phaser.Scene {
       const label = this.add.text(x, startY + 12, definition.typeId.slice(0, 4).toUpperCase(), {
         fontFamily: 'Orbitron', fontSize: '10px', color: definition.accent
       }).setOrigin(0.5);
-      const classCircle = this.add.circle(x + 17, startY + 33, 11, Phaser.Display.Color.HexStringToColor(rarityColor).color, 0.95)
+      const rarityColor = RARITY_TEXT_COLORS[definition.rarity] ?? PALETTE.text;
+      const rarityFill = Phaser.Display.Color.HexStringToColor(rarityColor).color;
+      const classCircle = this.add.circle(x + 17, startY + 33, 11, rarityFill, 0.95)
         .setStrokeStyle(1, 0xffffff, 0.55);
       const classText = this.add.text(x + 17, startY + 33, `${progress.classLevel}`, {
         fontFamily: 'Orbitron', fontSize: '9px', color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff'
@@ -3907,23 +3906,27 @@ export class ArenaScene extends Phaser.Scene {
     });
     
     soulDice.forEach((soulDie) => {
-      const definition = this.getDefinitionForInstance(soulDie);
-      if (!definition) return;
-      const meta = getRuntimeSkillMeta(definition);
+      // Always use the ORIGINAL base definition for soul boost calculations
+      // to avoid multiplicative stacking from previous soul boosts
+      const baseDefinition = this.definitions.get(soulDie.typeId);
+      if (!baseDefinition) return;
+      const meta = getRuntimeSkillMeta(baseDefinition);
       if (!meta.hasSoulHarvestPassive) return;
       
       // Increment soul count (no cap for Soul Dice)
       const currentSouls = this.soulDiceSoulsConjured.get(soulDie.instanceId) ?? 0;
       this.soulDiceSoulsConjured.set(soulDie.instanceId, currentSouls + 1);
       
-      // Apply damage and health boost per soul (20% of base stats per soul, added to max)
-      // Matches Dice Type Upgrade behavior - add to max, then adjust current proportionally
+      // Apply flat 20% damage and health boost per soul (calculated from ORIGINAL base stats)
+      // Each soul adds 20% of the ORIGINAL base stats to the die
       if (meta.soulBoostPercent) {
+        const baseAttack = baseDefinition.attack;
+        const baseHealth = baseDefinition.health;
         const boostPerSoul = meta.soulBoostPercent / 100;
-        const baseAttack = definition.attack;
-        const baseHealth = definition.health;
-        const newAttack = Math.round(baseAttack * (1 + boostPerSoul * (currentSouls + 1)));
-        const newMaxHealth = Math.round(baseHealth * (1 + boostPerSoul * (currentSouls + 1)));
+        // Total boost = 20% per soul conjured (linear, not multiplicative)
+        const totalBoost = boostPerSoul * (currentSouls + 1);
+        const newAttack = Math.round(baseAttack * (1 + totalBoost));
+        const newMaxHealth = Math.round(baseHealth * (1 + totalBoost));
         const healthRatio = soulDie.currentHealth / soulDie.maxHealth;
         const newCurrentHealth = Math.round(newMaxHealth * healthRatio);
         
@@ -3935,7 +3938,7 @@ export class ArenaScene extends Phaser.Scene {
               : d
           )
         };
-        this.instanceDefinitionOverrides.set(soulDie.instanceId, { ...definition, attack: newAttack, health: newMaxHealth });
+        this.instanceDefinitionOverrides.set(soulDie.instanceId, { ...baseDefinition, attack: newAttack, health: newMaxHealth });
       }
       
       this.combatLog.setText(`Soul Dice harvested ally soul! (${currentSouls + 1} souls, +${meta.soulBoostPercent}% stats)`);
