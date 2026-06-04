@@ -3,7 +3,7 @@ import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
-import { AlertManager } from '../ui/AlertManager';
+import { AlertManager } from '../utils/AlertManager';
 import {
   getDiamonds,
   setDiamonds,
