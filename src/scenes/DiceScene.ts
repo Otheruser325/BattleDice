@@ -35,7 +35,7 @@ function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: numb
   return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${description}`;
 }
 
-function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1): string {
+export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
   if (definition.skills.length === 0) return 'No skill';
   return definition.skills.map((skill, index) => formatSkillEntry(skill, index, definition.skills.length, definition, skillDamageMultiplier)).join('\n\n');
