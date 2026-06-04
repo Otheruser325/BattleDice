@@ -639,11 +639,31 @@ export class CasinoScene extends Phaser.Scene {
     const byRarity = (rarity: string, pool = defs) => pool.filter((definition) => definition.rarity === rarity);
     const table = CHEST_DROP_RATES[type];
 
+    // Calculate remaining useful copies per rarity for smarter roll distribution
+    const rarityRemainingCapacity = new Map<string, number>();
+    for (const entry of table) {
+      const pool = byRarity(entry.rarity);
+      let totalRemaining = 0;
+      for (const def of pool) {
+        const pending = pendingCopies.get(def.typeId) ?? 0;
+        const remaining = getRemainingUsefulCopies(this, def.typeId);
+        totalRemaining += Math.max(0, remaining - pending);
+      }
+      rarityRemainingCapacity.set(entry.rarity, totalRemaining);
+    }
+
     const tryGrantFromPool = (pool: typeof defs, rarity: string, copyRange: [number, number]): ChestRewardEntry | null => {
       const remainingPool = [...pool];
       while (remainingPool.length > 0) {
-        const index = Math.floor(Math.random() * remainingPool.length);
-        const die = remainingPool[index];
+        // Prefer dice with more remaining useful copies
+        remainingPool.sort((a, b) => {
+          const aPending = pendingCopies.get(a.typeId) ?? 0;
+          const bPending = pendingCopies.get(b.typeId) ?? 0;
+          const aRemaining = Math.max(0, getRemainingUsefulCopies(this, a.typeId) - aPending);
+          const bRemaining = Math.max(0, getRemainingUsefulCopies(this, b.typeId) - bPending);
+          return bRemaining - aRemaining;
+        });
+        const die = remainingPool[0];
         const copies = Phaser.Math.Between(copyRange[0], copyRange[1]);
         const progress = getDiceProgress(this, die.typeId);
         const beforeCopies = progress.copies;
@@ -654,7 +674,7 @@ export class CasinoScene extends Phaser.Scene {
         // Only mark as NEW if the die was not previously unlocked AND we actually granted copies
         const isNew = !wasUnlocked && grantedCopies > 0;
         if (grantedCopies > 0) return { typeId: die.typeId, title: die.title, rarity, copies: grantedCopies, isNew };
-        remainingPool.splice(index, 1);
+        remainingPool.shift();
       }
       return null;
     };
@@ -662,12 +682,18 @@ export class CasinoScene extends Phaser.Scene {
     const availableTable = table.filter((entry) => byRarity(entry.rarity).length > 0);
     if (availableTable.length === 0) return null;
 
-    let remainingEntries = [...availableTable];
+    // Use remaining capacity to weight rarity selection (hardened selection)
+    const weightedTable = availableTable.map(entry => ({
+      ...entry,
+      adjustedRate: entry.rate * Math.max(1, Math.log10(1 + (rarityRemainingCapacity.get(entry.rarity) ?? 1)))
+    }));
+
+    let remainingEntries = [...weightedTable];
     while (remainingEntries.length > 0) {
-      const totalRate = remainingEntries.reduce((sum, entry) => sum + entry.rate, 0);
+      const totalRate = remainingEntries.reduce((sum, entry) => sum + entry.adjustedRate, 0);
       let roll = Math.random() * totalRate;
       const selected = remainingEntries.find((entry) => {
-        roll -= entry.rate;
+        roll -= entry.adjustedRate;
         return roll < 0;
       }) ?? remainingEntries[remainingEntries.length - 1];
 
@@ -707,22 +733,48 @@ export class CasinoScene extends Phaser.Scene {
     const mask = this.add.rectangle(width / 2 - 430, rewardsTop, 860, rewardsHeight, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
     container.setMask(mask.createGeometryMask());
 
+    const rarityColors: Record<string, string> = {
+      Common: '#ffffff',
+      Uncommon: '#3dc45d',
+      Rare: '#5ba3ff',
+      Epic: '#b96cff',
+      Legendary: '#ffd84d',
+      Mythic: '#ff4d4d'
+    };
+
     entries.forEach((entry, i) => {
       const col = i % 3;
       const row = Math.floor(i / 3);
       const x = col * 280;
       const y = row * 92;
+      const rarityColor = rarityColors[entry.rarity] ?? PALETTE.text;
+      const accentHex = Phaser.Display.Color.HexStringToColor(rarityColor).color;
       const card = this.add.rectangle(x + 132, y + 38, 264, 76, 0x204d6a, 0.95)
-        .setStrokeStyle(1, 0x4f7ea1)
+        .setStrokeStyle(2, accentHex)
         .setInteractive({ useHandCursor: true });
-      const txt = this.add.text(x + 12, y + 10, `${entry.title} [${entry.rarity}]\n+${entry.copies} copies${entry.isNew ? '  NEW' : ''}`, {
+      const header = this.add.rectangle(x + 132, y + 18, 264, 28, accentHex, 0.15);
+      const titleText = this.add.text(x + 16, y + 10, entry.title.toUpperCase(), {
+        fontFamily: 'Orbitron',
+        fontSize: '13px',
+        color: rarityColor
+      });
+      const copiesText = this.add.text(x + 16, y + 50, `+${entry.copies} copies`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
-        color: PALETTE.text,
-        lineSpacing: 4
+        color: PALETTE.accentSoft
       });
+      const newBadge = entry.isNew ? this.add.text(x + 190, y + 50, 'NEW', {
+        fontFamily: 'Orbitron',
+        fontSize: '10px',
+        color: '#000000',
+        backgroundColor: '#2ecc71',
+        padding: { left: 6, right: 6, top: 2, bottom: 2 }
+      }) : null;
+      card.on('pointerover', () => card.setFillStyle(0x2a6080, 0.95));
+      card.on('pointerout', () => card.setFillStyle(0x204d6a, 0.95));
       card.on('pointerdown', () => this.showRewardDiceDetails(entry.typeId));
-      container.add([card, txt]);
+      container.add([card, header, titleText, copiesText]);
+      if (newBadge) container.add(newBadge);
     });
 
     const maxScroll = Math.max(0, Math.ceil(entries.length / 3) * 92 - rewardsHeight);
@@ -757,28 +809,78 @@ export class CasinoScene extends Phaser.Scene {
     if (!definition) return;
     const progress = getDiceProgress(this, definition.typeId);
     const { width, height } = this.scale;
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.45).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 560, 300, 0x173247, 0.98).setStrokeStyle(2, 0x4f7ea1);
-    const skills = definition.skills.map((skill) => `${skill.title} (${skill.type})`).join('  •  ') || 'No skill';
-    const text = this.add.text(width / 2, height / 2 - 24, `${definition.title}\nATK ${definition.attack}  HP ${definition.health}  RNG ${definition.range}\nTarget ${definition.targetingMode.toUpperCase()}  Class ${progress.classLevel}  Copies ${progress.copies}\n${skills}`, {
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
+    const panel = this.add.rectangle(width / 2, height / 2, 540, 320, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
+    
+    const rarityColors: Record<string, string> = {
+      Common: '#ffffff',
+      Uncommon: '#3dc45d',
+      Rare: '#5ba3ff',
+      Epic: '#b96cff',
+      Legendary: '#ffd84d',
+      Mythic: '#ff4d4d'
+    };
+    const rarityColor = rarityColors[definition.rarity] ?? PALETTE.text;
+    const accentColor = Phaser.Display.Color.HexStringToColor(rarityColor).color;
+    const accentHex = definition.accent ?? rarityColor;
+    
+    const header = this.add.rectangle(width / 2, height / 2 - 128, 540, 46, accentColor, 0.18);
+    const title = this.add.text(width / 2, height / 2 - 130, definition.title.toUpperCase(), {
       fontFamily: 'Orbitron',
-      fontSize: '13px',
-      color: PALETTE.text,
-      align: 'center',
-      wordWrap: { width: 500 }
+      fontSize: '20px',
+      color: accentHex
     }).setOrigin(0.5);
-    const closeBtn = this.add.text(width / 2, height / 2 + 112, 'Close', {
+    
+    const classCircle = this.add.rectangle(width / 2 - 80, height / 2 - 78, 14, 14, accentColor, 0.95);
+    const classText = this.add.text(width / 2 - 60, height / 2 - 82, `CLASS ${progress.classLevel}/15`, {
       fontFamily: 'Orbitron',
-      fontSize: '11px',
+      fontSize: '12px',
+      color: PALETTE.text
+    }).setOrigin(0, 0.5);
+    
+    const rarityCircle = this.add.rectangle(width / 2 + 20, height / 2 - 78, 14, 14, accentColor, 0.95);
+    const rarityText = this.add.text(width / 2 + 42, height / 2 - 82, definition.rarity.toUpperCase(), {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.text
+    }).setOrigin(0, 0.5);
+    
+    const copiesCircle = this.add.rectangle(width / 2 + 150, height / 2 - 78, 14, 14, 0x7ec8e3, 0.95);
+    const copiesText = this.add.text(width / 2 + 172, height / 2 - 82, `${progress.copies} copies`, {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.text
+    }).setOrigin(0, 0.5);
+    
+    const statsLine = this.add.text(width / 2, height / 2 - 50, `ATK ${definition.attack}  |  HP ${definition.health}  |  RANGE ${definition.range} (${definition.targetingMode.toUpperCase()})`, {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.textMuted,
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    const skillLines = definition.skills.map((skill) => `${skill.title} (${skill.type})`).join('\n') || 'No skill';
+    const skillText = this.add.text(width / 2, height / 2 + 4, skillLines, {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.textMuted,
+      align: 'center',
+      wordWrap: { width: 480 }
+    }).setOrigin(0.5);
+    
+    const closeBtn = this.add.text(width / 2, height / 2 + 128, 'Close', {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
       color: PALETTE.textMuted,
       backgroundColor: '#173247',
-      padding: { left: 8, right: 8, top: 4, bottom: 4 }
+      padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    
     const escHandler = () => close();
     this.input.keyboard?.on('keydown-ESC', escHandler);
     const close = () => {
       this.input.keyboard?.off('keydown-ESC', escHandler);
-      [overlay, panel, text, closeBtn].forEach((obj) => obj.destroy());
+      [overlay, panel, header, title, classCircle, classText, rarityCircle, rarityText, copiesCircle, copiesText, statsLine, skillText, closeBtn].forEach((obj) => obj.destroy());
       this.activeRewardDetailClose = null;
     };
     this.activeRewardDetailClose = close;

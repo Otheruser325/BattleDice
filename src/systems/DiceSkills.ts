@@ -43,6 +43,7 @@ export interface DiceSkillRuntimeMeta {
   hasDeathInstakill?: boolean;
   deathInstakillMana?: number;
   hasGrowthPermanent?: boolean;
+  hasBrokenGrowthPermanent?: boolean;
   transformAccent?: string;
   transformSymbol?: string;
   transformTitle?: string;
@@ -54,6 +55,9 @@ export interface DiceSkillRuntimeMeta {
   canConjureSouls?: boolean;
   conjureType?: 'ally' | 'enemy';
   maxSouls?: number;
+  noMaxSouls?: boolean;
+  soulBoostPercent?: number;
+  hasSoulHarvestPassive?: boolean;
   deuciferOddSiphonRate?: number;
   deuciferEvenDamageRate?: number;
   canSummonImp?: boolean;
@@ -144,6 +148,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     hasDeathInstakill,
     deathInstakillMana: hasDeathInstakill ? (primary?.manaNeeded ?? 12) : undefined,
     hasGrowthPermanent: notes.includes('runtime:growthPermanent'),
+    hasBrokenGrowthPermanent: notes.includes('runtime:brokenGrowthPermanent'),
     transformAccent: getNoteValue('runtime:transformAccent='),
     transformSymbol: getNoteValue('runtime:transformSymbol='),
     transformTitle: getNoteValue('runtime:transformTitle='),
@@ -155,6 +160,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     canConjureSouls: Boolean((modifiers as { canConjureSouls?: boolean } | undefined)?.canConjureSouls),
     conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' } | undefined)?.conjureType),
     maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls,
+    noMaxSouls: Boolean((modifiers as { noMaxSouls?: boolean } | undefined)?.noMaxSouls),
+    soulBoostPercent: (modifiers as { soulBoostPercent?: number } | undefined)?.soulBoostPercent,
+    hasSoulHarvestPassive: notes.includes('runtime:soulHarvestPassive'),
     deuciferOddSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
     deuciferEvenDamageRate: Number.isFinite(evenDamageRate) ? evenDamageRate : undefined,
     canSummonImp: allNotes.includes('runtime:deuciferSummonImp'),
