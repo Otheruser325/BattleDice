@@ -115,7 +115,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     }
 
     if (definition.typeId === 'Soul' && source.soulBoostPercent !== undefined) {
-      modifiers.soulBoostPercent = source.soulBoostPercent + classUps * SOUL_BOOST_RATIO_PER_CLASS;
+      modifiers.soulBoostPercent = source.soulBoostPercent + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
     }
 
     if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && source.manaGain !== undefined) {
@@ -235,11 +235,9 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
     return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
   }
-
   if (modifiers.shield !== undefined) {
     return `Gain +${scaleSkillDamage(modifiers.shield)} shield for ${modifiers.durationTurns ?? 2} turns.`;
   }
-
   if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {
     return `The next ${modifiers.numAttacksBoosted} basic attacks deal ${formatPercent(modifiers.numAttacksDamageMult - 1)} more damage.`;
   }
@@ -253,7 +251,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
   }
   if (modifiers.soulBoostPercent !== undefined) {
-    return `Conjures defeated ally souls. Soul Dice gains +${modifiers.soulBoostPercent}% damage and health for each soul conjured.`;
+    return `Conjures defeated ally souls. Soul Dice gains +${formatPercent(modifiers.soulBoostPercent)} damage and health for each soul conjured.`;
   }
   if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
     return `All friendly charging active skills gain +${modifiers.manaGain} mana.`;
