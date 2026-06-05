@@ -1525,9 +1525,6 @@ export class ArenaScene extends Phaser.Scene {
     return rowGroup;
   }
 
-
-
-
   // ── GAME START ───────────────────────────────────────────────────────────────
 
   private startGame() {
@@ -1944,7 +1941,6 @@ export class ArenaScene extends Phaser.Scene {
     this.rollAllButton.setFillStyle(0x7f8c8d, 0.5);
     this.rollAllButtonLabel.setText('ROLLED');
     this.updateCombatButtonState();
-
     this.combatLog.setText(`Rolled: ${rollResults.join(', ')}`);
     this.debug.log('All dice rolled', { results: rollResults });
   }
@@ -2088,11 +2084,10 @@ export class ArenaScene extends Phaser.Scene {
 
     container.destroy();
     this.handDice.delete(instanceId);
-
     this.placedDiceCount++;
     this.renderDice();
     this.updateCombatButtonState();
-
+	  
     this.combatLog.setText(`Placed ${existingDieInHand.typeId} at [${gridPos.row}, ${gridPos.col}] (${this.placedDiceCount}/${Math.min(25, this.currentHandOrder.length)})`);
     this.reflowHandPositions();
   }
@@ -2690,6 +2685,7 @@ export class ArenaScene extends Phaser.Scene {
     if (card.kind === 'Giant Hunter') { this.giantHunterRateByOwner[owner] += [0, 0.01, 0.02, 0.03][mag]; }
     if (card.kind === 'Odd Investment') this.oddInvestmentByOwner[owner] = { damage: this.oddInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.oddInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
     if (card.kind === 'Even Investment') this.evenInvestmentByOwner[owner] = { damage: this.evenInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.evenInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
+	if (card.kind === 'Crowd Attack') this.evenInvestmentByOwner[owner] = { damage: this.evenInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.evenInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
     this.renderDiceCardInfoPanel();
   }
 
@@ -2723,7 +2719,6 @@ export class ArenaScene extends Phaser.Scene {
     if (!data) return 0;
     return this.getEffectivePipForInvestment(die) === 3 ? data.reduction : 0;
   }
-
   
   private getEffectivePipForInvestment(die: DiceInstanceState): number {
     return die.ownerId === 'player' ? (this.dicePips.get(die.instanceId) ?? 1) : (this.enemyDicePips.get(die.instanceId) ?? 1);
@@ -2740,7 +2735,6 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private getDiceCardSkillDamageMultiplier(attacker: DiceInstanceState): number {
-    if (attacker.typeId === 'Iron' || attacker.typeId === 'Solitude') return 1;
     return this.getOffenseMultiplier(attacker);
   }
 
@@ -2984,7 +2978,6 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderLavaPools() {
     const boardWidth = GRID_SIZE * (TILE_SIZE + TILE_GAP) - TILE_GAP;
-
     const removeOld = (container: Phaser.GameObjects.Container) => {
       const toRemove: Phaser.GameObjects.GameObject[] = [];
       container.each((child: Phaser.GameObjects.GameObject) => {
@@ -3876,8 +3869,6 @@ export class ArenaScene extends Phaser.Scene {
 
   private checkDeathTransformCondition(defeated: DiceInstanceState) {
     const owner = defeated.ownerId;
-    
-    // Handle Soul Dice - conjure ally souls when allies are defeated
     const soulDice = this.gameState.dice.filter((die) => {
       if (die.ownerId !== owner || die.isDestroyed) return false;
       const def = this.getDefinitionForInstance(die);
@@ -3889,7 +3880,6 @@ export class ArenaScene extends Phaser.Scene {
     soulDice.forEach((soulDie) => {
       const baseDefinition = this.definitions.get(soulDie.typeId);
       if (!baseDefinition) return;
-      // Get the class-scaled definition for proper stats
       const scaledDef = this.getDefinitionForInstance(soulDie);
       const scaledMeta = getRuntimeSkillMeta(scaledDef);
       if (!scaledMeta.hasSoulHarvestPassive) return;
@@ -3897,18 +3887,13 @@ export class ArenaScene extends Phaser.Scene {
       const currentSouls = this.soulDiceSoulsConjured.get(soulDie.instanceId) ?? 0;
       this.soulDiceSoulsConjured.set(soulDie.instanceId, currentSouls + 1);
       
-      // Soul boost: apply to BASE stats (before class scaling), then apply class multiplier
-      // This prevents over-scaling where soul boost compounds with class-scaled stats
       if (scaledMeta.soulBoostPercent) {
         const classLevel = this.instanceClassLevels.get(soulDie.instanceId) ?? 1;
         const classMultiplier = getClassMultiplier(classLevel);
-        
         const baseAttack = baseDefinition.attack;
         const baseHealth = baseDefinition.health;
-        const boostPerSoul = scaledMeta.soulBoostPercent / 100;
+        const boostPerSoul = scaledMeta.soulBoostPercent;
         const totalBoost = boostPerSoul * (currentSouls + 1);
-        
-        // Apply soul boost to base stats, then apply class multiplier
         const newAttack = Math.round((baseAttack * (1 + totalBoost)) * classMultiplier);
         const newMaxHealth = Math.round((baseHealth * (1 + totalBoost)) * classMultiplier);
         const healthRatio = soulDie.currentHealth / soulDie.maxHealth;
@@ -3925,7 +3910,6 @@ export class ArenaScene extends Phaser.Scene {
         this.instanceDefinitionOverrides.set(soulDie.instanceId, { ...scaledDef, attack: newAttack, health: newMaxHealth });
       }
 		
-      // Use class-scaled soulBoostPercent for display message
       this.combatLog.setText(`Soul Dice harvested ally soul! (${currentSouls + 1} souls, +${scaledMeta.soulBoostPercent}% stats)`);
       AudioManager.playSfx(this, AUDIO_KEYS.soulHarvest);
     });
@@ -4591,7 +4575,6 @@ export class ArenaScene extends Phaser.Scene {
       icon.on('pointerout', () => tip.setVisible(false));
       c.add(icon);
     });};
-    // Only render Dice Card upgrades in Dice Card mode when cards are being picked
     if (this.activeRandomModifier === 'DiceCard') {
       const playerCardKeys = [...this.activeDiceCardKeysByOwner.player];
       const enemyCardKeys = [...this.activeDiceCardKeysByOwner.enemy];
@@ -4637,7 +4620,6 @@ export class ArenaScene extends Phaser.Scene {
       const visual = this.getTransformedVisual(diceUnit);
       const def = this.getDefinitionForInstance(diceUnit);
       const baseTitle = def?.title ?? diceUnit.typeId;
-      // Remove "Dice" suffix if it's the last word for cleaner display
       const dieTitle = baseTitle.endsWith('Dice') ? baseTitle.slice(0, -4).trim() : baseTitle;
       const classLevel = this.instanceClassLevels.get(diceUnit.instanceId) ?? 1;
       const shieldHp = this.shieldHpByInstance.get(diceUnit.instanceId) ?? 0;
@@ -5352,8 +5334,6 @@ export class ArenaScene extends Phaser.Scene {
     this.registry.set(BOT_FIRST_WIN_KEY, next);
     localStorage.setItem(BOT_FIRST_WIN_KEY, JSON.stringify(next));
   }
-
-
 
   private getChallengeRewardClaims(): string[] {
     const stored = this.registry.get(CHALLENGE_REWARD_CLAIMS_KEY) as string[] | undefined;
