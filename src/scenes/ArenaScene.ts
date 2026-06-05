@@ -4578,8 +4578,26 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderDiceCardInfoPanel() {
     this.diceCardInfoContainer?.destroy(true);
-    // This panel is intentionally empty - dice card upgrades appear via the card picker UI,
-    // and dice type icons are not needed as permanent placeholders
+    const y = this.scale.height - 30;
+    const c = this.add.container(0, 0).setDepth(350);
+    this.diceCardInfoContainer = c;
+    const tip = this.add.text(this.scale.width / 2 - 110, y - 70, '', { fontFamily: 'Orbitron', fontSize: '12px', color: '#fff2d8', backgroundColor: '#102030', padding: { x: 8, y: 6 }, wordWrap: { width: 210 } }).setDepth(351).setVisible(false);
+    const renderSide=(keys:string[], right:boolean)=>{
+      keys.slice(-8).forEach((key, idx) => {
+      const info = this.getDiceCardDescription(key);
+      const px = right ? this.scale.width - 24 - (idx*24) : 24 + (idx*24);
+      const icon = this.add.text(px, y, info.icon, { fontSize: '18px', color: info.color ?? '#ffffff' }).setOrigin(right ? 1 : 0, 1).setInteractive({ useHandCursor: true });
+      icon.on('pointerover', () => { tip.setText(`${info.title} (${info.rarity})\n${info.desc}`).setVisible(true); });
+      icon.on('pointerout', () => tip.setVisible(false));
+      c.add(icon);
+    });};
+    // Only render Dice Card upgrades in Dice Card mode when cards are being picked
+    if (this.activeRandomModifier === 'DiceCard') {
+      const playerCardKeys = [...this.activeDiceCardKeysByOwner.player];
+      const enemyCardKeys = [...this.activeDiceCardKeysByOwner.enemy];
+      renderSide(playerCardKeys, false);
+      renderSide(enemyCardKeys, true);
+    }
   }
 
   private renderDice() {
