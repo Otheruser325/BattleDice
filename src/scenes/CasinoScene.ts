@@ -684,10 +684,14 @@ export class CasinoScene extends Phaser.Scene {
     const availableTable = table.filter((entry) => byRarity(entry.rarity).length > 0);
     if (availableTable.length === 0) return null;
 
-    // Use remaining capacity to weight rarity selection (hardened selection)
+    // Use remaining capacity to weight rarity selection
+    // If a rarity has any remaining capacity, keep its base rate
+    // If a rarity has NO capacity, it should have been filtered out already
     const weightedTable = availableTable.map(entry => ({
       ...entry,
-      adjustedRate: entry.rate * Math.max(1, Math.log10(1 + (rarityRemainingCapacity.get(entry.rarity) ?? 1)))
+      // Don't penalize rarities for having low capacity - prefer all rarities with any capacity equally
+      // The removal of failed rarities (line below) will handle cases where all dice in a rarity are at capacity
+      adjustedRate: entry.rate
     }));
 
     let remainingEntries = [...weightedTable];
