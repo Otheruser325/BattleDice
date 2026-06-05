@@ -253,7 +253,6 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
   }
   if (modifiers.soulBoostPercent !== undefined) {
-    // soulBoostPercent is stored as a percentage value (e.g., 20 = 20%), not a decimal
     return `Conjures defeated ally souls. Soul Dice gains +${modifiers.soulBoostPercent}% damage and health for each soul conjured.`;
   }
   if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
@@ -316,7 +315,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   }
   if (currentModifiers.soulBoostPercent !== undefined && nextModifiers.soulBoostPercent !== undefined) {
     const delta = nextModifiers.soulBoostPercent - currentModifiers.soulBoostPercent;
-    if (delta > 0) skillDeltas.push(`Soul health/damage boost +${Number.isInteger(delta) ? delta : delta.toFixed(1)}%`);
+    if (delta > 0) skillDeltas.push(`Soul health/damage boost +${formatPercent(delta)}`);
   }
 
   const runtimeRateNotes: Array<{ key: string; label: string }> = [
