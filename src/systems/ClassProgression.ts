@@ -253,7 +253,8 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
   }
   if (modifiers.soulBoostPercent !== undefined) {
-    return `Conjures defeated ally souls. Soul Dice gains +${formatPercent(modifiers.soulBoostPercent)} damage and health for each soul conjured.`;
+    // soulBoostPercent is stored as a percentage value (e.g., 20 = 20%), not a decimal
+    return `Conjures defeated ally souls. Soul Dice gains +${modifiers.soulBoostPercent}% damage and health for each soul conjured.`;
   }
   if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
     return `All friendly charging active skills gain +${modifiers.manaGain} mana.`;
