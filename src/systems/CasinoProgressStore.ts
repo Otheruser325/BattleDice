@@ -41,7 +41,7 @@ function normalizeProgress(value: Partial<CasinoProgress> | null | undefined): C
     chips: Math.max(0, Math.floor(Number(value?.chips ?? DEFAULT_PROGRESS.chips) || 0)),
     chests: { ...DEFAULT_CHESTS, ...(value?.chests ?? {}) },
     fivesHand: normalizeFivesHand(value?.fivesHand),
-    fivesGauge: Phaser.Math.Clamp(Math.floor(Number(value?.fivesGauge ?? DEFAULT_PROGRESS.fivesGauge) || 0), 0, 100)
+    fivesGauge: Phaser.Math.Clamp(Math.floor(Number(value?.fivesGauge ?? DEFAULT_PROGRESS.fivesGauge) || 0), 0, 1000)
   };
 }
 
