@@ -47,7 +47,6 @@ export class SettingsScene extends Phaser.Scene {
       if (this.modalOpen) this.closeModal();
     });
 
-    // Check match state periodically to hide button during matches
     this.matchStateCheckTimer = this.time.addEvent({
       delay: 500,
       loop: true,
@@ -64,18 +63,12 @@ export class SettingsScene extends Phaser.Scene {
   private isMatchInProgress(): boolean {
     const arenaScene = this.scene.get(SCENE_KEYS.Arena);
     if (!arenaScene || !arenaScene.sys.isActive()) return false;
-    // Check the game phase - match is in progress during placement and combat stages
     const arenaState = arenaScene as unknown as { gamePhase?: { stage: string } };
     if (arenaState.gamePhase) {
       const { stage } = arenaState.gamePhase;
-      // Match in progress during placement or combat phases
-      // Not in progress during lobby or result stages (victory/defeat/draw/resolved)
       if (stage === 'placement' || stage === 'combat') return true;
       if (stage === 'lobby') return false;
-      // For result stages (victory/defeat/draw/resolved), check via scene restart state
     }
-    // Fallback: if scene is active but phase is result, consider match ended
-    // The settings button should be visible after match ends
     return false;
   }
 
@@ -138,21 +131,19 @@ export class SettingsScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const panelWidth = 720;
     const panelHeight = 520;
-    const contentPadding = 30;
+    const contentPadding = 260;
     const scrollSpeed = 0.3;
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
     const panel = this.add.rectangle(width / 2, height / 2, panelWidth, panelHeight, 0x102434, 0.98).setStrokeStyle(2, 0x496a84).setDepth(71);
-    const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'CHANGELOG (v0.7 beta)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
+    const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'CHANGELOG (v0.8 beta)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
     const closeBtn = this.add.text(width / 2, height / 2 + panelHeight / 2 - 30, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
 
-    // Create scrollable content container - positioned at mask center for proper alignment
     const contentWidth = panelWidth - contentPadding * 2;
     const contentStartY = height / 2 - panelHeight / 2 + 70;
     const contentHeight = panelHeight - 120;
     const contentContainer = this.add.container(width / 2, contentStartY).setDepth(72);
 
-    // Create mask for scrolling (use graphics to avoid white rectangle)
     const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
     maskShape.fillStyle(0xffffff);
     maskShape.fillRect(0, 0, contentWidth, contentHeight);
@@ -167,7 +158,6 @@ export class SettingsScene extends Phaser.Scene {
     let isDragging = false;
     let lastDragY = 0;
 
-    // Scroll handling
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (isDragging && contentHeightActual > contentHeight) {
         const deltaY = pointer.y - lastDragY;
@@ -188,7 +178,6 @@ export class SettingsScene extends Phaser.Scene {
       isDragging = false;
     });
 
-    // Mouse wheel scrolling
     this.input.keyboard?.on('wheel', (_: unknown, _2: unknown, _3: unknown, deltaY: number) => {
       if (contentHeightActual > contentHeight) {
         scrollY = Phaser.Math.Clamp(scrollY + deltaY * 0.5, 0, Math.max(0, contentHeightActual - contentHeight));
@@ -211,13 +200,11 @@ export class SettingsScene extends Phaser.Scene {
       const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => `• ${entry.version} (${entry.date})\n${entry.notes.map((n) => `  - ${n}`).join('\n')}`);
       body.setText(lines.join('\n\n') || 'No entries found.');
       
-      // Calculate content height and position (body is inside container at 0,0)
       const textHeight = body.height;
       contentHeightActual = textHeight;
       body.setX(0);
       body.setY(0);
       
-      // If content is taller than visible area, scroll to top
       if (contentHeightActual > contentHeight) {
         scrollY = 0;
       }
@@ -253,7 +240,6 @@ export class SettingsScene extends Phaser.Scene {
     this.modalOpen = false;
     this.modalElements.forEach((element) => element.destroy());
     this.modalElements = [];
-    // Re-check visibility after closing modal
     this.updateSettingsButtonVisibility();
   }
 
@@ -273,5 +259,4 @@ export class SettingsScene extends Phaser.Scene {
     if (!result.ok) { AlertManager.toast(this, { type: 'warning', message: 'Name change failed.' }); return; }
     AlertManager.toast(this, { type: 'success', message: `Name changed to ${next}${result.cost > 0 ? ` (-${result.cost} diamonds)` : ' (free)'}.` });
   }
-
 }
