@@ -131,9 +131,9 @@ export class SettingsScene extends Phaser.Scene {
     const panelWidth = 720;
     const panelHeight = 520;
     const contentPadding = 30;
-    const scrollSpeed = 0.3;
+    const scrollSpeed = 0.5;
 
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setDepth(70);
     const panel = this.add.rectangle(width / 2, height / 2, panelWidth, panelHeight, 0x102434, 0.98).setStrokeStyle(2, 0x496a84).setDepth(71);
     const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'BATTLE DICE CHANGELOG', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
     const closeBtn = this.add.text(width / 2, height / 2 + panelHeight / 2 - 30, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
@@ -142,12 +142,10 @@ export class SettingsScene extends Phaser.Scene {
     const contentWidth = panelWidth - contentPadding * 2;
     const contentStartY = height / 2 - panelHeight / 2 + 70;
     const contentStartX = width / 2 - panelWidth / 2 + contentPadding;
-    // Allow more vertical space for changelog entries
     const contentHeight = panelHeight - 100;
     const contentContainer = this.add.container(contentStartX, contentStartY).setDepth(72);
 
     // Create mask for scrolling (use graphics to avoid white rectangle)
-    // Use absolute world coordinates to match container position
     const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
     maskShape.fillStyle(0xffffff);
     maskShape.fillRect(contentStartX, contentStartY, contentWidth, contentHeight);
@@ -157,23 +155,25 @@ export class SettingsScene extends Phaser.Scene {
     contentContainer.add(body);
     contentContainer.setMask(maskShape.createGeometryMask());
 
+    // Scroll state
     let scrollY = 0;
     let contentHeightActual = 0;
     let isDragging = false;
     let lastDragY = 0;
 
-    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (isDragging && contentHeightActual > contentHeight) {
-        const deltaY = pointer.y - lastDragY;
-        scrollY = Phaser.Math.Clamp(scrollY - deltaY * scrollSpeed, 0, Math.max(0, contentHeightActual - contentHeight));
-        body.setY(scrollY);
+    // Drag scrolling - works on the overlay (entire modal area)
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (contentHeightActual > contentHeight) {
+        isDragging = true;
         lastDragY = pointer.y;
       }
     });
 
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (contentHeightActual > contentHeight) {
-        isDragging = true;
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (isDragging && contentHeightActual > contentHeight) {
+        const deltaY = pointer.y - lastDragY;
+        scrollY = Phaser.Math.Clamp(scrollY - deltaY * scrollSpeed, 0, Math.max(0, contentHeightActual - contentHeight));
+        body.setY(-scrollY);
         lastDragY = pointer.y;
       }
     });
@@ -182,10 +182,26 @@ export class SettingsScene extends Phaser.Scene {
       isDragging = false;
     });
 
+    // Mouse wheel scrolling with momentum
     this.input.keyboard?.on('wheel', (_: unknown, _2: unknown, _3: unknown, deltaY: number) => {
       if (contentHeightActual > contentHeight) {
-        scrollY = Phaser.Math.Clamp(scrollY + deltaY * 0.5, 0, Math.max(0, contentHeightActual - contentHeight));
-        body.setY(scrollY);
+        scrollY = Phaser.Math.Clamp(scrollY + deltaY * 1.5, 0, Math.max(0, contentHeightActual - contentHeight));
+        body.setY(-scrollY);
+      }
+    });
+
+    // Keyboard arrow scrolling
+    this.input.keyboard?.on('keydown-UP', () => {
+      if (contentHeightActual > contentHeight) {
+        scrollY = Phaser.Math.Clamp(scrollY - 50, 0, Math.max(0, contentHeightActual - contentHeight));
+        body.setY(-scrollY);
+      }
+    });
+
+    this.input.keyboard?.on('keydown-DOWN', () => {
+      if (contentHeightActual > contentHeight) {
+        scrollY = Phaser.Math.Clamp(scrollY + 50, 0, Math.max(0, contentHeightActual - contentHeight));
+        body.setY(-scrollY);
       }
     });
 
@@ -193,6 +209,8 @@ export class SettingsScene extends Phaser.Scene {
       this.input.off('pointermove');
       this.input.off('pointerdown');
       this.input.off('pointerup');
+      this.input.keyboard?.off('keydown-UP');
+      this.input.keyboard?.off('keydown-DOWN');
       [overlay, panel, title, closeBtn, contentContainer, maskShape].forEach((e) => e.destroy());
     };
     this.input.keyboard?.once('keydown-ESC', close);
@@ -204,14 +222,11 @@ export class SettingsScene extends Phaser.Scene {
       const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => `• ${entry.version} (${entry.date})\n${entry.notes.map((n) => `  - ${n}`).join('\n')}`);
       body.setText(lines.join('\n\n') || 'No entries found.');
       
-      const textHeight = body.height;
-      contentHeightActual = textHeight;
+      // Dynamic content height based on actual text
+      contentHeightActual = body.height;
       body.setX(0);
       body.setY(0);
-      
-      if (contentHeightActual > contentHeight) {
-        scrollY = 0;
-      }
+      scrollY = 0;
     } catch {
       body.setText('Could not fetch config/changelog.json');
     }
