@@ -1,7 +1,7 @@
 {
   "typeId": "Shield",
   "title": "Shield Dice",
-  "attack": 18,
+  "attack": 16,
   "health": 960,
   "range": 2,
   "rarity": "Common",
