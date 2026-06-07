@@ -351,18 +351,16 @@ export class SettingsScene extends Phaser.Scene {
 
   private setModalInteractivity(enabled: boolean) {
     this.modalElements.forEach((element) => {
-      if (element instanceof Phaser.GameObjects.Container) {
-        // Containers: disable all interactive children
-        element.each((child) => {
-          if (child instanceof Phaser.GameObjects.InteractiveObject) {
-            child.disableInteractive();
-          }
+      if (element && 'each' in element) {
+        // Container: disable all children
+        (element as Phaser.GameObjects.Container).each((child: Phaser.GameObjects.GameObject) => {
+          child.disableInteractive();
         });
-      } else if (element instanceof Phaser.GameObjects.InteractiveObject) {
+      } else if (element && 'disableInteractive' in element) {
         if (enabled) {
-          element.setInteractive({ useHandCursor: true });
+          (element as Phaser.GameObjects.GameObject).setInteractive({ useHandCursor: true });
         } else {
-          element.disableInteractive();
+          (element as Phaser.GameObjects.GameObject).disableInteractive();
         }
       }
     });
