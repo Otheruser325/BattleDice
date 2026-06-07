@@ -138,14 +138,18 @@ export class SettingsScene extends Phaser.Scene {
     const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'BATTLE DICE CHANGELOG', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
     const closeBtn = this.add.text(width / 2, height / 2 + panelHeight / 2 - 30, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
 
+    // Create scrollable content container - positioned at content area top-left
     const contentWidth = panelWidth - contentPadding * 2;
     const contentStartY = height / 2 - panelHeight / 2 + 70;
+    const contentStartX = width / 2 - panelWidth / 2 + contentPadding;
     const contentHeight = panelHeight - 120;
-    const contentContainer = this.add.container(width / 2, contentStartY).setDepth(72);
+    const contentContainer = this.add.container(contentStartX, contentStartY).setDepth(72);
 
+    // Create mask for scrolling (use graphics to avoid white rectangle)
+    // Use absolute world coordinates to match container position
     const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
     maskShape.fillStyle(0xffffff);
-    maskShape.fillRect(0, 0, contentWidth, contentHeight);
+    maskShape.fillRect(contentStartX, contentStartY, contentWidth, contentHeight);
     maskShape.setDepth(72);
 
     const body = this.add.text(0, 0, 'Loading changelog...', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted, wordWrap: { width: contentWidth } });
