@@ -243,7 +243,57 @@ scene.scene.start('Dice'); // or 'Arena', 'Shop', 'Casino'
 ## File Locations for Reference
 
 - **Dice Definitions**: `/public/gamedata/DiceDefinitions/`
-- **Scene Code**: `/src/scenes/` (DiceScene.ts, ArenaScene.ts, CasinoScene.ts, ShopScene.ts)
+- **Scene Code**: `/src/scenes/` (DiceScene.ts, ArenaScene.ts, CasinoScene.ts, ShopScene.ts, SettingsScene.ts)
 - **Data Management**: `/src/data/dice.ts`
 - **Skills System**: `/src/systems/DiceSkills.ts`
 - **Class Progression**: `/src/systems/ClassProgression.ts`
+
+## Known Issues & Fixes
+
+### 1. Changelog Scroll Mask (Fixed in #175)
+**Problem**: White rectangle covered changelog text, making it unreadable.
+
+**Root Cause**: Using `this.add.rectangle()` for the mask shape creates a visible white rectangle. Phaser masks work on the geometry shape, not the fill.
+
+**Fix Pattern** (in SettingsScene.ts):
+```typescript
+// ❌ WRONG - creates visible white rectangle
+const maskShape = this.add.rectangle(width / 2, height / 2, contentWidth, contentHeight, 0xffffff, 1);
+
+// ✅ CORRECT - invisible graphics mask
+const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
+maskShape.fillStyle(0xffffff);
+maskShape.fillRect(width / 2 - contentWidth / 2, height / 2 - contentHeight / 2, contentWidth, contentHeight);
+```
+
+### 2. Settings Button Visibility After Match End (Fixed in #175)
+**Problem**: Settings button stayed hidden after finishing/exiting an arena match.
+
+**Root Cause**: `isMatchInProgress()` checked `turnLimit` which wasn't being reset properly, or checked `gameState.turn > 0` which could be true even after match ends.
+
+**Fix**: Check `gamePhase.stage` directly:
+```typescript
+private isMatchInProgress(): boolean {
+  const arenaScene = this.scene.get(SCENE_KEYS.Arena);
+  if (!arenaScene || !arenaScene.sys.isActive()) return false;
+  const arenaState = arenaScene as unknown as { gamePhase?: { stage: string } };
+  if (arenaState.gamePhase) {
+    const { stage } = arenaState.gamePhase;
+    // Match in progress only during placement or combat
+    return stage === 'placement' || stage === 'combat';
+  }
+  return false;
+}
+```
+
+### 3. fireSupportByOwner Undefined (Fixed in #175)
+**Problem**: "can't access property 'player', this.fireSupportByOwner is undefined" error.
+
+**Root Cause**: Property was used but never declared.
+
+**Fix**: Add property declaration in ArenaScene.ts:
+```typescript
+private fireSupportByOwner: Record<'player' | 'enemy', number> = { player: 0, enemy: 0 };
+// And reset in resetRuntimeState():
+this.fireSupportByOwner = { player: 0, enemy: 0 };
+```

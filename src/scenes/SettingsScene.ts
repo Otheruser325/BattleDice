@@ -64,11 +64,18 @@ export class SettingsScene extends Phaser.Scene {
   private isMatchInProgress(): boolean {
     const arenaScene = this.scene.get(SCENE_KEYS.Arena);
     if (!arenaScene || !arenaScene.sys.isActive()) return false;
-    // Check if the arena scene has a gameState with turn > 0
-    const arenaState = arenaScene as unknown as { gameState?: { turn: number }; turnLimit?: number };
-    if (arenaState.gameState && arenaState.gameState.turn > 0) return true;
-    // Also check if turnLimit is set (indicates a match is configured)
-    if (arenaState.turnLimit && arenaState.turnLimit > 0) return true;
+    // Check the game phase - match is in progress during placement and combat stages
+    const arenaState = arenaScene as unknown as { gamePhase?: { stage: string } };
+    if (arenaState.gamePhase) {
+      const { stage } = arenaState.gamePhase;
+      // Match in progress during placement or combat phases
+      // Not in progress during lobby or result stages (victory/defeat/draw/resolved)
+      if (stage === 'placement' || stage === 'combat') return true;
+      if (stage === 'lobby') return false;
+      // For result stages (victory/defeat/draw/resolved), check via scene restart state
+    }
+    // Fallback: if scene is active but phase is result, consider match ended
+    // The settings button should be visible after match ends
     return false;
   }
 
@@ -145,9 +152,11 @@ export class SettingsScene extends Phaser.Scene {
     const contentStartY = height / 2 - panelHeight / 2 + 70;
     const contentHeight = panelHeight - 120;
 
-    // Create mask for scrolling
-    const maskShape = this.add.rectangle(width / 2, height / 2, contentWidth, contentHeight, 0xffffff, 1).setDepth(72);
-    maskShape.setMask(maskShape.createGeometryMask());
+    // Create mask for scrolling (use graphics to avoid white rectangle)
+    const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
+    maskShape.fillStyle(0xffffff);
+    maskShape.fillRect(width / 2 - contentWidth / 2, height / 2 - contentHeight / 2, contentWidth, contentHeight);
+    maskShape.setDepth(72);
 
     const body = this.add.text(0, 0, 'Loading changelog...', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted, wordWrap: { width: contentWidth } });
     contentContainer.add(body);
