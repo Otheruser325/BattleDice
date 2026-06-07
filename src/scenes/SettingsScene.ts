@@ -255,6 +255,7 @@ export class SettingsScene extends Phaser.Scene {
       this.input.keyboard?.off('keydown-DOWN');
       [overlay, panel, title, closeBtn, contentContainer, maskShape].forEach((e) => e.destroy());
       this.subModalOpen = false;
+      this.setModalInteractivity(true);
     };
     this.input.keyboard?.once('keydown-ESC', close);
     closeBtn.on('pointerdown', close);
