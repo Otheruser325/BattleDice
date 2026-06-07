@@ -110,7 +110,7 @@ export class SettingsScene extends Phaser.Scene {
       this.modalElements.push(...row);
     });
 
-    const changelogBtn = this.add.text(width - 314, 270, 'Changelog', {
+    const changelogBtn = this.add.text(width - 314, 275, 'Changelog', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#f4b860', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     changelogBtn.on('pointerdown', () => this.openChangelogModal());
@@ -131,7 +131,7 @@ export class SettingsScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const panelWidth = 720;
     const panelHeight = 520;
-    const contentPadding = 260;
+    const contentPadding = -260;
     const scrollSpeed = 0.3;
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
