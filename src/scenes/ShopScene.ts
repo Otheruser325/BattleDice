@@ -129,6 +129,7 @@ export class ShopScene extends Phaser.Scene {
           const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
           const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
           if (offer.isCasinoChipOffer) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount * (firstChipPurchase ? 2 : 1) }));
+          else if (offer.isDiamondFreebie) setDiamonds(this, getDiamonds(this) + offer.coinAmount);
           else if (offer.isCoinOffer) setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
           else {
             const progress = getDiceProgress(this, offer.typeId);
@@ -193,7 +194,10 @@ export class ShopScene extends Phaser.Scene {
   private getOfferHeaderLabel(offer: ShopOffer): string {
     if (offer.isDiceTokenOffer) return 'DICE TOKEN VAULT';
     if (offer.isCasinoChipOffer) return 'CASINO CHIP STACK';
-    if (offer.isFreebie) return offer.typeId ? `★ DAILY FREEBIE — ${offer.rarity.toUpperCase()}` : '★ DAILY FREEBIE';
+    if (offer.isFreebie) {
+      if (offer.isDiamondFreebie) return '★ DAILY FREEBIE — DIAMONDS';
+      return offer.typeId ? `★ DAILY FREEBIE — ${offer.rarity.toUpperCase()}` : '★ DAILY FREEBIE';
+    }
     return offer.rarity.toUpperCase();
   }
 
@@ -260,7 +264,7 @@ export class ShopScene extends Phaser.Scene {
     const nameLine = offer.isCasinoChipOffer
       ? 'Casino Chips'
       : (offer.isCoinOffer
-        ? 'Dice Tokens'
+        ? (offer.isDiamondFreebie ? 'Diamonds' : 'Dice Tokens')
         : (offer.typeId ? (() => {
           const def = getAllDiceDefinitions(this).find(d => d.typeId === offer.typeId);
           return (def?.title ?? offer.typeId);
@@ -277,7 +281,7 @@ export class ShopScene extends Phaser.Scene {
     const descLine = offer.isCasinoChipOffer
       ? `+${chipAmount.toLocaleString()} Casino Chips${firstChipPurchase ? ' (2× first buy)' : ''}`
       : (offer.isCoinOffer
-        ? `+${tokenAmount.toLocaleString()} Dice Tokens${firstTokenPurchase ? ' (2× first buy)' : ''}`
+        ? `+${tokenAmount.toLocaleString()} ${offer.isDiamondFreebie ? 'Diamonds' : 'Dice Tokens'}${firstTokenPurchase && !offer.isDiamondFreebie ? ' (2× first buy)' : ''}`
         : `×${offer.copies} ${offer.copies === 1 ? 'copy' : 'copies'}`);
     const descText = this.add.text(x + 8, y + 80, descLine, {
       fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text
