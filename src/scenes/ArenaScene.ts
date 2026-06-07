@@ -2231,10 +2231,12 @@ export class ArenaScene extends Phaser.Scene {
       ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
       : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
     const combatDelta = this.combatAttackCountDeltaByInstance.get(die.instanceId);
+    const fireSupportBonus = this.getFireSupportBonus(die);
     const additiveDelta = (combatDelta ?? (this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0))
       + (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0)
       + (this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0)
       + (this.brokenGrowthDeltaByInstance.get(die.instanceId) ?? 0)
+      + fireSupportBonus
       + Math.max(0, (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) - 1);
     const multiplier = this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1;
     const multiplierDelta = multiplier === 1 ? 0 : Math.floor(Math.max(0, basePips + additiveDelta) * multiplier) - Math.max(0, basePips + additiveDelta);
@@ -2247,14 +2249,27 @@ export class ArenaScene extends Phaser.Scene {
     return [];
   }
 
-  private computeAttackCount(instanceId: string, basePips: number, timeDelta = 0): number {
+  private getFireSupportBonus(die: DiceInstanceState): number {
+    // Fire Support: dice on backline gain extra attacks
+    // Player's backline: column 0 (leftmost)
+    // Enemy's backline: column 4 (rightmost)
+    if (!die.gridPosition) return 0;
+    const isBackline = die.ownerId === 'player'
+      ? die.gridPosition.col === 0
+      : die.gridPosition.col === 4;
+    if (!isBackline) return 0;
+    return this.fireSupportByOwner[die.ownerId];
+  }
+
+  private computeAttackCount(instanceId: string, basePips: number, timeDelta = 0, die?: DiceInstanceState): number {
     const debuff = this.attackDeltaByInstance.get(instanceId)?.delta ?? 0;
     const buff = this.extraAttackTurnsByInstance.get(instanceId)?.extra ?? 0;
     const skillMult = this.attackMultiplierTurnsByInstance.get(instanceId)?.multiplier ?? 1;
     const comboMult = this.combanityAttackMultiplierByInstance.get(instanceId)?.multiplier ?? 1;
     const permanentAttackCount = this.permanentAttackBonusByInstance.get(instanceId) ?? 0;
     const brokenGrowthDelta = this.brokenGrowthDeltaByInstance.get(instanceId) ?? 0;
-    const adjusted = Math.max(0, basePips + timeDelta + debuff + buff + permanentAttackCount + brokenGrowthDelta);
+    const fireSupportBonus = die ? this.getFireSupportBonus(die) : 0;
+    const adjusted = Math.max(0, basePips + timeDelta + debuff + buff + permanentAttackCount + brokenGrowthDelta + fireSupportBonus);
     return Math.max(0, Math.floor(adjusted * skillMult * comboMult));
   }
 
@@ -2422,7 +2437,7 @@ export class ArenaScene extends Phaser.Scene {
         const combatAttackCountDelta = combatStartBonus + pipAuraDelta + permanentAttackCount;
         this.combatAttackCountDeltaByInstance.set(die.instanceId, combatAttackCountDelta);
         this.recordAttackCountEffect(die.instanceId, combatAttackCountDelta);
-        const withPermanent = this.computeAttackCount(die.instanceId, pips, pipAuraDelta);
+        const withPermanent = this.computeAttackCount(die.instanceId, pips, pipAuraDelta, die);
         const stunned = this.stunnedByInstance.has(die.instanceId);
         const mightyRoar = shouldMightyRoar(die);
 
@@ -2685,7 +2700,8 @@ export class ArenaScene extends Phaser.Scene {
     if (card.kind === 'Giant Hunter') { this.giantHunterRateByOwner[owner] += [0, 0.01, 0.02, 0.03][mag]; }
     if (card.kind === 'Odd Investment') this.oddInvestmentByOwner[owner] = { damage: this.oddInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.oddInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
     if (card.kind === 'Even Investment') this.evenInvestmentByOwner[owner] = { damage: this.evenInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.evenInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
-	if (card.kind === 'Crowd Attack') this.evenInvestmentByOwner[owner] = { damage: this.evenInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.evenInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
+    if (card.kind === 'Crowd Attack') this.crowdAttackByOwner[owner] = { damage: this.crowdAttackByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.crowdAttackByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
+    if (card.kind === 'Fire Support') this.fireSupportByOwner[owner] += [0, 1, 2, 3][mag];
     this.renderDiceCardInfoPanel();
   }
 
@@ -2729,9 +2745,18 @@ export class ArenaScene extends Phaser.Scene {
     return effectivePip % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].damage : this.oddInvestmentByOwner[die.ownerId].damage;
   }
 
+  private getCrowdAttackDamageBonus(die: DiceInstanceState): number {
+    const effectivePip = this.getEffectivePipForInvestment(die);
+    // Crowd Attack affects dice with 1 or 2 effective pips
+    if (effectivePip === 1 || effectivePip === 2) {
+      return this.crowdAttackByOwner[die.ownerId].damage;
+    }
+    return 0;
+  }
+
   private getOffenseMultiplier(attacker: DiceInstanceState): number {
     const typeBoost = this.getTypeUpgradeMultiplier(attacker);
-    return typeBoost * (1 + this.getSpotlightScale(attacker) + this.getInvestmentDamageBonus(attacker));
+    return typeBoost * (1 + this.getSpotlightScale(attacker) + this.getInvestmentDamageBonus(attacker) + this.getCrowdAttackDamageBonus(attacker));
   }
 
   private getDiceCardSkillDamageMultiplier(attacker: DiceInstanceState): number {
@@ -2762,6 +2787,13 @@ export class ArenaScene extends Phaser.Scene {
     if (effectivePip % 2 === 1 && (odd.damage > 0 || odd.reduction > 0)) buffs.push(`Odd Investment +${pct(odd.damage)} dmg / ${pct(odd.reduction)} DR (odd pips)`);
     const even = this.evenInvestmentByOwner[owner];
     if (effectivePip % 2 === 0 && (even.damage > 0 || even.reduction > 0)) buffs.push(`Even Investment +${pct(even.damage)} dmg / ${pct(even.reduction)} DR (even pips)`);
+    const crowd = this.crowdAttackByOwner[owner];
+    if ((effectivePip === 1 || effectivePip === 2) && (crowd.damage > 0 || crowd.reduction > 0)) buffs.push(`Crowd Attack +${pct(crowd.damage)} dmg / ${pct(crowd.reduction)} DR (1-2 pips)`);
+    const fireSupport = this.fireSupportByOwner[owner];
+    if (die.gridPosition) {
+      const isBackline = owner === 'player' ? die.gridPosition.col === 0 : die.gridPosition.col === 4;
+      if (isBackline && fireSupport > 0) buffs.push(`Fire Support +${fireSupport} attacks (backline)`);
+    }
     if (this.fountainHealRateByOwner[owner] > 0) buffs.push(`Fountain of Love ${pct(this.fountainHealRateByOwner[owner])} heal`);
     if (this.manaPotionGainByOwner[owner] > 0) buffs.push(`Mana Potion +${this.manaPotionGainByOwner[owner]} mana`);
     if (this.giantHunterRateByOwner[owner] > 0) buffs.push(`Giant Hunter ${pct(this.giantHunterRateByOwner[owner])} max HP`);
@@ -3459,6 +3491,13 @@ export class ArenaScene extends Phaser.Scene {
     const die = this.gameState.dice.find((d) => d.instanceId === instanceId);
     if (!options.ignoreDamageReduction && die) reduction += this.getSpotlightScale(die);
     if (!options.ignoreDamageReduction && die) reduction += this.getEffectivePipForInvestment(die) % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].reduction : this.oddInvestmentByOwner[die.ownerId].reduction;
+    // Crowd Attack reduction for 1-2 pip dice
+    if (!options.ignoreDamageReduction && die) {
+      const effectivePip = this.getEffectivePipForInvestment(die);
+      if (effectivePip === 1 || effectivePip === 2) {
+        reduction += this.crowdAttackByOwner[die.ownerId].reduction;
+      }
+    }
     reduction = Phaser.Math.Clamp(reduction, 0, 0.95);
     if (reduction > 0) damage = Math.max(0, Math.floor(damage * (1 - reduction)));
     const armorShred = this.armorShredByInstance.get(instanceId);
@@ -4551,7 +4590,7 @@ export class ArenaScene extends Phaser.Scene {
       return { icon: '👥', title: name, rarity, desc: `Passive: dice with 1 or 2 pips gain +${dmg}% damage and ${red}% damage reduction.` };
     }
 	if (name === 'Fire Support') {
-      return { icon: '🏹', title: name, rarity, desc: `Passive: dice placed on the backline gain +${atk} attack count.` };
+      return { icon: '🏹', title: name, rarity, desc: `Passive: dice placed on the backline gain +${mag} attack count.` };
     }
     return { icon: '🎴', title: name, rarity, desc: '' };
   }
