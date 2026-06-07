@@ -18,6 +18,9 @@ export class SettingsScene extends Phaser.Scene {
   private modalOpen = false;
   private modalElements: Phaser.GameObjects.GameObject[] = [];
   private readonly debug = DebugManager.attachScene(SettingsScene.KEY);
+  private settingsButtonBg?: Phaser.GameObjects.Arc;
+  private settingsButtonIcon?: Phaser.GameObjects.Image;
+  private matchStateCheckTimer?: Phaser.Time.TimerEvent;
 
   constructor() {
     super(SettingsScene.KEY);
@@ -27,15 +30,15 @@ export class SettingsScene extends Phaser.Scene {
     const { width } = this.scale;
     this.debug.log('Settings overlay ready.');
 
-    const buttonBg = this.add.circle(width - 48, 46, 28, 0x112638, 0.94)
+    this.settingsButtonBg = this.add.circle(width - 48, 46, 28, 0x112638, 0.94)
       .setStrokeStyle(1, 0x4f748e)
       .setInteractive({ useHandCursor: true });
-    const buttonIcon = this.add.image(width - 48, 46, 'settings-icon')
+    this.settingsButtonIcon = this.add.image(width - 48, 46, 'settings-icon')
       .setDisplaySize(28, 28)
       .setTint(0xf5dfb0)
       .setInteractive({ useHandCursor: true });
 
-    [buttonBg, buttonIcon].forEach((target) => {
+    [this.settingsButtonBg, this.settingsButtonIcon].forEach((target) => {
       target.setDepth(40);
       target.on('pointerdown', () => (this.modalOpen ? this.closeModal() : this.openModal()));
     });
@@ -43,6 +46,30 @@ export class SettingsScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => {
       if (this.modalOpen) this.closeModal();
     });
+
+    // Check match state periodically to hide button during matches
+    this.matchStateCheckTimer = this.time.addEvent({
+      delay: 500,
+      loop: true,
+      callback: () => this.updateSettingsButtonVisibility()
+    });
+  }
+
+  private updateSettingsButtonVisibility() {
+    const buttonVisible = !this.isMatchInProgress();
+    this.settingsButtonBg?.setVisible(buttonVisible);
+    this.settingsButtonIcon?.setVisible(buttonVisible);
+  }
+
+  private isMatchInProgress(): boolean {
+    const arenaScene = this.scene.get(SCENE_KEYS.Arena);
+    if (!arenaScene || !arenaScene.sys.isActive()) return false;
+    // Check if the arena scene has a gameState with turn > 0
+    const arenaState = arenaScene as unknown as { gameState?: { turn: number }; turnLimit?: number };
+    if (arenaState.gameState && arenaState.gameState.turn > 0) return true;
+    // Also check if turnLimit is set (indicates a match is configured)
+    if (arenaState.turnLimit && arenaState.turnLimit > 0) return true;
+    return false;
   }
 
   private openModal() {
@@ -102,13 +129,70 @@ export class SettingsScene extends Phaser.Scene {
 
   private async openChangelogModal() {
     const { width, height } = this.scale;
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
-    const panel = this.add.rectangle(width / 2, height / 2, 720, 520, 0x102434, 0.98).setStrokeStyle(2, 0x496a84).setDepth(71);
-    const title = this.add.text(width / 2, height / 2 - 228, 'CHANGELOG (v0.7 beta)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
-    const body = this.add.text(width / 2, height / 2 - 6, 'Loading changelog...', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted, wordWrap: { width: 650 } }).setOrigin(0.5).setDepth(72);
-    const closeBtn = this.add.text(width / 2, height / 2 + 220, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
+    const panelWidth = 720;
+    const panelHeight = 520;
+    const contentPadding = 30;
+    const scrollSpeed = 0.3;
 
-    const close = () => [overlay, panel, title, body, closeBtn].forEach((e) => e.destroy());
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
+    const panel = this.add.rectangle(width / 2, height / 2, panelWidth, panelHeight, 0x102434, 0.98).setStrokeStyle(2, 0x496a84).setDepth(71);
+    const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'CHANGELOG (v0.7 beta)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
+    const closeBtn = this.add.text(width / 2, height / 2 + panelHeight / 2 - 30, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
+
+    // Create scrollable content container
+    const contentContainer = this.add.container(0, 0).setDepth(72);
+    const contentWidth = panelWidth - contentPadding * 2;
+    const contentStartY = height / 2 - panelHeight / 2 + 70;
+    const contentHeight = panelHeight - 120;
+
+    // Create mask for scrolling
+    const maskShape = this.add.rectangle(width / 2, height / 2, contentWidth, contentHeight, 0xffffff, 1).setDepth(72);
+    maskShape.setMask(maskShape.createGeometryMask());
+
+    const body = this.add.text(0, 0, 'Loading changelog...', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.textMuted, wordWrap: { width: contentWidth } });
+    contentContainer.add(body);
+    contentContainer.setMask(maskShape.createGeometryMask());
+
+    let scrollY = 0;
+    let contentHeightActual = 0;
+    let isDragging = false;
+    let lastDragY = 0;
+
+    // Scroll handling
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (isDragging && contentHeightActual > contentHeight) {
+        const deltaY = pointer.y - lastDragY;
+        scrollY = Phaser.Math.Clamp(scrollY - deltaY * scrollSpeed, 0, Math.max(0, contentHeightActual - contentHeight));
+        body.setY(scrollY);
+        lastDragY = pointer.y;
+      }
+    });
+
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (contentHeightActual > contentHeight) {
+        isDragging = true;
+        lastDragY = pointer.y;
+      }
+    });
+
+    this.input.on('pointerup', () => {
+      isDragging = false;
+    });
+
+    // Mouse wheel scrolling
+    this.input.keyboard?.on('wheel', (_: unknown, _2: unknown, _3: unknown, deltaY: number) => {
+      if (contentHeightActual > contentHeight) {
+        scrollY = Phaser.Math.Clamp(scrollY + deltaY * 0.5, 0, Math.max(0, contentHeightActual - contentHeight));
+        body.setY(scrollY);
+      }
+    });
+
+    const close = () => {
+      this.input.off('pointermove');
+      this.input.off('pointerdown');
+      this.input.off('pointerup');
+      [overlay, panel, title, closeBtn, contentContainer, maskShape].forEach((e) => e.destroy());
+    };
     this.input.keyboard?.once('keydown-ESC', close);
     closeBtn.on('pointerdown', close);
 
@@ -117,6 +201,17 @@ export class SettingsScene extends Phaser.Scene {
       const payload = await response.json();
       const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => `• ${entry.version} (${entry.date})\n${entry.notes.map((n) => `  - ${n}`).join('\n')}`);
       body.setText(lines.join('\n\n') || 'No entries found.');
+      
+      // Calculate content height and position
+      const textHeight = body.height;
+      contentHeightActual = textHeight;
+      body.setX(-contentWidth / 2);
+      body.setY(contentStartY);
+      
+      // If content is taller than visible area, scroll to top
+      if (contentHeightActual > contentHeight) {
+        scrollY = 0;
+      }
     } catch {
       body.setText('Could not fetch config/changelog.json');
     }
@@ -149,6 +244,8 @@ export class SettingsScene extends Phaser.Scene {
     this.modalOpen = false;
     this.modalElements.forEach((element) => element.destroy());
     this.modalElements = [];
+    // Re-check visibility after closing modal
+    this.updateSettingsButtonVisibility();
   }
 
   private promptForNameChange() {

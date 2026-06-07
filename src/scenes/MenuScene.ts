@@ -134,12 +134,9 @@ export class MenuScene extends Phaser.Scene {
     this.debug.event('Opening tab.', { tab: tab.label, sceneKey: tab.sceneKey, status: tab.status });
     this.scene.launch(tab.sceneKey);
     this.scene.bringToTop(MenuScene.KEY);
-    if (tab.sceneKey === SCENE_KEYS.Arena) {
-      if (this.scene.isActive(SCENE_KEYS.Settings)) this.scene.stop(SCENE_KEYS.Settings);
-    } else {
-      if (!this.scene.isActive(SCENE_KEYS.Settings)) this.scene.launch(SCENE_KEYS.Settings);
-      this.scene.bringToTop(SCENE_KEYS.Settings);
-    }
+    // Keep Settings scene running - it will hide its button during actual matches
+    if (!this.scene.isActive(SCENE_KEYS.Settings)) this.scene.launch(SCENE_KEYS.Settings);
+    this.scene.bringToTop(SCENE_KEYS.Settings);
     this.refreshTabs();
 
   }
