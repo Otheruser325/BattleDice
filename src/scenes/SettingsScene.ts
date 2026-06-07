@@ -27,12 +27,10 @@ export class SettingsScene extends Phaser.Scene {
   }
 
   shutdown() {
-    // Clean up timer and event listeners when scene is destroyed
     if (this.matchStateCheckTimer) {
       this.matchStateCheckTimer.destroy();
       this.matchStateCheckTimer = undefined;
     }
-    // Remove all input listeners
     this.input.off('pointerdown');
     this.input.off('pointermove');
     this.input.off('pointerup');
@@ -40,7 +38,6 @@ export class SettingsScene extends Phaser.Scene {
     this.input.keyboard?.off('keydown-UP');
     this.input.keyboard?.off('keydown-DOWN');
     this.input.keyboard?.off('keydown-ESC');
-    // Clean up modal elements
     this.modalElements.forEach((e) => {
       if (e && e.active) e.destroy();
     });
@@ -68,7 +65,6 @@ export class SettingsScene extends Phaser.Scene {
 
     this.input.keyboard?.on('keydown-ESC', () => {
       if (this.subModalOpen) {
-        // Close sub-modal first (changelog/name change)
         this.closeSubModal();
       } else if (this.modalOpen) {
         this.closeModal();
@@ -162,7 +158,7 @@ export class SettingsScene extends Phaser.Scene {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     close.on('pointerdown', () => {
-      if (this.subModalOpen) return; // Don't close main modal if sub-modal is open
+      if (this.subModalOpen) return;
       this.closeModal();
     });
     this.modalElements.push(changelogBtn, nameBtn, close);
@@ -180,14 +176,12 @@ export class SettingsScene extends Phaser.Scene {
     const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'BATTLE DICE CHANGELOG', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
     const closeBtn = this.add.text(width / 2, height / 2 + panelHeight / 2 - 30, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
 
-    // Create scrollable content container - positioned at content area with proper padding
     const contentWidth = panelWidth - contentPadding * 2;
     const contentStartY = height / 2 - panelHeight / 2 + 70;
     const contentStartX = width / 2 - panelWidth / 2 + contentPadding;
     const contentHeight = panelHeight - 100;
     const contentContainer = this.add.container(contentStartX, contentStartY).setDepth(72);
 
-    // Create mask for scrolling (use graphics to avoid white rectangle)
     const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
     maskShape.fillStyle(0xffffff);
     maskShape.fillRect(contentStartX, contentStartY, contentWidth, contentHeight);
@@ -197,13 +191,11 @@ export class SettingsScene extends Phaser.Scene {
     contentContainer.add(body);
     contentContainer.setMask(maskShape.createGeometryMask());
 
-    // Scroll state
     let scrollY = 0;
     let contentHeightActual = 0;
     let isDragging = false;
     let lastDragY = 0;
 
-    // Drag scrolling - works on the overlay (entire modal area)
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (contentHeightActual > contentHeight) {
         isDragging = true;
@@ -224,7 +216,6 @@ export class SettingsScene extends Phaser.Scene {
       isDragging = false;
     });
 
-    // Mouse wheel scrolling with momentum
     this.input.keyboard?.on('wheel', (_: unknown, _2: unknown, _3: unknown, deltaY: number) => {
       if (contentHeightActual > contentHeight) {
         scrollY = Phaser.Math.Clamp(scrollY + deltaY * 1.5, 0, Math.max(0, contentHeightActual - contentHeight));
@@ -232,7 +223,6 @@ export class SettingsScene extends Phaser.Scene {
       }
     });
 
-    // Keyboard arrow scrolling
     this.input.keyboard?.on('keydown-UP', () => {
       if (contentHeightActual > contentHeight) {
         scrollY = Phaser.Math.Clamp(scrollY - 50, 0, Math.max(0, contentHeightActual - contentHeight));
@@ -266,22 +256,18 @@ export class SettingsScene extends Phaser.Scene {
         const header = `• ${entry.version} (${entry.date})`;
         const notes: string[] = [];
         entry.notes.forEach((n) => {
-          // Convert arrows first
           let text = n.replace(/<-/g, '←').replace(/->/g, '→');
-          // Split by ' --' to separate sub-items (space-dash-dash)
           const parts = text.split(/ --/);
           parts.forEach((part, index) => {
             part = part.trim();
             if (!part) return;
             if (index === 0) {
-              // First part: treat as main bullet (may have leading dashes to strip)
               const match = part.match(/^(-+)(.*)$/);
               const content = match ? match[2].trim() : part;
               if (content) {
                 notes.push(`  • ${content}`);
               }
             } else {
-              // Subsequent parts: each gets double-dash hierarchy
               const content = part.replace(/^-+/, '').trim();
               if (content) {
                 notes.push(`    • ${content}`);
@@ -292,8 +278,6 @@ export class SettingsScene extends Phaser.Scene {
         return `${header}\n${notes.join('\n')}`;
       });
       body.setText(lines.join('\n\n') || 'No entries found.');
-      
-      // Dynamic content height based on actual text
       contentHeightActual = body.height;
       body.setX(0);
       body.setY(0);
@@ -336,23 +320,19 @@ export class SettingsScene extends Phaser.Scene {
   }
 
   private closeSubModal() {
-    // Close just the sub-modal (changelog/name change), keep main modal open
     this.debug.event('Closing sub-modal.');
     this.subModalOpen = false;
-    // Remove changelog-specific input listeners (but keep ESC for parent modal)
     this.input.off('pointermove');
     this.input.off('pointerdown');
     this.input.off('pointerup');
     this.input.keyboard?.off('keydown-UP');
     this.input.keyboard?.off('keydown-DOWN');
-    // Re-enable main modal element interactivity
     this.setModalInteractivity(true);
   }
 
   private setModalInteractivity(enabled: boolean) {
     this.modalElements.forEach((element) => {
       if (element && 'each' in element) {
-        // Container: disable all children
         (element as Phaser.GameObjects.Container).each((child: Phaser.GameObjects.GameObject) => {
           child.disableInteractive();
         });
