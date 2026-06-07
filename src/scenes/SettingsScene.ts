@@ -14,7 +14,6 @@ type SettingKey = keyof AppSettings;
 
 export class SettingsScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Settings;
-
   private modalOpen = false;
   private modalElements: Phaser.GameObjects.GameObject[] = [];
   private readonly debug = DebugManager.attachScene(SettingsScene.KEY);
@@ -136,7 +135,7 @@ export class SettingsScene extends Phaser.Scene {
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
     const panel = this.add.rectangle(width / 2, height / 2, panelWidth, panelHeight, 0x102434, 0.98).setStrokeStyle(2, 0x496a84).setDepth(71);
-    const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'CHANGELOG (v0.8 beta)', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
+    const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'BATTLE DICE CHANGELOG', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
     const closeBtn = this.add.text(width / 2, height / 2 + panelHeight / 2 - 30, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
 
     const contentWidth = panelWidth - contentPadding * 2;
