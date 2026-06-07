@@ -1,7 +1,7 @@
 import type { DiceDefinition, DiceInstanceState } from '../types/game';
 
 export type DiceCardRarity = 'Bronze' | 'Silver' | 'Gold';
-export type DiceCardKind = 'Fountain of Love' | 'Mana Potion' | 'Spotlight' | 'Type Upgrade' | 'Giant Hunter' | 'Odd Investment' | 'Even Investment' | 'Crowd Attack' | 'Fire Support';
+export type DiceCardKind = 'Type Upgrade' | 'Fountain of Love' | 'Mana Potion' | 'Spotlight' | 'Giant Hunter' | 'Odd Investment' | 'Even Investment' | 'Crowd Attack' | 'Fire Support';
 
 export interface DiceCard {
   key: string;
