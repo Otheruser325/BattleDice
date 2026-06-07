@@ -221,18 +221,30 @@ export class SettingsScene extends Phaser.Scene {
       const payload = await response.json();
       const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => {
         const header = `• ${entry.version} (${entry.date})`;
-        const notes = entry.notes.map((n) => {
-          // Convert arrows first (before dash processing)
+        const notes: string[] = [];
+        entry.notes.forEach((n) => {
+          // Convert arrows first
           let text = n.replace(/<-/g, '←').replace(/->/g, '→');
-          // Then process dashes for bullet hierarchy
-          const match = text.match(/^(-+)(.*)$/);
-          if (match) {
-            const dashes = match[1].length;
-            const remainder = match[2].trim();
-            const indent = '  '.repeat(dashes);
-            return `${indent}• ${remainder}`;
-          }
-          return `  • ${text}`;
+          // Split by ' --' to separate sub-items (space-dash-dash)
+          const parts = text.split(/ --/);
+          parts.forEach((part, index) => {
+            part = part.trim();
+            if (!part) return;
+            if (index === 0) {
+              // First part: treat as main bullet (may have leading dashes to strip)
+              const match = part.match(/^(-+)(.*)$/);
+              const content = match ? match[2].trim() : part;
+              if (content) {
+                notes.push(`  • ${content}`);
+              }
+            } else {
+              // Subsequent parts: each gets double-dash hierarchy
+              const content = part.replace(/^-+/, '').trim();
+              if (content) {
+                notes.push(`    • ${content}`);
+              }
+            }
+          });
         });
         return `${header}\n${notes.join('\n')}`;
       });
