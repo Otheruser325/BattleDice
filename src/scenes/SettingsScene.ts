@@ -219,7 +219,7 @@ export class SettingsScene extends Phaser.Scene {
     try {
       const response = await fetch(withBasePath('config/changelog.json'));
       const payload = await response.json();
-      const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => `• ${entry.version} (${entry.date})\n${entry.notes.map((n) => `  - ${n}`).join('\n')}`);
+      const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => `• ${entry.version} (${entry.date})\n${entry.notes.map((n) => `  • ${n}`).join('\n')}`);
       body.setText(lines.join('\n\n') || 'No entries found.');
       
       // Dynamic content height based on actual text
