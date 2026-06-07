@@ -297,3 +297,30 @@ private fireSupportByOwner: Record<'player' | 'enemy', number> = { player: 0, en
 // And reset in resetRuntimeState():
 this.fireSupportByOwner = { player: 0, enemy: 0 };
 ```
+
+### 4. crowdAttackByOwner Undefined (Fixed in #176)
+**Problem**: "can't access property 'player', this.crowdAttackByOwner is undefined" error.
+
+**Root Cause**: Same pattern as fireSupportByOwner - property was used but never declared.
+
+**Fix**: Add property declaration in ArenaScene.ts:
+```typescript
+private crowdAttackByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
+// And reset in resetRuntimeState():
+this.crowdAttackByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
+```
+
+### 5. Changelog Text Centering (Fixed in #176)
+**Problem**: Changelog text not properly centered within the scroll mask.
+
+**Root Cause**: Container and body position calculations were misaligned with the mask.
+
+**Fix**: Position container at mask center and use (0,0) for body inside container:
+```typescript
+const contentContainer = this.add.container(width / 2, contentStartY).setDepth(72);
+const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
+maskShape.fillStyle(0xffffff);
+maskShape.fillRect(0, 0, contentWidth, contentHeight);
+contentContainer.setMask(maskShape.createGeometryMask());
+// Body positioned at 0,0 inside container
+```

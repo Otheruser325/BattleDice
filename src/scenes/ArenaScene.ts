@@ -178,6 +178,7 @@ export class ArenaScene extends Phaser.Scene {
   private oddInvestmentByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private evenInvestmentByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private fireSupportByOwner: Record<'player' | 'enemy', number> = { player: 0, enemy: 0 };
+  private crowdAttackByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private assassinBoostAttacksByInstance: Map<string, number> = new Map();
   private diceCardPicksUsed = 0;
   private multiplayerClient = new ArenaMultiplayerClient();
@@ -258,6 +259,7 @@ export class ArenaScene extends Phaser.Scene {
     this.oddInvestmentByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
     this.evenInvestmentByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
     this.fireSupportByOwner = { player: 0, enemy: 0 };
+    this.crowdAttackByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
     this.diceTypeUpgradeBonus.clear();
     this.spotlightByInstance.clear();
     this.giantHunterRateByOwner = { player: 0, enemy: 0 };
