@@ -91,7 +91,7 @@ export class SettingsScene extends Phaser.Scene {
       fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text
     }).setDepth(43);
 
-    const subtitle = this.add.text(width - 314, 102, 'Main menu overlay', {
+    const subtitle = this.add.text(width - 314, 98, 'Menu overlay', {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
     }).setDepth(43);
 
@@ -105,22 +105,22 @@ export class SettingsScene extends Phaser.Scene {
     this.modalElements.push(overlay, panel, title, subtitle);
 
     toggles.forEach(([key, label], index) => {
-      const rowY = 136 + index * 44;
+      const rowY = 120 + index * 44;
       const row = this.createToggleRow(width - 304, rowY, label, key, settings[key]);
       this.modalElements.push(...row);
     });
 
-    const changelogBtn = this.add.text(width - 314, 258, 'Changelog', {
+    const changelogBtn = this.add.text(width - 314, 270, 'Changelog', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#f4b860', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     changelogBtn.on('pointerdown', () => this.openChangelogModal());
 
-    const nameBtn = this.add.text(width - 314, 292, 'Change Name', {
+    const nameBtn = this.add.text(width - 314, 305, 'Change Name', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#9fe6ff', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     nameBtn.on('pointerdown', () => this.promptForNameChange());
 
-    const close = this.add.text(width - 154, 292, 'Close', {
+    const close = this.add.text(width - 154, 305, 'Close', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     close.on('pointerdown', () => this.closeModal());
