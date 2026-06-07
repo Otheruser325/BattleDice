@@ -67,7 +67,12 @@ export class SettingsScene extends Phaser.Scene {
     });
 
     this.input.keyboard?.on('keydown-ESC', () => {
-      if (this.modalOpen) this.closeModal();
+      if (this.subModalOpen) {
+        // Close sub-modal first (changelog/name change)
+        this.closeSubModal();
+      } else if (this.modalOpen) {
+        this.closeModal();
+      }
     });
 
     this.matchStateCheckTimer = this.time.addEvent({
@@ -154,7 +159,10 @@ export class SettingsScene extends Phaser.Scene {
     const close = this.add.text(width - 154, 305, 'Close', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
-    close.on('pointerdown', () => this.closeModal());
+    close.on('pointerdown', () => {
+      if (this.subModalOpen) return; // Don't close main modal if sub-modal is open
+      this.closeModal();
+    });
     this.modalElements.push(changelogBtn, nameBtn, close);
   }
 
@@ -323,6 +331,19 @@ export class SettingsScene extends Phaser.Scene {
     this.modalElements.forEach((element) => element.destroy());
     this.modalElements = [];
     this.updateSettingsButtonVisibility();
+  }
+
+  private closeSubModal() {
+    // Close just the sub-modal (changelog/name change), keep main modal open
+    this.debug.event('Closing sub-modal.');
+    this.subModalOpen = false;
+    // Remove changelog-specific input listeners
+    this.input.off('pointermove');
+    this.input.off('pointerdown');
+    this.input.off('pointerup');
+    this.input.keyboard?.off('keydown-UP');
+    this.input.keyboard?.off('keydown-DOWN');
+    this.input.keyboard?.off('keydown-ESC');
   }
 
   private promptForNameChange() {
