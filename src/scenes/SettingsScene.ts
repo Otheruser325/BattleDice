@@ -130,7 +130,7 @@ export class SettingsScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const panelWidth = 720;
     const panelHeight = 520;
-    const contentPadding = -260;
+    const contentPadding = 30;
     const scrollSpeed = 0.3;
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x02080d, 0.72).setInteractive().setDepth(70);
@@ -138,11 +138,12 @@ export class SettingsScene extends Phaser.Scene {
     const title = this.add.text(width / 2, height / 2 - panelHeight / 2 + 30, 'BATTLE DICE CHANGELOG', { fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text }).setOrigin(0.5).setDepth(72);
     const closeBtn = this.add.text(width / 2, height / 2 + panelHeight / 2 - 30, 'Close', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(72);
 
-    // Create scrollable content container - positioned at content area top-left
+    // Create scrollable content container - positioned at content area with proper padding
     const contentWidth = panelWidth - contentPadding * 2;
     const contentStartY = height / 2 - panelHeight / 2 + 70;
     const contentStartX = width / 2 - panelWidth / 2 + contentPadding;
-    const contentHeight = panelHeight - 120;
+    // Allow more vertical space for changelog entries
+    const contentHeight = panelHeight - 100;
     const contentContainer = this.add.container(contentStartX, contentStartY).setDepth(72);
 
     // Create mask for scrolling (use graphics to avoid white rectangle)
