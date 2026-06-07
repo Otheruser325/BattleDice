@@ -1,6 +1,18 @@
 {
   "entries": [
     {
+      "version": "v0.8.0-beta",
+      "date": "2026-06-07",
+      "notes": [
+        "Dice additions: Soul and Broken Growth.",
+        "Dice Card: added Crowd Attack and Fire Support cards.",
+        "Casino: added a Fives gauge bar that guarantees a Five-of-a-kind when it's full in Fives tables.",
+        "Improved certain dice descriptions to be more clearer and comprehensive.",
+        "Dice balance: \nIron: Propositional damage reduced from 15% -> 14% \nIron: Propositional damage increase per Class UP reduced from 0.5% -> 0.4% \nSolitude: Max HP damage increase per Class UP reduced from 0.25% -> 0.2%",
+        "Fixed a bug related to freebie shop offers for endgame progression"
+      ]
+    },
+    {
       "version": "v0.7.0-beta",
       "date": "2026-05-28",
       "notes": [
@@ -14,6 +26,13 @@
         "Dice descriptions now react to class levels, and Transcendence/boss skill text was clarified.",
         "Fixed newly-spawned minions hanging the return-to-sender process during battle.",
         "Fixed Transcendence Dice 6-pip form not having grid-wide (infinite) range."
+      ]
+    },
+    {
+      "version": "v0.6.0-beta",
+      "date": "2026-05-21",
+      "notes": [
+        "Several fixes and improvements"
       ]
     },
     {
