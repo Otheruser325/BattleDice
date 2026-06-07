@@ -144,6 +144,7 @@ export class SettingsScene extends Phaser.Scene {
     changelogBtn.on('pointerdown', () => {
       if (this.subModalOpen) return;
       this.subModalOpen = true;
+      this.setModalInteractivity(false);
       this.openChangelogModal();
     });
 
@@ -153,6 +154,7 @@ export class SettingsScene extends Phaser.Scene {
     nameBtn.on('pointerdown', () => {
       if (this.subModalOpen) return;
       this.subModalOpen = true;
+      this.setModalInteractivity(false);
       this.promptForNameChange();
     });
 
@@ -337,13 +339,33 @@ export class SettingsScene extends Phaser.Scene {
     // Close just the sub-modal (changelog/name change), keep main modal open
     this.debug.event('Closing sub-modal.');
     this.subModalOpen = false;
-    // Remove changelog-specific input listeners
+    // Remove changelog-specific input listeners (but keep ESC for parent modal)
     this.input.off('pointermove');
     this.input.off('pointerdown');
     this.input.off('pointerup');
     this.input.keyboard?.off('keydown-UP');
     this.input.keyboard?.off('keydown-DOWN');
-    this.input.keyboard?.off('keydown-ESC');
+    // Re-enable main modal element interactivity
+    this.setModalInteractivity(true);
+  }
+
+  private setModalInteractivity(enabled: boolean) {
+    this.modalElements.forEach((element) => {
+      if (element instanceof Phaser.GameObjects.Container) {
+        // Containers: disable all interactive children
+        element.each((child) => {
+          if (child instanceof Phaser.GameObjects.InteractiveObject) {
+            child.disableInteractive();
+          }
+        });
+      } else if (element instanceof Phaser.GameObjects.InteractiveObject) {
+        if (enabled) {
+          element.setInteractive({ useHandCursor: true });
+        } else {
+          element.disableInteractive();
+        }
+      }
+    });
   }
 
   private promptForNameChange() {
