@@ -494,7 +494,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
     offer.isCoinOffer &&
     !offer.isDiceTokenOffer &&
     !offer.isCasinoChipOffer &&
-    !offer.isDiamondFreebie &&
+    offer.isDiamondFreebie &&
     !offer.typeId &&
     offer.coinAmount === diamondFreebieAmount
   );
