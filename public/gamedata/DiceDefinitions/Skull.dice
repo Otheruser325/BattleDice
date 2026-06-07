@@ -1,9 +1,9 @@
 {
   "typeId": "Skull",
   "title": "Skull Dice",
-  "attack": 16,
+  "attack": 22,
   "health": 600,
-  "range": 3,
+  "range": 2,
   "rarity": "Rare",
   "skills": [
     {
