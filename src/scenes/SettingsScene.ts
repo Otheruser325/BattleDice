@@ -15,6 +15,7 @@ type SettingKey = keyof AppSettings;
 export class SettingsScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Settings;
   private modalOpen = false;
+  private subModalOpen = false;
   private modalElements: Phaser.GameObjects.GameObject[] = [];
   private readonly debug = DebugManager.attachScene(SettingsScene.KEY);
   private settingsButtonBg?: Phaser.GameObjects.Arc;
@@ -23,6 +24,29 @@ export class SettingsScene extends Phaser.Scene {
 
   constructor() {
     super(SettingsScene.KEY);
+  }
+
+  shutdown() {
+    // Clean up timer and event listeners when scene is destroyed
+    if (this.matchStateCheckTimer) {
+      this.matchStateCheckTimer.destroy();
+      this.matchStateCheckTimer = undefined;
+    }
+    // Remove all input listeners
+    this.input.off('pointerdown');
+    this.input.off('pointermove');
+    this.input.off('pointerup');
+    this.input.keyboard?.off('wheel');
+    this.input.keyboard?.off('keydown-UP');
+    this.input.keyboard?.off('keydown-DOWN');
+    this.input.keyboard?.off('keydown-ESC');
+    // Clean up modal elements
+    this.modalElements.forEach((e) => {
+      if (e && e.active) e.destroy();
+    });
+    this.modalElements = [];
+    this.modalOpen = false;
+    this.subModalOpen = false;
   }
 
   create() {
@@ -112,12 +136,20 @@ export class SettingsScene extends Phaser.Scene {
     const changelogBtn = this.add.text(width - 314, 275, 'Changelog', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#f4b860', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
-    changelogBtn.on('pointerdown', () => this.openChangelogModal());
+    changelogBtn.on('pointerdown', () => {
+      if (this.subModalOpen) return;
+      this.subModalOpen = true;
+      this.openChangelogModal();
+    });
 
     const nameBtn = this.add.text(width - 314, 305, 'Change Name', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#9fe6ff', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
-    nameBtn.on('pointerdown', () => this.promptForNameChange());
+    nameBtn.on('pointerdown', () => {
+      if (this.subModalOpen) return;
+      this.subModalOpen = true;
+      this.promptForNameChange();
+    });
 
     const close = this.add.text(width - 154, 305, 'Close', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
@@ -212,6 +244,7 @@ export class SettingsScene extends Phaser.Scene {
       this.input.keyboard?.off('keydown-UP');
       this.input.keyboard?.off('keydown-DOWN');
       [overlay, panel, title, closeBtn, contentContainer, maskShape].forEach((e) => e.destroy());
+      this.subModalOpen = false;
     };
     this.input.keyboard?.once('keydown-ESC', close);
     closeBtn.on('pointerdown', close);
@@ -265,6 +298,7 @@ export class SettingsScene extends Phaser.Scene {
     const pill = this.add.rectangle(x + 212, y + 10, 70, 26, enabled ? 0xf4b860 : 0x183447, 1).setStrokeStyle(1, enabled ? 0xffdfa4 : 0x4b6e89).setInteractive({ useHandCursor: true }).setDepth(43);
     const value = this.add.text(x + 212, y + 10, enabled ? 'ON' : 'OFF', { fontFamily: 'Orbitron', fontSize: '11px', color: enabled ? '#071018' : PALETTE.textMuted }).setOrigin(0.5).setDepth(44);
     const flip = () => {
+      if (this.subModalOpen) return;
       const next = SettingsStore.toggle(this, key);
       const on = next[key];
       this.debug.event('Toggled setting.', { key, value: on });
@@ -285,6 +319,7 @@ export class SettingsScene extends Phaser.Scene {
   private closeModal() {
     this.debug.event('Closing settings modal.');
     this.modalOpen = false;
+    this.subModalOpen = false;
     this.modalElements.forEach((element) => element.destroy());
     this.modalElements = [];
     this.updateSettingsButtonVisibility();
@@ -295,15 +330,19 @@ export class SettingsScene extends Phaser.Scene {
     const isFirst = profile.nameChangesUsed === 0;
     const costLabel = isFirst ? 'FREE (first change)' : '50 diamonds';
     const entry = window.prompt(`Enter new username (1-18 chars). Cost: ${costLabel}`, profile.username || '');
-    if (entry == null) return;
-    const next = entry.trim();
-    if (!next) { AlertManager.toast(this, { type: 'warning', message: 'Name cannot be empty.' }); return; }
-    if (!ProfileStore.canAffordNameChange(this)) {
-      AlertManager.toast(this, { type: 'warning', message: `Not enough diamonds. Need 50, have ${getDiamonds(this)}.` });
-      return;
+    try {
+      if (entry == null) return;
+      const next = entry.trim();
+      if (!next) { AlertManager.toast(this, { type: 'warning', message: 'Name cannot be empty.' }); return; }
+      if (!ProfileStore.canAffordNameChange(this)) {
+        AlertManager.toast(this, { type: 'warning', message: `Not enough diamonds. Need 50, have ${getDiamonds(this)}.` });
+        return;
+      }
+      const result = ProfileStore.applyNameChange(this, next);
+      if (!result.ok) { AlertManager.toast(this, { type: 'warning', message: 'Name change failed.' }); return; }
+      AlertManager.toast(this, { type: 'success', message: `Name changed to ${next}${result.cost > 0 ? ` (-${result.cost} diamonds)` : ' (free)'}.` });
+    } finally {
+      this.subModalOpen = false;
     }
-    const result = ProfileStore.applyNameChange(this, next);
-    if (!result.ok) { AlertManager.toast(this, { type: 'warning', message: 'Name change failed.' }); return; }
-    AlertManager.toast(this, { type: 'success', message: `Name changed to ${next}${result.cost > 0 ? ` (-${result.cost} diamonds)` : ' (free)'}.` });
   }
 }
