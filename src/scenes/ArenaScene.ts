@@ -2329,9 +2329,16 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private addManaToAllActiveSlots(die: DiceInstanceState, gain = 1) {
-    if (this.manaPausedTurnsByInstance.has(die.instanceId)) return;
+    if (this.manaPausedTurnsByInstance.has(die.instanceId)) {
+      console.log(`Mana charging SKIPPED for ${die.typeId}: mana is paused for ${this.manaPausedTurnsByInstance.get(die.instanceId)} turns`);
+      return;
+    }
     const slots = this.getActiveManaSlots(die);
-    if (slots.length === 0) return;
+    if (slots.length === 0) {
+      console.log(`Mana charging SKIPPED for ${die.typeId}: no active slots found`);
+      return;
+    }
+    console.log(`Mana charging for ${die.typeId}: ${slots.length} slots, first slot needs ${slots[0].manaNeeded}`);
     slots.forEach((slot) => this.addMana(die.instanceId, slot.manaNeeded, this.getActiveMana(die.instanceId, slot.key), gain, slot.key));
     if (die.ownerId === 'player' && gain > 0) this.trackPlayerManaCharged(gain);
   }
@@ -3182,7 +3189,11 @@ export class ArenaScene extends Phaser.Scene {
         const hasActiveSkill = Boolean(attackerMeta?.activeManaNeeded) || attackerMeta?.canSummonWizard || attackerMeta?.hasMeteorStrike || attackerMeta?.hasDeathInstakill || attackerMeta?.canSummonImp;
 
         if (hasActiveSkill && !anyActiveFires && !attackerMeta?.disableManaGain) {
-          this.addManaToAllActiveSlots(attacker);
+          const slots = this.getActiveManaSlots(attacker);
+          if (slots.length > 0) {
+            this.addManaToAllActiveSlots(attacker);
+            this.combatLog.setText(`Charging mana for ${attacker.typeId}...`);
+          }
         }
 
         let damage = 0;
