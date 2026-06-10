@@ -22,6 +22,16 @@ export interface SkillEffectResult {
   leonFuriousClaw?: boolean;
 }
 
+export interface CombatStartAura {
+  sourceId: string;
+  extraAttacks: number;
+}
+
+export interface CombatStartResult extends SkillEffectResult {
+  combatStartAuras: CombatStartAura[];
+  bonusForInstance: Map<string, number>;
+}
+
 export interface CombatEndResult extends SkillEffectResult {
   growthDelta?: number;
 }
@@ -157,6 +167,26 @@ export function executeCombatStartSkillEffects(
   }
 
   return result;
+}
+
+export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): CombatStartAura[] {
+  return dice
+    .map((die) => {
+      const definition = getDefinition(die);
+      if (!definition) return null;
+      const extraAttacks = getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0;
+      return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
+    })
+    .filter((aura): aura is CombatStartAura => aura !== null);
+}
+
+export function computeCombatStartBonus(
+  die: DiceInstanceState,
+  playerAuras: CombatStartAura[],
+  enemyAuras: CombatStartAura[]
+): number {
+  const auras = die.ownerId === 'player' ? playerAuras : enemyAuras;
+  return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
 }
 
 export function executeCombatEndSkillEffects(

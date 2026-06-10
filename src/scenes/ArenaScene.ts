@@ -20,7 +20,7 @@ import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
-import { executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, hasJudgmentHammer, getHammerDamage } from '../systems/CombatSkills';
+import { executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeCombatStartSkillEffects, collectCombatStartAuras, computeCombatStartBonus, hasJudgmentHammer, getHammerDamage } from '../systems/CombatSkills';
 import { applyClassProgression, getClassScaledSkillDescription, getClassMultiplier } from '../systems/ClassProgression';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
@@ -2381,20 +2381,9 @@ export class ArenaScene extends Phaser.Scene {
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
     const playerBoardDice = getBoardDice(this.gameState, 'player');
     const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
-    const collectCombatStartAttackAuras = (dice: DiceInstanceState[]) => dice
-      .map((die) => {
-        const definition = this.getDefinitionForInstance(die);
-        if (!definition) return null;
-        const extraAttacks = getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0;
-        return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
-      })
-      .filter((aura): aura is { sourceId: string; extraAttacks: number } => aura !== null);
-    const playerCombatStartAuras = collectCombatStartAttackAuras(playerBoardDice);
-    const enemyCombatStartAuras = collectCombatStartAttackAuras(enemyBoardDice);
-    const combatStartBonusFor = (die: DiceInstanceState) => {
-      const auras = die.ownerId === 'player' ? playerCombatStartAuras : enemyCombatStartAuras;
-      return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
-    };
+    const playerCombatStartAuras = collectCombatStartAuras(playerBoardDice, (die) => this.getDefinitionForInstance(die));
+    const enemyCombatStartAuras = collectCombatStartAuras(enemyBoardDice, (die) => this.getDefinitionForInstance(die));
+    const combatStartBonusFor = (die: DiceInstanceState) => computeCombatStartBonus(die, playerCombatStartAuras, enemyCombatStartAuras);
     const rolledPipsFor = (die: DiceInstanceState) => die.ownerId === 'player'
       ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
       : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
