@@ -3,7 +3,7 @@
   "title": "Leon Dice",
   "attack": 40,
   "health": 3000,
-  "range": 5,
+  "range": 4,
   "footprint": 2,
   "rarity": "Mythic",
   "skills": [
@@ -20,7 +20,7 @@
     {
       "type": "Passive",
       "title": "Mighty Roar",
-      "description": "If no dice are in range, charges to the nearest enemy die and immediately executes Furious Claw, stunning its target for 1 turn.",
+      "description": "If no dice are in range, charges to the nearest enemy die and immediately executes Furious Claw, stunning its target for 2 turns.",
       "modifiers": {
         "notes": [
           "runtime:leonMightyRoar"

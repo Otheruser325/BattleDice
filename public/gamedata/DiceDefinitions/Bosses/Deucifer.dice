@@ -1,7 +1,7 @@
 {
   "typeId": "Deucifer",
   "title": "Deucifer Dice",
-  "attack": 60,
+  "attack": 80,
   "health": 5000,
   "range": 5,
   "footprint": 2,
@@ -30,8 +30,8 @@
     {
       "type": "Active",
       "title": "Rise From Hell",
-      "description": "Summons an Imp Dice 5 class levels lower (min. Class 1) on a random unoccupied tile.",
-      "manaNeeded": 15,
+      "description": "Summons an Imp Dice on a random unoccupied tile.",
+      "manaNeeded": 14,
       "modifiers": {
         "notes": [
           "runtime:deuciferSummonImp"

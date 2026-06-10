@@ -37,7 +37,7 @@
     {
       "type": "Active",
       "title": "Wizard Royale",
-      "description": "Summons a friendly Wizard Dice 5 class levels lower (min. Class 1).",
+      "description": "Summons a friendly Wizard Dice.",
       "manaNeeded": 18,
       "modifiers": {
         "notes": [

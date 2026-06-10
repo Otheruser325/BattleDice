@@ -10,7 +10,7 @@
     {
       "type": "CombatStart",
       "title": "Spellcast",
-      "description": "Feeds the Magician +2 mana. Mana gain increases by 1 every 4 class levels.",
+      "description": "Feeds the Magician +2 mana.",
       "modifiers": {
         "manaGain": 2,
         "notes": [

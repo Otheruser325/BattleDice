@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Death Incarnate",
-      "description": "Conjures ally souls when allied dice are defeated (up to 2). At 2 souls, transforms into Instakill Form, doubling max HP and healing to full. In Instakill Form: accumulates soul mana and instantly kills a target.",
+      "description": "Conjures defeated ally souls. After capturing 2 ally souls, transforms into Instakill Form, doubling its max HP and fully heals itself. In Instakill Form: accumulates mana and instantly kills a target.",
       "manaNeeded": 12,
       "modifiers": {
         "canConjureSouls": true,
