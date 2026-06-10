@@ -3693,8 +3693,8 @@ export class ArenaScene extends Phaser.Scene {
 
     const result = executeActiveSkillEffects(attacker, definition, classLevel, target, currentMana, activeSlot, isDeathTransformed);
 
-    if (result.extraEffects?.length && !result.meteorStrike && !result.deathInstakill && !result.summonWizard && !result.summonImp && !result.spearStrike) {
-      this.combatLog.setText(result.extraEffects.join('; '));
+    if (result.needsMana) {
+      this.combatLog.setText('Building mana...');
       this.addManaToAllActiveSlots(attacker);
     }
 

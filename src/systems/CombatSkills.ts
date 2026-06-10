@@ -22,16 +22,6 @@ export interface SkillEffectResult {
   leonFuriousClaw?: boolean;
 }
 
-export interface CombatStartAura {
-  sourceId: string;
-  extraAttacks: number;
-}
-
-export interface CombatStartResult extends SkillEffectResult {
-  combatStartAuras: CombatStartAura[];
-  bonusForInstance: Map<string, number>;
-}
-
 export interface CombatEndResult extends SkillEffectResult {
   growthDelta?: number;
 }
@@ -64,6 +54,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   attackDelta?: number;
   attackDeltaTurns?: number;
   iceSlow?: boolean;
+  needsMana?: boolean;
 }
 
 function createBaseResult(): SkillEffectResult {
@@ -169,7 +160,7 @@ export function executeCombatStartSkillEffects(
   return result;
 }
 
-export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): CombatStartAura[] {
+export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): { sourceId: string; extraAttacks: number }[] {
   return dice
     .map((die) => {
       const definition = getDefinition(die);
@@ -177,13 +168,13 @@ export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition
       const extraAttacks = getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0;
       return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
     })
-    .filter((aura): aura is CombatStartAura => aura !== null);
+    .filter((aura): aura is { sourceId: string; extraAttacks: number } => aura !== null);
 }
 
 export function computeCombatStartBonus(
   die: DiceInstanceState,
-  playerAuras: CombatStartAura[],
-  enemyAuras: CombatStartAura[]
+  playerAuras: { sourceId: string; extraAttacks: number }[],
+  enemyAuras: { sourceId: string; extraAttacks: number }[]
 ): number {
   const auras = die.ownerId === 'player' ? playerAuras : enemyAuras;
   return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
@@ -307,6 +298,7 @@ export function executeActiveSkillEffects(
       result.summonWizard = true;
       return result;
     }
+    return result;
   }
 
   if (meta.hasMeteorStrike) {
@@ -318,9 +310,8 @@ export function executeActiveSkillEffects(
         lavaTurns: meta.activeDurationTurns ?? 3
       };
       return result;
-    } else {
-      return { ...result, extraEffects: ['Building mana...'] };
     }
+    return result;
   }
 
   if (meta.hasDeathInstakill && isDeathTransformed) {
@@ -331,24 +322,21 @@ export function executeActiveSkillEffects(
         targetIsBoss: false
       };
       return result;
-    } else {
-      return { ...result, extraEffects: ['Building mana...'] };
     }
+    return result;
   }
 
   if (meta.canSummonImp) {
     if (canCastActive) {
       result.summonImp = true;
       return result;
-    } else if (manaNeeded > 0) {
-      return { ...result, extraEffects: ['Building mana...'] };
     }
     return result;
   }
 
   if (!canCastActive) {
     if (manaNeeded > 0) {
-      return { ...result, extraEffects: ['Building mana...'] };
+      result.needsMana = true;
     }
     return result;
   }
