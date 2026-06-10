@@ -17,7 +17,10 @@ export interface DiceSkillRuntimeMeta {
   activeDurationTurns?: number;
   poisonDamage?: number;
   onKillExtraAttacks?: number;
+  onDamagedExtraAttacks?: number;
+  onDamagedGrantAttacksToAlly?: boolean;
   onDeathExtraAttacks?: number;
+  onDeathGrantAttacksToAlly?: boolean;
   distanceDamageBonusPerTile?: number;
   distanceDamageBonusRatePerTile?: number;
   berserkThresholdRate?: number;
@@ -117,7 +120,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     activeDurationTurns: activeSkill ? (activeModifiers?.durationTurns ?? 0) : 0,
     poisonDamage: (activeModifiers as { poisonDamage?: number } | undefined)?.poisonDamage ?? (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
     onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
+    onDamagedExtraAttacks: primary?.type === 'OnDamaged' ? (modifiers?.extraAttacks ?? 0) : 0,
+    onDamagedGrantAttacksToAlly: Boolean((modifiers as { grantAttacksToAlly?: boolean } | undefined)?.grantAttacksToAlly),
     onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
+    onDeathGrantAttacksToAlly: Boolean((modifiers as { grantAttacksToAlly?: boolean } | undefined)?.grantAttacksToAlly),
     distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile,
     distanceDamageBonusRatePerTile: (modifiers as { distanceDamageBonusRatePerTile?: number } | undefined)?.distanceDamageBonusRatePerTile,
     berserkThresholdRate: (modifiers as { berserkThresholdRate?: number } | undefined)?.berserkThresholdRate,

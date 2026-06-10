@@ -37,6 +37,14 @@ export interface OnKillResult extends SkillEffectResult {
   leonRageBonus?: number;
 }
 
+export interface OnDamagedResult extends SkillEffectResult {
+  grantAttacksToAlly?: boolean;
+}
+
+export interface OnDeathResult extends SkillEffectResult {
+  grantAttacksToAlly?: boolean;
+}
+
 export interface PassiveEffectResult extends SkillEffectResult {
   splashTargets?: DiceInstanceState[];
   chainTarget?: DiceInstanceState;
@@ -83,18 +91,22 @@ export function executeOnDamagedSkillEffects(
   attacker: DiceInstanceState,
   damage: number,
   isLethal: boolean
-): SkillEffectResult {
-  const result = createBaseResult();
+): OnDamagedResult {
+  const result: OnDamagedResult = {};
   const meta = getRuntimeSkillMeta(definition);
 
   if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) {
     return result;
   }
 
-  const bonus = meta.onDeathExtraAttacks ?? 0;
+  const bonus = meta.onDamagedExtraAttacks ?? 0;
   if (bonus > 0) {
     applyBonusAttacks(result, bonus);
     result.extraEffects = [`OnDamaged grants +${bonus} attacks`];
+  }
+
+  if (meta.onDamagedGrantAttacksToAlly) {
+    result.grantAttacksToAlly = true;
   }
 
   return result;
@@ -105,8 +117,8 @@ export function executeOnDeathSkillEffects(
   definition: DiceDefinition,
   classLevel: number,
   attacker: DiceInstanceState
-): SkillEffectResult {
-  const result = createBaseResult();
+): OnDeathResult {
+  const result: OnDeathResult = {};
   const meta = getRuntimeSkillMeta(definition);
 
   if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) {
@@ -117,6 +129,10 @@ export function executeOnDeathSkillEffects(
   if (bonus > 0) {
     applyBonusAttacks(result, bonus);
     result.extraEffects = [`OnDeath grants +${bonus} attacks to ally`];
+  }
+
+  if (meta.onDeathGrantAttacksToAlly) {
+    result.grantAttacksToAlly = true;
   }
 
   return result;
