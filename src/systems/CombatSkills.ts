@@ -22,18 +22,19 @@ export interface SkillEffectResult {
   leonFuriousClaw?: boolean;
 }
 
-export interface CombatStartAura {
-  sourceId: string;
-  extraAttacks: number;
-}
-
 export interface CombatStartResult extends SkillEffectResult {
-  combatStartAuras: CombatStartAura[];
-  bonusForInstance: Map<string, number>;
+  combatStartAuras: { sourceId: string; extraAttacks: number }[];
 }
 
 export interface CombatEndResult extends SkillEffectResult {
   growthDelta?: number;
+  brokenGrowthDelta?: number;
+}
+
+export interface OnKillResult extends SkillEffectResult {
+  hammerTarget?: DiceInstanceState;
+  hammerDamage?: number;
+  leonRageBonus?: number;
 }
 
 export interface PassiveEffectResult extends SkillEffectResult {
@@ -64,6 +65,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   attackDelta?: number;
   attackDeltaTurns?: number;
   iceSlow?: boolean;
+  needsMana?: boolean;
 }
 
 function createBaseResult(): SkillEffectResult {
@@ -125,8 +127,8 @@ export function executeOnKillSkillEffects(
   definition: DiceDefinition,
   classLevel: number,
   defeated: DiceInstanceState
-): SkillEffectResult {
-  const result = createBaseResult();
+): OnKillResult {
+  const result: OnKillResult = {};
   const meta = getRuntimeSkillMeta(definition);
 
   if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) {
@@ -139,9 +141,15 @@ export function executeOnKillSkillEffects(
     result.extraEffects = [`OnKill grants +${bonus} attacks`];
   }
 
+  if (meta.hasJudgmentHammer) {
+    result.hammerTarget = defeated;
+    result.hammerDamage = meta.hammerDamage ?? 150;
+  }
+
   if ((meta.leonRageRate ?? 0) > 0 && classLevel >= 6) {
     const bonusDamage = Math.max(1, Math.floor(definition.attack * (meta.leonRageRate ?? 0)));
     result.bonusDamage = bonusDamage;
+    result.leonRageBonus = Math.ceil((meta.leonRageRate ?? 0) * 100);
     result.extraEffects = result.extraEffects ?? [];
     result.extraEffects.push(`Leon Rage grants +${bonusDamage} damage`);
   }
@@ -169,7 +177,7 @@ export function executeCombatStartSkillEffects(
   return result;
 }
 
-export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): CombatStartAura[] {
+export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): { sourceId: string; extraAttacks: number }[] {
   return dice
     .map((die) => {
       const definition = getDefinition(die);
@@ -177,13 +185,13 @@ export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition
       const extraAttacks = getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0;
       return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
     })
-    .filter((aura): aura is CombatStartAura => aura !== null);
+    .filter((aura): aura is { sourceId: string; extraAttacks: number } => aura !== null);
 }
 
 export function computeCombatStartBonus(
   die: DiceInstanceState,
-  playerAuras: CombatStartAura[],
-  enemyAuras: CombatStartAura[]
+  playerAuras: { sourceId: string; extraAttacks: number }[],
+  enemyAuras: { sourceId: string; extraAttacks: number }[]
 ): number {
   const auras = die.ownerId === 'player' ? playerAuras : enemyAuras;
   return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
@@ -212,7 +220,8 @@ export function executeCombatEndSkillEffects(
 
   if (meta.hasBrokenGrowthPermanent) {
     result.applyBrokenGrowth = true;
-    result.growthDelta = Math.random() < 0.5 ? -1 : 1;
+    result.brokenGrowthDelta = Math.random() < 0.5 ? -1 : 1;
+    result.growthDelta = result.brokenGrowthDelta;
   }
 
   return result;
@@ -307,6 +316,7 @@ export function executeActiveSkillEffects(
       result.summonWizard = true;
       return result;
     }
+    return result;
   }
 
   if (meta.hasMeteorStrike) {
@@ -318,9 +328,8 @@ export function executeActiveSkillEffects(
         lavaTurns: meta.activeDurationTurns ?? 3
       };
       return result;
-    } else {
-      return { ...result, extraEffects: ['Building mana...'] };
     }
+    return result;
   }
 
   if (meta.hasDeathInstakill && isDeathTransformed) {
@@ -331,24 +340,21 @@ export function executeActiveSkillEffects(
         targetIsBoss: false
       };
       return result;
-    } else {
-      return { ...result, extraEffects: ['Building mana...'] };
     }
+    return result;
   }
 
   if (meta.canSummonImp) {
     if (canCastActive) {
       result.summonImp = true;
       return result;
-    } else if (manaNeeded > 0) {
-      return { ...result, extraEffects: ['Building mana...'] };
     }
     return result;
   }
 
   if (!canCastActive) {
     if (manaNeeded > 0) {
-      return { ...result, extraEffects: ['Building mana...'] };
+      result.needsMana = true;
     }
     return result;
   }
@@ -421,20 +427,4 @@ export function hasJudgmentHammer(meta: DiceSkillRuntimeMeta): boolean {
 
 export function getHammerDamage(meta: DiceSkillRuntimeMeta): number {
   return meta.hammerDamage ?? 150;
-}
-
-export function getActiveManaNeeded(meta: DiceSkillRuntimeMeta): number {
-  return meta.activeManaNeeded ?? 0;
-}
-
-export function isActiveSkillMeteorStrike(meta: DiceSkillRuntimeMeta): boolean {
-  return meta.hasMeteorStrike ?? false;
-}
-
-export function isActiveSkillDeathInstakill(meta: DiceSkillRuntimeMeta): boolean {
-  return meta.hasDeathInstakill ?? false;
-}
-
-export function isActiveSkillSpear(meta: DiceSkillRuntimeMeta): boolean {
-  return meta.hasSpearActive ?? false;
 }

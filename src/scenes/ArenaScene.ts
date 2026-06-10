@@ -20,7 +20,7 @@ import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
-import { executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeCombatStartSkillEffects, collectCombatStartAuras, computeCombatStartBonus, hasJudgmentHammer, getHammerDamage } from '../systems/CombatSkills';
+import { executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, collectCombatStartAuras, computeCombatStartBonus, hasJudgmentHammer, getHammerDamage } from '../systems/CombatSkills';
 import { applyClassProgression, getClassScaledSkillDescription, getClassMultiplier } from '../systems/ClassProgression';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
@@ -3693,8 +3693,9 @@ export class ArenaScene extends Phaser.Scene {
 
     const result = executeActiveSkillEffects(attacker, definition, classLevel, target, currentMana, activeSlot, isDeathTransformed);
 
-    if (result.extraEffects?.length && !result.meteorStrike && !result.deathInstakill) {
-      this.combatLog.setText(result.extraEffects.join('; '));
+    if (result.needsMana) {
+      this.combatLog.setText('Building mana...');
+      this.addManaToAllActiveSlots(attacker);
     }
 
     if (result.summonWizard && activeSlot) {
@@ -3996,8 +3997,8 @@ export class ArenaScene extends Phaser.Scene {
           this.recordAttackCountEffect(die.instanceId, 1);
         }
 
-        if (result.applyBrokenGrowth && result.growthDelta !== undefined) {
-          const delta = result.growthDelta;
+        if (result.applyBrokenGrowth && result.brokenGrowthDelta !== undefined) {
+          const delta = result.brokenGrowthDelta;
           const currentDelta = this.brokenGrowthDeltaByInstance.get(die.instanceId) ?? 0;
           const newDelta = currentDelta + delta;
           this.brokenGrowthDeltaByInstance.set(die.instanceId, newDelta);
@@ -4742,9 +4743,9 @@ export class ArenaScene extends Phaser.Scene {
       this.basicAttackDamageBonusByInstance.set(attacker.instanceId, current + result.bonusDamage);
       this.playSkillSfxForDie(attacker, meta);
     }
-    if (hasJudgmentHammer(meta)) {
+    if (result.hammerTarget && result.hammerDamage !== undefined) {
       this.playSkillSfxForDie(attacker, meta);
-      await this.dropJudgmentHammer(attacker, getHammerDamage(meta), new Set<string>());
+      await this.dropJudgmentHammer(attacker, result.hammerDamage, new Set<string>());
     }
   }
 
