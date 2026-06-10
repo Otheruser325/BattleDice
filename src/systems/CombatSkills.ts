@@ -422,19 +422,3 @@ export function hasJudgmentHammer(meta: DiceSkillRuntimeMeta): boolean {
 export function getHammerDamage(meta: DiceSkillRuntimeMeta): number {
   return meta.hammerDamage ?? 150;
 }
-
-export function getActiveManaNeeded(meta: DiceSkillRuntimeMeta): number {
-  return meta.activeManaNeeded ?? 0;
-}
-
-export function isActiveSkillMeteorStrike(meta: DiceSkillRuntimeMeta): boolean {
-  return meta.hasMeteorStrike ?? false;
-}
-
-export function isActiveSkillDeathInstakill(meta: DiceSkillRuntimeMeta): boolean {
-  return meta.hasDeathInstakill ?? false;
-}
-
-export function isActiveSkillSpear(meta: DiceSkillRuntimeMeta): boolean {
-  return meta.hasSpearActive ?? false;
-}
