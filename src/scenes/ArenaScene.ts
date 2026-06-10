@@ -20,6 +20,7 @@ import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
+import { executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeCombatStartSkillEffects, collectCombatStartAuras, computeCombatStartBonus, hasJudgmentHammer, getHammerDamage } from '../systems/CombatSkills';
 import { applyClassProgression, getClassScaledSkillDescription, getClassMultiplier } from '../systems/ClassProgression';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
@@ -2380,20 +2381,9 @@ export class ArenaScene extends Phaser.Scene {
   private beginCombatPhaseWithRolledPips(): MatchBattleState {
     const playerBoardDice = getBoardDice(this.gameState, 'player');
     const enemyBoardDice = getBoardDice(this.gameState, 'enemy');
-    const collectCombatStartAttackAuras = (dice: DiceInstanceState[]) => dice
-      .map((die) => {
-        const definition = this.getDefinitionForInstance(die);
-        if (!definition) return null;
-        const extraAttacks = getRuntimeSkillMeta(definition).combatStartExtraAttacks ?? 0;
-        return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
-      })
-      .filter((aura): aura is { sourceId: string; extraAttacks: number } => aura !== null);
-    const playerCombatStartAuras = collectCombatStartAttackAuras(playerBoardDice);
-    const enemyCombatStartAuras = collectCombatStartAttackAuras(enemyBoardDice);
-    const combatStartBonusFor = (die: DiceInstanceState) => {
-      const auras = die.ownerId === 'player' ? playerCombatStartAuras : enemyCombatStartAuras;
-      return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
-    };
+    const playerCombatStartAuras = collectCombatStartAuras(playerBoardDice, (die) => this.getDefinitionForInstance(die));
+    const enemyCombatStartAuras = collectCombatStartAuras(enemyBoardDice, (die) => this.getDefinitionForInstance(die));
+    const combatStartBonusFor = (die: DiceInstanceState) => computeCombatStartBonus(die, playerCombatStartAuras, enemyCombatStartAuras);
     const rolledPipsFor = (die: DiceInstanceState) => die.ownerId === 'player'
       ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
       : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
@@ -3520,10 +3510,29 @@ export class ArenaScene extends Phaser.Scene {
     const beforePosition = before?.gridPosition;
     const nextState = applyDamage(this.gameState, instanceId, damage);
     const after = nextState.dice.find((die) => die.instanceId === instanceId);
+    if (before && after) {
+      const definition = this.getDefinitionForInstance(before);
+      const classLevel = this.instanceClassLevels.get(instanceId) ?? 1;
+      if (definition) {
+        const onDamagedResult = executeOnDamagedSkillEffects(before, definition, classLevel, before, damage, after.isDestroyed);
+        if (onDamagedResult.bonusAttacks && onDamagedResult.bonusAttacks > 0) {
+          this.recordAttackCountEffect(instanceId, onDamagedResult.bonusAttacks);
+          this.gameState = {
+            ...this.gameState,
+            dice: this.gameState.dice.map((die) => {
+              if (die.instanceId !== instanceId) return die;
+              return { ...die, attacksRemaining: die.attacksRemaining + onDamagedResult.bonusAttacks!, hasFinishedAttacking: false };
+            })
+          };
+        }
+        if (onDamagedResult.extraEffects?.length) {
+          this.combatLog.setText(onDamagedResult.extraEffects.join('; '));
+        }
+      }
+    }
     if (!before || !after?.isDestroyed) return { state: nextState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)), defeated: false };
     AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
-    const definition = this.getDefinitionForInstance(before);
-    const reviveChance = definition ? getRuntimeSkillMeta(definition).reviveChance : undefined;
+    const reviveChance = before ? getRuntimeSkillMeta(this.getDefinitionForInstance(before)!).reviveChance : undefined;
     if (!reviveChance || Math.random() >= reviveChance) return { state: nextState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), defeated: true };
 
     this.animateSkullRevive(before);
@@ -3621,17 +3630,15 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !target.gridPosition) return;
     const meta = getRuntimeSkillMeta(definition);
+    const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const targetBoardSide = this.getBoardSideForDie(target);
     const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.ownerId === target.ownerId);
-    if (meta.splashDamage) {
-      const splashTargets = boardSideTargets.filter((die) =>
-        die.instanceId !== target.instanceId &&
-        die.gridPosition &&
-        Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
-        Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 1
-      );
-      if (splashTargets.length > 0) this.playSkillSfxForDie(attacker, meta);
-      splashTargets.forEach((die) => {
+
+    const result = executePassiveSkillEffects(attacker, definition, classLevel, target, boardSideTargets);
+
+    if (result.splashTargets?.length) {
+      this.playSkillSfxForDie(attacker, meta);
+      result.splashTargets.forEach((die) => {
         const dealt = Math.max(1, Math.ceil(meta.splashDamage! * this.getCombanityDamageMultiplier(attacker, die) * this.getOffenseMultiplier(attacker)));
         const splashHit = this.applyDamageWithRevive(die.instanceId, dealt);
         this.gameState = splashHit.state;
@@ -3640,27 +3647,20 @@ export class ArenaScene extends Phaser.Scene {
         this.animateSkillEffect('fire', attacker, die);
       });
     }
-    if (meta.chainDamage) {
-      const chainTarget = boardSideTargets.find((die) =>
-        die.instanceId !== target.instanceId &&
-        die.gridPosition &&
-        Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 2 &&
-        Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 2
-      );
-      if (chainTarget) {
-        this.playSkillSfxForDie(attacker, meta);
-        const dealt = Math.max(1, Math.ceil(meta.chainDamage * this.getCombanityDamageMultiplier(attacker, chainTarget) * this.getOffenseMultiplier(attacker)));
-        const chainHit = this.applyDamageWithRevive(chainTarget.instanceId, dealt);
-        this.gameState = chainHit.state;
-        this.showDamageText(chainTarget, chainHit.dealt, '#fff176');
-        this.handleDefeatedDie(chainTarget, chainHit.defeated);
-        this.animateSkillEffect('electric', attacker, chainTarget);
-      }
+
+    if (result.chainTarget) {
+      this.playSkillSfxForDie(attacker, meta);
+      const dealt = Math.max(1, Math.ceil(meta.chainDamage * this.getCombanityDamageMultiplier(attacker, result.chainTarget) * this.getOffenseMultiplier(attacker)));
+      const chainHit = this.applyDamageWithRevive(result.chainTarget.instanceId, dealt);
+      this.gameState = chainHit.state;
+      this.showDamageText(result.chainTarget, chainHit.dealt, '#fff176');
+      this.handleDefeatedDie(result.chainTarget, chainHit.defeated);
+      this.animateSkillEffect('electric', attacker, result.chainTarget);
     }
 
-    if (meta.pierceBehindRange) {
+    if (result.pierceTargets?.length) {
       this.playSkillSfxForDie(attacker, meta);
-      this.getPierceBehindTargets(attacker, target, meta.pierceBehindRange).forEach((die) => {
+      result.pierceTargets.forEach((die) => {
         const pierceDamage = Math.max(1, Math.floor(definition.attack * this.getCombanityDamageMultiplier(attacker, die) * this.getDiceCardSkillDamageMultiplier(attacker)));
         const pierceHit = this.applyDamageWithRevive(die.instanceId, pierceDamage);
         this.gameState = pierceHit.state;
@@ -3668,7 +3668,8 @@ export class ArenaScene extends Phaser.Scene {
         this.handleDefeatedDie(die, pierceHit.defeated);
       });
     }
-    if (meta.hasLeonFuriousClaw && this.getAttackDistance(attacker, target) <= 2) {
+
+    if (result.leonFuriousClaw && this.getAttackDistance(attacker, target) <= 2) {
       void this.executeLeonFuriousClaw(attacker, target, 1);
     }
   }
@@ -3685,182 +3686,160 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
     const meta = getRuntimeSkillMeta(definition);
-
-    if (meta.canSummonWizard && (this.instanceClassLevels.get(attacker.instanceId) ?? 1) >= 6) {
-      const wizardSlot = this.getActiveManaSlot(attacker, 'Wizard Royale');
-      const wizardMana = wizardSlot?.manaNeeded ?? 18;
-      const currentMana = wizardSlot?.mana ?? 0;
-      if (currentMana >= wizardMana) {
-        const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getSummonedMinionClassLevel(attacker));
-        if (wizard) {
-          this.resetActiveMana(attacker.instanceId, wizardSlot?.key);
-          this.combatLog.setText(`🪄 ${attacker.typeId} summons a Wizard Dice!`);
-          return;
-        }
-      }
-    }
-
-    if (meta.hasMeteorStrike) {
-      const meteorSlot = this.getMeteorManaSlot(attacker);
-      const manaNeeded = meteorSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 7);
-      const currentMana = meteorSlot?.mana ?? 0;
-      if (currentMana >= manaNeeded) {
-        const attackerBoardSide = this.getBoardSideForDie(attacker);
-        const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
-        const enemyOwner: 'player' | 'enemy' = attacker.ownerId === 'player' ? 'enemy' : 'player';
-        const isMagicianMeteor = definition.typeId === 'Magician';
-        const meteorCount = isMagicianMeteor ? 3 : 1;
-        const meteorDamage = meta.meteorDamage ?? 60;
-        const lavaDamage = meta.lavaDamage ?? 25;
-        const lavaTurns = this.getSkillDurationTurns(meta.activeDurationTurns) ?? (isMagicianMeteor ? 4 : 3);
-        let totalHits = 0;
-        for (let meteorIndex = 0; meteorIndex < meteorCount; meteorIndex++) {
-          const origin = isMagicianMeteor
-            ? this.pickRandomGridTile()
-            : this.pickRandomOccupiedTile(targetBoardSide, enemyOwner);
-          if (!origin) break;
-          this.animateMeteorImpact(targetBoardSide, origin);
-          await this.delayCombatVisualPaced(1000);
-          const impactTiles = this.getPlusPatternTiles(origin);
-          const lavaTiles = isMagicianMeteor ? [origin] : impactTiles;
-          lavaTiles.forEach((tile) => {
-            const lavaKey = `${targetBoardSide}:${tile.row},${tile.col}`;
-            this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: lavaTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
-          });
-          impactTiles.forEach((tile) => {
-            const victim = this.gameState.dice.find((d) =>
-              d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
-              && this.getBoardSideForDie(d) === targetBoardSide);
-            if (!victim) return;
-            const hit = applyDirectDamage(victim, meteorDamage);
-            this.showDamageText(victim, hit.dealt, '#ff9f58');
-            this.handleDefeatedDie(victim, hit.defeated);
-            totalHits += 1;
-          });
-          this.renderLavaPools();
-        }
-        this.combatLog.setText(`☄️ ${attacker.typeId} meteor scorches ${totalHits} foe${totalHits === 1 ? '' : 's'} in + patterns for ${meteorDamage} damage and leaves lava!`);
-        this.resetActiveMana(attacker.instanceId, meteorSlot?.key);
-      } else {
-        this.addManaToAllActiveSlots(attacker);
-      }
-      return;
-    }
-
-    if (meta.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId)) {
-      const deathSlot = this.getActiveManaSlot(attacker, `Reaper's Touch`);
-      const instakillMana = deathSlot?.manaNeeded ?? (meta.deathInstakillMana ?? 12);
-      const currentMana = deathSlot?.mana ?? 0;
-      if (currentMana >= instakillMana) {
-        const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
-        if (freshTarget && !freshTarget.isDestroyed) {
-          AudioManager.playSfx(this, AUDIO_KEYS.deathInstakill);
-          const targetIsBoss = this.isBossDie(freshTarget);
-          const reaperDamage = targetIsBoss
-            ? Math.max(1, Math.floor(definition.attack * 10 * this.getDiceCardSkillDamageMultiplier(attacker)))
-            : freshTarget.currentHealth;
-          const instakillHit = this.applyDamageWithRevive(freshTarget.instanceId, reaperDamage, targetIsBoss ? {} : { ignoreDamageReduction: true, ignoreShield: true });
-          this.gameState = instakillHit.state;
-          this.showDamageText(freshTarget, instakillHit.dealt, '#c57cff');
-          this.combatLog.setText(targetIsBoss
-            ? `☠️ Death Dice's Reaper's Touch carves ${freshTarget.typeId} for ${instakillHit.dealt} damage!`
-            : `☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
-          if (instakillHit.defeated) {
-            await this.applyOnKillSkillEffects(attacker, freshTarget);
-            this.applyOnDeathSkillEffects(freshTarget, attacker);
-            this.handleDefeatedDie(freshTarget, true);
-          }
-        }
-        this.resetActiveMana(attacker.instanceId, deathSlot?.key);
-      } else {
-        this.addManaToAllActiveSlots(attacker);
-      }
-      return;
-    }
-
+    const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const activeSlot = this.getActiveManaSlots(attacker)[0];
-    const manaNeeded = activeSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 0);
-    const activeDurationTurns = this.getSkillDurationTurns(meta.activeDurationTurns);
     const currentMana = activeSlot ? this.getActiveMana(attacker.instanceId, activeSlot.key) : 0;
-    const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
-    if (meta.canSummonImp) {
-      if (canCastActive) {
-        const imp = this.summonMinionForOwner(attacker.ownerId, 'Imp', this.getSummonedMinionClassLevel(attacker));
-        if (imp) {
-          this.resetActiveMana(attacker.instanceId, activeSlot?.key);
-          this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
+    const isDeathTransformed = this.deathDiceTransformed.has(attacker.instanceId);
+
+    const result = executeActiveSkillEffects(attacker, definition, classLevel, target, currentMana, activeSlot, isDeathTransformed);
+
+    if (result.extraEffects?.length && !result.meteorStrike && !result.deathInstakill) {
+      this.combatLog.setText(result.extraEffects.join('; '));
+    }
+
+    if (result.summonWizard && activeSlot) {
+      const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getSummonedMinionClassLevel(attacker));
+      if (wizard) {
+        this.resetActiveMana(attacker.instanceId, activeSlot.key);
+        this.combatLog.setText(`🪄 ${attacker.typeId} summons a Wizard Dice!`);
+        return;
+      }
+    }
+
+    if (result.meteorStrike && activeSlot) {
+      const attackerBoardSide = this.getBoardSideForDie(attacker);
+      const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
+      const enemyOwner: 'player' | 'enemy' = attacker.ownerId === 'player' ? 'enemy' : 'player';
+      const isMagicianMeteor = definition.typeId === 'Magician';
+      const meteorCount = isMagicianMeteor ? 3 : 1;
+      const { damage: meteorDamage, lavaDamage, lavaTurns } = result.meteorStrike;
+      let totalHits = 0;
+      for (let meteorIndex = 0; meteorIndex < meteorCount; meteorIndex++) {
+        const origin = isMagicianMeteor
+          ? this.pickRandomGridTile()
+          : this.pickRandomOccupiedTile(targetBoardSide, enemyOwner);
+        if (!origin) break;
+        this.animateMeteorImpact(targetBoardSide, origin);
+        await this.delayCombatVisualPaced(1000);
+        const impactTiles = this.getPlusPatternTiles(origin);
+        const lavaTiles = isMagicianMeteor ? [origin] : impactTiles;
+        lavaTiles.forEach((tile) => {
+          const lavaKey = `${targetBoardSide}:${tile.row},${tile.col}`;
+          this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: lavaTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
+        });
+        impactTiles.forEach((tile) => {
+          const victim = this.gameState.dice.find((d) =>
+            d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
+            && this.getBoardSideForDie(d) === targetBoardSide);
+          if (!victim) return;
+          const hit = applyDirectDamage(victim, meteorDamage);
+          this.showDamageText(victim, hit.dealt, '#ff9f58');
+          this.handleDefeatedDie(victim, hit.defeated);
+          totalHits += 1;
+        });
+        this.renderLavaPools();
+      }
+      this.combatLog.setText(`☄️ ${attacker.typeId} meteor scorches ${totalHits} foe${totalHits === 1 ? '' : 's'} in + patterns for ${meteorDamage} damage and leaves lava!`);
+      this.resetActiveMana(attacker.instanceId, activeSlot.key);
+      return;
+    }
+
+    if (result.deathInstakill && activeSlot) {
+      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
+      if (freshTarget && !freshTarget.isDestroyed) {
+        AudioManager.playSfx(this, AUDIO_KEYS.deathInstakill);
+        const targetIsBoss = this.isBossDie(freshTarget);
+        const reaperDamage = targetIsBoss
+          ? Math.max(1, Math.floor(definition.attack * 10 * this.getDiceCardSkillDamageMultiplier(attacker)))
+          : freshTarget.currentHealth;
+        const instakillHit = this.applyDamageWithRevive(freshTarget.instanceId, reaperDamage, targetIsBoss ? {} : { ignoreDamageReduction: true, ignoreShield: true });
+        this.gameState = instakillHit.state;
+        this.showDamageText(freshTarget, instakillHit.dealt, '#c57cff');
+        this.combatLog.setText(targetIsBoss
+          ? `☠️ Death Dice's Reaper's Touch carves ${freshTarget.typeId} for ${instakillHit.dealt} damage!`
+          : `☠️ Death Dice's Reaper's Touch instantly kills ${freshTarget.typeId}!`);
+        if (instakillHit.defeated) {
+          await this.applyOnKillSkillEffects(attacker, freshTarget);
+          this.applyOnDeathSkillEffects(freshTarget, attacker);
+          this.handleDefeatedDie(freshTarget, true);
         }
-      } else if (manaNeeded > 0) {
-        this.addManaToAllActiveSlots(attacker);
+      }
+      this.resetActiveMana(attacker.instanceId, activeSlot.key);
+      return;
+    }
+
+    if (result.summonImp && activeSlot) {
+      const imp = this.summonMinionForOwner(attacker.ownerId, 'Imp', this.getSummonedMinionClassLevel(attacker));
+      if (imp) {
+        this.resetActiveMana(attacker.instanceId, activeSlot.key);
+        this.combatLog.setText(`🔥 ${attacker.typeId} summons an Imp Dice!`);
       }
       return;
     }
-    if (!canCastActive) {
-      if (manaNeeded > 0) this.addManaToAllActiveSlots(attacker);
-      return;
-    }
-    if (meta.hasSpearActive) {
+
+    if (result.spearStrike && activeSlot) {
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         this.animateSpearActive(attacker, freshTarget);
-        const primaryDamage = Math.max(1, Math.ceil(meta.activeDamage ?? 104));
-        const hit = applyDirectDamage(freshTarget, primaryDamage);
+        const hit = applyDirectDamage(freshTarget, result.spearStrike.damage);
         this.showDamageText(freshTarget, hit.dealt, '#dbe7e4');
         this.handleDefeatedDie(freshTarget, hit.defeated);
         this.getPierceBehindTargets(attacker, freshTarget, 2).forEach((die) => {
-          const pierceDamage = Math.max(1, Math.ceil(meta.pierceBehindDamage ?? 208));
-          const pierceHit = applyDirectDamage(die, pierceDamage);
+          const pierceHit = applyDirectDamage(die, result.spearStrike.pierceDamage);
           this.showDamageText(die, pierceHit.dealt, '#b58cff');
           this.handleDefeatedDie(die, pierceHit.defeated);
         });
       }
-      this.resetActiveMana(attacker.instanceId, activeSlot?.key);
+      this.resetActiveMana(attacker.instanceId, activeSlot.key);
       return;
     }
-    if (meta.activeHeal !== undefined) {
-      const healTarget = this.getWeakestDamagedAlly(attacker.ownerId, attacker.instanceId);
-      if (healTarget) {
-        this.playSkillSfxForDie(attacker, meta);
-        const healAmount = Math.max(1, Math.ceil(meta.activeHeal * this.getCombanityDamageMultiplier(attacker, healTarget) * this.getTypeUpgradeMultiplier(attacker)));
-        this.gameState = {
-          ...this.gameState,
-          dice: this.gameState.dice.map((die) => {
-            if (die.instanceId !== healTarget.instanceId || die.isDestroyed) return die;
-            return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healAmount) };
-          })
-        };
-        this.showHealText(healTarget, healAmount);
-        this.animateSkillEffect('heal', attacker, healTarget);
-      }
-    }
-    if ((meta.shield ?? 0) > 0) {
+
+    if (result.healTarget && result.healAmount !== undefined) {
+      const healTarget = result.healTarget;
+      const healAmount = Math.max(1, Math.ceil(result.healAmount * this.getCombanityDamageMultiplier(attacker, healTarget) * this.getTypeUpgradeMultiplier(attacker)));
       this.playSkillSfxForDie(attacker, meta);
-      const shieldGain = Math.max(1, Math.ceil((meta.shield ?? 0) * this.getCombanityDamageMultiplier(attacker, attacker) * this.getTypeUpgradeMultiplier(attacker)));
+      this.gameState = {
+        ...this.gameState,
+        dice: this.gameState.dice.map((die) => {
+          if (die.instanceId !== healTarget.instanceId || die.isDestroyed) return die;
+          return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healAmount) };
+        })
+      };
+      this.showHealText(healTarget, healAmount);
+      this.animateSkillEffect('heal', attacker, healTarget);
+    }
+
+    if (result.shieldGain !== undefined && activeSlot) {
+      this.playSkillSfxForDie(attacker, meta);
+      const shieldGain = Math.max(1, Math.ceil(result.shieldGain * this.getCombanityDamageMultiplier(attacker, attacker) * this.getTypeUpgradeMultiplier(attacker)));
       this.shieldHpByInstance.set(attacker.instanceId, (this.shieldHpByInstance.get(attacker.instanceId) ?? 0) + shieldGain);
-      if (activeDurationTurns !== undefined) this.shieldDurationTurnsByInstance.set(attacker.instanceId, activeDurationTurns);
+      if (result.shieldTurns !== undefined) {
+        const durationTurns = this.getSkillDurationTurns(result.shieldTurns);
+        if (durationTurns !== undefined) this.shieldDurationTurnsByInstance.set(attacker.instanceId, durationTurns);
+      }
       this.showHealText(attacker, shieldGain);
     }
-    if (attacker.typeId === 'Ice') {
-      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
-      if (freshTarget && !freshTarget.isDestroyed) {
-        const hit = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 16)));
-        this.showDamageText(freshTarget, hit.dealt, '#8fd5ff');
-        this.gameState = {
-          ...this.gameState,
-          dice: this.gameState.dice.map((die) => {
-            if (die.instanceId !== freshTarget.instanceId || die.isDestroyed || die.attacksRemaining <= 0) return die;
-            const attacksRemaining = Math.max(0, die.attacksRemaining - 1);
-            this.recordAttackCountEffect(die.instanceId, -1);
-            return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
-          })
-        };
-        this.handleDefeatedDie(freshTarget, hit.defeated);
-        this.animateSkillEffect('ice', attacker, freshTarget);
-      }
+
+    if (result.iceSlow && result.directDamage) {
+      const freshTarget = result.directDamage.target;
+      const hit = applyDirectDamage(freshTarget, result.directDamage.damage);
+      this.showDamageText(freshTarget, hit.dealt, '#8fd5ff');
+      this.gameState = {
+        ...this.gameState,
+        dice: this.gameState.dice.map((die) => {
+          if (die.instanceId !== freshTarget.instanceId || die.isDestroyed || die.attacksRemaining <= 0) return die;
+          const attacksRemaining = Math.max(0, die.attacksRemaining - 1);
+          this.recordAttackCountEffect(die.instanceId, -1);
+          return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
+        })
+      };
+      this.handleDefeatedDie(freshTarget, hit.defeated);
+      this.animateSkillEffect('ice', attacker, freshTarget);
     }
-    if (attacker.typeId === 'Poison') {
-      const poisonDamage = Math.max(1, Math.floor((meta.poisonDamage ?? 0) * this.getDiceCardSkillDamageMultiplier(attacker)));
-      const poisonTurns = activeDurationTurns ?? 1;
+
+    if (result.poisonTarget && result.poisonDamage !== undefined && result.poisonTurns !== undefined) {
+      const poisonDamage = Math.max(1, Math.floor(result.poisonDamage * this.getDiceCardSkillDamageMultiplier(attacker)));
+      const poisonTurns = result.poisonTurns;
       const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
       if (freshTarget && !freshTarget.isDestroyed) {
         const activePoisonDamage = Math.max(1, this.getDefinitionForInstance(attacker)?.attack ?? 1);
@@ -3873,41 +3852,46 @@ export class ArenaScene extends Phaser.Scene {
       this.animateSkillEffect('poison', attacker, target);
     }
 
-    const shouldApplyGenericActiveDamage = meta.activeDamage !== undefined && !meta.hasSpearActive && !meta.hasMeteorStrike && !(meta.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId)) && attacker.typeId !== 'Ice' && attacker.typeId !== 'Poison';
-    if (shouldApplyGenericActiveDamage) {
-      const freshTarget = this.gameState.dice.find(d => d.instanceId === target.instanceId);
-      if (freshTarget && !freshTarget.isDestroyed) {
-        const hit = applyDirectDamage(freshTarget, Math.max(1, Math.ceil(meta.activeDamage ?? 1)));
+    if (result.directDamage && !result.iceSlow) {
+      const freshTarget = result.directDamage.target;
+      if (!freshTarget.isDestroyed) {
+        const hit = applyDirectDamage(freshTarget, result.directDamage.damage);
         this.showDamageText(freshTarget, hit.dealt, '#ffbf80');
         this.handleDefeatedDie(freshTarget, hit.defeated);
       }
     }
 
-    if ((meta.activeExtraAttacks ?? 0) > 0 && activeDurationTurns !== undefined) {
-      if (attacker.typeId === 'Wind') {
-        if (attacker.gridPosition) {
-          const g = this.getGridContainerForDie(attacker);
-          const x = g.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-          const y = g.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-          AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
-        }
-        this.basicAttacksPerAttackByInstance.set(attacker.instanceId, { count: 2, turns: activeDurationTurns });
-        this.recordAttackCountEffect(attacker.instanceId, 1);
-        if (meta.disableManaGain) this.manaPausedTurnsByInstance.set(attacker.instanceId, activeDurationTurns);
-      } else {
-        this.extraAttackTurnsByInstance.set(attacker.instanceId, { extra: meta.activeExtraAttacks!, turns: activeDurationTurns });
-        this.recordAttackCountEffect(attacker.instanceId, meta.activeExtraAttacks!);
+    if (result.windExtraAttacks && result.extraAttacksTurns !== undefined) {
+      if (attacker.gridPosition) {
+        const g = this.getGridContainerForDie(attacker);
+        const x = g.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+        const y = g.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+        AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
+      }
+      this.basicAttacksPerAttackByInstance.set(attacker.instanceId, { count: 2, turns: result.extraAttacksTurns });
+      this.recordAttackCountEffect(attacker.instanceId, 1);
+      if (meta.disableManaGain) this.manaPausedTurnsByInstance.set(attacker.instanceId, result.extraAttacksTurns);
+    }
+
+    if (result.armorShredTarget && result.armorShredRate !== undefined && result.armorShredTurns !== undefined) {
+      const durationTurns = this.getSkillDurationTurns(result.armorShredTurns);
+      if (durationTurns !== undefined) {
+        this.armorShredByInstance.set(result.armorShredTarget.instanceId, { rate: result.armorShredRate, turns: durationTurns });
       }
     }
-    if ((meta.armorShredRate ?? 0) > 0 && activeDurationTurns !== undefined) {
-      this.armorShredByInstance.set(target.instanceId, { rate: meta.armorShredRate!, turns: activeDurationTurns });
+
+    if (result.attackDeltaTarget && result.attackDelta !== undefined && result.attackDeltaTurns !== undefined) {
+      const durationTurns = this.getSkillDurationTurns(result.attackDeltaTurns);
+      if (durationTurns !== undefined) {
+        this.attackDeltaByInstance.set(result.attackDeltaTarget.instanceId, { delta: result.attackDelta, turns: durationTurns });
+        this.recordAttackCountEffect(result.attackDeltaTarget.instanceId, result.attackDelta);
+        if (attacker.typeId === 'Ice') this.animateSkillEffect('ice', attacker, result.attackDeltaTarget);
+      }
     }
-    if ((meta.activeAttackDelta ?? 0) !== 0 && activeDurationTurns !== undefined) {
-      this.attackDeltaByInstance.set(target.instanceId, { delta: meta.activeAttackDelta!, turns: activeDurationTurns });
-      this.recordAttackCountEffect(target.instanceId, meta.activeAttackDelta!);
-      if (attacker.typeId === 'Ice') this.animateSkillEffect('ice', attacker, target);
+
+    if (activeSlot) {
+      this.resetActiveMana(attacker.instanceId, activeSlot.key);
     }
-    this.resetActiveMana(attacker.instanceId, activeSlot?.key);
   }
 
   private checkDeathTransformCondition(defeated: DiceInstanceState) {
@@ -4003,17 +3987,17 @@ export class ArenaScene extends Phaser.Scene {
         if (die.zone !== 'board' || die.isDestroyed) return die;
         const definition = this.getDefinitionForInstance(die);
         if (!definition) return die;
-        const meta = getRuntimeSkillMeta(definition);
-        const bonus = meta.combatEndExtraAttacks ?? 0;
+        const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
+        const result = executeCombatEndSkillEffects(die, definition, classLevel);
 
-        if (meta.hasGrowthPermanent) {
+        if (result.applyGrowth) {
           const current = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
           this.permanentAttackBonusByInstance.set(die.instanceId, current + 1);
           this.recordAttackCountEffect(die.instanceId, 1);
         }
 
-        if (meta.hasBrokenGrowthPermanent) {
-          const delta = Math.random() < 0.5 ? -1 : 1;
+        if (result.applyBrokenGrowth && result.growthDelta !== undefined) {
+          const delta = result.growthDelta;
           const currentDelta = this.brokenGrowthDeltaByInstance.get(die.instanceId) ?? 0;
           const newDelta = currentDelta + delta;
           this.brokenGrowthDeltaByInstance.set(die.instanceId, newDelta);
@@ -4021,8 +4005,11 @@ export class ArenaScene extends Phaser.Scene {
           this.combatLog.setText(`Broken Growth Dice: ${delta > 0 ? '+1' : '-1'} attack count (total: ${newDelta > 0 ? '+' : ''}${newDelta})`);
         }
 
-        if (bonus > 0) this.recordAttackCountEffect(die.instanceId, bonus);
-        return bonus > 0 ? { ...die, attacksRemaining: Math.max(0, die.attacksRemaining + bonus) } : die;
+        if (result.bonusAttacks && result.bonusAttacks > 0) {
+          this.recordAttackCountEffect(die.instanceId, result.bonusAttacks);
+          return { ...die, attacksRemaining: Math.max(0, die.attacksRemaining + result.bonusAttacks) };
+        }
+        return die;
       })
     };
   }
@@ -4736,31 +4723,28 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
     const meta = getRuntimeSkillMeta(definition);
-    if ((meta.isLockedUntilClass6 ?? false) && (this.instanceClassLevels.get(attacker.instanceId) ?? 1) < 6) return;
-    const bonus = meta.onKillExtraAttacks ?? 0;
-    if (bonus > 0) {
+    const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
+    const result = executeOnKillSkillEffects(attacker, definition, classLevel, _defeated);
+
+    if (result.bonusAttacks && result.bonusAttacks > 0) {
       this.playSkillSfxForDie(attacker, meta);
       this.gameState = {
         ...this.gameState,
         dice: this.gameState.dice.map((die) => {
           if (die.instanceId !== attacker.instanceId) return die;
-          this.recordAttackCountEffect(die.instanceId, bonus);
-          return { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false };
+          this.recordAttackCountEffect(die.instanceId, result.bonusAttacks!);
+          return { ...die, attacksRemaining: die.attacksRemaining + result.bonusAttacks!, hasFinishedAttacking: false };
         })
       };
     }
-    if (meta.hasJudgmentHammer) {
+    if (result.bonusDamage && result.bonusDamage > 0) {
+      const current = this.basicAttackDamageBonusByInstance.get(attacker.instanceId) ?? 0;
+      this.basicAttackDamageBonusByInstance.set(attacker.instanceId, current + result.bonusDamage);
       this.playSkillSfxForDie(attacker, meta);
-      await this.dropJudgmentHammer(attacker, meta.hammerDamage ?? 150, new Set<string>());
     }
-    if ((meta.leonRageRate ?? 0) > 0 && (this.instanceClassLevels.get(attacker.instanceId) ?? 1) >= 6) {
-      const definition = this.getDefinitionForInstance(attacker);
-      if (definition) {
-        const current = this.basicAttackDamageBonusByInstance.get(attacker.instanceId) ?? 0;
-        const bonus = Math.max(1, Math.floor(definition.attack * (meta.leonRageRate ?? 0)));
-        this.basicAttackDamageBonusByInstance.set(attacker.instanceId, current + bonus);
-      }
+    if (hasJudgmentHammer(meta)) {
       this.playSkillSfxForDie(attacker, meta);
+      await this.dropJudgmentHammer(attacker, getHammerDamage(meta), new Set<string>());
     }
   }
 
@@ -4803,20 +4787,26 @@ export class ArenaScene extends Phaser.Scene {
   private applyOnDeathSkillEffects(defeated: DiceInstanceState, _attacker: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(defeated);
     if (!definition) return;
-    const bonus = getRuntimeSkillMeta(definition).onDeathExtraAttacks ?? 0;
-    if (bonus <= 0) return;
-    this.playSkillSfxForDie(defeated);
-    const allyOwner = defeated.ownerId;
-    const ally = getBoardDice(this.gameState, allyOwner).find((die) => die.instanceId !== defeated.instanceId);
-    if (!ally) return;
-    this.gameState = {
-      ...this.gameState,
-      dice: this.gameState.dice.map((die) => {
-        if (die.instanceId !== ally.instanceId) return die;
-        this.recordAttackCountEffect(die.instanceId, bonus);
-        return { ...die, attacksRemaining: die.attacksRemaining + bonus, hasFinishedAttacking: false };
-      })
-    };
+    const meta = getRuntimeSkillMeta(definition);
+    const classLevel = this.instanceClassLevels.get(defeated.instanceId) ?? 1;
+    const result = executeOnDeathSkillEffects(defeated, definition, classLevel, _attacker);
+
+    if (result.bonusAttacks && result.bonusAttacks > 0 && result.extraEffects?.length) {
+      this.playSkillSfxForDie(defeated, meta);
+      const allyOwner = defeated.ownerId;
+      const ally = getBoardDice(this.gameState, allyOwner).find((die) => die.instanceId !== defeated.instanceId);
+      if (ally) {
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.map((die) => {
+            if (die.instanceId !== ally.instanceId) return die;
+            this.recordAttackCountEffect(die.instanceId, result.bonusAttacks!);
+            return { ...die, attacksRemaining: die.attacksRemaining + result.bonusAttacks!, hasFinishedAttacking: false };
+          })
+        };
+      }
+      this.combatLog.setText(result.extraEffects.join('; '));
+    }
   }
 
   private playSkillSfxForDie(die: DiceInstanceState, providedMeta?: ReturnType<typeof getRuntimeSkillMeta>) {
