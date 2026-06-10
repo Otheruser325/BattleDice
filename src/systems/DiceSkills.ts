@@ -171,6 +171,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     canSummonWizard: allNotes.includes('runtime:magicianSummonWizard'),
     hasLeonFuriousClaw: allNotes.includes('runtime:leonFuriousClaw'),
     hasLeonMightyRoar: allNotes.includes('runtime:leonMightyRoar'),
+    hasLeonRage: allNotes.includes('runtime:leonRage'),
     leonRageRate: allNotes.includes('runtime:leonRage') ? ((modifiers as { targetMaxHpBonusRate?: number } | undefined)?.targetMaxHpBonusRate ?? 0.2) : undefined,
     isLockedUntilClass6: allNotes.includes('runtime:unlockAtClass6'),
     disableManaGain: Boolean((activeModifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain ?? (modifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain)

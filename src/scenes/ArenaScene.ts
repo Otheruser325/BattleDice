@@ -3997,8 +3997,8 @@ export class ArenaScene extends Phaser.Scene {
           this.recordAttackCountEffect(die.instanceId, 1);
         }
 
-        if (result.applyBrokenGrowth && result.growthDelta !== undefined) {
-          const delta = result.growthDelta;
+        if (result.applyBrokenGrowth && result.brokenGrowthDelta !== undefined) {
+          const delta = result.brokenGrowthDelta;
           const currentDelta = this.brokenGrowthDeltaByInstance.get(die.instanceId) ?? 0;
           const newDelta = currentDelta + delta;
           this.brokenGrowthDeltaByInstance.set(die.instanceId, newDelta);
@@ -4743,9 +4743,9 @@ export class ArenaScene extends Phaser.Scene {
       this.basicAttackDamageBonusByInstance.set(attacker.instanceId, current + result.bonusDamage);
       this.playSkillSfxForDie(attacker, meta);
     }
-    if (hasJudgmentHammer(meta)) {
+    if (result.hammerTarget && result.hammerDamage !== undefined) {
       this.playSkillSfxForDie(attacker, meta);
-      await this.dropJudgmentHammer(attacker, getHammerDamage(meta), new Set<string>());
+      await this.dropJudgmentHammer(attacker, result.hammerDamage, new Set<string>());
     }
   }
 

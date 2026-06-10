@@ -22,8 +22,19 @@ export interface SkillEffectResult {
   leonFuriousClaw?: boolean;
 }
 
+export interface CombatStartResult extends SkillEffectResult {
+  combatStartAuras: { sourceId: string; extraAttacks: number }[];
+}
+
 export interface CombatEndResult extends SkillEffectResult {
   growthDelta?: number;
+  brokenGrowthDelta?: number;
+}
+
+export interface OnKillResult extends SkillEffectResult {
+  hammerTarget?: DiceInstanceState;
+  hammerDamage?: number;
+  leonRageBonus?: number;
 }
 
 export interface PassiveEffectResult extends SkillEffectResult {
@@ -116,8 +127,8 @@ export function executeOnKillSkillEffects(
   definition: DiceDefinition,
   classLevel: number,
   defeated: DiceInstanceState
-): SkillEffectResult {
-  const result = createBaseResult();
+): OnKillResult {
+  const result: OnKillResult = {};
   const meta = getRuntimeSkillMeta(definition);
 
   if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) {
@@ -130,9 +141,15 @@ export function executeOnKillSkillEffects(
     result.extraEffects = [`OnKill grants +${bonus} attacks`];
   }
 
+  if (meta.hasJudgmentHammer) {
+    result.hammerTarget = defeated;
+    result.hammerDamage = meta.hammerDamage ?? 150;
+  }
+
   if ((meta.leonRageRate ?? 0) > 0 && classLevel >= 6) {
     const bonusDamage = Math.max(1, Math.floor(definition.attack * (meta.leonRageRate ?? 0)));
     result.bonusDamage = bonusDamage;
+    result.leonRageBonus = Math.ceil((meta.leonRageRate ?? 0) * 100);
     result.extraEffects = result.extraEffects ?? [];
     result.extraEffects.push(`Leon Rage grants +${bonusDamage} damage`);
   }
@@ -203,7 +220,8 @@ export function executeCombatEndSkillEffects(
 
   if (meta.hasBrokenGrowthPermanent) {
     result.applyBrokenGrowth = true;
-    result.growthDelta = Math.random() < 0.5 ? -1 : 1;
+    result.brokenGrowthDelta = Math.random() < 0.5 ? -1 : 1;
+    result.growthDelta = result.brokenGrowthDelta;
   }
 
   return result;
