@@ -3179,10 +3179,16 @@ export class ArenaScene extends Phaser.Scene {
         const regularActiveFires = Boolean(primarySlot && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill && !wizardFires);
         const anyActiveFires = wizardFires || meteorFires || deathFires || regularActiveFires;
         const skipBasicAttack = anyActiveFires;
+        const hasActiveSkillNeedingMana = (attackerMeta?.activeManaNeeded ?? 0) > 0 || attackerMeta?.canSummonWizard || attackerMeta?.hasMeteorStrike || attackerMeta?.hasDeathInstakill || attackerMeta?.canSummonImp;
+        const needsManaCharging = !anyActiveFires && hasActiveSkillNeedingMana && !attackerMeta?.disableManaGain;
 
         let damage = 0;
         let targetDefeated = false;
         let basicAttackVisualCount = 1;
+
+        if (needsManaCharging) {
+          this.addManaToAllActiveSlots(attacker);
+        }
 
         if (!skipBasicAttack) {
           if (beamLine && (!forcedTarget || forcedTarget.instanceId === beamLine.target.instanceId)) {
