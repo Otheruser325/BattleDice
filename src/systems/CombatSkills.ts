@@ -316,6 +316,7 @@ export function executeActiveSkillEffects(
       result.summonWizard = true;
       return result;
     }
+    result.needsMana = true;
     return result;
   }
 
@@ -329,6 +330,7 @@ export function executeActiveSkillEffects(
       };
       return result;
     }
+    result.needsMana = true;
     return result;
   }
 
@@ -341,6 +343,7 @@ export function executeActiveSkillEffects(
       };
       return result;
     }
+    result.needsMana = true;
     return result;
   }
 
@@ -348,6 +351,9 @@ export function executeActiveSkillEffects(
     if (canCastActive) {
       result.summonImp = true;
       return result;
+    }
+    if (manaNeeded > 0) {
+      result.needsMana = true;
     }
     return result;
   }
