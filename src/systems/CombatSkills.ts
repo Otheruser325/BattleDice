@@ -358,43 +358,63 @@ export function executeActiveSkillEffects(
     return result;
   }
 
-  if (!canCastActive) {
-    if (manaNeeded > 0) {
+  if (meta.hasSpearActive) {
+    if (canCastActive) {
+      result.spearStrike = {
+        damage: meta.activeDamage ?? 104,
+        pierceDamage: meta.pierceBehindDamage ?? 208
+      };
+    } else if (manaNeeded > 0) {
       result.needsMana = true;
     }
     return result;
   }
 
-  if (meta.hasSpearActive) {
-    result.spearStrike = {
-      damage: meta.activeDamage ?? 104,
-      pierceDamage: meta.pierceBehindDamage ?? 208
-    };
-    return result;
-  }
-
   if (meta.activeHeal !== undefined) {
-    result.healTarget = target;
-    result.healAmount = Math.max(1, Math.ceil(meta.activeHeal));
+    if (canCastActive) {
+      result.healTarget = target;
+      result.healAmount = Math.max(1, Math.ceil(meta.activeHeal));
+    } else if (manaNeeded > 0) {
+      result.needsMana = true;
+    }
     return result;
   }
 
   if ((meta.shield ?? 0) > 0) {
-    result.shieldGain = Math.max(1, Math.ceil(meta.shield ?? 0));
-    result.shieldTurns = meta.activeDurationTurns;
+    if (canCastActive) {
+      result.shieldGain = Math.max(1, Math.ceil(meta.shield ?? 0));
+      result.shieldTurns = meta.activeDurationTurns;
+    } else if (manaNeeded > 0) {
+      result.needsMana = true;
+    }
     return result;
   }
 
   if (attacker.typeId === 'Ice') {
-    result.directDamage = { target, damage: Math.max(1, Math.ceil(meta.activeDamage ?? 16)) };
-    result.iceSlow = true;
+    if (canCastActive) {
+      result.directDamage = { target, damage: Math.max(1, Math.ceil(meta.activeDamage ?? 16)) };
+      result.iceSlow = true;
+    } else if (manaNeeded > 0) {
+      result.needsMana = true;
+    }
     return result;
   }
 
   if (attacker.typeId === 'Poison') {
-    result.poisonTarget = target;
-    result.poisonDamage = Math.max(1, Math.floor((meta.poisonDamage ?? 0)));
-    result.poisonTurns = meta.activeDurationTurns ?? 1;
+    if (canCastActive) {
+      result.poisonTarget = target;
+      result.poisonDamage = Math.max(1, Math.floor((meta.poisonDamage ?? 0)));
+      result.poisonTurns = meta.activeDurationTurns ?? 1;
+    } else if (manaNeeded > 0) {
+      result.needsMana = true;
+    }
+    return result;
+  }
+
+  if (!canCastActive) {
+    if (manaNeeded > 0) {
+      result.needsMana = true;
+    }
     return result;
   }
 
