@@ -11,10 +11,8 @@
       "title": "Radiant Rally",
       "description": "Adds +1 attack count to all other friendly dice (resets on combat end).",
       "modifiers": {
-        "extraAttacks": 1,
-        "notes": [
-          "runtime:skillSfx=dice_light_skill"
-        ]
+        "allyExtraAttacks": 1,
+        "skillSfx": "dice_light_skill"
       }
     }
   ],

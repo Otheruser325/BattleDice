@@ -14,10 +14,9 @@
       "modifiers": {
         "activeDamage": 60,
         "durationTurns": 2,
-        "notes": [
-          "runtime:armorShredRate=0.2",
-          "runtime:skillSfx=dice_crack_skill"
-        ]
+        "armorReduction": 0.2,
+        "statusEffect": "fracture",
+        "skillSfx": "dice_crack_skill"
       }
     }
   ],

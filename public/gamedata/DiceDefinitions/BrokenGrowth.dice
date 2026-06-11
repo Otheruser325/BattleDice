@@ -11,9 +11,7 @@
       "title": "Corrupted Growth",
       "description": "50% chance to increase or decrease attack count by 1 for the remainder of the match.",
       "modifiers": {
-        "notes": [
-          "runtime:brokenGrowthPermanent"
-        ]
+        "brokenGrowthDelta": 1
       }
     }
   ],

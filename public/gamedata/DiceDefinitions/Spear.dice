@@ -11,11 +11,8 @@
       "title": "Piercing Spear",
       "description": "Basic attacks also stab the tile directly behind the target.",
       "modifiers": {
-        "notes": [
-          "runtime:pierceBehind=1",
-          "runtime:skillSfx=dice_spear_skill"
-        ],
-        "pierceBehindRange": 1
+        "pierceBehindRange": 1,
+        "skillSfx": "dice_spear_skill"
       }
     },
     {
@@ -24,13 +21,10 @@
       "description": "Sends in a charged spear that deals 104 damage to its target, then 208 damage to foes hit behind it with +1 piercing range.",
       "manaNeeded": 8,
       "modifiers": {
-        "notes": [
-          "runtime:spearActive",
-          "runtime:skillSfx=dice_spear_skill"
-        ],
         "activeDamage": 104,
         "pierceBehindDamage": 208,
-        "pierceBehindRange": 2
+        "pierceBehindRange": 2,
+        "skillSfx": "dice_spear_skill"
       }
     }
   ],

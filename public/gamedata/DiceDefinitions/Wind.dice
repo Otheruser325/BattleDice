@@ -8,15 +8,14 @@
     {
       "type": "Active",
       "title": "Gale Tempo",
-      "description": "Shoots twice as many attacks for 2 turns and cannot gain mana again until the effect ends.",
+      "description": "Shoots twice as many attacks for 2 turns without spending an attack, then cannot gain mana again until the effect ends.",
       "manaNeeded": 10,
       "modifiers": {
-        "extraAttacks": 2,
+        "attackCountIncrease": 1,
         "durationTurns": 2,
         "disableManaGain": true,
-        "notes": [
-          "runtime:skillSfx=dice_wind_skill"
-        ]
+        "consumeAttack": false,
+        "skillSfx": "dice_wind_skill"
       }
     }
   ],

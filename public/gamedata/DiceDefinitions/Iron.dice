@@ -11,9 +11,6 @@
       "title": "Crush Armor",
       "description": "Deals bonus damage equal to 14% of the target's current HP.",
       "modifiers": {
-        "notes": [
-          "runtime:targetCurrentHpBonusRate=0.14"
-        ],
         "targetCurrentHpBonusRate": 0.14
       }
     }

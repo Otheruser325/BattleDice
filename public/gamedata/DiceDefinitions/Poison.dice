@@ -11,12 +11,11 @@
       "description": "Deals direct toxic damage equal to its attack, then applies 20 poison damage per turn for 3 turns (stacks).",
       "manaNeeded": 5,
       "modifiers": {
+        "activeDamage": 20,
         "durationTurns": 3,
-        "notes": [
-          "Applies 20 poison damage per turn.",
-          "runtime:skillSfx=dice_poison_skill"
-        ],
-        "poisonDamage": 20
+        "poisonDamage": 20,
+        "statusEffect": "poison",
+        "skillSfx": "dice_poison_skill"
       }
     }
   ],

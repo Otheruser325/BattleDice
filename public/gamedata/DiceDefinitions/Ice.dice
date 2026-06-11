@@ -14,9 +14,8 @@
         "attackDelta": -1,
         "durationTurns": 2,
         "activeDamage": 32,
-        "notes": [
-          "runtime:skillSfx=dice_ice_skill"
-        ]
+        "statusEffect": "slow",
+        "skillSfx": "dice_ice_skill"
       }
     }
   ],
