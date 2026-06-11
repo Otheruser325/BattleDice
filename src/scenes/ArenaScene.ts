@@ -38,6 +38,7 @@ type MatchResultStage = 'victory' | 'defeat' | 'draw';
 type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy' | 'DiceCard';
 type ChallengeKey = 'daily' | 'deucifer' | 'dopamine' | 'bossfight' | null;
 type ChallengeStatus = 'not-started' | 'started' | 'completed' | 'failed';
+type DailyLoadoutMode = 'mirror' | 'player-vs-enemy' | 'random-vs-random';
 type TranscendenceBeamPattern = 'row' | 'column' | 'diagonalDown' | 'diagonalUp';
 
 interface GamePhase {
@@ -64,6 +65,7 @@ const BOT_FIRST_WIN_KEY = 'arena:claimedBotFirstWins';
 const CHALLENGE_STATUS_KEY = 'arena:challengeStatus';
 const CHALLENGE_REWARD_CLAIMS_KEY = 'arena:challengeRewardClaims';
 const BOSSFIGHT_PROGRESS_KEY = 'arena:bossfightProgress';
+const BOSSFIGHT_MENU_STATE_KEY = 'arena:bossfightMenuState';
 type BossfightBossType = 'Magician' | 'Leon';
 const BOSSFIGHT_BOSSES: BossfightBossType[] = ['Magician', 'Leon'];
 const MAX_BOSSFIGHT_LEVEL = 15;
@@ -244,8 +246,7 @@ export class ArenaScene extends Phaser.Scene {
     this.deuciferBossSummoned = false;
     this.bossfightLevel = 1;
     this.bossfightCurrentBoss = 'Magician';
-    this.bossfightMenuBoss = 'Magician';
-    this.bossfightMenuLevel = 1;
+    this.loadBossfightMenuState();
     this.bossfightBossDefeatedThisTurn = false;
     this.bossfightPendingReward = null;
     this.stunnedByInstance.clear();
@@ -779,6 +780,25 @@ export class ArenaScene extends Phaser.Scene {
     return { tokens: 1000 + (boundedLevel - 1) * 500, chips: 10 + (boundedLevel - 1) * 5 };
   }
 
+ private loadBossfightMenuState() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(BOSSFIGHT_MENU_STATE_KEY) ?? '{}') as Partial<{ boss: BossfightBossType; level: number }>;
+      const boss = BOSSFIGHT_BOSSES.includes(stored.boss as BossfightBossType) ? stored.boss as BossfightBossType : 'Magician';
+      this.bossfightMenuBoss = boss;
+      this.bossfightMenuLevel = Phaser.Math.Clamp(Math.floor(Number(stored.level ?? 1) || 1), 1, this.getBossfightHighestUnlockedLevel(boss));
+    } catch {
+      this.bossfightMenuBoss = 'Magician';
+      this.bossfightMenuLevel = 1;
+    }
+  }
+
+  private saveBossfightMenuState() {
+    localStorage.setItem(BOSSFIGHT_MENU_STATE_KEY, JSON.stringify({
+      boss: this.bossfightMenuBoss,
+      level: this.bossfightMenuLevel
+    }));
+  }
+
   private completeBossfightLevel(boss: BossfightBossType, level: number) {
     const progress = this.getBossfightProgress();
     const currentUnlocked = progress.unlockedLevels[boss];
@@ -828,6 +848,7 @@ export class ArenaScene extends Phaser.Scene {
       button.on('pointerdown', () => {
         this.bossfightMenuBoss = boss;
         this.bossfightMenuLevel = Math.min(this.bossfightMenuLevel, this.getBossfightHighestUnlockedLevel(boss));
+		this.saveBossfightMenuState();
         this.openBossfightModal();
       });
       elements.push(button, title, sub);
@@ -842,8 +863,8 @@ export class ArenaScene extends Phaser.Scene {
     const rightEnabled = this.bossfightMenuLevel < unlockedLevel;
     const left = this.add.text(cx - 148, cy + 18, '◀', { fontFamily: 'Orbitron', fontSize: '28px', color: leftEnabled ? PALETTE.accentSoft : '#4d6170' }).setOrigin(0.5).setInteractive({ useHandCursor: leftEnabled });
     const right = this.add.text(cx + 148, cy + 18, '▶', { fontFamily: 'Orbitron', fontSize: '28px', color: rightEnabled ? PALETTE.accentSoft : '#4d6170' }).setOrigin(0.5).setInteractive({ useHandCursor: rightEnabled });
-    if (leftEnabled) left.on('pointerdown', () => { this.bossfightMenuLevel -= 1; this.openBossfightModal(); });
-    if (rightEnabled) right.on('pointerdown', () => { this.bossfightMenuLevel += 1; this.openBossfightModal(); });
+    if (leftEnabled) left.on('pointerdown', () => { this.bossfightMenuLevel -= 1; this.saveBossfightMenuState(); this.openBossfightModal(); });
+    if (rightEnabled) right.on('pointerdown', () => { this.bossfightMenuLevel += 1; this.saveBossfightMenuState(); this.openBossfightModal(); });
     elements.push(levelText, left, right);
 
     elements.push(
@@ -869,6 +890,9 @@ export class ArenaScene extends Phaser.Scene {
     this.activeDailyKey = '';
     this.bossfightCurrentBoss = boss;
     this.bossfightLevel = Phaser.Math.Clamp(Math.floor(level), 1, this.getBossfightHighestUnlockedLevel(boss));
+	this.bossfightMenuBoss = boss;
+    this.bossfightMenuLevel = this.bossfightLevel;
+    this.saveBossfightMenuState();
     this.bossfightBossDefeatedThisTurn = false;
     this.bossfightPendingReward = null;
     this.configRandomMode = false;
@@ -898,11 +922,19 @@ export class ArenaScene extends Phaser.Scene {
       r.on('pointerdown', onClick);
       return [r, t, d];
     };
-    const daily = makeBtn(cx - 320, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\nRandom mode mashup\nReward: ${this.dailyHard ? '1600 Tokens + 20 Chips' : '800 Tokens + 10 Chips'}`, () => {
+    const dailyLoadoutMode = this.getDailyLoadoutMode();
+    const dailyClassMode = this.getDailyUsesRandomClassUps() ? 'Random class-ups' : 'Your class-ups';
+    const dailyModeLabel = dailyLoadoutMode === 'mirror'
+      ? 'Mirror vs mirror'
+      : dailyLoadoutMode === 'random-vs-random'
+      ? 'Random vs random'
+      : 'Your loadout vs enemy loadout';
+    const dailyReward = this.dailyHard ? '2400 Tokens + 30 Chips' : '800 Tokens + 10 Chips';
+    const daily = makeBtn(cx - 320, cy, `Daily Challenge${this.dailyHard ? ' ☠ HARD!' : ''}`, `Status: ${this.getChallengeStatusLabel(dailyStatus)}\n${dailyModeLabel}\n${dailyClassMode}\nReward: ${dailyReward}`, () => {
       this.activeChallenge = 'daily';
       if (this.getChallengeStatus('daily') !== 'completed') this.setChallengeStatus('daily', 'started');
       this.configRandomMode = true;
-      this.configRandomizeLoadoutAndClassUps = this.getDailySeededIndex('daily-mirror-mode', 2) === 0;
+      this.configRandomizeLoadoutAndClassUps = this.getDailyUsesRandomClassUps();
       this.configUseLevelling = true;
       this.configDifficulty = this.dailyHard ? 'Nightmare' : 'Medium';
       this.turnLimit = 10;
@@ -949,6 +981,17 @@ export class ArenaScene extends Phaser.Scene {
     const key = this.activeDailyKey || new Date().toISOString().slice(0, 10);
     const seed = [...`${key}:modifier:v2`].reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) >>> 0, 2166136261);
     return modifiers[seed % modifiers.length] ?? 'Classic';
+  }
+
+  private getDailyLoadoutMode(): DailyLoadoutMode {
+    const roll = this.getDailySeededIndex('daily-loadout-mode', 100);
+    if (roll < 33) return 'mirror';
+    if (roll < 67) return 'player-vs-enemy';
+    return 'random-vs-random';
+  }
+
+  private getDailyUsesRandomClassUps(): boolean {
+    return this.getDailySeededIndex('daily-class-mode', 2) === 0;
   }
 
   private getDailySeededIndex(label: string, length: number): number {
@@ -1728,27 +1771,37 @@ export class ArenaScene extends Phaser.Scene {
   private initializeBattle() {
     const allDefinitions = getAllDiceDefinitions(this);
     const shouldRandomizeLoadoutAndClassUps = this.configRandomMode && this.configRandomizeLoadoutAndClassUps;
-    const playerLoadoutDefinitions = shouldRandomizeLoadoutAndClassUps ? this.pickRandomEnemyLoadout(allDefinitions) : getDiceDefinitions(this);
+    const dailyLoadoutMode = this.activeChallenge === 'daily' ? this.getDailyLoadoutMode() : null;
+    const dailyRandomClassUps = this.activeChallenge === 'daily' && this.getDailyUsesRandomClassUps();
+    const dailyMirrorLoadout = dailyLoadoutMode === 'mirror' ? this.pickDailySeededLoadout(allDefinitions, 'mirror') : null;
+    const playerLoadoutDefinitions = dailyMirrorLoadout
+      ?? (dailyLoadoutMode === 'random-vs-random'
+        ? this.pickDailySeededLoadout(allDefinitions, 'player')
+        : shouldRandomizeLoadoutAndClassUps && this.activeChallenge !== 'daily'
+        ? this.pickRandomEnemyLoadout(allDefinitions)
+        : getDiceDefinitions(this));
 
     const effectiveLevel = (raw: number) => this.configUseLevelling ? raw : 1;
 
     const playerClassLevels = new Map<DiceTypeId, number>();
     const hardDaily = this.activeChallenge === 'daily' && this.dailyHard;
-    const playerMaxClass = hardDaily ? Math.min(11, this.getDailySeededIndex('player-class-cap', 11) + 1) : 15;
+    const playerMaxClass = hardDaily ? 10 : 15;
+    const playerClassLevelsBySlot: number[] = [];
     const playerDefs = playerLoadoutDefinitions
-      .map((definition) => {
-        const classLevel = shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
-          ? (this.activeChallenge === 'daily'
-            ? Math.min(playerMaxClass, this.getDailySeededIndex(`player-class-${definition.typeId}-${playerClassLevels.size}`, playerMaxClass) + 1)
-            : Phaser.Math.Between(1, 15))
+      .map((definition, index) => {
+        const classLevel = this.activeChallenge === 'daily' && this.configUseLevelling
+          ? (dailyRandomClassUps
+            ? Math.min(playerMaxClass, this.getDailySeededIndex(`player-class-${definition.typeId}-${index}`, playerMaxClass) + 1)
+            : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel))
+          : shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
+          ? Phaser.Math.Between(1, 15)
           : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
         playerClassLevels.set(definition.typeId, classLevel);
+		playerClassLevelsBySlot[index] = classLevel;
         return this.applyClassProgress(definition, classLevel);
       });
 
     const playerBestClass = [...playerClassLevels.values()].reduce((max, lvl) => Math.max(max, lvl), 1);
-    const enemyBonusClass = hardDaily ? 3 : 0;
-
     const enemyRawDefs = this.activeChallenge === 'bossfight'
       ? [this.bossfightCurrentBoss]
         .map((typeId) => this.definitions.get(typeId))
@@ -1761,18 +1814,26 @@ export class ArenaScene extends Phaser.Scene {
       ? ['Healing', 'Light', 'Battery', 'Meteor', 'Wind']
         .map((typeId) => allDefinitions.find((d) => d.typeId === typeId))
         .filter((d): d is DiceDefinition => Boolean(d))
+		: dailyMirrorLoadout
+      ? dailyMirrorLoadout
+      : dailyLoadoutMode
+      ? this.pickDailySeededLoadout(allDefinitions, 'enemy')
       : this.pickRandomEnemyLoadout(allDefinitions);
-    const enemyDefs = enemyRawDefs.map((definition) => {
+    const enemyDefs = enemyRawDefs.map((definition, index) => {
       const classLevel = this.activeChallenge === 'bossfight'
         ? this.bossfightLevel
         : this.activeChallenge === 'deucifer'
         ? 11
         : this.activeChallenge === 'dopamine'
         ? 7
+		: this.activeChallenge === 'daily' && this.configUseLevelling
+        ? (hardDaily
+          ? Math.min(15, Math.max(playerClassLevelsBySlot[index % Math.max(1, playerClassLevelsBySlot.length)] ?? playerBestClass, playerBestClass) + 5)
+          : dailyRandomClassUps
+          ? this.getDailySeededIndex(`enemy-class-${definition.typeId}-${index}`, 15) + 1
+          : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel))
         : shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
-        ? (this.activeChallenge === 'daily'
-          ? Math.min(15, this.getDailySeededIndex(`enemy-class-${definition.typeId}-${this.enemyClassLevels.size}`, 15) + 1 + enemyBonusClass)
-          : Phaser.Math.Between(1, 15))
+        ? Phaser.Math.Between(1, 15)
         : effectiveLevel(this.rollEnemyClassLevel());
       this.enemyClassLevels.set(definition.typeId, classLevel);
       return this.applyClassProgress(definition, classLevel);
@@ -4853,6 +4914,11 @@ export class ArenaScene extends Phaser.Scene {
         if (range >= 5) return Math.random() < 0.8 ? this.pickRandomColumn([2, 3, 4]) : Phaser.Math.Between(0, GRID_SIZE - 1);
         return Phaser.Math.Between(0, GRID_SIZE - 1);
       case 'Nightmare':
+		if (this.shouldNightmareTakeInitiative()) {
+          if (range >= 5) return this.pickRandomColumn([0, 1]);
+          if (range === 4) return this.pickRandomColumn([0, 1, 2]);
+          return 0;
+        }
         if (range <= 3) return 0;
         if (range === 4) return 1;
         if (range === 5) return 2;
@@ -4863,6 +4929,14 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  private shouldNightmareTakeInitiative(): boolean {
+    if (this.configDifficulty !== 'Nightmare') return false;
+    const playerDice = this.gameState.dice.filter((die) => die.ownerId === 'player' && die.zone === 'board' && !die.isDestroyed && die.gridPosition);
+    if (playerDice.length === 0) return false;
+    const backlineCount = playerDice.filter((die) => (die.gridPosition?.col ?? GRID_SIZE) <= 1).length;
+    const longRangeCount = playerDice.filter((die) => (this.getDefinitionForInstance(die)?.range ?? 0) >= 5).length;
+    return backlineCount / playerDice.length >= 0.6 || (backlineCount >= 2 && longRangeCount >= 2);
+  }
 
   private getDiceCardDescription(key: string): { icon: string; title: string; rarity: string; desc: string; color?: string } {
     const [name, rarity = ''] = key.split(':');
@@ -5044,7 +5118,7 @@ export class ArenaScene extends Phaser.Scene {
       return Array.from({ length: weight }, () => definition);
     });
   }
-
+	
   private async applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
@@ -5173,7 +5247,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     const meta = getRuntimeSkillMeta(definition);
-    const damage = meta.beamDamage ?? 300;
+    const damage = meta.beamDamage ?? 600;
     const targetPos = target.gridPosition;
     const targetBoardSide = this.getBoardSideForDie(target);
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
@@ -5465,9 +5539,10 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private showDieInfoPopup(die: DiceInstanceState) {
-    const definition = this.getDefinitionForInstance(die);
+    const liveDie = this.gameState.dice.find((candidate) => candidate.instanceId === die.instanceId) ?? die;
+    const definition = this.getDefinitionForInstance(liveDie);
     if (!definition) return;
-    if (this.dieInfoPopupInstanceId === die.instanceId && this.dieInfoPopup) {
+    if (this.dieInfoPopupInstanceId === liveDie.instanceId && this.dieInfoPopup) {
       this.dieInfoPopupTimer?.remove(false);
       this.dieInfoPopup.destroy(true);
       this.dieInfoPopup = null;
@@ -5477,33 +5552,37 @@ export class ArenaScene extends Phaser.Scene {
     this.dieInfoPopupTimer?.remove(false);
     this.dieInfoPopup?.destroy(true);
     const { width } = this.scale;
-    const activeBuffs = this.getActiveBuffSummaryForDie(die);
-    const attackCountBuffs = this.getAttackCountBuffLines(die);
-    const statusEffects = this.getStatusEffectSummaryForDie(die);
+    const activeBuffs = this.getActiveBuffSummaryForDie(liveDie);
+    const attackCountBuffs = this.getAttackCountBuffLines(liveDie);
+    const statusEffects = this.getStatusEffectSummaryForDie(liveDie);
     const meta = getRuntimeSkillMeta(definition);
-    const isDeathTransformed = meta.hasDeathTransform && this.deathDiceTransformed.has(die.instanceId);
-    const isAlternateTransformed = isDeathTransformed || (meta.transformOnOddPip && this.oddPipTransformed.has(die.instanceId));
+    const pip = liveDie.ownerId === 'player' ? (this.dicePips.get(liveDie.instanceId) ?? 0) : (this.enemyDicePips.get(liveDie.instanceId) ?? 0);
+    const isPlacementPhase = this.gamePhase.stage === 'placement';
+    const isDeathTransformed = meta.hasDeathTransform && this.deathDiceTransformed.has(liveDie.instanceId);
+    const isTranscendenceTransformed = meta.hasTranscendence && (isPlacementPhase ? pip === 6 : this.transcendenceTransformed.has(liveDie.instanceId));
+    const isOddPipTransformed = meta.transformOnOddPip && (isPlacementPhase ? pip % 2 === 1 : this.oddPipTransformed.has(liveDie.instanceId));
+    const isAlternateTransformed = isDeathTransformed || isTranscendenceTransformed || isOddPipTransformed;
     const transformSkillIndices = new Set(meta.transformSkillIndices?.length ? meta.transformSkillIndices : meta.transformSkillIndex === undefined ? [] : [meta.transformSkillIndex]);
     const displayTitle = isAlternateTransformed ? (meta.transformTitle ?? definition.title) : definition.title;
-    const typeUpgradeMult = this.getTypeUpgradeMultiplier(die);
+    const typeUpgradeMult = this.getTypeUpgradeMultiplier(liveDie);
     const effectiveAtk = Math.max(1, Math.floor(definition.attack * typeUpgradeMult));
-    const soulCount = meta.canConjureSouls ? this.getConjuredSoulCount(die, meta) : 0;
+    const soulCount = meta.canConjureSouls ? this.getConjuredSoulCount(liveDie, meta) : 0;
     const soulCap = meta.maxSouls;
     const soulBoost = meta.soulBoostPercent !== undefined && soulCount > 0 ? ` (+${Math.round(meta.soulBoostPercent * soulCount * 100)}% stats)` : '';
     const soulNote = meta.canConjureSouls ? ` • SOULS ${soulCount}${meta.noMaxSouls || soulCap === undefined ? '' : `/${soulCap}`}${soulBoost}` : '';
     const footprintNote = this.getFootprintForDefinition(definition) > 1 ? ` • ${this.getFootprintForDefinition(definition)}x${this.getFootprintForDefinition(definition)}` : '';
-    const stats = this.add.text(width / 2, 50, `${displayTitle} • HP ${die.currentHealth}/${die.maxHealth} • ATK ${effectiveAtk} • RNG ${definition.range}${footprintNote}${soulNote} • TARGET ${definition.targetingMode.toUpperCase()}`, {
+    const stats = this.add.text(width / 2, 50, `${displayTitle} • HP ${liveDie.currentHealth}/${liveDie.maxHealth} • ATK ${effectiveAtk} • RNG ${definition.range}${footprintNote}${soulNote} • TARGET ${definition.targetingMode.toUpperCase()}`, {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: PALETTE.text
     }).setOrigin(0.5);
-    const activeSlots = this.getActiveManaSlots(die);
-    const mana = Math.max(0, ...activeSlots.map((slot) => this.getActiveMana(die.instanceId, slot.key)));
-    const shieldHp = this.shieldHpByInstance.get(die.instanceId) ?? 0;
+    const activeSlots = this.getActiveManaSlots(liveDie);
+    const mana = Math.max(0, ...activeSlots.map((slot) => this.getActiveMana(liveDie.instanceId, slot.key)));
+    const shieldHp = this.shieldHpByInstance.get(liveDie.instanceId) ?? 0;
     const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
     const manaNote = activeSlots.length > 0 ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
+    const classLevel = this.instanceClassLevels.get(liveDie.instanceId) ?? 1;
     const visibleSkills = definition.skills.filter((skill, index) => {
       if ((skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') && classLevel < 6) return false;
       if (isAlternateTransformed && transformSkillIndices.size > 0) return transformSkillIndices.has(index);
@@ -5552,7 +5631,7 @@ export class ArenaScene extends Phaser.Scene {
       popupElements.push(label);
     });
     this.dieInfoPopup = this.add.container(0, 0, popupElements).setDepth(330).setScale(0.96).setAlpha(0);
-    this.dieInfoPopupInstanceId = die.instanceId;
+    this.dieInfoPopupInstanceId = liveDie.instanceId;
     this.tweens.add({ targets: this.dieInfoPopup, alpha: 1, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.Out' });
     this.dieInfoPopupTimer = this.time.delayedCall(2200, () => {
       if (!this.dieInfoPopup) return;
@@ -5791,8 +5870,8 @@ export class ArenaScene extends Phaser.Scene {
       this.setChallengeStatus('daily', 'completed');
       const dailyClaimKey = `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}`;
       if (!this.hasChallengeRewardClaimed(dailyClaimKey)) {
-        tokenReward += this.dailyHard ? 1600 : 800;
-        chipReward += this.dailyHard ? 20 : 10;
+        tokenReward += this.dailyHard ? 2400 : 800;
+        chipReward += this.dailyHard ? 30 : 10;
         this.markChallengeRewardClaimed(dailyClaimKey);
       }
     }
