@@ -51,6 +51,96 @@ function getCombinedModifiers(definition: DiceDefinition): DiceSkillModifier {
   return definition.skills.reduce((acc, skill) => ({ ...acc, ...(skill.modifiers ?? {}) }), {} as DiceSkillModifier);
 }
 
+function parseRuntimeRate(notes: string[] | undefined, key: string): number | undefined {
+  const note = (notes ?? []).find((entry) => entry.startsWith(key));
+  if (!note) return undefined;
+  const parsed = Number(note.split('=')[1]);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function formatValue(value: number): string {
+  return Number.isInteger(value) ? `${value}` : `${Number(value.toFixed(2))}`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function replaceLiteralNumber(text: string, sourceValue: number | undefined, displayValue: number | undefined): string {
+  if (sourceValue === undefined || displayValue === undefined || !Number.isFinite(sourceValue) || !Number.isFinite(displayValue)) return text;
+  const from = formatValue(sourceValue);
+  const to = formatValue(displayValue);
+  if (from === to) return text;
+  return text.replace(new RegExp(`(^|[^\\d.])${escapeRegExp(from)}(?![\\d.])`, 'g'), `$1${to}`);
+}
+
+function replaceLiteralPercent(text: string, sourceValue: number | undefined, displayValue: number | undefined): string {
+  if (sourceValue === undefined || displayValue === undefined || !Number.isFinite(sourceValue) || !Number.isFinite(displayValue)) return text;
+  const from = formatPercent(sourceValue);
+  const to = formatPercent(displayValue);
+  if (from === to) return text;
+  return text.replace(new RegExp(escapeRegExp(from), 'g'), to);
+}
+
+function replaceTurnCount(text: string, sourceValue: number | undefined, displayValue: number | undefined): string {
+  if (sourceValue === undefined || displayValue === undefined || !Number.isFinite(sourceValue) || !Number.isFinite(displayValue)) return text;
+  const from = formatValue(sourceValue);
+  const to = formatValue(displayValue);
+  if (from === to) return text;
+  return text.replace(new RegExp(`(for\\s+)${escapeRegExp(from)}(\\s+turns?)`, 'gi'), `$1${to}$2`);
+}
+
+function scaleDisplayDamage(value: number | undefined, multiplier: number): number | undefined {
+  return value === undefined ? undefined : Math.max(1, Math.round(value * Math.max(1, multiplier)));
+}
+
+function getDynamicSkillDescription(description: string, source: DiceSkillModifier, display: DiceSkillModifier, skillDamageMultiplier = 1): string {
+  let text = description;
+  const flatDamageKeys: Array<keyof DiceSkillModifier> = [
+    'splashDamage',
+    'chainDamage',
+    'poisonDamage',
+    'activeDamage',
+    'activeHeal',
+    'meteorDamage',
+    'lavaDamage',
+    'beamDamage',
+    'pierceBehindDamage',
+    'hammerDamage',
+    'shield'
+  ];
+
+  flatDamageKeys.forEach((key) => {
+    const sourceValue = source[key];
+    const displayValue = display[key];
+    if (typeof sourceValue !== 'number' || typeof displayValue !== 'number') return;
+    text = replaceLiteralNumber(text, sourceValue, scaleDisplayDamage(displayValue, skillDamageMultiplier));
+  });
+
+  text = replaceLiteralNumber(text, source.damageRange?.[0], scaleDisplayDamage(display.damageRange?.[0], skillDamageMultiplier));
+  text = replaceLiteralNumber(text, source.damageRange?.[1], scaleDisplayDamage(display.damageRange?.[1], skillDamageMultiplier));
+  text = replaceTurnCount(text, source.durationTurns, display.durationTurns);
+  text = replaceLiteralNumber(text, Math.abs(source.attackDelta ?? Number.NaN), Math.abs(display.attackDelta ?? Number.NaN));
+  text = replaceLiteralNumber(text, source.numAttacksBoosted, display.numAttacksBoosted);
+  text = replaceLiteralNumber(text, source.manaGain, display.manaGain);
+  text = replaceLiteralNumber(text, source.pierceBehindRange, display.pierceBehindRange);
+  text = replaceLiteralNumber(text, source.allyExtraAttacks, display.allyExtraAttacks);
+  text = replaceLiteralNumber(text, source.attackCountIncrease, display.attackCountIncrease);
+  text = replaceLiteralNumber(text, source.growthDelta, display.growthDelta);
+  text = replaceLiteralNumber(text, source.brokenGrowthDelta, display.brokenGrowthDelta);
+
+  text = replaceLiteralPercent(text, source.reviveChance, display.reviveChance);
+  text = replaceLiteralPercent(text, source.targetMaxHpBonusRate, display.targetMaxHpBonusRate);
+  text = replaceLiteralPercent(text, source.targetCurrentHpBonusRate, display.targetCurrentHpBonusRate);
+  text = replaceLiteralPercent(text, source.distanceDamageBonusRatePerTile, display.distanceDamageBonusRatePerTile);
+  text = replaceLiteralPercent(text, source.berserkThresholdRate, display.berserkThresholdRate);
+  text = replaceLiteralPercent(text, source.berserkDamageMultiplier !== undefined ? source.berserkDamageMultiplier - 1 : undefined, display.berserkDamageMultiplier !== undefined ? display.berserkDamageMultiplier - 1 : undefined);
+  text = replaceLiteralPercent(text, source.soulBoostPercent, display.soulBoostPercent);
+  text = replaceLiteralPercent(text, source.armorReduction, display.armorReduction);
+
+  return text;
+}
+
 export function applyClassProgression(definition: DiceDefinition, classLevel: number): DiceDefinition {
   const boundedClassLevel = Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(classLevel)));
   const multiplier = isBossDefinition(definition)
@@ -100,14 +190,10 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.numAttacksBoosted = source.numAttacksBoosted + Math.floor(classUps / 4);
     }
 
-    if (definition.typeId === 'Crack' && source.notes?.some((note) => note.startsWith('runtime:armorShredRate='))) {
-      const base = source.notes.find((note) => note.startsWith('runtime:armorShredRate='));
-      const parsed = base ? Number(base.split('=')[1]) : 0;
-      if (Number.isFinite(parsed)) {
-        const nextRate = Math.min(0.95, parsed + CRACK_ARMOR_SHRED_RATE_PER_CLASS * classUps);
-        modifiers.notes = (source.notes ?? []).filter((note) => !note.startsWith('runtime:armorShredRate='));
-        modifiers.notes.push(`runtime:armorShredRate=${nextRate.toFixed(2)}`);
-      }
+    const armorReduction = source.armorReduction ?? parseRuntimeRate(source.notes, 'runtime:armorShredRate=');
+    if (armorReduction !== undefined) {
+      modifiers.armorReduction = Math.min(0.95, armorReduction + CRACK_ARMOR_SHRED_RATE_PER_CLASS * classUps);
+      modifiers.notes = (source.notes ?? []).filter((note) => !note.startsWith('runtime:armorShredRate='));
     }
 
     if (definition.typeId === 'Battery' && source.manaGain !== undefined) {
@@ -134,7 +220,11 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + 0.02 * classUps;
     }
 
-    return { ...skill, modifiers };
+    const scaledSkill = { ...skill, modifiers };
+    return {
+      ...scaledSkill,
+      description: getClassScaledSkillDescription(definition, scaledSkill, 1, source)
+    };
   });
 
   const scaled = {
@@ -144,99 +234,44 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     skills
   };
 
-  return {
-    ...scaled,
-    skills: scaled.skills.map((skill) => ({
-      ...skill,
-      description: getClassScaledSkillDescription(scaled, skill)
-    }))
-  };
+  return scaled;
 }
 
-export function getClassScaledSkillDescription(definition: DiceDefinition, skill = definition.skills[0], skillDamageMultiplier = 1): string {
+export function getClassScaledSkillDescription(definition: DiceDefinition, skill = definition.skills[0], skillDamageMultiplier = 1, sourceModifiers?: DiceSkillModifier): string {
   const modifiers = getModifier(skill);
-  const notes = modifiers.notes ?? [];
-  const scaleSkillDamage = (value: number | undefined) => value === undefined ? undefined : Math.max(1, Math.round(value * Math.max(1, skillDamageMultiplier)));
+  const description = skill?.description ?? '';
+  const dynamicDescription = getDynamicSkillDescription(description, sourceModifiers ?? modifiers, modifiers, skillDamageMultiplier);
+  if (dynamicDescription.trim()) return dynamicDescription;
 
   if (modifiers.damageRange) {
-    const min = scaleSkillDamage(modifiers.damageRange[0]) ?? modifiers.damageRange[0];
-    const max = scaleSkillDamage(modifiers.damageRange[1]) ?? modifiers.damageRange[1];
+    const min = scaleDisplayDamage(modifiers.damageRange[0], skillDamageMultiplier) ?? modifiers.damageRange[0];
+    const max = scaleDisplayDamage(modifiers.damageRange[1], skillDamageMultiplier) ?? modifiers.damageRange[1];
     return `Deals random damage from ${min} to ${max} to a foe.`;
   }
   if (modifiers.splashDamage !== undefined) {
-    return `Attacks cause ${scaleSkillDamage(modifiers.splashDamage)} splash damage to adjacent foes on the target's board.`;
+    return `Attacks cause ${scaleDisplayDamage(modifiers.splashDamage, skillDamageMultiplier)} splash damage to adjacent foes on the target's board.`;
   }
   if (modifiers.chainDamage !== undefined) {
-    return `Attacks chain onto another foe on the target's board within 2 tiles for ${scaleSkillDamage(modifiers.chainDamage)} bonus damage.`;
+    return `Attacks chain onto another foe on the target's board within 2 tiles for ${scaleDisplayDamage(modifiers.chainDamage, skillDamageMultiplier)} bonus damage.`;
   }
   if (modifiers.activeHeal !== undefined) {
-    return `Heals the weakest ally for ${scaleSkillDamage(modifiers.activeHeal)} HP.`;
-  }
-  if (notes.includes('runtime:spearActive') && modifiers.activeDamage !== undefined && modifiers.pierceBehindDamage !== undefined) {
-    return `Sends in a charged spear that deals ${scaleSkillDamage(modifiers.activeDamage)} damage to its target, then ${scaleSkillDamage(modifiers.pierceBehindDamage)} damage behind it with extended range.`;
-  }
-  if (notes.includes('runtime:judgmentHammer') && modifiers.hammerDamage !== undefined) {
-    return `Summons a judge hammer on the weakest foe for ${scaleSkillDamage(modifiers.hammerDamage)} damage in a 3x3 radius. Hammer kills can retrigger this effect.`;
-  }
-  if (notes.includes('runtime:solitudePreCombat') && modifiers.targetMaxHpBonusRate !== undefined) {
-    return `When isolated from adjacent allies on the same board, basic attacks deal bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
-  }
-  if (notes.includes('runtime:pierceBehind=1') && modifiers.pierceBehindRange !== undefined) {
-    return `Basic attacks also stab ${modifiers.pierceBehindRange} ${modifiers.pierceBehindRange === 1 ? 'tile' : 'tiles'} behind the target.`;
+    return `Heals the weakest ally for ${scaleDisplayDamage(modifiers.activeHeal, skillDamageMultiplier)} HP.`;
   }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
-    return `Deals ${scaleSkillDamage(modifiers.activeDamage)} damage and immediately reduces the target's current attack count by ${Math.abs(modifiers.attackDelta)} for ${modifiers.durationTurns ?? 1} turns.`;
+    return `Deals ${scaleDisplayDamage(modifiers.activeDamage, skillDamageMultiplier)} damage and immediately changes the target's current attack count by ${modifiers.attackDelta} for ${modifiers.durationTurns ?? 1} turns.`;
   }
-  if (definition.typeId === 'Crack' && modifiers.activeDamage !== undefined) {
-    const shredNote = (modifiers.notes ?? []).find((note) => note.startsWith('runtime:armorShredRate='));
-    const shredRate = shredNote ? Number(shredNote.split('=')[1]) : 0.2;
-    return `Deal ${scaleSkillDamage(modifiers.activeDamage)} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
+  if (modifiers.activeDamage !== undefined && modifiers.armorReduction !== undefined) {
+    const shredRate = modifiers.armorReduction;
+    return `Deal ${scaleDisplayDamage(modifiers.activeDamage, skillDamageMultiplier)} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
   }
   if (modifiers.poisonDamage !== undefined) {
-    return `Deals direct toxic damage equal to its attack, then applies ${scaleSkillDamage(modifiers.poisonDamage)} poison damage per turn for ${modifiers.durationTurns ?? 3} turns (stacks).`;
-  }
-  if (notes.includes('runtime:meteorStrike') && modifiers.meteorDamage !== undefined && modifiers.lavaDamage !== undefined) {
-    const turns = modifiers.durationTurns ?? (notes.includes('runtime:tripleMeteor') ? 4 : 3);
-    if (notes.includes('runtime:tripleMeteor')) {
-      return `Summons 3 magic meteors on random enemy-grid tiles, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a plus pattern. Leaves lava on each epicentre for ${turns} turns that deals ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
-    }
-    return `Throws a striking meteor at a random foe, causing ${scaleSkillDamage(modifiers.meteorDamage)} damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern, lasting ${turns} turns. Foes standing on lava take ${scaleSkillDamage(modifiers.lavaDamage)} damage at combat start.`;
-  }
-  if (notes.includes('runtime:hasTranscendence') && modifiers.beamDamage !== undefined) {
-    return `If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${scaleSkillDamage(modifiers.beamDamage)} damage.`;
-  }
-  if (notes.some((note) => note.startsWith('runtime:deuciferOddSiphon='))) {
-    return skill?.description ?? '';
-  }
-  if (notes.some((note) => note.startsWith('runtime:deuciferEvenDamage='))) {
-    return skill?.description ?? '';
-  }
-  if (notes.includes('runtime:manaManipulator') && modifiers.attackDelta !== undefined) {
-    return `Steals ${Math.abs(modifiers.attackDelta)} mana from all enemy charging actives.`;
-  }
-  if (notes.includes('runtime:wizardSpellcast') && modifiers.manaGain !== undefined) {
-    return `Feeds the Magician +${modifiers.manaGain} mana.`;
-  }
-  if (notes.includes('runtime:magicianSummonWizard')) {
-    return skill?.description ?? '';
-  }
-  if (notes.includes('runtime:leonFuriousClaw') && modifiers.targetMaxHpBonusRate !== undefined) {
-    return `Nearby enemies trigger double claw attacks with a 20% chance to crit for 100% bonus damage. Rage gains +${formatPercent(modifiers.targetMaxHpBonusRate)} basic attack damage per fallen foe.`;
-  }
-  if (notes.includes('runtime:leonMightyRoar')) {
-    return skill?.description ?? '';
-  }
-  if (notes.includes('runtime:leonRage') && modifiers.targetMaxHpBonusRate !== undefined) {
-    return `Leon gains +${formatPercent(modifiers.targetMaxHpBonusRate)} basic attack damage for each fallen foe.`;
-  }
-  if (notes.includes('runtime:deuciferSummonImp')) {
-    return skill?.description ?? '';
+    return `Applies ${scaleDisplayDamage(modifiers.poisonDamage, skillDamageMultiplier)} poison damage per turn for ${modifiers.durationTurns ?? 3} turns (stacks).`;
   }
   if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
     return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
   }
   if (modifiers.shield !== undefined) {
-    return `Gain +${scaleSkillDamage(modifiers.shield)} shield for ${modifiers.durationTurns ?? 2} turns.`;
+    return `Gain +${scaleDisplayDamage(modifiers.shield, skillDamageMultiplier)} shield for ${modifiers.durationTurns ?? 2} turns.`;
   }
   if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {
     return `The next ${modifiers.numAttacksBoosted} basic attacks deal ${formatPercent(modifiers.numAttacksDamageMult - 1)} more damage.`;
@@ -260,7 +295,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `When defeated, it comes back to life with a ${formatPercent(modifiers.reviveChance)} chance.`;
   }
 
-  return skill?.description ?? '';
+  return description;
 }
 
 export function getClassProgressionPreview(definition: DiceDefinition, classLevel: number): ClassProgressionPreview {
@@ -316,22 +351,9 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
     if (delta > 0) skillDeltas.push(`Soul health/damage boost +${formatPercent(delta)}`);
   }
 
-  const runtimeRateNotes: Array<{ key: string; label: string }> = [
-    { key: 'runtime:armorShredRate=', label: 'Fracture armor reduction' }
-  ];
-  runtimeRateNotes.forEach(({ key, label }) => {
-    const parseRate = (mods: DiceSkillModifier): number | undefined => {
-      const note = (mods.notes ?? []).find((entry) => entry.startsWith(key));
-      if (!note) return undefined;
-      const parsed = Number(note.split('=')[1]);
-      return Number.isFinite(parsed) ? parsed : undefined;
-    };
-    const currentRate = parseRate(currentModifiers);
-    const nextRate = parseRate(nextModifiers);
-    if (currentRate !== undefined && nextRate !== undefined && nextRate > currentRate) {
-      skillDeltas.push(`${label} +${formatPercent(nextRate - currentRate)}`);
-    }
-  });
+  if (currentModifiers.armorReduction !== undefined && nextModifiers.armorReduction !== undefined && nextModifiers.armorReduction > currentModifiers.armorReduction) {
+    skillDeltas.push(`Fracture armor reduction +${formatPercent(nextModifiers.armorReduction - currentModifiers.armorReduction)}`);
+  }
 
   if (currentModifiers.berserkThresholdRate !== undefined && nextModifiers.berserkThresholdRate !== undefined) {
     const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;

@@ -1,4 +1,4 @@
-import type { DiceDefinition, DiceInstanceState } from '../types/game';
+import type { DiceDefinition, DiceInstanceState, DiceStatusEffect } from '../types/game';
 import { getBoardSideCombatDistance } from './CombatRange';
 
 export interface DiceSkillRuntimeMeta {
@@ -33,10 +33,13 @@ export interface DiceSkillRuntimeMeta {
   lavaDamage?: number;
   beamDamage?: number;
   pierceBehindRange?: number;
+  activePierceBehindRange?: number;
   pierceBehindDamage?: number;
   hammerDamage?: number;
   shield?: number;
   armorShredRate?: number;
+  activeStatusEffect?: DiceStatusEffect;
+  attackCountIncrease?: number;
   hasSpearActive?: boolean;
   hasSolitudePreCombat?: boolean;
   hasJudgmentHammer?: boolean;
@@ -72,6 +75,9 @@ export interface DiceSkillRuntimeMeta {
   leonRageRate?: number;
   isLockedUntilClass6?: boolean;
   disableManaGain?: boolean;
+  consumeAttack?: boolean;
+  growthDelta?: number;
+  brokenGrowthDelta?: number;
 }
 
 
@@ -98,11 +104,13 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
   const parsedBeamDamage = beamNote ? Number(beamNote.split('=')[1]) : undefined;
 
   const getNoteValue = (prefix: string) => notes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
+  const getActiveNoteValue = (prefix: string) => activeModifiers?.notes?.find((note) => note.startsWith(prefix))?.slice(prefix.length);
   const hasDeathInstakill = notes.includes('runtime:deathInstakill');
   const allNotes = allModifiers.flatMap((modifier) => modifier.notes ?? []);
   const getAnyNoteValue = (prefix: string) => allNotes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
   const oddSiphonRate = Number(getAnyNoteValue('runtime:deuciferOddSiphon='));
   const evenDamageRate = Number(getAnyNoteValue('runtime:deuciferEvenDamage='));
+  const activeStatusEffect = (activeModifiers as { statusEffect?: DiceStatusEffect } | undefined)?.statusEffect;
 
   return {
     randomDamage: range ? { min: range[0], max: range[1] } : undefined,
@@ -111,11 +119,12 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     splashDamage: modifiers?.splashDamage,
     chainDamage: modifiers?.chainDamage,
     reviveChance,
-    combatStartExtraAttacks: primary?.type === 'CombatStart' ? (modifiers?.extraAttacks ?? 0) : 0,
-    combatEndExtraAttacks: primary?.type === 'CombatEnd' && !notes.includes('runtime:growthPermanent') ? (modifiers?.extraAttacks ?? 0) : 0,
+    combatStartExtraAttacks: primary?.type === 'CombatStart' ? (modifiers?.allyExtraAttacks ?? modifiers?.extraAttacks ?? 0) : 0,
+    combatEndExtraAttacks: primary?.type === 'CombatEnd' && modifiers?.growthDelta === undefined && modifiers?.brokenGrowthDelta === undefined && !notes.includes('runtime:growthPermanent') ? (modifiers?.extraAttacks ?? 0) : 0,
     targetingMode: definition.targetingMode,
     activeManaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
     activeExtraAttacks: activeSkill ? (activeModifiers?.extraAttacks ?? 0) : 0,
+    attackCountIncrease: activeSkill ? (activeModifiers?.attackCountIncrease ?? 0) : 0,
     activeAttackDelta: activeSkill ? (activeModifiers?.attackDelta ?? 0) : 0,
     activeDurationTurns: activeSkill ? (activeModifiers?.durationTurns ?? 0) : 0,
     poisonDamage: (activeModifiers as { poisonDamage?: number } | undefined)?.poisonDamage ?? (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
@@ -135,17 +144,21 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     meteorDamage: (activeModifiers as { meteorDamage?: number } | undefined)?.meteorDamage ?? (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
     lavaDamage: (activeModifiers as { lavaDamage?: number } | undefined)?.lavaDamage ?? (modifiers as { lavaDamage?: number } | undefined)?.lavaDamage,
     beamDamage: (modifiers as { beamDamage?: number } | undefined)?.beamDamage ?? (Number.isFinite(parsedBeamDamage) ? parsedBeamDamage : undefined),
-    pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange ?? (activeModifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
+    pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
+    activePierceBehindRange: (activeModifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
     pierceBehindDamage: (activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage ?? (modifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage,
     hammerDamage: (modifiers as { hammerDamage?: number } | undefined)?.hammerDamage,
     shield: (activeModifiers as { shield?: number } | undefined)?.shield ?? (modifiers as { shield?: number } | undefined)?.shield,
     armorShredRate: (() => {
+      const explicitArmorReduction = (activeModifiers as { armorReduction?: number } | undefined)?.armorReduction ?? (modifiers as { armorReduction?: number } | undefined)?.armorReduction;
+      if (explicitArmorReduction !== undefined) return explicitArmorReduction;
       const activeNotes = activeModifiers?.notes ?? [];
       const shredNote = [...activeNotes, ...notes].find((note) => note.startsWith('runtime:armorShredRate='));
       const parsed = shredNote ? Number(shredNote.split('=')[1]) : undefined;
       return Number.isFinite(parsed) ? parsed : undefined;
     })(),
-    hasSpearActive: notes.includes('runtime:spearActive') || (activeModifiers?.notes ?? []).includes('runtime:spearActive'),
+    activeStatusEffect,
+    hasSpearActive: Boolean((activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage !== undefined || notes.includes('runtime:spearActive') || (activeModifiers?.notes ?? []).includes('runtime:spearActive')),
     hasSolitudePreCombat: notes.includes('runtime:solitudePreCombat'),
     hasJudgmentHammer: notes.includes('runtime:judgmentHammer'),
     hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence',
@@ -153,16 +166,18 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     hasDeathTransform: notes.includes('runtime:deathTransform'),
     hasDeathInstakill,
     deathInstakillMana: hasDeathInstakill ? (primary?.manaNeeded ?? 12) : undefined,
-    hasGrowthPermanent: notes.includes('runtime:growthPermanent'),
-    hasBrokenGrowthPermanent: notes.includes('runtime:brokenGrowthPermanent'),
+    hasGrowthPermanent: modifiers?.growthDelta !== undefined || notes.includes('runtime:growthPermanent'),
+    hasBrokenGrowthPermanent: modifiers?.brokenGrowthDelta !== undefined || notes.includes('runtime:brokenGrowthPermanent'),
+    growthDelta: modifiers?.growthDelta,
+    brokenGrowthDelta: modifiers?.brokenGrowthDelta,
     transformAccent: getNoteValue('runtime:transformAccent='),
     transformSymbol: getNoteValue('runtime:transformSymbol='),
     transformTitle: getNoteValue('runtime:transformTitle='),
     alternateButton: getNoteValue('runtime:alternateButton='),
     baseButton: getNoteValue('runtime:baseButton='),
-    skillSfxKey: getAnyNoteValue('runtime:skillSfx=') ?? getNoteValue('runtime:skillSfx='),
-    attackSfxKey: getNoteValue('runtime:attackSfx='),
-    transformedAttackSfxKey: getNoteValue('runtime:attackSfxTransformed='),
+    skillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx=') ?? getAnyNoteValue('runtime:skillSfx=') ?? getNoteValue('runtime:skillSfx='),
+    attackSfxKey: (modifiers as { attackSfx?: string } | undefined)?.attackSfx ?? getNoteValue('runtime:attackSfx='),
+    transformedAttackSfxKey: (modifiers as { transformedAttackSfx?: string } | undefined)?.transformedAttackSfx ?? getNoteValue('runtime:attackSfxTransformed='),
     canConjureSouls: Boolean((modifiers as { canConjureSouls?: boolean } | undefined)?.canConjureSouls),
     conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' } | undefined)?.conjureType),
     maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls,
@@ -180,7 +195,8 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     hasLeonRage: allNotes.includes('runtime:leonRage'),
     leonRageRate: allNotes.includes('runtime:leonRage') ? ((modifiers as { targetMaxHpBonusRate?: number } | undefined)?.targetMaxHpBonusRate ?? 0.2) : undefined,
     isLockedUntilClass6: allNotes.includes('runtime:unlockAtClass6'),
-    disableManaGain: Boolean((activeModifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain ?? (modifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain)
+    disableManaGain: Boolean((activeModifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain),
+    consumeAttack: (activeModifiers as { consumeAttack?: boolean } | undefined)?.consumeAttack ?? true
   };
 }
 

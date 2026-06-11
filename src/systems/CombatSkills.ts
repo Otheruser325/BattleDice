@@ -1,4 +1,4 @@
-import type { DiceDefinition, DiceInstanceState } from '../types/game';
+import type { DiceDefinition, DiceInstanceState, DiceStatusEffect } from '../types/game';
 import { getRuntimeSkillMeta, type DiceSkillRuntimeMeta } from './DiceSkills';
 
 export interface SkillContext {
@@ -56,7 +56,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   meteorStrike?: { damage: number; lavaDamage: number; lavaTurns: number; targetBoardSide: 'player' | 'enemy' };
   deathInstakill?: { damage: number; targetIsBoss: boolean };
   summonImp?: boolean;
-  spearStrike?: { damage: number; pierceDamage: number };
+  spearStrike?: { damage: number; pierceDamage: number; pierceRange: number };
   healTarget?: DiceInstanceState;
   shieldGain?: number;
   shieldTurns?: number;
@@ -64,7 +64,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   poisonDamage?: number;
   poisonTurns?: number;
   directDamage?: { target: DiceInstanceState; damage: number };
-  windExtraAttacks?: number;
+  attackCountIncrease?: number;
   extraAttacksTurns?: number;
   armorShredTarget?: DiceInstanceState;
   armorShredRate?: number;
@@ -72,7 +72,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   attackDeltaTarget?: DiceInstanceState;
   attackDelta?: number;
   attackDeltaTurns?: number;
-  iceSlow?: boolean;
+  statusEffect?: DiceStatusEffect;
   needsMana?: boolean;
 }
 
@@ -232,11 +232,13 @@ export function executeCombatEndSkillEffects(
 
   if (meta.hasGrowthPermanent) {
     result.applyGrowth = true;
+    result.growthDelta = meta.growthDelta ?? 1;
   }
 
   if (meta.hasBrokenGrowthPermanent) {
     result.applyBrokenGrowth = true;
-    result.brokenGrowthDelta = Math.random() < 0.5 ? -1 : 1;
+    const delta = Math.max(1, Math.abs(meta.brokenGrowthDelta ?? 1));
+    result.brokenGrowthDelta = Math.random() < 0.5 ? -delta : delta;
     result.growthDelta = result.brokenGrowthDelta;
   }
 
@@ -378,7 +380,8 @@ export function executeActiveSkillEffects(
     if (canCastActive) {
       result.spearStrike = {
         damage: meta.activeDamage ?? 104,
-        pierceDamage: meta.pierceBehindDamage ?? 208
+        pierceDamage: meta.pierceBehindDamage ?? 208,
+        pierceRange: meta.activePierceBehindRange ?? meta.pierceBehindRange ?? 1
       };
     } else if (manaNeeded > 0) {
       result.needsMana = true;
@@ -406,27 +409,6 @@ export function executeActiveSkillEffects(
     return result;
   }
 
-  if (attacker.typeId === 'Ice') {
-    if (canCastActive) {
-      result.directDamage = { target, damage: Math.max(1, Math.ceil(meta.activeDamage ?? 16)) };
-      result.iceSlow = true;
-    } else if (manaNeeded > 0) {
-      result.needsMana = true;
-    }
-    return result;
-  }
-
-  if (attacker.typeId === 'Poison') {
-    if (canCastActive) {
-      result.poisonTarget = target;
-      result.poisonDamage = Math.max(1, Math.floor((meta.poisonDamage ?? 0)));
-      result.poisonTurns = meta.activeDurationTurns ?? 1;
-    } else if (manaNeeded > 0) {
-      result.needsMana = true;
-    }
-    return result;
-  }
-
   if (!canCastActive) {
     if (manaNeeded > 0) {
       result.needsMana = true;
@@ -434,24 +416,32 @@ export function executeActiveSkillEffects(
     return result;
   }
 
-  if (meta.activeDamage !== undefined && !meta.hasSpearActive && !meta.hasMeteorStrike && !(meta.hasDeathInstakill && isDeathTransformed) && attacker.typeId !== 'Ice' && attacker.typeId !== 'Poison') {
+  result.statusEffect = meta.activeStatusEffect;
+
+  if (meta.activeDamage !== undefined && !meta.hasSpearActive && !meta.hasMeteorStrike && !(meta.hasDeathInstakill && isDeathTransformed)) {
     result.directDamage = { target, damage: Math.max(1, Math.ceil(meta.activeDamage ?? 1)) };
   }
 
-  if ((meta.activeExtraAttacks ?? 0) > 0 && meta.activeDurationTurns !== undefined) {
-    if (attacker.typeId === 'Wind') {
-      result.windExtraAttacks = 1;
-      result.extraAttacksTurns = meta.activeDurationTurns;
-    } else {
-      result.extraAttacksTurns = meta.activeDurationTurns;
-      applyBonusAttacks(result, meta.activeExtraAttacks!);
-    }
+  if ((meta.attackCountIncrease ?? 0) > 0 && meta.activeDurationTurns !== undefined) {
+    result.attackCountIncrease = meta.attackCountIncrease;
+    result.extraAttacksTurns = meta.activeDurationTurns;
   }
 
-  if ((meta.armorShredRate ?? 0) > 0 && meta.activeDurationTurns !== undefined) {
+  if ((meta.activeExtraAttacks ?? 0) > 0 && meta.activeDurationTurns !== undefined) {
+    result.extraAttacksTurns = meta.activeDurationTurns;
+    applyBonusAttacks(result, meta.activeExtraAttacks!);
+  }
+
+  if ((meta.armorShredRate ?? 0) > 0 && meta.activeDurationTurns !== undefined && (meta.activeStatusEffect === 'fracture' || meta.activeStatusEffect === undefined)) {
     result.armorShredTarget = target;
     result.armorShredRate = meta.armorShredRate!;
     result.armorShredTurns = meta.activeDurationTurns;
+  }
+
+  if (meta.activeStatusEffect === 'poison' && meta.poisonDamage !== undefined) {
+    result.poisonTarget = target;
+    result.poisonDamage = Math.max(1, Math.floor(meta.poisonDamage));
+    result.poisonTurns = meta.activeDurationTurns ?? 1;
   }
 
   if ((meta.activeAttackDelta ?? 0) !== 0 && meta.activeDurationTurns !== undefined) {

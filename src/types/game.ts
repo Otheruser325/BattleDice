@@ -2,12 +2,15 @@ export type DiceTypeId = string;
 export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDeath';
 export type DiceRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
 export type DiceTargetingMode = 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
+export type DiceStatusEffect = 'slow' | 'poison' | 'fracture';
 
 export interface DiceSkillModifier {
   attackDelta?: number;
   healthDelta?: number;
   attackMultiplier?: number;
   extraAttacks?: number;
+  allyExtraAttacks?: number;
+  attackCountIncrease?: number;
   durationTurns?: number;
   splashDamage?: number;
   chainDamage?: number;
@@ -36,6 +39,8 @@ export interface DiceSkillModifier {
   maxSouls?: number;
   soulBoostPercent?: number;
   shield?: number;
+  armorReduction?: number;
+  statusEffect?: DiceStatusEffect;
   tauntDuration?: number;
   tauntRange?: number;
   jumpRange?: number;
@@ -43,6 +48,12 @@ export interface DiceSkillModifier {
   numAttacksDamageMult?: number;
   manaGain?: number;
   disableManaGain?: boolean;
+  consumeAttack?: boolean;
+  growthDelta?: number;
+  brokenGrowthDelta?: number;
+  skillSfx?: string;
+  attackSfx?: string;
+  transformedAttackSfx?: string;
 }
 
 
