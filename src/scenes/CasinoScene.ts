@@ -600,19 +600,17 @@ export class CasinoScene extends Phaser.Scene {
 
   private rollChestOpenRewards(type: ChestType, openCount: number): ChestOpenRewards {
     const merged = new Map<string, ChestRewardEntry>();
-    const pendingCopies = new Map<string, number>();
     const tokenRange = CHEST_TOKEN_REWARDS[type];
     let diceTokens = 0;
     let emptyRewardRolls = 0;
 
     for (let i = 0; i < openCount; i++) {
       diceTokens += Phaser.Math.Between(tokenRange[0], tokenRange[1]);
-      const reward = this.rollChestReward(type, pendingCopies);
+      const reward = this.rollChestReward(type);
       if (!reward) {
         emptyRewardRolls += 1;
         continue;
       }
-      pendingCopies.set(reward.typeId, (pendingCopies.get(reward.typeId) ?? 0) + reward.copies);
 
       const current = merged.get(reward.typeId);
       merged.set(reward.typeId, current
@@ -631,11 +629,16 @@ export class CasinoScene extends Phaser.Scene {
     return { entries: [...merged.values()], diceTokens };
   }
 
-  private rollChestReward(type: ChestType, pendingCopies: Map<string, number>): ChestRewardEntry | null {
+  private getRemainingChestCopyCapacity(typeId: string): number {
+    const progress = getDiceProgress(this, typeId);
+    const unlockCopy = progress.unlocked || DEFAULT_LOADOUT_IDS.has(typeId) ? 0 : 1;
+    return getRemainingUsefulCopies(this, typeId) + unlockCopy;
+  }
+
+  private rollChestReward(type: ChestType): ChestRewardEntry | null {
     const defs = getAllDiceDefinitions(this).filter((definition) => {
       if (!canReceiveUsefulCopies(this, definition.typeId)) return false;
-      const pending = pendingCopies.get(definition.typeId) ?? 0;
-      return pending < getRemainingUsefulCopies(this, definition.typeId);
+      return this.getRemainingChestCopyCapacity(definition.typeId) > 0;
     });
     const byRarity = (rarity: string, pool = defs) => pool.filter((definition) => definition.rarity === rarity);
     const table = CHEST_DROP_RATES[type];
@@ -646,9 +649,7 @@ export class CasinoScene extends Phaser.Scene {
       const pool = byRarity(entry.rarity);
       let totalRemaining = 0;
       for (const def of pool) {
-        const pending = pendingCopies.get(def.typeId) ?? 0;
-        const remaining = getRemainingUsefulCopies(this, def.typeId);
-        totalRemaining += Math.max(0, remaining - pending);
+        totalRemaining += this.getRemainingChestCopyCapacity(def.typeId);
       }
       rarityRemainingCapacity.set(entry.rarity, totalRemaining);
     }
@@ -658,23 +659,25 @@ export class CasinoScene extends Phaser.Scene {
       while (remainingPool.length > 0) {
         // Prefer dice with more remaining useful copies
         remainingPool.sort((a, b) => {
-          const aPending = pendingCopies.get(a.typeId) ?? 0;
-          const bPending = pendingCopies.get(b.typeId) ?? 0;
-          const aRemaining = Math.max(0, getRemainingUsefulCopies(this, a.typeId) - aPending);
-          const bRemaining = Math.max(0, getRemainingUsefulCopies(this, b.typeId) - bPending);
-          return bRemaining - aRemaining;
+          return this.getRemainingChestCopyCapacity(b.typeId) - this.getRemainingChestCopyCapacity(a.typeId);
         });
         const die = remainingPool[0];
-        const copies = Phaser.Math.Between(copyRange[0], copyRange[1]);
+        const capacity = this.getRemainingChestCopyCapacity(die.typeId);
+        const copies = Math.min(Phaser.Math.Between(copyRange[0], copyRange[1]), capacity);
+        if (copies <= 0) {
+          remainingPool.shift();
+          continue;
+        }
         const progress = getDiceProgress(this, die.typeId);
         const beforeCopies = progress.copies;
         const wasUnlocked = progress.unlocked || DEFAULT_LOADOUT_IDS.has(die.typeId);
         grantDiceCopies(this, die.typeId, copies);
-        const afterCopies = getDiceProgress(this, die.typeId).copies;
+        const afterProgress = getDiceProgress(this, die.typeId);
+        const afterCopies = afterProgress.copies;
         const grantedCopies = Math.max(0, afterCopies - beforeCopies);
-        // Only mark as NEW if the die was not previously unlocked AND we actually granted copies
-        const isNew = !wasUnlocked && grantedCopies > 0;
-        if (grantedCopies > 0) return { typeId: die.typeId, title: die.title, rarity, copies: grantedCopies, isNew };
+        const unlockedNow = !wasUnlocked && afterProgress.unlocked;
+        const effectiveCopies = grantedCopies + (unlockedNow ? 1 : 0);
+        if (effectiveCopies > 0) return { typeId: die.typeId, title: die.title, rarity, copies: effectiveCopies, isNew: unlockedNow };
         remainingPool.shift();
       }
       return null;
@@ -819,7 +822,7 @@ export class CasinoScene extends Phaser.Scene {
     const displayDie = getDiceModalDisplayDefinition(definition, progress.classLevel, showAlternate);
     
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 540, 390, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
+    const panel = this.add.rectangle(width / 2, height / 2, 540, 340, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
     
     const rarityColors: Record<string, string> = {
       Common: '#ffffff',
@@ -829,20 +832,19 @@ export class CasinoScene extends Phaser.Scene {
       Legendary: '#ffd84d',
       Mythic: '#ff4d4d'
     };
-    const rarityColor = rarityColors[definition.rarity] ?? PALETTE.text;
+    const rarityColor = rarityColors[displayDie.rarity] ?? PALETTE.text;
     
     const cls = progress.classLevel;
-    const isMaxed = cls >= 15;
     
     // Title with class level
-    const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, {
+    const title = this.add.text(width / 2, height / 2 - 140, `${displayDie.title} • CLASS ${cls}/15`, {
       fontFamily: 'Orbitron',
       fontSize: '20px',
       color: displayDie.accent
     }).setOrigin(0.5);
     
     // Stats with class progression
-    const stats = this.add.text(width / 2, height / 2 - 116, `ATK ${displayDie.attack}  |  HP ${displayDie.health}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, {
+    const stats = this.add.text(width / 2, height / 2 - 106, `ATK ${displayDie.attack}  |  HP ${displayDie.health}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
@@ -850,13 +852,13 @@ export class CasinoScene extends Phaser.Scene {
     }).setOrigin(0.5);
     
     // Rarity label and colored rarity text (matching DiceScene style)
-    const rarityLabel = this.add.text(width / 2 - 140, height / 2 - 94, 'RARITY', {
+    const rarityLabel = this.add.text(width / 2 - 140, height / 2 - 84, 'RARITY', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
       align: 'right'
     }).setOrigin(1, 0.5);
-    const rarityStats = this.add.text(width / 2 - 126, height / 2 - 94, definition.rarity, {
+    const rarityStats = this.add.text(width / 2 - 126, height / 2 - 84, displayDie.rarity, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: rarityColor,
@@ -864,30 +866,17 @@ export class CasinoScene extends Phaser.Scene {
     }).setOrigin(0, 0.5);
     
     // Target and copies (matching DiceScene style)
-    const targetStats = this.add.text(width / 2 + 12, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
+    const targetStats = this.add.text(width / 2 + 12, height / 2 - 84, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
       align: 'left'
     }).setOrigin(0, 0.5);
     
-    // Class circle indicator
-    const classCircle = this.add.circle(width / 2 + 220, height / 2 - 92, 28, Phaser.Display.Color.HexStringToColor(rarityColor).color, 0.95).setStrokeStyle(2, 0xffffff, 0.55);
-    const classLabel = this.add.text(width / 2 + 220, height / 2 - 100, 'CLASS', {
-      fontFamily: 'Orbitron',
-      fontSize: '9px',
-      color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff'
-    }).setOrigin(0.5);
-    const classLevelText = this.add.text(width / 2 + 220, height / 2 - 84, `${cls}`, {
-      fontFamily: 'Orbitron',
-      fontSize: '18px',
-      color: definition.rarity === 'Common' || definition.rarity === 'Legendary' ? '#111111' : '#ffffff'
-    }).setOrigin(0.5);
-    
     // Skill info with scrolling (matching DiceScene style)
     const skillViewportWidth = 470;
-    const skillViewportHeight = 112;
-    const skillViewportTop = height / 2 - 88;
+    const skillViewportHeight = 132;
+    const skillViewportTop = height / 2 - 70;
     const skillTextContent = formatSkillInfo(displayDie);
     const skillContainer = this.add.container(width / 2, skillViewportTop);
     const skill = this.add.text(0, 0, skillTextContent, {
@@ -922,7 +911,7 @@ export class CasinoScene extends Phaser.Scene {
     
     let close = () => undefined;
     const alternateLabel = getDiceAlternateFormLabel(definition, showAlternate);
-    const altBtn = this.add.text(width / 2, height / 2 + 142, alternateLabel ?? '', {
+    const altBtn = this.add.text(width / 2, height / 2 + 120, alternateLabel ?? '', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.accentSoft,
@@ -938,12 +927,12 @@ export class CasinoScene extends Phaser.Scene {
     } else {
       altBtn.setVisible(false);
     }
-    const closeBtn = this.add.text(width / 2, height / 2 + 170, 'Close', {
+    const closeBtn = this.add.text(width / 2, height / 2 + 146, 'Close', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted,
       backgroundColor: '#173247',
-      padding: { left: 10, right: 10, top: 6, bottom: 6 }
+      padding: { left: 8, right: 8, top: 4, bottom: 4 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     
     const escHandler = () => close();
@@ -951,7 +940,7 @@ export class CasinoScene extends Phaser.Scene {
     close = () => {
       this.input.off('wheel', wheelHandler);
       this.input.keyboard?.off('keydown-ESC', escHandler);
-      [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, altBtn, closeBtn].forEach((obj) => obj.destroy());
+      [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, skillContainer, skillMaskShape, skillScrollHint, altBtn, closeBtn].forEach((obj) => obj.destroy());
       this.activeRewardDetailClose = null;
     };
     this.activeRewardDetailClose = close;
@@ -959,7 +948,7 @@ export class CasinoScene extends Phaser.Scene {
     overlay.on('pointerdown', () => undefined);
     
     // Set depth for all elements
-    [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, altBtn, closeBtn].forEach((el) => (el as any).setDepth?.(450));
+    [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, skillContainer, skillMaskShape, skillScrollHint, altBtn, closeBtn].forEach((el) => (el as any).setDepth?.(450));
   }
 
   private getDiceTextureKey(pip: number) {

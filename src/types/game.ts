@@ -14,6 +14,8 @@ export interface DiceSkillModifier {
   durationTurns?: number;
   maxStacks?: number;
   splashDamage?: number;
+  splashDamageRatesByOddPip?: [number, number, number];
+  heatwaveDamageRate?: number;
   chainDamage?: number;
   poisonDamage?: number;
   activeDamage?: number;
@@ -30,6 +32,8 @@ export interface DiceSkillModifier {
   damageRange?: [number, number];
   targetMaxHpBonusRate?: number;
   targetCurrentHpBonusRate?: number;
+  lowHpThresholdRate?: number;
+  lowHpDamageBonusRate?: number;
   berserkThresholdRate?: number;
   berserkDamageMultiplier?: number;
   pipMatchAllyAttackDelta?: number;
@@ -43,6 +47,7 @@ export interface DiceSkillModifier {
   noMaxSouls?: boolean;
   soulBoostPercent?: number;
   deathTransform?: boolean;
+  transformOnOddPip?: boolean;
   deathInstakill?: boolean;
   transformSkillIndex?: number;
   transformSkillIndices?: number[];
@@ -60,6 +65,7 @@ export interface DiceSkillModifier {
   statusEffect?: DiceStatusEffect;
   tauntDuration?: number;
   tauntRange?: number;
+  lockRange?: number;
   jumpRange?: number;
   numAttacksBoosted?: number;
   numAttacksDamageMult?: number;

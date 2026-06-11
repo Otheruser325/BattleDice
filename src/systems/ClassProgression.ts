@@ -11,6 +11,7 @@ export const SOLITUDE_MAX_HP_RATE_PER_CLASS = 0.002;
 export const CRACK_ARMOR_SHRED_RATE_PER_CLASS = 0.01;
 export const BATTERY_MANA_GAIN_PER_5_CLASS = 1;
 export const SOUL_BOOST_RATIO_PER_CLASS = 0.005;
+export const LOW_HP_DAMAGE_RATE_PER_CLASS = 0.02;
 
 export interface ClassProgressionPreview {
   attackDelta: number;
@@ -132,6 +133,8 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
   text = replaceLiteralPercent(text, source.reviveChance, display.reviveChance);
   text = replaceLiteralPercent(text, source.targetMaxHpBonusRate, display.targetMaxHpBonusRate);
   text = replaceLiteralPercent(text, source.targetCurrentHpBonusRate, display.targetCurrentHpBonusRate);
+  text = replaceLiteralPercent(text, source.lowHpThresholdRate, display.lowHpThresholdRate);
+  text = replaceLiteralPercent(text, source.lowHpDamageBonusRate, display.lowHpDamageBonusRate);
   text = replaceLiteralPercent(text, source.distanceDamageBonusRatePerTile, display.distanceDamageBonusRatePerTile);
   text = replaceLiteralPercent(text, source.berserkThresholdRate, display.berserkThresholdRate);
   text = replaceLiteralPercent(text, source.berserkDamageMultiplier !== undefined ? source.berserkDamageMultiplier - 1 : undefined, display.berserkDamageMultiplier !== undefined ? display.berserkDamageMultiplier - 1 : undefined);
@@ -176,6 +179,10 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     if (definition.typeId === 'Iron' && source.targetCurrentHpBonusRate !== undefined) {
       modifiers.targetCurrentHpBonusRate = source.targetCurrentHpBonusRate + IRON_CURRENT_HP_RATE_PER_CLASS * classUps;
+    }
+
+    if (source.lowHpDamageBonusRate !== undefined) {
+      modifiers.lowHpDamageBonusRate = Math.min(0.78, source.lowHpDamageBonusRate + LOW_HP_DAMAGE_RATE_PER_CLASS * classUps);
     }
 
     if (definition.typeId === 'Berserk' && source.berserkThresholdRate !== undefined) {
@@ -241,6 +248,16 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   const modifiers = getModifier(skill);
   const description = skill?.description ?? '';
   const dynamicDescription = getDynamicSkillDescription(description, sourceModifiers ?? modifiers, modifiers, skillDamageMultiplier);
+  if (dynamicDescription.trim() && dynamicDescription !== description) return dynamicDescription;
+  if (modifiers.targetMaxHpBonusRate !== undefined) {
+    return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
+  }
+  if (modifiers.targetCurrentHpBonusRate !== undefined) {
+    return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP.`;
+  }
+  if (modifiers.lowHpThresholdRate !== undefined && modifiers.lowHpDamageBonusRate !== undefined) {
+    return `Targeted foes below ${formatPercent(modifiers.lowHpThresholdRate)} of their max HP receive ${formatPercent(modifiers.lowHpDamageBonusRate)} more damage.`;
+  }
   if (dynamicDescription.trim()) return dynamicDescription;
 
   if (modifiers.damageRange) {
@@ -275,12 +292,6 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   }
   if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {
     return `The next ${modifiers.numAttacksBoosted} basic attacks deal ${formatPercent(modifiers.numAttacksDamageMult - 1)} more damage.`;
-  }
-  if (modifiers.targetMaxHpBonusRate !== undefined) {
-    return `Deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
-  }
-  if (modifiers.targetCurrentHpBonusRate !== undefined) {
-    return `Deals bonus damage equal to ${formatPercent(modifiers.targetCurrentHpBonusRate)} of the target's current HP.`;
   }
   if (modifiers.distanceDamageBonusRatePerTile !== undefined) {
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
@@ -345,6 +356,10 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   if (currentModifiers.targetCurrentHpBonusRate !== undefined && nextModifiers.targetCurrentHpBonusRate !== undefined) {
     const delta = nextModifiers.targetCurrentHpBonusRate - currentModifiers.targetCurrentHpBonusRate;
     if (delta > 0) skillDeltas.push(`Current HP damage +${formatPercent(delta)}`);
+  }
+  if (currentModifiers.lowHpDamageBonusRate !== undefined && nextModifiers.lowHpDamageBonusRate !== undefined) {
+    const delta = nextModifiers.lowHpDamageBonusRate - currentModifiers.lowHpDamageBonusRate;
+    if (delta > 0) skillDeltas.push(`Low HP damage +${formatPercent(delta)}`);
   }
   if (currentModifiers.soulBoostPercent !== undefined && nextModifiers.soulBoostPercent !== undefined) {
     const delta = nextModifiers.soulBoostPercent - currentModifiers.soulBoostPercent;

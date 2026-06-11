@@ -7,7 +7,11 @@ export interface DiceSkillRuntimeMeta {
   randomDamage?: { min: number; max: number };
   targetMaxHpBonusRate?: number;
   targetCurrentHpBonusRate?: number;
+  lowHpThresholdRate?: number;
+  lowHpDamageBonusRate?: number;
   splashDamage?: number;
+  splashDamageRatesByOddPip?: [number, number, number];
+  heatwaveDamageRate?: number;
   chainDamage?: number;
   reviveChance?: number;
   combatStartExtraAttacks?: number;
@@ -49,6 +53,7 @@ export interface DiceSkillRuntimeMeta {
   statusEffects?: DiceStatusEffect[];
   tauntRange?: number;
   tauntDuration?: number;
+  lockRange?: number;
   stunDuration?: number;
   attackCountIncrease?: number;
   hasSpearActive?: boolean;
@@ -59,6 +64,7 @@ export interface DiceSkillRuntimeMeta {
   hasTranscendence?: boolean;
   hasMeteorStrike?: boolean;
   hasDeathTransform?: boolean;
+  transformOnOddPip?: boolean;
   hasDeathInstakill?: boolean;
   deathInstakillMana?: number;
   hasGrowthPermanent?: boolean;
@@ -167,12 +173,23 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
   const stunModifiers = allModifiers.find((modifier) =>
     parseStatusEffect((modifier as { statusEffect?: string }).statusEffect) === 'stun'
     || (modifier.notes ?? []).includes('runtime:stun'));
+  const lockModifiers = allModifiers.find((modifier) => (modifier as { lockRange?: number }).lockRange !== undefined);
+  const splashDamageRatesByOddPip = allModifiers
+    .map((modifier) => (modifier as { splashDamageRatesByOddPip?: [number, number, number] }).splashDamageRatesByOddPip)
+    .find((rates): rates is [number, number, number] => Array.isArray(rates) && rates.length === 3 && rates.every((rate) => typeof rate === 'number' && Number.isFinite(rate)));
+  const heatwaveDamageRate = allModifiers
+    .map((modifier) => (modifier as { heatwaveDamageRate?: number }).heatwaveDamageRate)
+    .find((rate): rate is number => typeof rate === 'number' && Number.isFinite(rate));
 
   return {
     randomDamage: range ? { min: range[0], max: range[1] } : undefined,
     targetMaxHpBonusRate: explicitRate ?? (Number.isFinite(parsedRate) ? parsedRate : undefined),
     targetCurrentHpBonusRate: explicitCurrentRate ?? (Number.isFinite(parsedCurrentRate) ? parsedCurrentRate : undefined),
+    lowHpThresholdRate: (modifiers as { lowHpThresholdRate?: number } | undefined)?.lowHpThresholdRate,
+    lowHpDamageBonusRate: (modifiers as { lowHpDamageBonusRate?: number } | undefined)?.lowHpDamageBonusRate,
     splashDamage: modifiers?.splashDamage,
+    splashDamageRatesByOddPip,
+    heatwaveDamageRate,
     chainDamage: modifiers?.chainDamage,
     reviveChance,
     combatStartExtraAttacks: primary?.type === 'CombatStart' ? (modifiers?.allyExtraAttacks ?? modifiers?.extraAttacks ?? 0) : 0,
@@ -222,6 +239,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     statusEffects,
     tauntRange: (tauntModifiers as { tauntRange?: number } | undefined)?.tauntRange,
     tauntDuration: (tauntModifiers as { tauntDuration?: number; durationTurns?: number } | undefined)?.tauntDuration ?? (tauntModifiers as { durationTurns?: number } | undefined)?.durationTurns,
+    lockRange: (lockModifiers as { lockRange?: number } | undefined)?.lockRange,
     stunDuration: (stunModifiers as { durationTurns?: number } | undefined)?.durationTurns,
     hasSpearActive: Boolean((activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage !== undefined || notes.includes('runtime:spearActive') || (activeModifiers?.notes ?? []).includes('runtime:spearActive')),
     hasSolitudePreCombat: Boolean((modifiers as { checkForAdjacentAllies?: boolean } | undefined)?.checkForAdjacentAllies ?? notes.includes('runtime:solitudePreCombat')),
@@ -231,6 +249,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence',
     hasMeteorStrike: Boolean(allModifiers.some((modifier) => (modifier as { meteorDamage?: number }).meteorDamage !== undefined) || allNotes.includes('runtime:meteorStrike')),
     hasDeathTransform: Boolean((modifiers as { deathTransform?: boolean } | undefined)?.deathTransform ?? notes.includes('runtime:deathTransform')),
+    transformOnOddPip: Boolean((modifiers as { transformOnOddPip?: boolean } | undefined)?.transformOnOddPip),
     hasDeathInstakill,
     deathInstakillMana: hasDeathInstakill ? (activeSkill?.manaNeeded ?? primary?.manaNeeded ?? 12) : undefined,
     hasGrowthPermanent: modifiers?.growthDelta !== undefined || notes.includes('runtime:growthPermanent'),
