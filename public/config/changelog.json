@@ -1,6 +1,19 @@
 {
   "entries": [
     {
+      "version": "v0.9.0-beta",
+      "date": "2026-06-11",
+      "notes": [
+        "Dice additions: Solar, Slingshot and Lock.",
+        "Dice Card: added Vanguard and Centerline dice cards.",
+        "Refactored dice descriptions and class-up handling to bolster consistency",
+        "Refactored skill and runtime metadata handling to futureproof the game from stale edge cases",
+        "Added active status effect view in the dice info panel in arena",
+        "Dice balance: --Ice: Slow can now stack up to 3 times on the same target --Deucifer: Damage increased from 60 -> 80 --Deucifer: Raise From Hell mana charge rate reduced from 15 -> 14 --Leon: Attack range reduced from 5 -> 4 --Leon: Furious Claw stun duration increased from 1 turn -> 2 turns",
+        "Fixed a bug related to freebie shop offers for endgame progression"
+      ]
+    },
+    {
       "version": "v0.8.0-beta",
       "date": "2026-06-07",
       "notes": [
