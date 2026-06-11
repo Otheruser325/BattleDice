@@ -11,13 +11,10 @@
       "title": "Lonely Dominion",
       "description": "When no ally occupies any adjacent tile on the same board, basic attacks deal bonus damage equal to 8% of the target's max HP.",
       "modifiers": {
-        "notes": [
-          "runtime:targetMaxHpBonusRate=0.08",
-          "runtime:solitudePreCombat",
-          "runtime:skillSfx=dice_solitude_skill",
-          "runtime:attackSfx=dice_solitude_attack"
-        ],
-        "targetMaxHpBonusRate": 0.08
+        "targetMaxHpBonusRate": 0.08,
+        "checkForAdjacentAllies": true,
+        "skillSfx": "dice_solitude_skill",
+        "attackSfx": "dice_solitude_attack"
       }
     }
   ],

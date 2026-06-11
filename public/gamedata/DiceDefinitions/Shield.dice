@@ -11,12 +11,10 @@
       "title": "Provoke Frontline",
       "description": "Taunts nearby enemies in a 2-tile radius.",
       "modifiers": {
+        "statusEffect": "taunt",
         "tauntRange": 2,
         "tauntDuration": 99,
-        "notes": [
-          "runtime:skillSfx=dice_shield_skill",
-          "runtime:shieldTaunt"
-        ]
+        "skillSfx": "dice_shield_skill"
       }
     },
     {

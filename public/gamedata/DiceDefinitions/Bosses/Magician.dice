@@ -25,13 +25,11 @@
       "manaNeeded": 12,
       "modifiers": {
         "meteorDamage": 200,
+        "meteorCount": 3,
+        "hasRandomOrientation": true,
         "lavaDamage": 100,
         "durationTurns": 4,
-        "notes": [
-          "runtime:meteorStrike",
-          "runtime:tripleMeteor",
-          "runtime:skillSfx=dice_meteor_skill"
-        ]
+        "skillSfx": "dice_meteor_skill"
       }
     },
     {

@@ -14,10 +14,7 @@
         "canConjureSouls": true,
         "conjureType": "ally",
         "noMaxSouls": true,
-        "soulBoostPercent": 0.2,
-        "notes": [
-          "runtime:soulHarvestPassive"
-        ]
+        "soulBoostPercent": 0.2
       }
     }
   ],

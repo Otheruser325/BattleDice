@@ -22,6 +22,8 @@
       "title": "Mighty Roar",
       "description": "If no dice are in range, charges to the nearest enemy die and immediately executes Furious Claw, stunning its target for 2 turns.",
       "modifiers": {
+        "statusEffect": "stun",
+        "durationTurns": 2,
         "notes": [
           "runtime:leonMightyRoar"
         ]

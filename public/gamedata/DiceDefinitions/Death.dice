@@ -10,22 +10,29 @@
       "type": "Passive",
       "title": "Death Incarnate",
       "description": "Conjures defeated ally souls. After capturing 2 ally souls, transforms into Instakill Form, doubling its max HP and fully heals itself. In Instakill Form: accumulates mana and instantly kills a target.",
-      "manaNeeded": 12,
       "modifiers": {
         "canConjureSouls": true,
         "conjureType": "ally",
         "maxSouls": 2,
-        "notes": [
-          "runtime:deathTransform",
-          "runtime:deathInstakill",
-          "runtime:transformAccent=#c06bdb",
-          "runtime:transformSymbol=\u2620",
-          "runtime:transformTitle=Death Dice \u2014 Instakill Form",
-          "runtime:alternateButton=View Instakill Form",
-          "runtime:baseButton=View Death Dice",
-          "runtime:skillSfx=dice_death_skill_01",
-          "runtime:attackSfxTransformed=dice_death_t_attack"
-        ]
+        "deathTransform": true,
+        "transformSkillIndex": 1,
+        "transformAccent": "#c06bdb",
+        "transformSymbol": "\u2620",
+        "transformTitle": "Death Dice \u2014 Instakill Form",
+        "alternateButton": "View Instakill Form",
+        "baseButton": "View Death Dice",
+        "skillSfx": "dice_death_skill_01",
+        "transformedAttackSfx": "dice_death_t_attack"
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Reaper's Touch",
+      "description": "Instantly kills a target. Bosses instead take 10x Death Dice's attack as damage.",
+      "manaNeeded": 12,
+      "modifiers": {
+        "deathInstakill": true,
+        "skillSfx": "dice_death_skill_01"
       }
     }
   ],

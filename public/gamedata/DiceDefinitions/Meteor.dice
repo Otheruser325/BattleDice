@@ -13,12 +13,10 @@
       "manaNeeded": 7,
       "modifiers": {
         "durationTurns": 3,
-        "notes": [
-          "runtime:meteorStrike",
-          "runtime:skillSfx=dice_meteor_skill"
-        ],
+        "meteorCount": 1,
         "meteorDamage": 120,
-        "lavaDamage": 50
+        "lavaDamage": 50,
+        "skillSfx": "dice_meteor_skill"
       }
     }
   ],

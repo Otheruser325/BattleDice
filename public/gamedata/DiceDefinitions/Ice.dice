@@ -13,6 +13,7 @@
       "modifiers": {
         "attackDelta": -1,
         "durationTurns": 2,
+        "maxStacks": 3,
         "activeDamage": 32,
         "statusEffect": "slow",
         "skillSfx": "dice_ice_skill"
