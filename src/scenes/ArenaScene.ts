@@ -5061,20 +5061,6 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private pickRandomEnemyLoadout(pool: DiceDefinition[]): DiceDefinition[] {
-    if (this.activeChallenge === 'daily') {
-      const weighted = this.buildDifficultyWeightedPool(pool);
-      const byId = new Map(weighted.map((d) => [d.typeId, d]));
-      const unique = [...new Set(weighted.map((d) => d.typeId))].sort();
-      const selected: DiceDefinition[] = [];
-      for (let i = 0; i < 5 && unique.length > 0; i++) {
-        const idx = this.getDailySeededIndex(`loadout-${i}`, unique.length);
-        const typeId = unique.splice(idx, 1)[0];
-        const def = byId.get(typeId);
-        if (def) selected.push(def);
-      }
-      return selected.slice(0, 5);
-    }
-
     const weightedPool = this.buildDifficultyWeightedPool(pool);
     const arr = [...weightedPool];
     for (let i = arr.length - 1; i > 0; i--) {
@@ -5099,6 +5085,20 @@ export class ArenaScene extends Phaser.Scene {
       selected.push(pick);
     }
 
+    return selected.slice(0, 5);
+  }
+
+  private pickDailySeededLoadout(pool: DiceDefinition[], label: string): DiceDefinition[] {
+    const weighted = this.buildDifficultyWeightedPool(pool);
+    const byId = new Map(weighted.map((d) => [d.typeId, d]));
+    const unique = [...new Set(weighted.map((d) => d.typeId))].sort();
+    const selected: DiceDefinition[] = [];
+    for (let i = 0; i < 5 && unique.length > 0; i++) {
+      const idx = this.getDailySeededIndex(`${label}-loadout-${i}`, unique.length);
+      const typeId = unique.splice(idx, 1)[0];
+      const def = byId.get(typeId);
+      if (def) selected.push(def);
+    }
     return selected.slice(0, 5);
   }
 
