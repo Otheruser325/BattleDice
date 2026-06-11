@@ -1,5 +1,5 @@
 export type DiceTypeId = string;
-export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDamaged' | 'OnDeath';
+export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDamaged' | 'OnDeath' | 'OnTransformed';
 export type DiceRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
 export type DiceTargetingMode = 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
 export type DiceStatusEffect = 'slow' | 'poison' | 'fracture' | 'taunt' | 'stun' | 'berserk';
@@ -18,6 +18,8 @@ export interface DiceSkillModifier {
   poisonDamage?: number;
   activeDamage?: number;
   activeHeal?: number;
+  onlyTargetsAllies?: boolean;
+  skillTargeting?: DiceTargetingMode;
   meteorDamage?: number;
   lavaDamage?: number;
   beamDamage?: number;
@@ -43,6 +45,7 @@ export interface DiceSkillModifier {
   deathTransform?: boolean;
   deathInstakill?: boolean;
   transformSkillIndex?: number;
+  transformSkillIndices?: number[];
   transformAccent?: string;
   transformSymbol?: string;
   transformTitle?: string;

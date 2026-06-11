@@ -4,8 +4,7 @@ import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgr
 import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
 import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, DEFAULT_LOADOUT_IDS, getRangeLabel } from '../data/dice';
-import { applyClassProgression } from '../systems/ClassProgression';
-import { formatSkillInfo } from './DiceScene';
+import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition } from './DiceScene';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
@@ -541,7 +540,7 @@ export class CasinoScene extends Phaser.Scene {
       close();
     };
     this.input.keyboard?.on('keydown-ESC', escHandler);
-    const close = () => {
+    close = () => {
       this.input.keyboard?.off('keydown-ESC', escHandler);
       [overlay, panel, title, chest, count, dropInfo, ratesBtn, open, openAll, closeBtn].forEach((o) => o.destroy());
     };
@@ -793,6 +792,7 @@ export class CasinoScene extends Phaser.Scene {
     };
     this.input.on('wheel', wheelHandler);
 
+    let close = () => undefined;
     const escHandler = () => {
       if (this.activeRewardDetailClose) {
         this.activeRewardDetailClose();
@@ -801,7 +801,7 @@ export class CasinoScene extends Phaser.Scene {
       close();
     };
     this.input.keyboard?.on('keydown-ESC', escHandler);
-    const close = () => {
+    close = () => {
       this.input.off('wheel', wheelHandler);
       this.input.keyboard?.off('keydown-ESC', escHandler);
       [overlay, panel, title, tokenSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
@@ -810,17 +810,16 @@ export class CasinoScene extends Phaser.Scene {
     overlay.on('pointerdown', () => undefined);
   }
 
-  private showRewardDiceDetails(typeId: string) {
+  private showRewardDiceDetails(typeId: string, showAlternate = false) {
     const definition = getAllDiceDefinitions(this).find((d) => d.typeId === typeId);
     if (!definition) return;
     const progress = getDiceProgress(this, definition.typeId);
     const { width, height } = this.scale;
     
-    // Get display stats with class progression applied
-    const displayDie = applyClassProgression(definition, progress.classLevel);
+    const displayDie = getDiceModalDisplayDefinition(definition, progress.classLevel, showAlternate);
     
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
-    const panel = this.add.rectangle(width / 2, height / 2, 540, 380, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
+    const panel = this.add.rectangle(width / 2, height / 2, 540, 390, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
     
     const rarityColors: Record<string, string> = {
       Common: '#ffffff',
@@ -839,7 +838,7 @@ export class CasinoScene extends Phaser.Scene {
     const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, {
       fontFamily: 'Orbitron',
       fontSize: '20px',
-      color: definition.accent
+      color: displayDie.accent
     }).setOrigin(0.5);
     
     // Stats with class progression
@@ -865,7 +864,7 @@ export class CasinoScene extends Phaser.Scene {
     }).setOrigin(0, 0.5);
     
     // Target and copies (matching DiceScene style)
-    const targetStats = this.add.text(width / 2 + 126, height / 2 - 94, `TARGET ${definition.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
+    const targetStats = this.add.text(width / 2 + 12, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
@@ -921,7 +920,25 @@ export class CasinoScene extends Phaser.Scene {
     };
     this.input.on('wheel', wheelHandler);
     
-    const closeBtn = this.add.text(width / 2, height / 2 + 155, 'Close', {
+    let close = () => undefined;
+    const alternateLabel = getDiceAlternateFormLabel(definition, showAlternate);
+    const altBtn = this.add.text(width / 2, height / 2 + 142, alternateLabel ?? '', {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.accentSoft,
+      backgroundColor: '#224b66',
+      padding: { left: 8, right: 8, top: 4, bottom: 4 }
+    }).setOrigin(0.5);
+    if (alternateLabel) {
+      altBtn.setInteractive({ useHandCursor: true });
+      altBtn.on('pointerdown', () => {
+        close();
+        this.showRewardDiceDetails(typeId, !showAlternate);
+      });
+    } else {
+      altBtn.setVisible(false);
+    }
+    const closeBtn = this.add.text(width / 2, height / 2 + 170, 'Close', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted,
@@ -931,10 +948,10 @@ export class CasinoScene extends Phaser.Scene {
     
     const escHandler = () => close();
     this.input.keyboard?.on('keydown-ESC', escHandler);
-    const close = () => {
+    close = () => {
       this.input.off('wheel', wheelHandler);
       this.input.keyboard?.off('keydown-ESC', escHandler);
-      [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, closeBtn].forEach((obj) => obj.destroy());
+      [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, altBtn, closeBtn].forEach((obj) => obj.destroy());
       this.activeRewardDetailClose = null;
     };
     this.activeRewardDetailClose = close;
@@ -942,7 +959,7 @@ export class CasinoScene extends Phaser.Scene {
     overlay.on('pointerdown', () => undefined);
     
     // Set depth for all elements
-    [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, closeBtn].forEach((el) => (el as any).setDepth?.(450));
+    [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, classCircle, classLabel, classLevelText, skillContainer, skillMaskShape, skillScrollHint, altBtn, closeBtn].forEach((el) => (el as any).setDepth?.(450));
   }
 
   private getDiceTextureKey(pip: number) {

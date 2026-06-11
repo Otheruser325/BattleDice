@@ -45,6 +45,10 @@ export interface OnDeathResult extends SkillEffectResult {
   grantAttacksToAlly?: boolean;
 }
 
+export interface OnTransformedResult extends SkillEffectResult {
+  extraAttacksTurns?: number;
+}
+
 export interface PassiveEffectResult extends SkillEffectResult {
   splashTargets?: DiceInstanceState[];
   chainTarget?: DiceInstanceState;
@@ -136,6 +140,29 @@ export function executeOnDeathSkillEffects(
     result.grantAttacksToAlly = true;
   }
 
+  return result;
+}
+
+export function executeOnTransformedSkillEffects(
+  transformed: DiceInstanceState,
+  definition: DiceDefinition,
+  classLevel: number
+): OnTransformedResult {
+  const result: OnTransformedResult = {};
+  const meta = getRuntimeSkillMeta(definition);
+
+  if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) {
+    return result;
+  }
+
+  const bonus = meta.onTransformedExtraAttacks ?? 0;
+  if (bonus > 0) {
+    applyBonusAttacks(result, bonus);
+    result.extraAttacksTurns = meta.onTransformedDurationTurns ?? 1;
+    result.extraEffects = [`OnTransformed grants +${bonus} attacks`];
+  }
+
+  void transformed;
   return result;
 }
 

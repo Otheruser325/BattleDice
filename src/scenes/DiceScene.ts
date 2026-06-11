@@ -35,10 +35,78 @@ function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: numb
   return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${description}`;
 }
 
+function getTransformSkillIndexSet(definition: DiceDefinition): Set<number> {
+  const meta = getRuntimeSkillMeta(definition);
+  return new Set(meta.transformSkillIndices?.length ? meta.transformSkillIndices : meta.transformSkillIndex === undefined ? [] : [meta.transformSkillIndex]);
+}
+
 export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
-  if (definition.skills.length === 0) return 'No skill';
-  return definition.skills.map((skill, index) => formatSkillEntry(skill, index, definition.skills.length, definition, skillDamageMultiplier)).join('\n\n');
+  const hiddenTransformSkills = getTransformSkillIndexSet(definition);
+  const visibleSkills = definition.skills
+    .map((skill, index) => ({ skill, index }))
+    .filter(({ index }) => !hiddenTransformSkills.has(index));
+  if (visibleSkills.length === 0) return 'No skill';
+  return visibleSkills.map(({ skill }, visibleIndex) => formatSkillEntry(skill, visibleIndex, visibleSkills.length, {
+    ...definition,
+    skills: definition.skills
+  }, skillDamageMultiplier)).join('\n\n');
+}
+
+export function getDiceAlternateFormLabel(die: DiceDefinition, showingAlternate: boolean): string | null {
+  const meta = getRuntimeSkillMeta(die);
+  if (!meta.alternateButton || !meta.baseButton) return null;
+  return showingAlternate ? meta.baseButton : meta.alternateButton;
+}
+
+export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: number, showAlternate: boolean): DiceDefinition {
+  const scaled = applyClassProgression(die, classLevel);
+  const meta = getRuntimeSkillMeta(scaled);
+  const transformSkillIndices = meta.transformSkillIndices?.length ? meta.transformSkillIndices : meta.transformSkillIndex === undefined ? [] : [meta.transformSkillIndex];
+  if (!showAlternate) return scaled;
+  if (!meta.transformTitle) return scaled;
+
+  const transformSkills = transformSkillIndices
+    .map((index) => scaled.skills[index])
+    .filter((skill): skill is DiceSkillDefinition => Boolean(skill));
+  if (meta.hasDeathTransform && transformSkills.length > 0) {
+    return {
+      ...scaled,
+      title: meta.transformTitle,
+      health: scaled.health * 2,
+      accent: meta.transformAccent ?? scaled.accent,
+      skills: transformSkills.map((skill) => ({
+        ...skill,
+        description: skill.title === "Reaper's Touch"
+          ? `Instantly kills a target. Bosses instead take ${scaled.attack * 10} damage.`
+          : skill.description
+      }))
+    };
+  }
+  if (transformSkills.length > 0) {
+    return {
+      ...scaled,
+      title: meta.transformTitle,
+      accent: meta.transformAccent ?? scaled.accent,
+      skills: transformSkills
+    };
+  }
+
+  if (meta.hasTranscendence) {
+    return {
+      ...scaled,
+      title: meta.transformTitle,
+      accent: meta.transformAccent ?? scaled.accent,
+      skills: [{
+        type: 'Passive' as const,
+        title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
+        description: `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${meta.beamDamage ?? 600} damage.`,
+        modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
+      }]
+    };
+  }
+
+  return scaled;
 }
 
 
@@ -320,49 +388,11 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
   }
 
   private getAlternateFormLabel(die: ReturnType<typeof getAllDiceDefinitions>[number], showingAlternate: boolean): string | null {
-    const meta = getRuntimeSkillMeta(die);
-    if (!meta.alternateButton || !meta.baseButton) return null;
-    return showingAlternate ? meta.baseButton : meta.alternateButton;
+    return getDiceAlternateFormLabel(die, showingAlternate);
   }
 
   private getModalDisplayDie(die: ReturnType<typeof getAllDiceDefinitions>[number], classLevel: number, showAlternate: boolean) {
-    const scaled = applyClassProgression(die, classLevel);
-    if (!showAlternate) return scaled;
-
-    const meta = getRuntimeSkillMeta(scaled);
-    if (!meta.transformTitle) return scaled;
-
-    if (meta.hasDeathTransform) {
-      return {
-        ...scaled,
-        title: meta.transformTitle,
-        health: scaled.health * 2,
-        accent: meta.transformAccent ?? scaled.accent,
-        skills: [{
-          type: 'Active' as const,
-          title: "Reaper's Touch",
-          description: `At ${meta.deathInstakillMana ?? 12} soul mana, instantly kills a target; bosses take heavy damage instead. Death transforms into this form after 2 allies are defeated.`,
-          manaNeeded: meta.deathInstakillMana ?? 12,
-          modifiers: { notes: ['runtime:deathInstakill'] }
-        }]
-      };
-    }
-
-    if (meta.hasTranscendence) {
-      return {
-        ...scaled,
-        title: meta.transformTitle,
-        accent: meta.transformAccent ?? scaled.accent,
-        skills: [{
-          type: 'Passive' as const,
-          title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
-          description: `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${meta.beamDamage ?? 600} damage.`,
-          modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
-        }]
-      };
-    }
-
-    return scaled;
+    return getDiceModalDisplayDefinition(die, classLevel, showAlternate);
   }
 
   private openDiceModal(typeId: string, tokenText: Phaser.GameObjects.Text, onUpdate: () => void, selectedSlot: number, showAlternate = false) {
