@@ -182,7 +182,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.berserkThresholdRate = Math.min(0.95, source.berserkThresholdRate + BERSERK_THRESHOLD_RATE_PER_CLASS * classUps);
     }
 
-    if (definition.typeId === 'Solitude' && source.targetMaxHpBonusRate !== undefined) {
+    if (source.checkForAdjacentAllies && source.targetMaxHpBonusRate !== undefined) {
       modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + SOLITUDE_MAX_HP_RATE_PER_CLASS * classUps;
     }
 
@@ -200,7 +200,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.manaGain = source.manaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
     }
 
-    if (definition.typeId === 'Soul' && source.soulBoostPercent !== undefined) {
+    if (source.soulBoostPercent !== undefined) {
       modifiers.soulBoostPercent = source.soulBoostPercent + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
     }
 

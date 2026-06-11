@@ -53,7 +53,7 @@ export interface PassiveEffectResult extends SkillEffectResult {
 
 export interface ActiveEffectResult extends SkillEffectResult {
   summonWizard?: boolean;
-  meteorStrike?: { damage: number; lavaDamage: number; lavaTurns: number; targetBoardSide: 'player' | 'enemy' };
+  meteorStrike?: { damage: number; lavaDamage: number; lavaTurns: number; meteorCount: number; hasRandomOrientation: boolean };
   deathInstakill?: { damage: number; targetIsBoss: boolean };
   summonImp?: boolean;
   spearStrike?: { damage: number; pierceDamage: number; pierceRange: number };
@@ -72,6 +72,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   attackDeltaTarget?: DiceInstanceState;
   attackDelta?: number;
   attackDeltaTurns?: number;
+  attackDeltaMaxStacks?: number;
   statusEffect?: DiceStatusEffect;
   needsMana?: boolean;
 }
@@ -102,7 +103,7 @@ export function executeOnDamagedSkillEffects(
   const bonus = meta.onDamagedExtraAttacks ?? 0;
   if (bonus > 0) {
     applyBonusAttacks(result, bonus);
-    result.extraEffects = [`OnDamaged grants +${bonus} attacks`];
+    result.extraEffects = [`OnDamaged grants +${bonus} attacks${meta.onDamagedGrantAttacksToAlly ? ' to ally' : ''}`];
   }
 
   if (meta.onDamagedGrantAttacksToAlly) {
@@ -344,7 +345,9 @@ export function executeActiveSkillEffects(
       result.meteorStrike = {
         damage: meta.meteorDamage ?? 60,
         lavaDamage: meta.lavaDamage ?? 25,
-        lavaTurns: meta.activeDurationTurns ?? 3
+        lavaTurns: meta.activeDurationTurns ?? 3,
+        meteorCount: Math.max(1, Math.floor(meta.meteorCount ?? 1)),
+        hasRandomOrientation: meta.hasRandomOrientation ?? false
       };
       return result;
     }
@@ -448,6 +451,7 @@ export function executeActiveSkillEffects(
     result.attackDeltaTarget = target;
     result.attackDelta = meta.activeAttackDelta!;
     result.attackDeltaTurns = meta.activeDurationTurns;
+    result.attackDeltaMaxStacks = meta.activeMaxStacks;
   }
 
   return result;

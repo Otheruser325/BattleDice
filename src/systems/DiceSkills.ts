@@ -1,5 +1,7 @@
-import type { DiceDefinition, DiceInstanceState, DiceStatusEffect } from '../types/game';
+import type { DiceDefinition, DiceInstanceState, DiceSkillType, DiceStatusEffect } from '../types/game';
 import { getBoardSideCombatDistance } from './CombatRange';
+
+const STATUS_EFFECTS: DiceStatusEffect[] = ['slow', 'poison', 'fracture', 'taunt', 'stun', 'berserk'];
 
 export interface DiceSkillRuntimeMeta {
   randomDamage?: { min: number; max: number };
@@ -15,6 +17,7 @@ export interface DiceSkillRuntimeMeta {
   activeExtraAttacks?: number;
   activeAttackDelta?: number;
   activeDurationTurns?: number;
+  activeMaxStacks?: number;
   poisonDamage?: number;
   onKillExtraAttacks?: number;
   onDamagedExtraAttacks?: number;
@@ -30,6 +33,8 @@ export interface DiceSkillRuntimeMeta {
   activeDamage?: number;
   activeHeal?: number;
   meteorDamage?: number;
+  meteorCount?: number;
+  hasRandomOrientation?: boolean;
   lavaDamage?: number;
   beamDamage?: number;
   pierceBehindRange?: number;
@@ -39,9 +44,15 @@ export interface DiceSkillRuntimeMeta {
   shield?: number;
   armorShredRate?: number;
   activeStatusEffect?: DiceStatusEffect;
+  statusEffects?: DiceStatusEffect[];
+  tauntRange?: number;
+  tauntDuration?: number;
+  stunDuration?: number;
   attackCountIncrease?: number;
   hasSpearActive?: boolean;
   hasSolitudePreCombat?: boolean;
+  checkForAdjacentAllies?: boolean;
+  checkForAdjacentFoes?: boolean;
   hasJudgmentHammer?: boolean;
   hasTranscendence?: boolean;
   hasMeteorStrike?: boolean;
@@ -59,11 +70,12 @@ export interface DiceSkillRuntimeMeta {
   attackSfxKey?: string;
   transformedAttackSfxKey?: string;
   canConjureSouls?: boolean;
-  conjureType?: 'ally' | 'enemy';
+  conjureType?: 'ally' | 'enemy' | 'both';
   maxSouls?: number;
   noMaxSouls?: boolean;
   soulBoostPercent?: number;
   hasSoulHarvestPassive?: boolean;
+  transformSkillIndex?: number;
   deuciferOddSiphonRate?: number;
   deuciferEvenDamageRate?: number;
   canSummonImp?: boolean;
@@ -84,8 +96,15 @@ export interface DiceSkillRuntimeMeta {
 export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
   const primary = definition.skills[0];
   const modifiers = primary?.modifiers;
-  const activeSkill = definition.skills.find((skill) => skill.type === 'Active');
+  const skillOfType = (type: DiceSkillType) => definition.skills.find((skill) => skill.type === type);
+  const activeSkill = skillOfType('Active');
   const activeModifiers = activeSkill?.modifiers;
+  const onKillSkill = skillOfType('OnKill');
+  const onKillModifiers = onKillSkill?.modifiers;
+  const onDamagedSkill = skillOfType('OnDamaged');
+  const onDamagedModifiers = onDamagedSkill?.modifiers;
+  const onDeathSkill = skillOfType('OnDeath');
+  const onDeathModifiers = onDeathSkill?.modifiers;
   const allModifiers = definition.skills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
   const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
     const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
@@ -104,13 +123,33 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
   const parsedBeamDamage = beamNote ? Number(beamNote.split('=')[1]) : undefined;
 
   const getNoteValue = (prefix: string) => notes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
-  const getActiveNoteValue = (prefix: string) => activeModifiers?.notes?.find((note) => note.startsWith(prefix))?.slice(prefix.length);
-  const hasDeathInstakill = notes.includes('runtime:deathInstakill');
   const allNotes = allModifiers.flatMap((modifier) => modifier.notes ?? []);
+  const getActiveNoteValue = (prefix: string) => activeModifiers?.notes?.find((note) => note.startsWith(prefix))?.slice(prefix.length);
+  const hasDeathInstakill = Boolean(allModifiers.some((modifier) => (modifier as { deathInstakill?: boolean }).deathInstakill) || allNotes.includes('runtime:deathInstakill'));
   const getAnyNoteValue = (prefix: string) => allNotes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
   const oddSiphonRate = Number(getAnyNoteValue('runtime:deuciferOddSiphon='));
   const evenDamageRate = Number(getAnyNoteValue('runtime:deuciferEvenDamage='));
-  const activeStatusEffect = (activeModifiers as { statusEffect?: DiceStatusEffect } | undefined)?.statusEffect;
+  const parseStatusEffect = (value: unknown): DiceStatusEffect | undefined => {
+    if (typeof value !== 'string') return undefined;
+    return STATUS_EFFECTS.includes(value as DiceStatusEffect) ? value as DiceStatusEffect : undefined;
+  };
+  const activeStatusEffectNote = getActiveNoteValue('runtime:statusEffect=') ?? getActiveNoteValue('runtime:status=');
+  const activeStatusEffect = parseStatusEffect((activeModifiers as { statusEffect?: string } | undefined)?.statusEffect)
+    ?? parseStatusEffect(activeStatusEffectNote);
+  const statusNoteEffects = allNotes
+    .map((note) => note.startsWith('runtime:statusEffect=') ? note.slice('runtime:statusEffect='.length) : note.startsWith('runtime:status=') ? note.slice('runtime:status='.length) : undefined)
+    .map(parseStatusEffect)
+    .filter((effect): effect is DiceStatusEffect => Boolean(effect));
+  const statusEffects = [...new Set(allModifiers
+    .map((modifier) => parseStatusEffect((modifier as { statusEffect?: string }).statusEffect))
+    .filter((effect): effect is DiceStatusEffect => Boolean(effect))
+    .concat(statusNoteEffects))];
+  const tauntModifiers = allModifiers.find((modifier) =>
+    parseStatusEffect((modifier as { statusEffect?: string }).statusEffect) === 'taunt'
+    || (modifier.notes ?? []).includes('runtime:shieldTaunt'));
+  const stunModifiers = allModifiers.find((modifier) =>
+    parseStatusEffect((modifier as { statusEffect?: string }).statusEffect) === 'stun'
+    || (modifier.notes ?? []).includes('runtime:stun'));
 
   return {
     randomDamage: range ? { min: range[0], max: range[1] } : undefined,
@@ -127,12 +166,13 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     attackCountIncrease: activeSkill ? (activeModifiers?.attackCountIncrease ?? 0) : 0,
     activeAttackDelta: activeSkill ? (activeModifiers?.attackDelta ?? 0) : 0,
     activeDurationTurns: activeSkill ? (activeModifiers?.durationTurns ?? 0) : 0,
+    activeMaxStacks: activeSkill ? (activeModifiers?.maxStacks ?? 1) : 1,
     poisonDamage: (activeModifiers as { poisonDamage?: number } | undefined)?.poisonDamage ?? (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
-    onKillExtraAttacks: primary?.type === 'OnKill' ? (modifiers?.extraAttacks ?? 0) : 0,
-    onDamagedExtraAttacks: primary?.type === 'OnDamaged' ? (modifiers?.extraAttacks ?? 0) : 0,
-    onDamagedGrantAttacksToAlly: Boolean((modifiers as { grantAttacksToAlly?: boolean } | undefined)?.grantAttacksToAlly),
-    onDeathExtraAttacks: primary?.type === 'OnDeath' ? (modifiers?.extraAttacks ?? 0) : 0,
-    onDeathGrantAttacksToAlly: Boolean((modifiers as { grantAttacksToAlly?: boolean } | undefined)?.grantAttacksToAlly),
+    onKillExtraAttacks: onKillModifiers?.extraAttacks ?? 0,
+    onDamagedExtraAttacks: onDamagedModifiers?.extraAttacks ?? 0,
+    onDamagedGrantAttacksToAlly: Boolean((onDamagedModifiers as { grantAttacksToAlly?: boolean } | undefined)?.grantAttacksToAlly),
+    onDeathExtraAttacks: onDeathModifiers?.extraAttacks ?? 0,
+    onDeathGrantAttacksToAlly: Boolean((onDeathModifiers as { grantAttacksToAlly?: boolean } | undefined)?.grantAttacksToAlly),
     distanceDamageBonusPerTile: (modifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile,
     distanceDamageBonusRatePerTile: (modifiers as { distanceDamageBonusRatePerTile?: number } | undefined)?.distanceDamageBonusRatePerTile,
     berserkThresholdRate: (modifiers as { berserkThresholdRate?: number } | undefined)?.berserkThresholdRate,
@@ -142,6 +182,8 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
     activeDamage: (activeModifiers as { activeDamage?: number } | undefined)?.activeDamage ?? (modifiers as { activeDamage?: number } | undefined)?.activeDamage,
     activeHeal: (activeModifiers as { activeHeal?: number } | undefined)?.activeHeal ?? (modifiers as { activeHeal?: number } | undefined)?.activeHeal,
     meteorDamage: (activeModifiers as { meteorDamage?: number } | undefined)?.meteorDamage ?? (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
+    meteorCount: (activeModifiers as { meteorCount?: number } | undefined)?.meteorCount ?? (modifiers as { meteorCount?: number } | undefined)?.meteorCount,
+    hasRandomOrientation: Boolean((activeModifiers as { hasRandomOrientation?: boolean } | undefined)?.hasRandomOrientation ?? (modifiers as { hasRandomOrientation?: boolean } | undefined)?.hasRandomOrientation),
     lavaDamage: (activeModifiers as { lavaDamage?: number } | undefined)?.lavaDamage ?? (modifiers as { lavaDamage?: number } | undefined)?.lavaDamage,
     beamDamage: (modifiers as { beamDamage?: number } | undefined)?.beamDamage ?? (Number.isFinite(parsedBeamDamage) ? parsedBeamDamage : undefined),
     pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
@@ -158,32 +200,39 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
       return Number.isFinite(parsed) ? parsed : undefined;
     })(),
     activeStatusEffect,
+    statusEffects,
+    tauntRange: (tauntModifiers as { tauntRange?: number } | undefined)?.tauntRange,
+    tauntDuration: (tauntModifiers as { tauntDuration?: number; durationTurns?: number } | undefined)?.tauntDuration ?? (tauntModifiers as { durationTurns?: number } | undefined)?.durationTurns,
+    stunDuration: (stunModifiers as { durationTurns?: number } | undefined)?.durationTurns,
     hasSpearActive: Boolean((activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage !== undefined || notes.includes('runtime:spearActive') || (activeModifiers?.notes ?? []).includes('runtime:spearActive')),
-    hasSolitudePreCombat: notes.includes('runtime:solitudePreCombat'),
+    hasSolitudePreCombat: Boolean((modifiers as { checkForAdjacentAllies?: boolean } | undefined)?.checkForAdjacentAllies ?? notes.includes('runtime:solitudePreCombat')),
+    checkForAdjacentAllies: Boolean((modifiers as { checkForAdjacentAllies?: boolean } | undefined)?.checkForAdjacentAllies ?? notes.includes('runtime:solitudePreCombat')),
+    checkForAdjacentFoes: Boolean((modifiers as { checkForAdjacentFoes?: boolean } | undefined)?.checkForAdjacentFoes),
     hasJudgmentHammer: notes.includes('runtime:judgmentHammer'),
     hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence',
-    hasMeteorStrike: allNotes.includes('runtime:meteorStrike'),
-    hasDeathTransform: notes.includes('runtime:deathTransform'),
+    hasMeteorStrike: Boolean(allModifiers.some((modifier) => (modifier as { meteorDamage?: number }).meteorDamage !== undefined) || allNotes.includes('runtime:meteorStrike')),
+    hasDeathTransform: Boolean((modifiers as { deathTransform?: boolean } | undefined)?.deathTransform ?? notes.includes('runtime:deathTransform')),
     hasDeathInstakill,
-    deathInstakillMana: hasDeathInstakill ? (primary?.manaNeeded ?? 12) : undefined,
+    deathInstakillMana: hasDeathInstakill ? (activeSkill?.manaNeeded ?? primary?.manaNeeded ?? 12) : undefined,
     hasGrowthPermanent: modifiers?.growthDelta !== undefined || notes.includes('runtime:growthPermanent'),
     hasBrokenGrowthPermanent: modifiers?.brokenGrowthDelta !== undefined || notes.includes('runtime:brokenGrowthPermanent'),
     growthDelta: modifiers?.growthDelta,
     brokenGrowthDelta: modifiers?.brokenGrowthDelta,
-    transformAccent: getNoteValue('runtime:transformAccent='),
-    transformSymbol: getNoteValue('runtime:transformSymbol='),
-    transformTitle: getNoteValue('runtime:transformTitle='),
-    alternateButton: getNoteValue('runtime:alternateButton='),
-    baseButton: getNoteValue('runtime:baseButton='),
+    transformAccent: (modifiers as { transformAccent?: string } | undefined)?.transformAccent ?? getNoteValue('runtime:transformAccent='),
+    transformSymbol: (modifiers as { transformSymbol?: string } | undefined)?.transformSymbol ?? getNoteValue('runtime:transformSymbol='),
+    transformTitle: (modifiers as { transformTitle?: string } | undefined)?.transformTitle ?? getNoteValue('runtime:transformTitle='),
+    alternateButton: (modifiers as { alternateButton?: string } | undefined)?.alternateButton ?? getNoteValue('runtime:alternateButton='),
+    baseButton: (modifiers as { baseButton?: string } | undefined)?.baseButton ?? getNoteValue('runtime:baseButton='),
     skillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx=') ?? getAnyNoteValue('runtime:skillSfx=') ?? getNoteValue('runtime:skillSfx='),
     attackSfxKey: (modifiers as { attackSfx?: string } | undefined)?.attackSfx ?? getNoteValue('runtime:attackSfx='),
     transformedAttackSfxKey: (modifiers as { transformedAttackSfx?: string } | undefined)?.transformedAttackSfx ?? getNoteValue('runtime:attackSfxTransformed='),
     canConjureSouls: Boolean((modifiers as { canConjureSouls?: boolean } | undefined)?.canConjureSouls),
-    conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' } | undefined)?.conjureType),
+    conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' | 'both' } | undefined)?.conjureType),
     maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls,
     noMaxSouls: Boolean((modifiers as { noMaxSouls?: boolean } | undefined)?.noMaxSouls),
     soulBoostPercent: (modifiers as { soulBoostPercent?: number } | undefined)?.soulBoostPercent,
-    hasSoulHarvestPassive: notes.includes('runtime:soulHarvestPassive'),
+    hasSoulHarvestPassive: Boolean((modifiers as { soulBoostPercent?: number } | undefined)?.soulBoostPercent !== undefined || notes.includes('runtime:soulHarvestPassive')),
+    transformSkillIndex: (modifiers as { transformSkillIndex?: number } | undefined)?.transformSkillIndex,
     deuciferOddSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
     deuciferEvenDamageRate: Number.isFinite(evenDamageRate) ? evenDamageRate : undefined,
     canSummonImp: allNotes.includes('runtime:deuciferSummonImp'),

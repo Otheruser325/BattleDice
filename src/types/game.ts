@@ -1,8 +1,8 @@
 export type DiceTypeId = string;
-export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDeath';
+export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDamaged' | 'OnDeath';
 export type DiceRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
 export type DiceTargetingMode = 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
-export type DiceStatusEffect = 'slow' | 'poison' | 'fracture';
+export type DiceStatusEffect = 'slow' | 'poison' | 'fracture' | 'taunt' | 'stun' | 'berserk';
 
 export interface DiceSkillModifier {
   attackDelta?: number;
@@ -12,6 +12,7 @@ export interface DiceSkillModifier {
   allyExtraAttacks?: number;
   attackCountIncrease?: number;
   durationTurns?: number;
+  maxStacks?: number;
   splashDamage?: number;
   chainDamage?: number;
   poisonDamage?: number;
@@ -35,9 +36,22 @@ export interface DiceSkillModifier {
   distanceDamageBonusRatePerTile?: number;
   notes?: string[];
   canConjureSouls?: boolean;
-  conjureType?: 'ally' | 'enemy';
+  conjureType?: 'ally' | 'enemy' | 'both';
   maxSouls?: number;
+  noMaxSouls?: boolean;
   soulBoostPercent?: number;
+  deathTransform?: boolean;
+  deathInstakill?: boolean;
+  transformSkillIndex?: number;
+  transformAccent?: string;
+  transformSymbol?: string;
+  transformTitle?: string;
+  alternateButton?: string;
+  baseButton?: string;
+  meteorCount?: number;
+  hasRandomOrientation?: boolean;
+  checkForAdjacentAllies?: boolean;
+  checkForAdjacentFoes?: boolean;
   shield?: number;
   armorReduction?: number;
   statusEffect?: DiceStatusEffect;
