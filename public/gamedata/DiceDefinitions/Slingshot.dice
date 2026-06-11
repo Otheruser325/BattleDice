@@ -1,0 +1,21 @@
+{
+  "typeId": "Slingshot",
+  "title": "Slingshot Dice",
+  "attack": 32,
+  "health": 560,
+  "range": 6,
+  "rarity": "Rare",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Sharp Exploit",
+      "description": "Targeted foes below 50% of their max HP receive 50% more damage.",
+      "modifiers": {
+        "lowHpThresholdRate": 0.5,
+        "lowHpDamageBonusRate": 0.5
+      }
+    }
+  ],
+  "accent": "#d7b36a",
+  "targetingMode": "Weakest"
+}

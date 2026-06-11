@@ -1,0 +1,44 @@
+{
+  "typeId": "Solar",
+  "title": "Solar Dice",
+  "attack": 28,
+  "health": 840,
+  "range": 4,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Blazing Sun",
+      "description": "When it rolls an odd pip, transforms into Solar Form.",
+      "modifiers": {
+        "transformOnOddPip": true,
+        "transformSkillIndex": 1,
+        "transformSkillIndices": [1, 2],
+        "transformAccent": "#ffd34d",
+        "transformSymbol": "☀",
+        "transformTitle": "Solar Dice — Solar Form",
+        "alternateButton": "View Solar Form",
+        "baseButton": "View Solar Dice"
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Scorchin' Hot",
+      "description": "In Solar Form, basic attacks deal 80%/60%/40% splash damage based on Solar Dice's odd pip count (1/3/5).",
+      "modifiers": {
+        "splashDamageRatesByOddPip": [0.8, 0.6, 0.4]
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Heatwave",
+      "description": "In Solar Form, basic attacks trigger a heatwave around Solar Dice, dealing equal damage to adjacent foes.",
+      "modifiers": {
+        "heatwaveDamageRate": 1
+      }
+    }
+  ],
+  "accent": "#ffb347",
+  "transformDescriptions": ["Solar Form"],
+  "targetingMode": "Nearest"
+}
