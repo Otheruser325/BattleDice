@@ -13,9 +13,9 @@
       "manaNeeded": 6,
       "modifiers": {
         "activeHeal": 200,
-        "notes": [
-          "runtime:skillSfx=dice_heal_skill"
-        ]
+        "onlyTargetsAllies": true,
+        "skillTargeting": "Weakest",
+        "skillSfx": "dice_heal_skill"
       }
     }
   ],

@@ -16,6 +16,7 @@
         "maxSouls": 2,
         "deathTransform": true,
         "transformSkillIndex": 1,
+        "transformSkillIndices": [1],
         "transformAccent": "#c06bdb",
         "transformSymbol": "\u2620",
         "transformTitle": "Death Dice \u2014 Instakill Form",
