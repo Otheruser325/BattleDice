@@ -150,17 +150,34 @@ export class AnimationManager {
   static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind', tint?: number) {
     const g = scene.add.graphics().setDepth(255);
     const color = tint ?? ({ ice: 0x8fd5ff, fire: 0xff8a4c, electric: 0xfff176, poison: 0x74d66f, wind: 0x9fe7d9 } as const)[kind];
+
     if (kind === 'wind') {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 3; i += 1) {
         g.lineStyle(2, color, 0.8 - i * 0.2);
         g.strokeCircle(x, y, 14 + i * 9);
       }
-    } else {
-      if (kind === 'ice') { g.lineStyle(2, 0x8fd5ff, 0.9); g.strokeRect(tx - 18, ty - 18, 36, 36); }
-      if (kind === 'fire') { g.fillStyle(0xff8a3d, 0.25); g.fillTriangle(tx, ty - 18, tx - 14, ty + 16, tx + 14, ty + 16); }
-      if (kind === 'poison') { g.fillStyle(0x74d66f, 0.28); g.fillCircle(tx, ty, 14); g.fillCircle(tx + 12, ty - 8, 7); }
-      if (kind === 'electric') { g.lineStyle(2, 0xffef7a, 0.95); g.beginPath(); g.moveTo(ax, ay); g.lineTo((ax+tx)/2 - 8, (ay+ty)/2 + 6); g.lineTo((ax+tx)/2 + 6, (ay+ty)/2 - 5); g.lineTo(tx, ty); g.strokePath(); }
+    } else if (kind === 'ice') {
+      g.lineStyle(2, 0x8fd5ff, 0.9);
+      g.strokeRect(x - 18, y - 18, 36, 36);
+    } else if (kind === 'fire') {
+      g.fillStyle(0xff8a3d, 0.25);
+      g.fillTriangle(x, y - 18, x - 14, y + 16, x + 14, y + 16);
+    } else if (kind === 'poison') {
+      g.fillStyle(0x74d66f, 0.28);
+      g.fillCircle(x, y, 14);
+      g.fillCircle(x + 12, y - 8, 7);
+    } else if (kind === 'electric') {
+      g.lineStyle(2, 0xffef7a, 0.95);
+      g.beginPath();
+      g.moveTo(x - 12, y - 10);
+      g.lineTo(x - 2, y - 2);
+      g.lineTo(x - 8, y + 2);
+      g.lineTo(x + 4, y + 12);
+      g.lineTo(x - 2, y + 2);
+      g.lineTo(x + 10, y - 4);
+      g.strokePath();
     }
+
     scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: 320, onComplete: () => g.destroy() });
   }
   
