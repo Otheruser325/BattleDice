@@ -40,6 +40,19 @@ function getTransformSkillIndexSet(definition: DiceDefinition): Set<number> {
   return new Set(meta.transformSkillIndices?.length ? meta.transformSkillIndices : meta.transformSkillIndex === undefined ? [] : [meta.transformSkillIndex]);
 }
 
+function getVisibleSkillCount(definition: DiceDefinition): number {
+  const hiddenTransformSkills = getTransformSkillIndexSet(definition);
+  return definition.skills.filter((_, index) => !hiddenTransformSkills.has(index)).length;
+}
+function formatSkillTypeLine(definition: DiceDefinition): string {
+  const hiddenTransformSkills = getTransformSkillIndexSet(definition);
+  const visibleSkills = definition.skills.filter((_, index) => !hiddenTransformSkills.has(index));
+  if (visibleSkills.length === 1) {
+    return formatSkillType(visibleSkills[0]?.type).toUpperCase();
+  }
+  return `${visibleSkills.length} SKILLS`;
+}
+
 export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
   const hiddenTransformSkills = getTransformSkillIndexSet(definition);
@@ -272,7 +285,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
       const skillInfo = formatSkillInfo(displayedDie, locked);
       const displayType = locked
         ? 'LOCKED'
-        : (displayedDie.skills.length === 1 ? formatSkillType(displayedDie.skills[0]?.type).toUpperCase() : `${displayedDie.skills.length} SKILLS`);
+        : formatSkillTypeLine(displayedDie);
       const skillTypeLine = this.add.text(x + 20, y + 78, displayType, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
@@ -292,7 +305,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
         classTag.setText(this.isDiceLocked(die.typeId) ? 'LOCKED' : `C${nextCls}`);
         statLine.setText(`ATK ${nextDisplayedDie.attack}  |  HP ${nextDisplayedDie.health}
 RANGE ${die.range} (${getRangeLabel(die.range)})`);
-        skillTypeLine.setText(nextDisplayedDie.skills.length === 1 ? formatSkillType(nextDisplayedDie.skills[0]?.type).toUpperCase() : `${nextDisplayedDie.skills.length} SKILLS`);
+        skillTypeLine.setText(formatSkillTypeLine(nextDisplayedDie));
         skillDesc.setText(formatSkillInfo(nextDisplayedDie, this.isDiceLocked(die.typeId)));
       };
       refreshCardStats.push(refreshCardStatLine);
