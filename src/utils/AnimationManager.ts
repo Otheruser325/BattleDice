@@ -156,10 +156,10 @@ export class AnimationManager {
         g.strokeCircle(x, y, 14 + i * 9);
       }
     } else {
-      g.lineStyle(3, color, 0.9);
-      g.strokeCircle(x, y, 16);
-      g.fillStyle(color, 0.2);
-      g.fillCircle(x, y, 18);
+      if (kind === 'ice') { g.lineStyle(2, 0x8fd5ff, 0.9); g.strokeRect(tx - 18, ty - 18, 36, 36); }
+      if (kind === 'fire') { g.fillStyle(0xff8a3d, 0.25); g.fillTriangle(tx, ty - 18, tx - 14, ty + 16, tx + 14, ty + 16); }
+      if (kind === 'poison') { g.fillStyle(0x74d66f, 0.28); g.fillCircle(tx, ty, 14); g.fillCircle(tx + 12, ty - 8, 7); }
+      if (kind === 'electric') { g.lineStyle(2, 0xffef7a, 0.95); g.beginPath(); g.moveTo(ax, ay); g.lineTo((ax+tx)/2 - 8, (ay+ty)/2 + 6); g.lineTo((ax+tx)/2 + 6, (ay+ty)/2 - 5); g.lineTo(tx, ty); g.strokePath(); }
     }
     scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: 320, onComplete: () => g.destroy() });
   }
@@ -265,7 +265,6 @@ export class AnimationManager {
     g.strokeCircle(x + 20, y, 6);
     scene.tweens.add({ targets: g, alpha: 0, scale: 3, duration: 500, onComplete: () => g.destroy() });
   }
-
 
   static animateBatteryCharge(scene: Phaser.Scene, x: number, y: number, color: number) {
     const g = scene.add.graphics().setDepth(320).setAlpha(0);
