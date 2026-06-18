@@ -102,11 +102,12 @@ function getUnlockedSkillMeta(
   trigger: DiceSkillType,
   activeSkillIndex?: number
 ): DiceSkillRuntimeMeta | undefined {
-  const hasTrigger = activeSkillIndex === undefined
+  const selectedActiveSkillIndex = trigger === 'Active' ? activeSkillIndex : undefined;
+  const hasTrigger = selectedActiveSkillIndex === undefined
     ? definition.skills.some((skill) => skill.type === trigger)
-    : definition.skills[activeSkillIndex]?.type === trigger;
+    : definition.skills[selectedActiveSkillIndex]?.type === trigger;
   if (!hasTrigger) return undefined;
-  const meta = getRuntimeSkillMeta(definition, activeSkillIndex);
+  const meta = getRuntimeSkillMeta(definition, selectedActiveSkillIndex);
   if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) return undefined;
   return meta;
 }
