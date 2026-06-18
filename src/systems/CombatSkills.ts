@@ -89,15 +89,24 @@ function applyBonusAttacks(result: SkillEffectResult, bonus: number): void {
   result.bonusAttacks = (result.bonusAttacks ?? 0) + bonus;
 }
 
-type CombatSkillTrigger = Extract<DiceSkillType, 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDamaged' | 'OnDeath' | 'OnTransformed'>;
+interface ActiveSkillSlot {
+  key: string;
+  title: string;
+  manaNeeded: number;
+  skillIndex?: number;
+}
 
-function getUnlockedCombatMeta(
+function getUnlockedSkillMeta(
   definition: DiceDefinition,
   classLevel: number,
-  trigger: CombatSkillTrigger
+  trigger: DiceSkillType,
+  activeSkillIndex?: number
 ): DiceSkillRuntimeMeta | undefined {
-  if (!definition.skills.some((skill) => skill.type === trigger)) return undefined;
-  const meta = getRuntimeSkillMeta(definition);
+  const hasTrigger = activeSkillIndex === undefined
+    ? definition.skills.some((skill) => skill.type === trigger)
+    : definition.skills[activeSkillIndex]?.type === trigger;
+  if (!hasTrigger) return undefined;
+  const meta = getRuntimeSkillMeta(definition, activeSkillIndex);
   if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) return undefined;
   return meta;
 }
@@ -111,7 +120,7 @@ export function executeOnDamagedSkillEffects(
   isLethal: boolean
 ): OnDamagedResult {
   const result: OnDamagedResult = {};
-  const meta = getUnlockedCombatMeta(definition, classLevel, 'OnDamaged');
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'OnDamaged');
   if (!meta) return result;
 
   const bonus = meta.onDamagedExtraAttacks ?? 0;
@@ -134,7 +143,7 @@ export function executeOnDeathSkillEffects(
   attacker: DiceInstanceState
 ): OnDeathResult {
   const result: OnDeathResult = {};
-  const meta = getUnlockedCombatMeta(definition, classLevel, 'OnDeath');
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'OnDeath');
   if (!meta) return result;
 
   const bonus = meta.onDeathExtraAttacks ?? 0;
@@ -156,7 +165,7 @@ export function executeOnTransformedSkillEffects(
   classLevel: number
 ): OnTransformedResult {
   const result: OnTransformedResult = {};
-  const meta = getUnlockedCombatMeta(definition, classLevel, 'OnTransformed');
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'OnTransformed');
   if (!meta) return result;
 
   const bonus = meta.onTransformedExtraAttacks ?? 0;
@@ -177,7 +186,7 @@ export function executeOnKillSkillEffects(
   defeated: DiceInstanceState
 ): OnKillResult {
   const result: OnKillResult = {};
-  const meta = getUnlockedCombatMeta(definition, classLevel, 'OnKill');
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'OnKill');
   if (!meta) return result;
 
   const bonus = meta.onKillExtraAttacks ?? 0;
@@ -208,7 +217,7 @@ export function executeCombatStartSkillEffects(
   classLevel: number
 ): SkillEffectResult {
   const result = createBaseResult();
-  const meta = getUnlockedCombatMeta(definition, classLevel, 'CombatStart');
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'CombatStart');
   if (!meta) return result;
 
   const bonus = meta.combatStartExtraAttacks ?? 0;
@@ -245,7 +254,7 @@ export function executeCombatEndSkillEffects(
   classLevel: number
 ): CombatEndResult {
   const result: CombatEndResult = {};
-  const meta = getUnlockedCombatMeta(definition, classLevel, 'CombatEnd');
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'CombatEnd');
   if (!meta) return result;
 
   const bonus = meta.combatEndExtraAttacks ?? 0;
@@ -276,10 +285,9 @@ export function executePassiveSkillEffects(
   boardSideTargets: DiceInstanceState[]
 ): PassiveEffectResult {
   const result: PassiveEffectResult = {};
-  const meta = getRuntimeSkillMeta(definition);
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'Passive');
 
-  if (!target.gridPosition) return result;
-  if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) return result;
+  if (!target.gridPosition || !meta) return result;
 
   if (meta.splashDamage) {
     const splashTargets = boardSideTargets.filter((die) =>
@@ -340,16 +348,15 @@ export function executeActiveSkillEffects(
   classLevel: number,
   target: DiceInstanceState,
   currentMana: number,
-  activeSlot: { key: string; title: string; manaNeeded: number } | undefined,
+  activeSlot: ActiveSkillSlot | undefined,
   isDeathTransformed: boolean
 ): ActiveEffectResult {
   const result: ActiveEffectResult = {};
-  const meta = getRuntimeSkillMeta(definition);
+  const meta = getUnlockedSkillMeta(definition, classLevel, 'Active', activeSlot?.skillIndex);
+  if (!meta) return result;
 
   const manaNeeded = activeSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 0);
   const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
-
-  if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) return result;
 
   if (meta.canSummonWizard && classLevel >= 6) {
     const wizardMana = activeSlot?.manaNeeded ?? 18;

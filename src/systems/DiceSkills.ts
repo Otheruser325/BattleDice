@@ -106,11 +106,14 @@ export interface DiceSkillRuntimeMeta {
 }
 
 
-export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntimeMeta {
+export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex?: number): DiceSkillRuntimeMeta {
   const primary = definition.skills[0];
   const modifiers = primary?.modifiers;
   const skillOfType = (type: DiceSkillType) => definition.skills.find((skill) => skill.type === type);
-  const activeSkill = skillOfType('Active');
+  const selectedActiveSkill = activeSkillIndex === undefined || definition.skills[activeSkillIndex]?.type !== 'Active'
+    ? undefined
+    : definition.skills[activeSkillIndex];
+  const activeSkill = selectedActiveSkill ?? skillOfType('Active');
   const activeModifiers = activeSkill?.modifiers;
   const onKillSkill = skillOfType('OnKill');
   const onKillModifiers = onKillSkill?.modifiers;
@@ -120,7 +123,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition): DiceSkillRuntim
   const onDeathModifiers = onDeathSkill?.modifiers;
   const onTransformedSkill = skillOfType('OnTransformed');
   const onTransformedModifiers = onTransformedSkill?.modifiers;
-  const allModifiers = definition.skills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
+  const runtimeSkills = selectedActiveSkill
+    ? definition.skills.filter((skill, index) => skill.type !== 'Active' || index === activeSkillIndex)
+    : definition.skills;
+  const allModifiers = runtimeSkills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
   const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
     const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
     return sum === 0 ? undefined : sum;

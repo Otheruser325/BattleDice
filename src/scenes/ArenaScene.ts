@@ -2421,7 +2421,7 @@ export class ArenaScene extends Phaser.Scene {
     return Math.max(0, Math.floor(adjusted * skillMult * comboMult));
   }
 
-  private getActiveManaSlots(die: DiceInstanceState): Array<{ key: string; title: string; manaNeeded: number }> {
+  private getActiveManaSlots(die: DiceInstanceState): Array<{ key: string; title: string; manaNeeded: number; skillIndex?: number }> {
     const def = this.getDefinitionForInstance(die);
     if (!def) return [];
     const meta = getRuntimeSkillMeta(def);
@@ -2432,7 +2432,7 @@ export class ArenaScene extends Phaser.Scene {
     if (meta.hasDeathInstakill && !this.deathDiceTransformed.has(die.instanceId)) return [];
     if (meta.hasDeathInstakill && this.deathDiceTransformed.has(die.instanceId)) {
       if (transformSkill && (transformSkill.manaNeeded ?? 0) > 0) {
-        return [{ key: `transform:${transformSkill.title}:${transformSkillIndex}`, title: transformSkill.title, manaNeeded: Math.max(1, transformSkill.manaNeeded ?? 1) }];
+        return [{ key: `transform:${transformSkill.title}:${transformSkillIndex}`, title: transformSkill.title, manaNeeded: Math.max(1, transformSkill.manaNeeded ?? 1), skillIndex: transformSkillIndex }];
       }
       return [{ key: 'deathInstakill', title: `Reaper's Touch`, manaNeeded: meta.deathInstakillMana ?? 12 }];
     }
@@ -2442,7 +2442,7 @@ export class ArenaScene extends Phaser.Scene {
         ? []
         : [{ skill, index }])
       .filter(({ skill }) => !(skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') || classLevel >= 6)
-      .map(({ skill, index }) => ({ key: `${skill.title}:${index}`, title: skill.title, manaNeeded: Math.max(1, skill.manaNeeded ?? 1) }));
+      .map(({ skill, index }) => ({ key: `${skill.title}:${index}`, title: skill.title, manaNeeded: Math.max(1, skill.manaNeeded ?? 1), skillIndex: index }));
   }
 
   private getActiveMana(instanceId: string, key?: string): number {
@@ -3970,7 +3970,7 @@ export class ArenaScene extends Phaser.Scene {
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !target.gridPosition) return;
-    const meta = getRuntimeSkillMeta(definition);
+    const meta = getRuntimeSkillMeta(definition, activeSlot.skillIndex);
     const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const targetBoardSide = this.getBoardSideForDie(target);
     const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.ownerId === target.ownerId);
@@ -4015,7 +4015,7 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
-  private async applyActiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState, activeSlot: { key: string; title: string; manaNeeded: number }) {
+  private async applyActiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState, activeSlot: { key: string; title: string; manaNeeded: number; skillIndex?: number }) {
     const applyDirectDamage = (victim: DiceInstanceState, baseDamage: number): { dealt: number; defeated: boolean } => {
       const multiplier = this.getCombanityDamageMultiplier(attacker, victim);
       const giantHunter = this.getGiantHunterBonus(attacker.ownerId, victim);
@@ -4026,7 +4026,7 @@ export class ArenaScene extends Phaser.Scene {
     };
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
-    const meta = getRuntimeSkillMeta(definition);
+    const meta = getRuntimeSkillMeta(definition, activeSlot.skillIndex);
     const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const currentMana = this.getActiveMana(attacker.instanceId, activeSlot.key);
     const isDeathTransformed = this.deathDiceTransformed.has(attacker.instanceId);
@@ -5155,7 +5155,7 @@ export class ArenaScene extends Phaser.Scene {
   private async applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
-    const meta = getRuntimeSkillMeta(definition);
+    const meta = getRuntimeSkillMeta(definition, activeSlot.skillIndex);
     const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const result = executeOnKillSkillEffects(attacker, definition, classLevel, _defeated);
 
