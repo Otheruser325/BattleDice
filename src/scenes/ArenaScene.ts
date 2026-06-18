@@ -3970,7 +3970,7 @@ export class ArenaScene extends Phaser.Scene {
   private applyPassiveSkillEffects(attacker: DiceInstanceState, target: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !target.gridPosition) return;
-    const meta = getRuntimeSkillMeta(definition, activeSlot.skillIndex);
+    const meta = getRuntimeSkillMeta(definition);
     const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const targetBoardSide = this.getBoardSideForDie(target);
     const boardSideTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.ownerId === target.ownerId);
@@ -5155,7 +5155,7 @@ export class ArenaScene extends Phaser.Scene {
   private async applyOnKillSkillEffects(attacker: DiceInstanceState, _defeated: DiceInstanceState) {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return;
-    const meta = getRuntimeSkillMeta(definition, activeSlot.skillIndex);
+    const meta = getRuntimeSkillMeta(definition);
     const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const result = executeOnKillSkillEffects(attacker, definition, classLevel, _defeated);
 
