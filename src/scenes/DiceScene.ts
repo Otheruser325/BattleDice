@@ -44,7 +44,6 @@ function getVisibleSkillCount(definition: DiceDefinition): number {
   const hiddenTransformSkills = getTransformSkillIndexSet(definition);
   return definition.skills.filter((_, index) => !hiddenTransformSkills.has(index)).length;
 }
-
 function formatSkillTypeLine(definition: DiceDefinition): string {
   const hiddenTransformSkills = getTransformSkillIndexSet(definition);
   const visibleSkills = definition.skills.filter((_, index) => !hiddenTransformSkills.has(index));
