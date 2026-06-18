@@ -2471,7 +2471,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private isActiveManaEligibleThisTurn(instanceId: string, key?: string): boolean {
-    return (this.manaFilledTurnBySlot.get(this.getManaSlotKey(instanceId, key)) ?? -1) < this.gameState.turn;
+    return (this.manaFilledTurnBySlot.get(this.getManaSlotKey(instanceId, key)) ?? -1) <= this.gameState.turn;
   }
 
   private resetActiveMana(instanceId: string, key?: string) {
