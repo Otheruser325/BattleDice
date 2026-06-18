@@ -121,7 +121,7 @@ export class ArenaScene extends Phaser.Scene {
   private shieldDurationTurnsByInstance: Map<string, number> = new Map();
   private tauntedByInstance: Map<string, { sourceId: string; turns: number }> = new Map();
   private attackCapacityByInstance: Map<string, number> = new Map();
-  private attackDeltaByInstance: Map<string, { delta: number; turns: number }> = new Map();
+  private attackDeltaByInstance: Map<string, { delta: number; turns: number; stacks?: Array<{ delta: number; turns: number }> }> = new Map();
   private extraAttackTurnsByInstance: Map<string, { extra: number; turns: number }> = new Map();
   private attackMultiplierTurnsByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private basicAttacksPerAttackByInstance: Map<string, { count: number; turns: number }> = new Map();
@@ -132,7 +132,7 @@ export class ArenaScene extends Phaser.Scene {
   private manaPausedTurnsByInstance: Map<string, number> = new Map();
   private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
-  private poisonByInstance: Map<string, { damage: number; turns: number; stacks?: number; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> = new Map();
+  private poisonByInstance: Map<string, { stacks: Array<{ damage: number; turns: number; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> }> = new Map();
   private armorShredByInstance: Map<string, { rate: number; turns: number }> = new Map();
   private transcendenceTransformed: Set<string> = new Set();
   private oddPipTransformed: Set<string> = new Set();
@@ -3722,6 +3722,36 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
+  private getPoisonSummary(instanceId: string): { damage: number; turns: number; stacks: number } | undefined {
+    const poison = this.poisonByInstance.get(instanceId);
+    if (!poison) return undefined;
+    const activeStacks = poison.stacks.filter((stack) => stack.turns > 0);
+    if (activeStacks.length === 0) return undefined;
+    return {
+      damage: activeStacks.reduce((sum, stack) => sum + stack.damage, 0),
+      turns: Math.max(...activeStacks.map((stack) => stack.turns)),
+      stacks: activeStacks.length
+    };
+  }
+
+  private getAttackDeltaSummary(instanceId: string): { delta: number; turns: number; stacks: number } | undefined {
+    const attackDelta = this.attackDeltaByInstance.get(instanceId);
+    if (!attackDelta) return undefined;
+    const stacks = attackDelta.stacks?.filter((stack) => stack.turns > 0);
+    if (!stacks?.length) return { delta: attackDelta.delta, turns: attackDelta.turns, stacks: Math.abs(attackDelta.delta) > 0 ? 1 : 0 };
+    return {
+      delta: stacks.reduce((sum, stack) => sum + stack.delta, 0),
+      turns: Math.max(...stacks.map((stack) => stack.turns)),
+      stacks: stacks.length
+    };
+  }
+
+  private getStatusStackCount(die: DiceInstanceState, effect: 'slow' | 'poison' | 'berserk' | 'taunt' | 'fracture' | 'stun'): number {
+    if (effect === 'poison') return this.getPoisonSummary(die.instanceId)?.stacks ?? 0;
+    if (effect === 'slow') return this.getAttackDeltaSummary(die.instanceId)?.stacks ?? 0;
+    return 0;
+  }
+
   private getStatusEffects(die: DiceInstanceState): Array<'slow' | 'poison' | 'berserk' | 'taunt' | 'fracture' | 'stun'> {
     const effects: Array<'slow' | 'poison' | 'berserk' | 'taunt' | 'fracture' | 'stun'> = [];
     if ((this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0) < 0) effects.push('slow');
@@ -3735,11 +3765,14 @@ export class ArenaScene extends Phaser.Scene {
 
   private getStatusEffectSummaryForDie(die: DiceInstanceState): string[] {
     const statusLines: string[] = [];
-    const attackDelta = this.attackDeltaByInstance.get(die.instanceId);
-    if (attackDelta && attackDelta.delta < 0) statusLines.push(`Slow ${attackDelta.delta} attacks (${attackDelta.turns} turns)`);
-    const poison = this.poisonByInstance.get(die.instanceId);
+    const attackDelta = this.getAttackDeltaSummary(die.instanceId);
+    if (attackDelta && attackDelta.delta < 0) {
+      const stackText = attackDelta.stacks > 1 ? ` x${attackDelta.stacks}` : '';
+      statusLines.push(`Slow${stackText} ${attackDelta.delta} attacks (${attackDelta.turns} turns)`);
+    }
+    const poison = this.getPoisonSummary(die.instanceId);
     if (poison) {
-      const stackText = poison.stacks && poison.stacks > 1 ? ` x${poison.stacks}` : '';
+      const stackText = poison.stacks > 1 ? ` x${poison.stacks}` : '';
       statusLines.push(`Poison${stackText}: ${poison.damage}/turn (${poison.turns} turns)`);
     }
     const fracture = this.armorShredByInstance.get(die.instanceId);
@@ -4165,7 +4198,9 @@ export class ArenaScene extends Phaser.Scene {
       const poisonDamage = Math.max(1, Math.floor(result.poisonDamage * this.getDiceCardSkillDamageMultiplier(attacker)));
       const poisonTurns = result.poisonTurns;
       const existing = this.poisonByInstance.get(target.instanceId);
-      this.poisonByInstance.set(target.instanceId, { damage: (existing?.damage ?? 0) + poisonDamage, turns: (existing?.turns ?? 0) + poisonTurns, stacks: (existing?.stacks ?? 0) + 1, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
+      this.poisonByInstance.set(target.instanceId, {
+        stacks: [...(existing?.stacks ?? []), { damage: poisonDamage, turns: poisonTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId }]
+      });
       this.animateSkillEffect('poison', attacker, target);
     }
 
@@ -4206,15 +4241,17 @@ export class ArenaScene extends Phaser.Scene {
         let appliedDelta = result.attackDelta;
         let nextDelta = result.attackDelta;
         let nextTurns = durationTurns;
+        let nextStacks: Array<{ delta: number; turns: number }> | undefined;
         if (result.statusEffect === 'slow' && result.attackDelta < 0 && (result.attackDeltaMaxStacks ?? 1) > 1) {
           const maxStacks = Math.max(1, Math.floor(result.attackDeltaMaxStacks ?? 1));
-          const stackUnit = Math.abs(result.attackDelta);
-          const minDelta = -stackUnit * maxStacks;
-          nextDelta = Math.max(minDelta, (existing?.delta ?? 0) + result.attackDelta);
-          nextTurns = Math.max(existing?.turns ?? 0, durationTurns);
+          nextStacks = [...(existing?.stacks ?? [{ delta: existing?.delta ?? 0, turns: existing?.turns ?? 0 }].filter((stack) => stack.delta < 0 && stack.turns > 0)), { delta: result.attackDelta, turns: durationTurns }]
+            .filter((stack) => stack.turns > 0)
+            .slice(-maxStacks);
+          nextDelta = nextStacks.reduce((sum, stack) => sum + stack.delta, 0);
+          nextTurns = Math.max(...nextStacks.map((stack) => stack.turns));
           appliedDelta = nextDelta - (existing?.delta ?? 0);
         }
-        this.attackDeltaByInstance.set(result.attackDeltaTarget.instanceId, { delta: nextDelta, turns: nextTurns });
+        this.attackDeltaByInstance.set(result.attackDeltaTarget.instanceId, { delta: nextDelta, turns: nextTurns, stacks: nextStacks });
         this.recordAttackCountEffect(result.attackDeltaTarget.instanceId, appliedDelta);
         if (result.statusEffect === 'slow') {
           this.gameState = {
@@ -4426,6 +4463,19 @@ export class ArenaScene extends Phaser.Scene {
       else this.stunnedByInstance.set(key, nextTurns);
     });
     this.attackDeltaByInstance.forEach((value, key) => {
+      if (value.stacks?.length) {
+        const nextStacks = value.stacks.map((stack) => ({ ...stack, turns: stack.turns - 1 })).filter((stack) => stack.turns > 0);
+        if (nextStacks.length === 0) {
+          this.attackDeltaByInstance.delete(key);
+        } else {
+          this.attackDeltaByInstance.set(key, {
+            delta: nextStacks.reduce((sum, stack) => sum + stack.delta, 0),
+            turns: Math.max(...nextStacks.map((stack) => stack.turns)),
+            stacks: nextStacks
+          });
+        }
+        return;
+      }
       const nextTurns = value.turns - 1;
       if (nextTurns <= 0) {
         this.attackDeltaByInstance.delete(key);
@@ -4583,14 +4633,15 @@ export class ArenaScene extends Phaser.Scene {
   private applyTurnBasedEffects() {
     const newlyDefeated: DiceInstanceState[] = [];
     this.poisonByInstance.forEach((effect, instanceId) => {
-      if (effect.turns <= 0) return;
+      const activeStacks = effect.stacks.filter((stack) => stack.turns > 0);
+      if (activeStacks.length === 0) return;
+      const tickDamage = Math.max(1, Math.floor(activeStacks.reduce((sum, stack) => sum + stack.damage, 0)));
       const target = this.gameState.dice.find((die) => die.instanceId === instanceId && !die.isDestroyed);
-      if (target) this.showDamageText(target, Math.max(1, Math.floor(effect.damage)), '#74d66f');
+      if (target) this.showDamageText(target, tickDamage, '#74d66f');
       this.gameState = {
         ...this.gameState,
         dice: this.gameState.dice.map((die) => {
           if (die.instanceId !== instanceId || die.isDestroyed) return die;
-          const tickDamage = Math.max(1, Math.floor(effect.damage));
           const currentHealth = Math.max(0, die.currentHealth - tickDamage);
           const isDestroyed = currentHealth <= 0;
           if (isDestroyed && !die.isDestroyed) newlyDefeated.push(die);
@@ -4605,8 +4656,10 @@ export class ArenaScene extends Phaser.Scene {
           };
         })
       };
-      this.poisonByInstance.set(instanceId, { ...effect, turns: effect.turns - 1 });
-      if (effect.turns - 1 <= 0) {
+      const nextStacks = activeStacks.map((stack) => ({ ...stack, turns: stack.turns - 1 })).filter((stack) => stack.turns > 0);
+      if (nextStacks.length > 0) {
+        this.poisonByInstance.set(instanceId, { stacks: nextStacks });
+      } else {
         this.poisonByInstance.delete(instanceId);
       }
     });
@@ -5704,19 +5757,17 @@ export class ArenaScene extends Phaser.Scene {
       }).setOrigin(0.5);
       icon.setName('status-effect');
       container.add(icon);
-      if (effect === 'poison') {
-        const stacks = this.poisonByInstance.get(die.instanceId)?.stacks ?? 0;
-        if (stacks > 1) {
-          const stackLabel = this.add.text(px + 7, py + 5, `${stacks}`, {
-            fontFamily: 'Orbitron',
-            fontSize: '7px',
-            color: '#ffffff',
-            backgroundColor: '#173247',
-            padding: { left: 1, right: 1, top: 0, bottom: 0 }
-          }).setOrigin(0.5);
-          stackLabel.setName('status-effect');
-          container.add(stackLabel);
-        }
+      const stacks = this.getStatusStackCount(die, effect);
+      if (stacks > 1) {
+        const stackLabel = this.add.text(px + 7, py + 5, `${stacks}`, {
+          fontFamily: 'Orbitron',
+          fontSize: '7px',
+          color: '#ffffff',
+          backgroundColor: '#173247',
+          padding: { left: 1, right: 1, top: 0, bottom: 0 }
+        }).setOrigin(0.5);
+        stackLabel.setName('status-effect');
+        container.add(stackLabel);
       }
     });
   }
