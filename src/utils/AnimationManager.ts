@@ -213,8 +213,7 @@ export class AnimationManager {
       }
     });
   }
-
-
+  
   static animateGrowthTurn(scene: Phaser.Scene, x: number, y: number, color: number, broken = false) {
     const g = scene.add.graphics().setDepth(262);
     g.lineStyle(4, color, 0.95);
