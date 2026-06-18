@@ -168,17 +168,17 @@ export class AnimationManager {
   static animateFracture(scene: Phaser.Scene, x: number, y: number) {
     const g = scene.add.graphics().setDepth(260);
     g.fillStyle(0xff4da6, 0.22);
-    g.fillRoundedRect(x - 21, y - 21, 42, 42, 10);
-    g.lineStyle(3, 0xff9bd0, 0.95);
-    g.strokeRoundedRect(x - 21, y - 21, 42, 42, 10);
-    g.lineStyle(3, 0x331127, 0.95);
+    g.fillRoundedRect(x - 23, y - 23, 46, 46, 12);
+    g.lineStyle(4, 0xff9bd0, 0.98);
+    g.strokeRoundedRect(x - 23, y - 23, 46, 46, 12);
+    g.lineStyle(3, 0x331127, 0.98);
     g.beginPath();
-    g.moveTo(x - 2, y - 18);
-    g.lineTo(x + 5, y - 6);
-    g.lineTo(x - 4, y + 2);
-    g.lineTo(x + 3, y + 18);
+    g.moveTo(x - 3, y - 20);
+    g.lineTo(x + 6, y - 7);
+    g.lineTo(x - 5, y + 3);
+    g.lineTo(x + 4, y + 20);
     g.strokePath();
-    scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: 520, ease: 'Quad.easeOut', onComplete: () => g.destroy() });
+    scene.time.delayedCall(800, () => g.destroy());
   }
 
   static animateSoulHarvest(scene: Phaser.Scene, fromX: number, fromY: number, toX: number, toY: number, enemySide = false) {
@@ -212,6 +212,28 @@ export class AnimationManager {
         soul.destroy();
       }
     });
+  }
+
+  static animateGrowthTurn(scene: Phaser.Scene, x: number, y: number, color: number, broken = false) {
+    const g = scene.add.graphics().setDepth(262);
+    g.lineStyle(4, color, 0.95);
+    g.beginPath();
+    g.arc(x, y, 20, Phaser.Math.DegToRad(35), Phaser.Math.DegToRad(320), false);
+    g.strokePath();
+    g.fillStyle(color, 0.95);
+    g.fillTriangle(x + 16, y - 16, x + 29, y - 15, x + 21, y - 3);
+    scene.tweens.add({ targets: g, angle: 360, duration: 900, ease: 'Sine.easeInOut', onComplete: () => g.destroy() });
+
+    if (!broken) return;
+    const burst = scene.add.graphics().setDepth(263);
+    burst.fillStyle(0xb86cff, 0.32);
+    burst.fillCircle(x, y, 12);
+    burst.lineStyle(3, 0xe1b4ff, 0.9);
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (Math.PI * 2 * i) / 8;
+      burst.lineBetween(x, y, x + Math.cos(angle) * 26, y + Math.sin(angle) * 26);
+    }
+    scene.tweens.add({ targets: burst, alpha: 0, scale: 1.45, duration: 360, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
   }
 
   static animateHeatwave(scene: Phaser.Scene, x: number, y: number) {

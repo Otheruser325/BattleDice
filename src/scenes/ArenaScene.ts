@@ -4326,6 +4326,11 @@ export class ArenaScene extends Phaser.Scene {
       const cap = meta.maxSouls ?? 2;
       const count = Math.min(cap, previous + 1);
       this.setConjuredSoulCount(deathDie, meta, count);
+      const deathCenter = this.getTileCenter(deathDie);
+      const defeatedCenter = this.getTileCenter(defeated);
+      if (deathCenter && defeatedCenter) {
+        AnimationManager.animateSoulHarvest(this, defeatedCenter.x, defeatedCenter.y, deathCenter.x, deathCenter.y, deathDie.ownerId === 'enemy');
+      }
 
       if (count >= cap) {
         this.deathDiceTransformed.add(deathDie.instanceId);
@@ -4387,6 +4392,7 @@ export class ArenaScene extends Phaser.Scene {
           const current = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
           this.permanentAttackBonusByInstance.set(die.instanceId, current + delta);
           this.recordAttackCountEffect(die.instanceId, delta);
+          this.animateGrowthEffect(die, false);
         }
 
         if (result.applyBrokenGrowth && result.brokenGrowthDelta !== undefined) {
@@ -4395,6 +4401,7 @@ export class ArenaScene extends Phaser.Scene {
           const newDelta = currentDelta + delta;
           this.brokenGrowthDeltaByInstance.set(die.instanceId, newDelta);
           this.recordAttackCountEffect(die.instanceId, delta);
+          this.animateGrowthEffect(die, delta < 0);
           this.combatLog.setText(`Broken Growth Dice: ${delta > 0 ? '+1' : '-1'} attack count (total: ${newDelta > 0 ? '+' : ''}${newDelta})`);
         }
 
@@ -4687,6 +4694,19 @@ export class ArenaScene extends Phaser.Scene {
       x: grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2,
       y: grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
     };
+  }
+
+  private getDieAccentColor(die: DiceInstanceState): number {
+    const accent = this.getDefinitionForInstance(die)?.accent;
+    if (!accent) return 0xffffff;
+    const parsed = Number.parseInt(accent.replace('#', ''), 16);
+    return Number.isFinite(parsed) ? parsed : 0xffffff;
+  }
+
+  private animateGrowthEffect(die: DiceInstanceState, broken: boolean) {
+    const center = this.getTileCenter(die);
+    if (!center) return;
+    AnimationManager.animateGrowthTurn(this, center.x, center.y, this.getDieAccentColor(die), broken);
   }
 
   private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal' | 'fracture' | 'heatwave', attacker: DiceInstanceState, target: DiceInstanceState) {
