@@ -3746,11 +3746,11 @@ export class ArenaScene extends Phaser.Scene {
       delta: stacks.reduce((sum, stack) => sum + stack.delta, 0),
       turns: Math.max(...stacks.map((stack) => stack.turns)),
       stacks: stacks.length
+    };
+  }
+
   private getStatusStackCount(die: DiceInstanceState, effect: 'slow' | 'poison'): number {
     if (effect === 'poison') return this.getPoisonSummary(die.instanceId)?.stacks ?? 0;
-    if (effect === 'slow') return this.getAttackDeltaSummary(die.instanceId)?.stacks ?? 0;
-    return 0;
-  }
     if (effect === 'slow') return this.getAttackDeltaSummary(die.instanceId)?.stacks ?? 0;
     return 0;
   }
