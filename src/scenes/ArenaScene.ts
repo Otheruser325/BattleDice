@@ -2404,9 +2404,6 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private getFireSupportBonus(die: DiceInstanceState): number {
-    // Fire Support: dice on backline gain extra attacks
-    // Player's backline: column 0 (leftmost)
-    // Enemy's backline: column 4 (rightmost)
     if (!die.gridPosition) return 0;
     const isBackline = die.ownerId === 'player'
       ? die.gridPosition.col === 0
@@ -2958,7 +2955,6 @@ export class ArenaScene extends Phaser.Scene {
 
   private getCrowdAttackDamageBonus(die: DiceInstanceState): number {
     const effectivePip = this.getEffectivePipForInvestment(die);
-    // Crowd Attack affects dice with 1 or 2 effective pips
     if (effectivePip === 1 || effectivePip === 2) {
       return this.crowdAttackByOwner[die.ownerId].damage;
     }
@@ -3018,7 +3014,7 @@ export class ArenaScene extends Phaser.Scene {
       const vanguard = this.getVanguardReduction(die);
       if (vanguard > 0) buffs.push(`Vanguard ${pct(vanguard)} DR (frontline)`);
       const centreline = this.getCentrelineDamageBonus(die);
-      if (centreline > 0) buffs.push(`Centreline +${pct(centreline)} dmg (centre column)`);
+      if (centreline > 0) buffs.push(`Centreline +${pct(centreline)} dmg (centre)`);
     }
     if (this.fountainHealRateByOwner[owner] > 0) buffs.push(`Fountain of Love ${pct(this.fountainHealRateByOwner[owner])} heal`);
     if (this.manaPotionGainByOwner[owner] > 0) buffs.push(`Mana Potion +${this.manaPotionGainByOwner[owner]} mana`);
@@ -3848,7 +3844,6 @@ export class ArenaScene extends Phaser.Scene {
     if (!options.ignoreDamageReduction && die) reduction += this.getSpotlightScale(die);
     if (!options.ignoreDamageReduction && die) reduction += this.getVanguardReduction(die);
     if (!options.ignoreDamageReduction && die) reduction += this.getEffectivePipForInvestment(die) % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].reduction : this.oddInvestmentByOwner[die.ownerId].reduction;
-    // Crowd Attack reduction for 1-2 pip dice
     if (!options.ignoreDamageReduction && die) {
       const effectivePip = this.getEffectivePipForInvestment(die);
       if (effectivePip === 1 || effectivePip === 2) {
