@@ -3372,18 +3372,25 @@ export class ArenaScene extends Phaser.Scene {
 
         const attackerDef = this.getDefinitionForInstance(attacker);
         const attackerMeta = attackerDef ? getRuntimeSkillMeta(attackerDef) : undefined;
-        const activeSlots = this.getActiveManaSlots(attacker)
-          .map((slot) => ({ ...slot, mana: this.getActiveMana(attacker.instanceId, slot.key) }));
-        const wizardSlot = activeSlots.find((slot) => slot.title === 'Wizard Royale');
-        const meteorSlot = activeSlots.find((slot) => slot.title === 'Spell Strike' || slot.title === 'Meteor Strike' || slot.title === 'Meteor');
-        const deathSlot = activeSlots.find((slot) => slot.title === `Reaper's Touch`);
-        const primarySlot = activeSlots.find((slot) => slot.mana >= slot.manaNeeded);
-        const wizardFires = Boolean(wizardSlot && this.shouldCastWizardRoyale(attacker, wizardSlot.mana));
-        const meteorFires = Boolean(attackerMeta?.hasMeteorStrike && !wizardFires && meteorSlot && meteorSlot.mana >= meteorSlot.manaNeeded);
-        const deathFires = Boolean(attackerMeta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && deathSlot && deathSlot.mana >= deathSlot.manaNeeded);
-        const regularActiveFires = Boolean(primarySlot && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill && !wizardFires);
-        const anyActiveFires = wizardFires || meteorFires || deathFires || regularActiveFires;
-        const activeSlot = wizardFires ? wizardSlot : meteorFires ? meteorSlot : deathFires ? deathSlot : regularActiveFires ? primarySlot : undefined;
+        const getChargedActiveSlot = () => {
+          const activeSlots = this.getActiveManaSlots(attacker)
+            .map((slot) => ({ ...slot, mana: this.getActiveMana(attacker.instanceId, slot.key) }));
+          const wizardSlot = activeSlots.find((slot) => slot.title === 'Wizard Royale');
+          const meteorSlot = activeSlots.find((slot) => slot.title === 'Spell Strike' || slot.title === 'Meteor Strike' || slot.title === 'Meteor');
+          const deathSlot = activeSlots.find((slot) => slot.title === `Reaper's Touch`);
+          const primarySlot = activeSlots.find((slot) => slot.mana >= slot.manaNeeded);
+          const wizardFires = Boolean(wizardSlot && this.shouldCastWizardRoyale(attacker, wizardSlot.mana));
+          const meteorFires = Boolean(attackerMeta?.hasMeteorStrike && !wizardFires && meteorSlot && meteorSlot.mana >= meteorSlot.manaNeeded);
+          const deathFires = Boolean(attackerMeta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && deathSlot && deathSlot.mana >= deathSlot.manaNeeded);
+          const regularActiveFires = Boolean(primarySlot && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill && !wizardFires);
+          return wizardFires ? wizardSlot : meteorFires ? meteorSlot : deathFires ? deathSlot : regularActiveFires ? primarySlot : undefined;
+        };
+        let activeSlot = getChargedActiveSlot();
+        if (!activeSlot) {
+          this.addManaToAllActiveSlots(attacker);
+          activeSlot = getChargedActiveSlot();
+        }
+        const anyActiveFires = Boolean(activeSlot);
         const skipBasicAttack = anyActiveFires;
         const forcedTarget = this.resolveTauntForcedTarget(attacker);
         const beamLine = this.findTranscendenceBeamTarget(attacker, forcedTarget);
@@ -3425,10 +3432,6 @@ export class ArenaScene extends Phaser.Scene {
             break;
           }
           continue;
-        }
-
-        if (!anyActiveFires) {
-          this.addManaToAllActiveSlots(attacker);
         }
 
         let damage = 0;
