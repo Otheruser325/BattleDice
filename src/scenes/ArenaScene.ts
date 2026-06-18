@@ -3949,17 +3949,20 @@ export class ArenaScene extends Phaser.Scene {
 
     const heatwaveRate = meta.heatwaveDamageRate ?? 0;
     if (heatwaveRate <= 0) return;
-    const attackerBoardSide = this.getBoardSideForDie(attacker);
-    this.getBoardDiceOnSide(attacker.ownerId === 'player' ? 'enemy' : 'player', attackerBoardSide)
+    const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
+    const targetBoardSide = this.getBoardSideForDie(target);
+    this.getBoardDiceOnSide(enemyOwner, targetBoardSide)
       .filter((die) =>
         die.gridPosition &&
         Math.abs(die.gridPosition.row - attacker.gridPosition!.row) <= 1 &&
-        Math.abs(die.gridPosition.col - attacker.gridPosition!.col) <= 1)
+        Math.abs(die.gridPosition.col - attacker.gridPosition!.col) <= 1 &&
+        (die.gridPosition.row !== attacker.gridPosition!.row || die.gridPosition.col !== attacker.gridPosition!.col))
       .forEach((die) => {
         const damage = Math.max(1, Math.floor(baseDamage * heatwaveRate));
         const hit = this.applyDamageWithRevive(die.instanceId, damage);
         this.gameState = hit.state;
         this.showDamageText(die, hit.dealt, '#ff7a35');
+        this.animateSkillEffect('heatwave', attacker, die);
         this.handleDefeatedDie(die, hit.defeated);
       });
   }
@@ -4192,6 +4195,7 @@ export class ArenaScene extends Phaser.Scene {
       const durationTurns = this.getSkillDurationTurns(result.armorShredTurns);
       if (durationTurns !== undefined) {
         this.armorShredByInstance.set(result.armorShredTarget.instanceId, { rate: result.armorShredRate, turns: durationTurns });
+        this.animateSkillEffect('fracture', attacker, result.armorShredTarget);
       }
     }
 
@@ -4294,6 +4298,12 @@ export class ArenaScene extends Phaser.Scene {
         this.instanceDefinitionOverrides.set(soulDie.instanceId, { ...scaledDef, attack: newAttack, health: newMaxHealth });
       }
 		
+      const soulCenter = this.getTileCenter(soulDie);
+      const defeatedCenter = this.getTileCenter(defeated);
+      if (soulCenter && defeatedCenter) {
+        AnimationManager.animateSoulHarvest(this, defeatedCenter.x, defeatedCenter.y, soulCenter.x, soulCenter.y, soulDie.ownerId === 'enemy');
+      }
+
       this.combatLog.setText(`Soul Dice harvested ally soul! (${currentSouls + 1} souls, +${scaledMeta.soulBoostPercent}% stats)`);
       AudioManager.playSfx(this, AUDIO_KEYS.soulHarvest);
     });
@@ -4316,6 +4326,11 @@ export class ArenaScene extends Phaser.Scene {
       const cap = meta.maxSouls ?? 2;
       const count = Math.min(cap, previous + 1);
       this.setConjuredSoulCount(deathDie, meta, count);
+      const deathCenter = this.getTileCenter(deathDie);
+      const defeatedCenter = this.getTileCenter(defeated);
+      if (deathCenter && defeatedCenter) {
+        AnimationManager.animateSoulHarvest(this, defeatedCenter.x, defeatedCenter.y, deathCenter.x, deathCenter.y, deathDie.ownerId === 'enemy');
+      }
 
       if (count >= cap) {
         this.deathDiceTransformed.add(deathDie.instanceId);
@@ -4377,6 +4392,7 @@ export class ArenaScene extends Phaser.Scene {
           const current = this.permanentAttackBonusByInstance.get(die.instanceId) ?? 0;
           this.permanentAttackBonusByInstance.set(die.instanceId, current + delta);
           this.recordAttackCountEffect(die.instanceId, delta);
+          this.animateGrowthEffect(die, false);
         }
 
         if (result.applyBrokenGrowth && result.brokenGrowthDelta !== undefined) {
@@ -4385,6 +4401,7 @@ export class ArenaScene extends Phaser.Scene {
           const newDelta = currentDelta + delta;
           this.brokenGrowthDeltaByInstance.set(die.instanceId, newDelta);
           this.recordAttackCountEffect(die.instanceId, delta);
+          this.animateGrowthEffect(die, delta < 0);
           this.combatLog.setText(`Broken Growth Dice: ${delta > 0 ? '+1' : '-1'} attack count (total: ${newDelta > 0 ? '+' : ''}${newDelta})`);
         }
 
@@ -4670,21 +4687,37 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal', attacker: DiceInstanceState, target: DiceInstanceState) {
-    if (!attacker.gridPosition || !target.gridPosition) return;
-    const attackerGrid = this.getGridContainerForDie(attacker);
-    const targetGrid = this.getGridContainerForDie(target);
-    const ax = attackerGrid.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const ay = attackerGrid.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const tx = targetGrid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const ty = targetGrid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const g = this.add.graphics();
-    if (kind === 'ice') { g.lineStyle(2, 0x8fd5ff, 0.9); g.strokeRect(tx - 18, ty - 18, 36, 36); }
-    if (kind === 'fire') { g.fillStyle(0xff8a3d, 0.25); g.fillTriangle(tx, ty - 18, tx - 14, ty + 16, tx + 14, ty + 16); }
-    if (kind === 'poison') { g.fillStyle(0x74d66f, 0.28); g.fillCircle(tx, ty, 14); g.fillCircle(tx + 12, ty - 8, 7); }
-    if (kind === 'electric') { g.lineStyle(2, 0xffef7a, 0.95); g.beginPath(); g.moveTo(ax, ay); g.lineTo((ax+tx)/2 - 8, (ay+ty)/2 + 6); g.lineTo((ax+tx)/2 + 6, (ay+ty)/2 - 5); g.lineTo(tx, ty); g.strokePath(); }
-    if (kind === 'heal') { g.lineStyle(3, 0x7dff9f, 0.95); g.strokeCircle(tx, ty, 18); g.lineBetween(tx - 10, ty, tx + 10, ty); g.lineBetween(tx, ty - 10, tx, ty + 10); }
-    this.tweens.add({ targets: g, alpha: 0, duration: 420, onComplete: () => g.destroy() });
+  private getTileCenter(die: DiceInstanceState): { x: number; y: number } | undefined {
+    if (!die.gridPosition) return undefined;
+    const grid = this.getGridContainerForDie(die);
+    return {
+      x: grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2,
+      y: grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
+    };
+  }
+
+  private getDieAccentColor(die: DiceInstanceState): number {
+    const accent = this.getDefinitionForInstance(die)?.accent;
+    if (!accent) return 0xffffff;
+    const parsed = Number.parseInt(accent.replace('#', ''), 16);
+    return Number.isFinite(parsed) ? parsed : 0xffffff;
+  }
+
+  private animateGrowthEffect(die: DiceInstanceState, broken: boolean) {
+    const center = this.getTileCenter(die);
+    if (!center) return;
+    AnimationManager.animateGrowthTurn(this, center.x, center.y, this.getDieAccentColor(die), broken);
+  }
+
+  private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal' | 'fracture' | 'heatwave', attacker: DiceInstanceState, target: DiceInstanceState) {
+    const attackerCenter = this.getTileCenter(attacker);
+    const targetCenter = this.getTileCenter(target);
+    if (!attackerCenter || !targetCenter) return;
+    if (kind === 'heal') { AnimationManager.animateHealingPulse(this, targetCenter.x, targetCenter.y); return; }
+    if (kind === 'fracture') { AnimationManager.animateFracture(this, targetCenter.x, targetCenter.y); return; }
+    if (kind === 'heatwave') { AnimationManager.animateHeatwave(this, targetCenter.x, targetCenter.y); return; }
+    if (kind === 'electric') { AnimationManager.animateSpearStrike(this, attackerCenter.x, attackerCenter.y, targetCenter.x, targetCenter.y); return; }
+    AnimationManager.animateElementalSkill(this, targetCenter.x, targetCenter.y, kind);
   }
 
   private pickRandomGridTile(): { row: number; col: number } {

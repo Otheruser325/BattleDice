@@ -164,6 +164,93 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: 320, onComplete: () => g.destroy() });
   }
 
+
+  static animateFracture(scene: Phaser.Scene, x: number, y: number) {
+    const g = scene.add.graphics().setDepth(260);
+    g.fillStyle(0xff4da6, 0.22);
+    g.fillRoundedRect(x - 23, y - 23, 46, 46, 12);
+    g.lineStyle(4, 0xff9bd0, 0.98);
+    g.strokeRoundedRect(x - 23, y - 23, 46, 46, 12);
+    g.lineStyle(3, 0x331127, 0.98);
+    g.beginPath();
+    g.moveTo(x - 3, y - 20);
+    g.lineTo(x + 6, y - 7);
+    g.lineTo(x - 5, y + 3);
+    g.lineTo(x + 4, y + 20);
+    g.strokePath();
+    scene.time.delayedCall(800, () => g.destroy());
+  }
+
+  static animateSoulHarvest(scene: Phaser.Scene, fromX: number, fromY: number, toX: number, toY: number, enemySide = false) {
+    const color = enemySide ? 0xff5b5b : 0x5ab7ff;
+    const soul = scene.add.graphics().setDepth(270);
+    soul.fillStyle(color, 0.88);
+    soul.fillCircle(0, 0, 7);
+    soul.fillCircle(-4, -5, 4);
+    soul.fillCircle(4, -5, 4);
+    soul.setPosition(fromX, fromY);
+    const trail = scene.add.graphics().setDepth(269);
+    scene.tweens.add({
+      targets: soul,
+      x: toX,
+      y: toY,
+      scaleX: 0.55,
+      scaleY: 0.55,
+      duration: 620,
+      ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        trail.clear();
+        trail.lineStyle(2, color, 0.32);
+        trail.strokeLineShape(new Phaser.Geom.Line(fromX, fromY, soul.x, soul.y));
+      },
+      onComplete: () => {
+        const burst = scene.add.graphics().setDepth(271);
+        burst.lineStyle(2, color, 0.9);
+        burst.strokeCircle(toX, toY, 12);
+        scene.tweens.add({ targets: burst, alpha: 0, scale: 1.8, duration: 260, onComplete: () => burst.destroy() });
+        trail.destroy();
+        soul.destroy();
+      }
+    });
+  }
+
+
+  static animateGrowthTurn(scene: Phaser.Scene, x: number, y: number, color: number, broken = false) {
+    const g = scene.add.graphics().setDepth(262);
+    g.lineStyle(4, color, 0.95);
+    g.beginPath();
+    g.arc(x, y, 20, Phaser.Math.DegToRad(35), Phaser.Math.DegToRad(320), false);
+    g.strokePath();
+    g.fillStyle(color, 0.95);
+    g.fillTriangle(x + 16, y - 16, x + 29, y - 15, x + 21, y - 3);
+    scene.tweens.add({ targets: g, angle: 360, duration: 900, ease: 'Sine.easeInOut', onComplete: () => g.destroy() });
+
+    if (!broken) return;
+    const burst = scene.add.graphics().setDepth(263);
+    burst.fillStyle(0xb86cff, 0.32);
+    burst.fillCircle(x, y, 12);
+    burst.lineStyle(3, 0xe1b4ff, 0.9);
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (Math.PI * 2 * i) / 8;
+      burst.lineBetween(x, y, x + Math.cos(angle) * 26, y + Math.sin(angle) * 26);
+    }
+    scene.tweens.add({ targets: burst, alpha: 0, scale: 1.45, duration: 360, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
+  }
+
+  static animateHeatwave(scene: Phaser.Scene, x: number, y: number) {
+    const g = scene.add.graphics().setDepth(258);
+    g.fillStyle(0xff6a2a, 0.24);
+    g.fillCircle(x, y, 18);
+    for (let i = 0; i < 5; i += 1) {
+      const angle = (Math.PI * 2 * i) / 5;
+      const tipX = x + Math.cos(angle) * 26;
+      const tipY = y + Math.sin(angle) * 26;
+      g.fillStyle(i % 2 === 0 ? 0xffb347 : 0xff5c2a, 0.72);
+      g.fillTriangle(x, y, tipX - Math.sin(angle) * 7, tipY + Math.cos(angle) * 7, tipX + Math.sin(angle) * 7, tipY - Math.cos(angle) * 7);
+    }
+    scene.tweens.add({ targets: g, alpha: 0, scale: 1.55, duration: 360, ease: 'Quad.easeOut', onComplete: () => g.destroy() });
+  }
+
   static animateSkullRevive(scene: Phaser.Scene, x: number, y: number) {
     const g = scene.add.graphics().setDepth(260);
     g.lineStyle(3, 0xd8e4e8, 0.9);
