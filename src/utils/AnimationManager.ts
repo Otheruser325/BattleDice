@@ -323,6 +323,32 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, duration: 280, onComplete: () => g.destroy() });
   }
 
+  static animateElectricStrike(scene: Phaser.Scene, ax: number, ay: number, tx: number, ty: number) {
+    const g = scene.add.graphics().setDepth(260);
+    const segments = 7;
+    const points = [{ x: ax, y: ay }];
+    for (let i = 1; i < segments; i++) {
+      const t = i / segments;
+      const x = Phaser.Math.Linear(ax, tx, t) + Phaser.Math.Between(-10, 10);
+      const y = Phaser.Math.Linear(ay, ty, t) + Phaser.Math.Between(-10, 10);
+      points.push({ x, y });
+    }
+    points.push({ x: tx, y: ty });
+    g.lineStyle(8, 0xfff176, 0.3);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => g.lineTo(point.x, point.y));
+    g.strokePath();
+    g.lineStyle(3, 0xffffff, 0.95);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => g.lineTo(point.x, point.y));
+    g.strokePath();
+    g.fillStyle(0xfff176, 0.24);
+    g.fillCircle(tx, ty, 20);
+    scene.tweens.add({ targets: g, alpha: 0, scale: 1.08, duration: 300, onComplete: () => g.destroy() });
+  }
+
   static animateTranscendenceBeamFx(scene: Phaser.Scene, attackerX: number, attackerY: number, targetGridX: number, rowY: number, targetX: number, targetY: number, boardWidth: number) {
     const g = scene.add.graphics().setDepth(260);
     g.lineStyle(5, 0x6ff6ff, 0.94);

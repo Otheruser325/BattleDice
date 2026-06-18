@@ -1,7 +1,7 @@
 import type { DiceDefinition, DiceInstanceState } from '../types/game';
 
 export type DiceCardRarity = 'Bronze' | 'Silver' | 'Gold';
-export type DiceCardKind = 'Type Upgrade' | 'Fountain of Love' | 'Mana Potion' | 'Spotlight' | 'Giant Hunter' | 'Odd Investment' | 'Even Investment' | 'Crowd Attack' | 'Fire Support';
+export type DiceCardKind = 'Type Upgrade' | 'Fountain of Love' | 'Mana Potion' | 'Spotlight' | 'Giant Hunter' | 'Odd Investment' | 'Even Investment' | 'Crowd Attack' | 'Fire Support' | 'Vanguard' | 'Centreline';
 
 export interface DiceCard {
   key: string;
@@ -62,7 +62,9 @@ export function rollDiceCards(
     { key: `Odd Investment:${rarity}`, title: 'Odd Investment', rarity, kind: 'Odd Investment' },
     { key: `Even Investment:${rarity}`, title: 'Even Investment', rarity, kind: 'Even Investment' },
     { key: `Crowd Attack:${rarity}`, title: 'Crowd Attack', rarity, kind: 'Crowd Attack' },
-    { key: `Fire Support:${rarity}`, title: 'Fire Support', rarity, kind: 'Fire Support' }
+    { key: `Fire Support:${rarity}`, title: 'Fire Support', rarity, kind: 'Fire Support' },
+    { key: `Vanguard:${rarity}`, title: 'Vanguard', rarity, kind: 'Vanguard' },
+    { key: `Centreline:${rarity}`, title: 'Centreline', rarity, kind: 'Centreline' }
   ];
   const upgrades: DiceCard[] = upgradeTypes.map((typeId) => ({ key: `${typeId} Upgrade:${rarity}`, title: `${typeId} Upgrade`, rarity, kind: 'Type Upgrade', typeId }));
   const pool: DiceCard[] = [...base, ...upgrades].filter((card) => !activeKeys.has(card.key));
