@@ -2897,23 +2897,20 @@ export class ArenaScene extends Phaser.Scene {
       if (!def) return;
       const range = getRuntimeSkillMeta(def).lockRange ?? 0;
       const target = boardDice
-        .filter((foe) => foe.ownerId !== lock.ownerId && !this.chainedByInstance.has(foe.instanceId))
+        .filter((foe) => foe.ownerId !== lock.ownerId && !this.chainedByInstance.has(foe.instanceId) && !this.isBossDie(foe))
         .map((foe) => ({ die: foe, distance: this.getDistanceWithBoardSides(lock, foe) }))
         .filter(({ distance }) => distance <= range)
         .sort((a, b) => a.distance - b.distance || a.die.currentHealth - b.die.currentHealth)[0]?.die;
       if (!target) return;
       this.chainedByInstance.set(target.instanceId, lock.instanceId);
-      this.attackCapacityByInstance.set(target.instanceId, 0);
-      this.showDamageText(target, 0, '#9ed0ff', 'LOCK');
     });
-    if (this.chainedByInstance.size > 0) {
-      this.gameState = {
-        ...this.gameState,
-        dice: this.gameState.dice.map((die) => this.chainedByInstance.has(die.instanceId)
-          ? { ...die, attacksRemaining: 0, hasFinishedAttacking: true }
-          : die)
-      };
-    }
+  }
+
+  private getActiveLockSource(die: DiceInstanceState): DiceInstanceState | undefined {
+    const sourceId = this.chainedByInstance.get(die.instanceId);
+    if (!sourceId) return undefined;
+    return this.gameState.dice.find((source) =>
+      source.instanceId === sourceId && source.ownerId !== die.ownerId && source.zone === 'board' && !source.isDestroyed);
   }
 
   private getTypeUpgradeMultiplier(attacker: DiceInstanceState): number {
@@ -3382,16 +3379,30 @@ export class ArenaScene extends Phaser.Scene {
           const wizardFires = Boolean(wizardSlot && this.shouldCastWizardRoyale(attacker, wizardSlot.mana));
           const meteorFires = Boolean(attackerMeta?.hasMeteorStrike && !wizardFires && meteorSlot && meteorSlot.mana >= meteorSlot.manaNeeded);
           const deathFires = Boolean(attackerMeta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && deathSlot && deathSlot.mana >= deathSlot.manaNeeded);
-          const regularActiveFires = Boolean(primarySlot && !attackerMeta?.hasMeteorStrike && !attackerMeta?.hasDeathInstakill && !wizardFires);
+          const regularActiveFires = Boolean(primarySlot && !wizardFires && !meteorFires && !deathFires && !attackerMeta?.hasDeathInstakill);
           return wizardFires ? wizardSlot : meteorFires ? meteorSlot : deathFires ? deathSlot : regularActiveFires ? primarySlot : undefined;
         };
         let activeSlot = getChargedActiveSlot();
         if (!activeSlot) {
           this.addManaToAllActiveSlots(attacker);
-          activeSlot = getChargedActiveSlot();
         }
         const anyActiveFires = Boolean(activeSlot);
         const skipBasicAttack = anyActiveFires;
+        const lockSource = this.getActiveLockSource(attacker);
+        if (lockSource) {
+          this.gameState = {
+            ...this.gameState,
+            dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId ? { ...die, attacksRemaining: 0, hasFinishedAttacking: true } : die)
+          };
+          this.combatLog.setText(`${ownerName} ${attacker.typeId} is chained by ${lockSource.typeId} and skips!`);
+          this.renderDice();
+          this.renderEnemyDice();
+          if (!(await this.delayCombatPaced(500))) {
+            timedOut = true;
+            break;
+          }
+          continue;
+        }
         const forcedTarget = this.resolveTauntForcedTarget(attacker);
         const beamLine = this.findTranscendenceBeamTarget(attacker, forcedTarget);
         const beamTarget = beamLine?.target;
@@ -3746,11 +3757,11 @@ export class ArenaScene extends Phaser.Scene {
       delta: stacks.reduce((sum, stack) => sum + stack.delta, 0),
       turns: Math.max(...stacks.map((stack) => stack.turns)),
       stacks: stacks.length
+    };
+  }
+
   private getStatusStackCount(die: DiceInstanceState, effect: 'slow' | 'poison'): number {
     if (effect === 'poison') return this.getPoisonSummary(die.instanceId)?.stacks ?? 0;
-    if (effect === 'slow') return this.getAttackDeltaSummary(die.instanceId)?.stacks ?? 0;
-    return 0;
-  }
     if (effect === 'slow') return this.getAttackDeltaSummary(die.instanceId)?.stacks ?? 0;
     return 0;
   }
@@ -3782,7 +3793,7 @@ export class ArenaScene extends Phaser.Scene {
     if (fracture) statusLines.push(`Fracture +${Math.round(fracture.rate * 100)}% damage taken (${fracture.turns} turns)`);
     const taunt = this.tauntedByInstance.get(die.instanceId);
     if (taunt) statusLines.push('Taunt');
-    if (this.chainedByInstance.has(die.instanceId)) statusLines.push('Locked');
+    if (this.getActiveLockSource(die)) statusLines.push('Locked');
     const stunTurns = this.stunnedByInstance.get(die.instanceId);
     if (stunTurns) statusLines.push(`Stun (${stunTurns} turns)`);
     if (this.isBerserkActive(die)) statusLines.push('Berserk active');
@@ -4065,6 +4076,10 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition, activeSlot.skillIndex);
     const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const currentMana = this.getActiveMana(attacker.instanceId, activeSlot.key);
+    if (currentMana < activeSlot.manaNeeded) {
+      this.combatLog.setText('Building mana...');
+      return;
+    }
     const isDeathTransformed = this.deathDiceTransformed.has(attacker.instanceId);
 
     const result = executeActiveSkillEffects(attacker, definition, classLevel, target, currentMana, activeSlot, isDeathTransformed);
@@ -5564,6 +5579,21 @@ export class ArenaScene extends Phaser.Scene {
       container.add(shieldBubble);
     }
 
+    if (this.getActiveLockSource(die)) {
+      const chain = this.add.graphics();
+      chain.name = 'status-effect';
+      chain.lineStyle(3, 0x9ed0ff, 0.95);
+      chain.strokeCircle(x, y, 25);
+      chain.lineStyle(2, 0xd7f0ff, 0.9);
+      chain.beginPath();
+      chain.moveTo(x - 22, y - 9);
+      chain.lineTo(x + 22, y + 9);
+      chain.moveTo(x - 22, y + 9);
+      chain.lineTo(x + 22, y - 9);
+      chain.strokePath();
+      container.add(chain);
+    }
+
     const footprint = this.getFootprintForDefinition(definition);
     const visualSize = footprint * TILE_SIZE + (footprint - 1) * TILE_GAP - 8;
     const centerX = x + (footprint - 1) * (TILE_SIZE + TILE_GAP) / 2;
@@ -5666,10 +5696,9 @@ export class ArenaScene extends Phaser.Scene {
       color: PALETTE.text
     }).setOrigin(0.5);
     const activeSlots = this.getActiveManaSlots(liveDie);
-    const mana = Math.max(0, ...activeSlots.map((slot) => this.getActiveMana(liveDie.instanceId, slot.key)));
+    const activeManaLines = activeSlots.map((slot) => `${slot.title} ${this.getActiveMana(liveDie.instanceId, slot.key)}/${slot.manaNeeded}`);
     const shieldHp = this.shieldHpByInstance.get(liveDie.instanceId) ?? 0;
     const shieldNote = shieldHp > 0 ? ` • Shield ${shieldHp}` : '';
-    const manaNote = activeSlots.length > 0 ? ` • Mana ${mana}` : '';
     const formatSkillType = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2');
     const classLevel = this.instanceClassLevels.get(liveDie.instanceId) ?? 1;
     const visibleSkills = definition.skills.filter((skill, index) => {
@@ -5677,7 +5706,7 @@ export class ArenaScene extends Phaser.Scene {
       if (isAlternateTransformed && transformSkillIndices.size > 0) return transformSkillIndices.has(index);
       return !transformSkillIndices.has(index);
     });
-    const desc = this.add.text(width / 2, 78, `${visibleSkills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}${manaNote}`, {
+    const desc = this.add.text(width / 2, 78, `${visibleSkills.map((skill) => `${skill.title} (${formatSkillType(skill.type)}): ${getClassScaledSkillDescription(definition, skill, typeUpgradeMult)}`).join(' | ')}${shieldNote}`, {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
@@ -5685,9 +5714,20 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5, 0);
     const panelTop = 24;
     let nextBuffY = desc.y + desc.height + 8;
-    const panelHeight = Math.max(112, nextBuffY - panelTop + (statusEffects.length > 0 ? 18 : 0) + (activeBuffs.length > 0 ? 18 : 0) + attackCountBuffs.length * 14 + 12);
+    const panelHeight = Math.max(112, nextBuffY - panelTop + activeManaLines.length * 12 + (statusEffects.length > 0 ? 18 : 0) + (activeBuffs.length > 0 ? 18 : 0) + attackCountBuffs.length * 14 + 12);
     const panel = this.add.rectangle(width / 2, panelTop + panelHeight / 2, 560, panelHeight, 0x102434, 0.95).setStrokeStyle(2, 0x406987);
     const popupElements: Phaser.GameObjects.GameObject[] = [panel, stats, desc];
+    if (activeManaLines.length > 0) {
+      const manaText = this.add.text(width / 2, nextBuffY, `Mana: ${activeManaLines.join('  •  ')}`, {
+        fontFamily: 'Orbitron',
+        fontSize: '10px',
+        color: '#9ed0ff',
+        align: 'center',
+        wordWrap: { width: 530 }
+      }).setOrigin(0.5, 0);
+      popupElements.push(manaText);
+      nextBuffY += manaText.height + 4;
+    }
     if (statusEffects.length > 0) {
       const status = this.add.text(width / 2, nextBuffY, `Status Effects: ${statusEffects.join('  •  ')}`, {
         fontFamily: 'Orbitron',
