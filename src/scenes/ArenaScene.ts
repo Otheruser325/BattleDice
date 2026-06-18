@@ -4596,7 +4596,6 @@ export class ArenaScene extends Phaser.Scene {
     expiredLava.forEach(k => this.lavaPoolsByTile.delete(k));
   }
 
-
   private applyFountainOfLoveCombatEndHealing() {
     this.gameState = {
       ...this.gameState,
@@ -4821,7 +4820,6 @@ export class ArenaScene extends Phaser.Scene {
     if (kind === 'heal') { AnimationManager.animateHealingPulse(this, targetCenter.x, targetCenter.y); return; }
     if (kind === 'fracture') { AnimationManager.animateFracture(this, targetCenter.x, targetCenter.y); return; }
     if (kind === 'heatwave') { AnimationManager.animateHeatwave(this, targetCenter.x, targetCenter.y); return; }
-    if (kind === 'electric') { AnimationManager.animateElectricStrike(this, attackerCenter.x, attackerCenter.y, targetCenter.x, targetCenter.y); return; }
     AnimationManager.animateElementalSkill(this, targetCenter.x, targetCenter.y, kind);
   }
 
@@ -5550,7 +5548,6 @@ export class ArenaScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(300);
     this.tweens.add({ targets: text, y: y - 24, alpha: 0, duration: 640, ease: 'Cubic.easeOut', onComplete: () => text.destroy() });
   }
-
 
   private clearRangeHighlights() {
     this.rangeHighlightObjects.forEach((obj) => obj.destroy());
