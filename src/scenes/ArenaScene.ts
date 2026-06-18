@@ -115,6 +115,7 @@ export class ArenaScene extends Phaser.Scene {
   private enemyDicePips: Map<string, number> = new Map();
   private enemyClassLevels: Map<string, number> = new Map();
   private manaByInstance: Map<string, number> = new Map();
+  private manaFilledTurnBySlot: Map<string, number> = new Map();
   private playerManaChargedAccrued = 0;
   private activeManaByInstance: Map<string, Map<string, number>> = new Map();
   private shieldHpByInstance: Map<string, number> = new Map();
@@ -187,6 +188,8 @@ export class ArenaScene extends Phaser.Scene {
   private oddInvestmentByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private evenInvestmentByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private fireSupportByOwner: Record<'player' | 'enemy', number> = { player: 0, enemy: 0 };
+  private vanguardReductionByOwner: Record<'player' | 'enemy', number> = { player: 0, enemy: 0 };
+  private centrelineDamageByOwner: Record<'player' | 'enemy', number> = { player: 0, enemy: 0 };
   private crowdAttackByOwner: Record<'player' | 'enemy', { damage: number; reduction: number }> = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
   private assassinBoostAttacksByInstance: Map<string, number> = new Map();
   private diceCardPicksUsed = 0;
@@ -219,6 +222,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyDicePips.clear();
     this.enemyClassLevels.clear();
     this.manaByInstance.clear();
+    this.manaFilledTurnBySlot.clear();
     this.activeManaByInstance.clear();
     this.shieldHpByInstance.clear();
     this.shieldDurationTurnsByInstance.clear();
@@ -270,6 +274,8 @@ export class ArenaScene extends Phaser.Scene {
     this.oddInvestmentByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
     this.evenInvestmentByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
     this.fireSupportByOwner = { player: 0, enemy: 0 };
+    this.vanguardReductionByOwner = { player: 0, enemy: 0 };
+    this.centrelineDamageByOwner = { player: 0, enemy: 0 };
     this.crowdAttackByOwner = { player: { damage: 0, reduction: 0 }, enemy: { damage: 0, reduction: 0 } };
     this.diceTypeUpgradeBonus.clear();
     this.spotlightByInstance.clear();
@@ -2463,21 +2469,36 @@ export class ArenaScene extends Phaser.Scene {
     this.manaByInstance.set(instanceId, maxCurrent);
   }
 
+  private getManaSlotKey(instanceId: string, key?: string): string {
+    return `${instanceId}:${key ?? 'default'}`;
+  }
+
+  private isActiveManaEligibleThisTurn(instanceId: string, key?: string): boolean {
+    return (this.manaFilledTurnBySlot.get(this.getManaSlotKey(instanceId, key)) ?? -1) < this.gameState.turn;
+  }
+
   private resetActiveMana(instanceId: string, key?: string) {
     if (!key) {
       this.manaByInstance.set(instanceId, 0);
       this.activeManaByInstance.delete(instanceId);
+      [...this.manaFilledTurnBySlot.keys()].filter((slotKey) => slotKey.startsWith(`${instanceId}:`)).forEach((slotKey) => this.manaFilledTurnBySlot.delete(slotKey));
       return;
     }
     const slots = new Map(this.activeManaByInstance.get(instanceId) ?? []);
     slots.set(key, 0);
+    this.manaFilledTurnBySlot.delete(this.getManaSlotKey(instanceId, key));
     this.activeManaByInstance.set(instanceId, slots);
     this.manaByInstance.set(instanceId, Math.max(0, ...Array.from(slots.values())));
   }
 
   private addMana(instanceId: string, manaNeeded: number, currentMana: number, gain = 1, key?: string) {
     if (this.manaPausedTurnsByInstance.has(instanceId)) return;
+    const before = Phaser.Math.Clamp(Math.floor(currentMana), 0, Math.max(1, manaNeeded));
     this.setActiveMana(instanceId, key, currentMana + gain, manaNeeded);
+    const after = this.getActiveMana(instanceId, key);
+    if (gain > 0 && before < manaNeeded && after >= manaNeeded) {
+      this.manaFilledTurnBySlot.set(this.getManaSlotKey(instanceId, key), this.gameState.turn);
+    }
   }
 
   private addManaToAllActiveSlots(die: DiceInstanceState, gain = 1) {
@@ -2861,6 +2882,8 @@ export class ArenaScene extends Phaser.Scene {
     if (card.kind === 'Even Investment') this.evenInvestmentByOwner[owner] = { damage: this.evenInvestmentByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.evenInvestmentByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
     if (card.kind === 'Crowd Attack') this.crowdAttackByOwner[owner] = { damage: this.crowdAttackByOwner[owner].damage + [0, 0.2, 0.3, 0.4][mag], reduction: this.crowdAttackByOwner[owner].reduction + [0, 0.1, 0.15, 0.2][mag] };
     if (card.kind === 'Fire Support') this.fireSupportByOwner[owner] += [0, 1, 2, 3][mag];
+    if (card.kind === 'Vanguard') this.vanguardReductionByOwner[owner] += [0, 0.2, 0.3, 0.4][mag];
+    if (card.kind === 'Centreline') this.centrelineDamageByOwner[owner] += [0, 0.2, 0.4, 0.6][mag];
     this.renderDiceCardInfoPanel();
   }
 
@@ -2944,7 +2967,18 @@ export class ArenaScene extends Phaser.Scene {
 
   private getOffenseMultiplier(attacker: DiceInstanceState): number {
     const typeBoost = this.getTypeUpgradeMultiplier(attacker);
-    return typeBoost * (1 + this.getSpotlightScale(attacker) + this.getInvestmentDamageBonus(attacker) + this.getCrowdAttackDamageBonus(attacker));
+    return typeBoost * (1 + this.getSpotlightScale(attacker) + this.getInvestmentDamageBonus(attacker) + this.getCrowdAttackDamageBonus(attacker) + this.getCentrelineDamageBonus(attacker));
+  }
+
+  private getCentrelineDamageBonus(die: DiceInstanceState): number {
+    if (!die.gridPosition || die.gridPosition.col !== 2) return 0;
+    return this.centrelineDamageByOwner[die.ownerId];
+  }
+
+  private getVanguardReduction(die: DiceInstanceState): number {
+    if (!die.gridPosition) return 0;
+    const isFrontline = die.ownerId === 'player' ? die.gridPosition.col === 4 : die.gridPosition.col === 0;
+    return isFrontline ? this.vanguardReductionByOwner[die.ownerId] : 0;
   }
 
   private getDiceCardSkillDamageMultiplier(attacker: DiceInstanceState): number {
@@ -2981,6 +3015,10 @@ export class ArenaScene extends Phaser.Scene {
     if (die.gridPosition) {
       const isBackline = owner === 'player' ? die.gridPosition.col === 0 : die.gridPosition.col === 4;
       if (isBackline && fireSupport > 0) buffs.push(`Fire Support +${fireSupport} attacks (backline)`);
+      const vanguard = this.getVanguardReduction(die);
+      if (vanguard > 0) buffs.push(`Vanguard ${pct(vanguard)} DR (frontline)`);
+      const centreline = this.getCentrelineDamageBonus(die);
+      if (centreline > 0) buffs.push(`Centreline +${pct(centreline)} dmg (centre column)`);
     }
     if (this.fountainHealRateByOwner[owner] > 0) buffs.push(`Fountain of Love ${pct(this.fountainHealRateByOwner[owner])} heal`);
     if (this.manaPotionGainByOwner[owner] > 0) buffs.push(`Mana Potion +${this.manaPotionGainByOwner[owner]} mana`);
@@ -3375,10 +3413,10 @@ export class ArenaScene extends Phaser.Scene {
           const wizardSlot = activeSlots.find((slot) => slot.title === 'Wizard Royale');
           const meteorSlot = activeSlots.find((slot) => slot.title === 'Spell Strike' || slot.title === 'Meteor Strike' || slot.title === 'Meteor');
           const deathSlot = activeSlots.find((slot) => slot.title === `Reaper's Touch`);
-          const primarySlot = activeSlots.find((slot) => slot.mana >= slot.manaNeeded);
-          const wizardFires = Boolean(wizardSlot && this.shouldCastWizardRoyale(attacker, wizardSlot.mana));
-          const meteorFires = Boolean(attackerMeta?.hasMeteorStrike && !wizardFires && meteorSlot && meteorSlot.mana >= meteorSlot.manaNeeded);
-          const deathFires = Boolean(attackerMeta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && deathSlot && deathSlot.mana >= deathSlot.manaNeeded);
+          const primarySlot = activeSlots.find((slot) => slot.mana >= slot.manaNeeded && this.isActiveManaEligibleThisTurn(attacker.instanceId, slot.key));
+          const wizardFires = Boolean(wizardSlot && this.isActiveManaEligibleThisTurn(attacker.instanceId, wizardSlot.key) && this.shouldCastWizardRoyale(attacker, wizardSlot.mana));
+          const meteorFires = Boolean(attackerMeta?.hasMeteorStrike && !wizardFires && meteorSlot && meteorSlot.mana >= meteorSlot.manaNeeded && this.isActiveManaEligibleThisTurn(attacker.instanceId, meteorSlot.key));
+          const deathFires = Boolean(attackerMeta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && deathSlot && deathSlot.mana >= deathSlot.manaNeeded && this.isActiveManaEligibleThisTurn(attacker.instanceId, deathSlot.key));
           const regularActiveFires = Boolean(primarySlot && !wizardFires && !meteorFires && !deathFires && !attackerMeta?.hasDeathInstakill);
           return wizardFires ? wizardSlot : meteorFires ? meteorSlot : deathFires ? deathSlot : regularActiveFires ? primarySlot : undefined;
         };
@@ -3808,6 +3846,7 @@ export class ArenaScene extends Phaser.Scene {
     let reduction = options.ignoreDamageReduction ? 0 : (this.damageReductionByInstance.get(instanceId) ?? 0);
     const die = this.gameState.dice.find((d) => d.instanceId === instanceId);
     if (!options.ignoreDamageReduction && die) reduction += this.getSpotlightScale(die);
+    if (!options.ignoreDamageReduction && die) reduction += this.getVanguardReduction(die);
     if (!options.ignoreDamageReduction && die) reduction += this.getEffectivePipForInvestment(die) % 2 === 0 ? this.evenInvestmentByOwner[die.ownerId].reduction : this.oddInvestmentByOwner[die.ownerId].reduction;
     // Crowd Attack reduction for 1-2 pip dice
     if (!options.ignoreDamageReduction && die) {
@@ -3997,8 +4036,8 @@ export class ArenaScene extends Phaser.Scene {
     const heatwaveRate = meta.heatwaveDamageRate ?? 0;
     if (heatwaveRate <= 0) return;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const targetBoardSide = this.getBoardSideForDie(target);
-    this.getBoardDiceOnSide(enemyOwner, targetBoardSide)
+    const attackerBoardSide = this.getBoardSideForDie(attacker);
+    this.getBoardDiceOnSide(enemyOwner, attackerBoardSide)
       .filter((die) =>
         die.gridPosition &&
         Math.abs(die.gridPosition.row - attacker.gridPosition!.row) <= 1 &&
@@ -4076,7 +4115,7 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition, activeSlot.skillIndex);
     const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
     const currentMana = this.getActiveMana(attacker.instanceId, activeSlot.key);
-    if (currentMana < activeSlot.manaNeeded) {
+    if (currentMana < activeSlot.manaNeeded || !this.isActiveManaEligibleThisTurn(attacker.instanceId, activeSlot.key)) {
       this.combatLog.setText('Building mana...');
       return;
     }
@@ -4787,7 +4826,7 @@ export class ArenaScene extends Phaser.Scene {
     if (kind === 'heal') { AnimationManager.animateHealingPulse(this, targetCenter.x, targetCenter.y); return; }
     if (kind === 'fracture') { AnimationManager.animateFracture(this, targetCenter.x, targetCenter.y); return; }
     if (kind === 'heatwave') { AnimationManager.animateHeatwave(this, targetCenter.x, targetCenter.y); return; }
-    if (kind === 'electric') { AnimationManager.animateSpearStrike(this, attackerCenter.x, attackerCenter.y, targetCenter.x, targetCenter.y); return; }
+    if (kind === 'electric') { AnimationManager.animateElectricStrike(this, attackerCenter.x, attackerCenter.y, targetCenter.x, targetCenter.y); return; }
     AnimationManager.animateElementalSkill(this, targetCenter.x, targetCenter.y, kind);
   }
 
@@ -5086,6 +5125,14 @@ export class ArenaScene extends Phaser.Scene {
     }
 	if (name === 'Fire Support') {
       return { icon: '🏹', title: name, rarity, desc: `Passive: dice placed on the backline gain +${mag} attack count.` };
+    }
+    if (name === 'Vanguard') {
+      const pct = [0, 20, 30, 40][mag];
+      return { icon: '🛡️', title: name, rarity, desc: `Passive: frontline dice gain ${pct}% damage reduction.` };
+    }
+    if (name === 'Centreline') {
+      const pct = [0, 20, 40, 60][mag];
+      return { icon: '🎯', title: name, rarity, desc: `Passive: centre-column dice gain +${pct}% damage.` };
     }
     return { icon: '🎴', title: name, rarity, desc: '' };
   }
