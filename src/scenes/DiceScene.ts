@@ -46,13 +46,12 @@ function getVisibleSkillCount(definition: DiceDefinition): number {
 }
 
 function formatSkillTypeLine(definition: DiceDefinition): string {
-  const visibleSkillCount = getVisibleSkillCount(definition);
-  if (visibleSkillCount === 1) {
-    const hiddenTransformSkills = getTransformSkillIndexSet(definition);
-    const visibleSkill = definition.skills.find((_, index) => !hiddenTransformSkills.has(index));
-    return formatSkillType(visibleSkill?.type).toUpperCase();
+  const hiddenTransformSkills = getTransformSkillIndexSet(definition);
+  const visibleSkills = definition.skills.filter((_, index) => !hiddenTransformSkills.has(index));
+  if (visibleSkills.length === 1) {
+    return formatSkillType(visibleSkills[0]?.type).toUpperCase();
   }
-  return `${visibleSkillCount} SKILLS`;
+  return `${visibleSkills.length} SKILLS`;
 }
 
 export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1): string {
