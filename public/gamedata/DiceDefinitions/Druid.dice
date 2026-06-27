@@ -13,6 +13,7 @@
       "modifiers": {
         "ricochetHealCount": 1,
         "ricochetHealRange": 2,
+        "skillTargeting": "Weakest",
         "notes": [
           "runtime:druidicEssence"
         ],
@@ -31,9 +32,28 @@
           "runtime:druidBearTransform"
         ],
         "skillSfx": "dice_berserk_skill"
+      },
+      {
+        "type": "OnTransformed",
+        "title": "Uncontrollable Maul",
+        "description": "Teleports onto the nearest enemy and deals 250 damage upon mauling.",
+        "modifiers": {
+          "bearMaulDamage": 250,
+          "notes": ['runtime:druidBearForm']
+        }
+      },
+      {
+        "type": "Passive",
+        "title": "Critical Claw",
+        "description": "Basic attacks have a 20% chance of dealing 100% more damage.",
+        "modifiers": {
+          "bearCritChance": 0.2,
+          "bearCritMultiplier": 2,
+          "notes": ['runtime:druidBearForm']
+        }
       }
     }
   ],
   "accent": "#6ec97a",
-  "targetingMode": "Weakest"
+  "targetingMode": "Nearest"
 }
