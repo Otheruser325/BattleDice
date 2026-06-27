@@ -26,15 +26,13 @@
       "manaNeeded": 20,
       "modifiers": {
         "consumeAttack": false,
+        "transformSkillIndices": [ 2, 3 ],
         "notes": [
           "runtime:druidBearTransform"
         ],
         "skillSfx": "dice_berserk_skill"
       }
     }
-  ],
-  "transformDescriptions": [
-    "Bear Form: 1500 HP, 50 damage, 2 range. On transformation, teleports onto the nearest enemy and mauls for 250 damage. Basic attacks have a 20% chance to deal 100% more damage."
   ],
   "accent": "#6ec97a",
   "targetingMode": "Weakest"
