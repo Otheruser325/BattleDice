@@ -1,0 +1,21 @@
+{
+  "typeId": "Armor",
+  "title": "Armor Dice",
+  "attack": 26,
+  "health": 600,
+  "range": 3,
+  "rarity": "Epic",
+  "skills": [
+    {
+      "type": "OnDamaged",
+      "title": "Heavy Plating",
+      "description": "Creates 20 armour every time it absorbs damage.",
+      "modifiers": {
+        "onDamagedShield": 20,
+        "skillSfx": "dice_armor_skill"
+      }
+    }
+  ],
+  "accent": "#a7b0bd",
+  "targetingMode": "Nearest"
+}

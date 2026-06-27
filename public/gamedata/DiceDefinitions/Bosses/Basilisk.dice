@@ -1,0 +1,50 @@
+{
+  "typeId": "Basilisk",
+  "title": "Basilisk Dice",
+  "attack": 40,
+  "health": 2500,
+  "range": 4,
+  "footprint": 2,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Distorting Appearance",
+      "description": "Enemy dice in Basilisk's range have a 50% chance to ignore attacking the boss outright until the next turn.",
+      "modifiers": {
+        "avoidBossAttackChance": 0.5,
+        "notes": [
+          "runtime:basiliskDistortion"
+        ]
+      }
+    },
+    {
+      "type": "OnKill",
+      "title": "Delicious Appetite",
+      "description": "Dice defeated by Basilisk restore 25% of Basilisk's missing max HP.",
+      "modifiers": {
+        "onKillMissingHealRate": 0.25,
+        "notes": [
+          "runtime:basiliskAppetite"
+        ]
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Rapacious Revenge",
+      "description": "When Basilisk falls below 20% HP, it bites the nearest enemy dice 5 times for 100 damage.",
+      "modifiers": {
+        "revengeThresholdRate": 0.2,
+        "revengeHits": 5,
+        "revengeDamage": 100,
+        "notes": [
+          "runtime:basiliskRevenge",
+          "runtime:unlockAtClass6"
+        ]
+      }
+    }
+  ],
+  "accent": "#6abf69",
+  "targetingMode": "Weakest",
+  "isBoss": true
+}

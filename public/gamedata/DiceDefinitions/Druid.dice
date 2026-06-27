@@ -1,0 +1,41 @@
+{
+  "typeId": "Druid",
+  "title": "Druid Dice",
+  "attack": 36,
+  "health": 600,
+  "range": 5,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Druidic Essence",
+      "description": "Instead of attacking enemies, basic attacks heal the weakest ally for the full attack power, and orbs ricochet onto 1 nearby ally within 2 tiles.",
+      "modifiers": {
+        "ricochetHealCount": 1,
+        "ricochetHealRange": 2,
+        "notes": [
+          "runtime:druidicEssence"
+        ],
+        "skillSfx": "dice_heal_skill"
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Ferocious Nature",
+      "description": "Transforms into a powerful bear after helping his allies for long enough.",
+      "manaNeeded": 20,
+      "modifiers": {
+        "consumeAttack": false,
+        "notes": [
+          "runtime:druidBearTransform"
+        ],
+        "skillSfx": "dice_berserk_skill"
+      }
+    }
+  ],
+  "transformDescriptions": [
+    "Bear Form: 1500 HP, 50 damage, 2 range. On transformation, teleports onto the nearest enemy and mauls for 250 damage. Basic attacks have a 20% chance to deal 100% more damage."
+  ],
+  "accent": "#6ec97a",
+  "targetingMode": "Weakest"
+}
