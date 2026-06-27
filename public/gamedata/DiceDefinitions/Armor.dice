@@ -11,7 +11,7 @@
       "title": "Heavy Plating",
       "description": "Creates 20 armour every time it absorbs damage.",
       "modifiers": {
-        "onDamagedShield": 20,
+        "shield": 20,
         "skillSfx": "dice_armor_skill"
       }
     }
