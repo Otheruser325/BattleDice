@@ -13,9 +13,7 @@
       "manaNeeded": 3,
       "modifiers": {
         "activeDamage": 50,
-        "notes": [
-          "runtime:activeHitsAllEnemies"
-        ],
+        "hitsAllFoes": true,
 		"attackSfx": "dice_drizzle_attack",
         "skillSfx": "dice_drizzle_skill"
       }
