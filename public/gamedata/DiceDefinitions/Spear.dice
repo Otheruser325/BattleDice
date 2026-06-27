@@ -12,7 +12,7 @@
       "description": "Basic attacks also stab the tile directly behind the target.",
       "modifiers": {
         "pierceBehindRange": 1,
-        "skillSfx": "dice_spear_skill"
+        "attackSfx": "dice_spear_skill"
       }
     },
     {
