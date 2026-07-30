@@ -66,8 +66,8 @@ const CHALLENGE_STATUS_KEY = 'arena:challengeStatus';
 const CHALLENGE_REWARD_CLAIMS_KEY = 'arena:challengeRewardClaims';
 const BOSSFIGHT_PROGRESS_KEY = 'arena:bossfightProgress';
 const BOSSFIGHT_MENU_STATE_KEY = 'arena:bossfightMenuState';
-type BossfightBossType = 'Magician' | 'Leon';
-const BOSSFIGHT_BOSSES: BossfightBossType[] = ['Magician', 'Leon'];
+type BossfightBossType = 'Magician' | 'Leon' | 'Basilisk';
+const BOSSFIGHT_BOSSES: BossfightBossType[] = ['Magician', 'Leon', 'Basilisk'];
 const MAX_BOSSFIGHT_LEVEL = 15;
 const TRANSCENDENCE_GRID_WIDE_RANGE = GRID_SIZE * 2 - 1;
 
@@ -738,7 +738,7 @@ export class ArenaScene extends Phaser.Scene {
 
 
   private normalizeBossfightProgress(value: Partial<BossfightProgress> | null | undefined): BossfightProgress {
-    const fallback: BossfightProgress = { unlockedLevels: { Magician: 1, Leon: 1 }, rewardClaims: [] };
+    const fallback: BossfightProgress = { unlockedLevels: { Magician: 1, Leon: 1, Basilisk: 1 }, rewardClaims: [] };
     const unlockedLevels = { ...fallback.unlockedLevels };
     BOSSFIGHT_BOSSES.forEach((boss) => {
       const raw = value?.unlockedLevels?.[boss];
@@ -836,7 +836,7 @@ export class ArenaScene extends Phaser.Scene {
     const reward = this.getBossfightRewards(this.bossfightMenuLevel);
     const isMaxSelected = this.bossfightMenuLevel >= unlockedLevel;
 
-    const bossColor: Record<BossfightBossType, string> = { Magician: '#b073ff', Leon: '#e63946' };
+    const bossColor: Record<BossfightBossType, string> = { Magician: '#b073ff', Leon: '#e63946', Basilisk: '#6abf69' };
     elements.push(
       this.add.rectangle(cx, cy, width, height, 0x000000, 0.6).setInteractive(),
       this.add.rectangle(cx, cy, 720, 390, 0x102434, 0.98).setStrokeStyle(2, 0x6f5bb5),
@@ -859,8 +859,9 @@ export class ArenaScene extends Phaser.Scene {
       });
       elements.push(button, title, sub);
     };
-    makeBossButton('Magician', cx - 128);
-    makeBossButton('Leon', cx + 128);
+    makeBossButton('Magician', cx - 180);
+    makeBossButton('Leon', cx);
+    makeBossButton('Basilisk', cx + 180);
 
     const levelText = this.add.text(cx, cy + 18, `${this.bossfightMenuBoss} Lv.${this.bossfightMenuLevel}`, {
       fontFamily: 'Orbitron', fontSize: '28px', color: bossColor[this.bossfightMenuBoss]
@@ -1940,9 +1941,13 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private collectOccupiedCells(ownerId: 'player' | 'enemy', excludedInstanceId?: string): Set<string> {
+    return this.collectOccupiedCellsOnBoardSide(ownerId, excludedInstanceId);
+  }
+
+  private collectOccupiedCellsOnBoardSide(boardSide: 'player' | 'enemy', excludedInstanceId?: string): Set<string> {
     const usedCells = new Set<string>();
     this.gameState.dice.forEach((die) => {
-      if (die.ownerId !== ownerId || die.instanceId === excludedInstanceId || die.zone !== 'board' || die.isDestroyed || !die.gridPosition) return;
+      if (this.getBoardSideForDie(die) !== boardSide || die.instanceId === excludedInstanceId || die.zone !== 'board' || die.isDestroyed || !die.gridPosition) return;
       this.markFootprint(die.gridPosition.row, die.gridPosition.col, this.getFootprintForDie(die), usedCells);
     });
     return usedCells;
@@ -2446,6 +2451,19 @@ export class ArenaScene extends Phaser.Scene {
         : [{ skill, index }])
       .filter(({ skill }) => !(skill.modifiers?.notes ?? []).includes('runtime:unlockAtClass6') || classLevel >= 6)
       .map(({ skill, index }) => ({ key: `${skill.title}:${index}`, title: skill.title, manaNeeded: Math.max(1, skill.manaNeeded ?? 1), skillIndex: index }));
+  }
+
+
+  private getActiveSkillMetaForSlot(die: DiceInstanceState, slot?: { skillIndex?: number }): ReturnType<typeof getRuntimeSkillMeta> | undefined {
+    const definition = this.getDefinitionForInstance(die);
+    if (!definition) return undefined;
+    return getRuntimeSkillMeta(definition, slot?.skillIndex);
+  }
+
+  private canActiveSlotFire(die: DiceInstanceState, slot: { key: string; manaNeeded: number; skillIndex?: number }, fallbackMeta?: ReturnType<typeof getRuntimeSkillMeta>): boolean {
+    const slotMeta = this.getActiveSkillMetaForSlot(die, slot) ?? fallbackMeta;
+    if (!slotMeta || (slotMeta.isLockedUntilClass6 ?? false)) return false;
+    return this.getActiveMana(die.instanceId, slot.key) >= slot.manaNeeded && this.isActiveManaEligibleThisTurn(die.instanceId, slot.key);
   }
 
   private getActiveMana(instanceId: string, key?: string): number {
@@ -3186,7 +3204,13 @@ export class ArenaScene extends Phaser.Scene {
         && (onlyTargetsAllies || !this.isBlockedByAllyChain(attacker, die))
         && (!onlyTargetsAllies || this.getBoardSideForDie(die) === attackerBoardSide))
       .map((die) => ({ die, distance: this.getAttackDistance(attacker, die) }))
-      .filter(({ distance }) => distance <= Math.max(1, effectiveRange));
+      .filter(({ die, distance }) => {
+        if (distance > Math.max(1, effectiveRange)) return false;
+        if (onlyTargetsAllies || !this.isBossDie(die)) return true;
+        const bossMeta = this.getDefinitionForInstance(die) ? getRuntimeSkillMeta(this.getDefinitionForInstance(die)!) : undefined;
+        const avoidChance = bossMeta?.avoidBossAttackChance ?? 0;
+        return avoidChance <= 0 || distance > Math.max(1, this.getDefinitionForInstance(die)?.range ?? effectiveRange) || Math.random() >= avoidChance;
+      });
     return this.selectTargetCandidate(candidates, mode);
   }
 
@@ -3229,19 +3253,22 @@ export class ArenaScene extends Phaser.Scene {
 
   private moveLeonBesideTarget(leon: DiceInstanceState, target: DiceInstanceState) {
     if (!target.gridPosition) return;
-    const usedCells = this.collectOccupiedCells(leon.ownerId, leon.instanceId);
+    const targetBoardSide = this.getBoardSideForDie(target);
+    const usedCells = this.collectOccupiedCellsOnBoardSide(targetBoardSide, leon.instanceId);
     const footprint = this.getFootprintForDie(leon);
-    const candidates: { row: number; col: number; distance: number }[] = [];
+    const candidates: { row: number; col: number; distance: number; rowOffset: number; colOffset: number }[] = [];
     for (let row = 0; row <= GRID_SIZE - footprint; row++) {
       for (let col = 0; col <= GRID_SIZE - footprint; col++) {
         if (!this.canPlaceFootprint(row, col, footprint, usedCells)) continue;
-        const proxy: DiceInstanceState = { ...leon, gridPosition: { row, col } };
-        candidates.push({ row, col, distance: this.getDistanceWithBoardSides(proxy, target) });
+        const rowOffset = Math.abs(row - target.gridPosition.row);
+        const colOffset = Math.abs(col - target.gridPosition.col);
+        candidates.push({ row, col, distance: rowOffset + colOffset, rowOffset, colOffset });
       }
     }
-    const best = candidates.sort((a, b) => a.distance - b.distance || a.row - b.row || a.col - b.col)[0];
+    const best = candidates.sort((a, b) => a.distance - b.distance || a.rowOffset - b.rowOffset || a.colOffset - b.colOffset || a.row - b.row || a.col - b.col)[0];
     if (!best) return;
     this.gameState = placeDieOnBoard(this.gameState, leon.instanceId, best.row, best.col);
+    this.infiltratedBoardSideByInstance.set(leon.instanceId, targetBoardSide);
   }
 
   private resolveTauntForcedTarget(attacker: DiceInstanceState): DiceInstanceState | undefined {
@@ -3405,18 +3432,19 @@ export class ArenaScene extends Phaser.Scene {
         const attackerMeta = attackerDef ? getRuntimeSkillMeta(attackerDef) : undefined;
         const getChargedActiveSlot = () => {
           const activeSlots = this.getActiveManaSlots(attacker)
-            .map((slot) => ({ ...slot, mana: this.getActiveMana(attacker.instanceId, slot.key) }));
+            .map((slot) => ({ ...slot, mana: this.getActiveMana(attacker.instanceId, slot.key), meta: this.getActiveSkillMetaForSlot(attacker, slot) }));
           const wizardSlot = activeSlots.find((slot) => slot.title === 'Wizard Royale');
           const meteorSlot = activeSlots.find((slot) => slot.title === 'Spell Strike' || slot.title === 'Meteor Strike' || slot.title === 'Meteor');
           const deathSlot = activeSlots.find((slot) => slot.title === `Reaper's Touch`);
-          const primarySlot = activeSlots.find((slot) => slot.mana >= slot.manaNeeded && this.isActiveManaEligibleThisTurn(attacker.instanceId, slot.key));
+          const primarySlot = activeSlots.find((slot) => this.canActiveSlotFire(attacker, slot, slot.meta));
           const wizardFires = Boolean(wizardSlot && this.isActiveManaEligibleThisTurn(attacker.instanceId, wizardSlot.key) && this.shouldCastWizardRoyale(attacker, wizardSlot.mana));
-          const meteorFires = Boolean(attackerMeta?.hasMeteorStrike && !wizardFires && meteorSlot && meteorSlot.mana >= meteorSlot.manaNeeded && this.isActiveManaEligibleThisTurn(attacker.instanceId, meteorSlot.key));
-          const deathFires = Boolean(attackerMeta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && deathSlot && deathSlot.mana >= deathSlot.manaNeeded && this.isActiveManaEligibleThisTurn(attacker.instanceId, deathSlot.key));
-          const regularActiveFires = Boolean(primarySlot && !wizardFires && !meteorFires && !deathFires && !attackerMeta?.hasDeathInstakill);
+          const meteorFires = Boolean(meteorSlot?.meta?.hasMeteorStrike && !wizardFires && this.canActiveSlotFire(attacker, meteorSlot, meteorSlot.meta));
+          const deathFires = Boolean(deathSlot?.meta?.hasDeathInstakill && this.deathDiceTransformed.has(attacker.instanceId) && this.canActiveSlotFire(attacker, deathSlot, deathSlot.meta));
+          const regularActiveFires = Boolean(primarySlot && !wizardFires && !meteorFires && !deathFires && !primarySlot.meta?.hasDeathInstakill);
           return wizardFires ? wizardSlot : meteorFires ? meteorSlot : deathFires ? deathSlot : regularActiveFires ? primarySlot : undefined;
         };
         let activeSlot = getChargedActiveSlot();
+        const activeSlotMeta = activeSlot ? this.getActiveSkillMetaForSlot(attacker, activeSlot) : undefined;
         if (!activeSlot) {
           this.addManaToAllActiveSlots(attacker);
         }
@@ -3441,10 +3469,10 @@ export class ArenaScene extends Phaser.Scene {
         const beamLine = this.findTranscendenceBeamTarget(attacker, forcedTarget);
         const beamTarget = beamLine?.target;
         let target = forcedTarget ?? beamTarget ?? this.findAttackTargetForArena(attacker);
-        const activeTarget = activeSlot && attackerMeta?.activeOnlyTargetsAllies
-          ? (attackerMeta.activeHeal !== undefined
-            ? this.findActiveHealTargetForArena(attacker, attackerMeta.activeSkillTargeting ?? attackerMeta.targetingMode ?? 'Nearest')
-            : this.findSkillTargetForArena(attacker, attackerMeta.activeSkillTargeting ?? attackerMeta.targetingMode ?? 'Nearest', true))
+        const activeTarget = activeSlot && activeSlotMeta?.activeOnlyTargetsAllies
+          ? (activeSlotMeta.activeHeal !== undefined
+            ? this.findActiveHealTargetForArena(attacker, activeSlotMeta.activeSkillTargeting ?? activeSlotMeta.targetingMode ?? 'Nearest')
+            : this.findSkillTargetForArena(attacker, activeSlotMeta.activeSkillTargeting ?? activeSlotMeta.targetingMode ?? 'Nearest', true))
           : undefined;
         if (activeTarget) target = activeTarget;
         if (!target) {
@@ -3491,6 +3519,10 @@ export class ArenaScene extends Phaser.Scene {
             targetDefeated = result.targetDestroyed;
           } else {
             this.playAttackSfx(attacker, attackerMeta);
+            if (attackerMeta?.hasDruidicEssence) {
+              damage = this.applyDruidBasicHeal(attacker, attackerMeta);
+              this.gameState = spendAttack(this.gameState, attacker.instanceId);
+            } else {
             const defs = this.getDefinitionsForCombat(attacker, target);
             const rawResult = executeAttack(this.gameState, attacker.instanceId, target.instanceId, defs, {
               attacker: this.getDefinitionForInstance(attacker),
@@ -3512,7 +3544,8 @@ export class ArenaScene extends Phaser.Scene {
             const lowHpExploitMult = target.currentHealth < target.maxHealth * (attackerMeta?.lowHpThresholdRate ?? 0)
               ? 1 + (attackerMeta?.lowHpDamageBonusRate ?? 0)
               : 1;
-            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + basicDamageBonus + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult * lowHpExploitMult));
+            const bearCritMult = Math.random() < (attackerMeta?.bearCritChance ?? 0) ? (attackerMeta?.bearCritMultiplier ?? 2) : 1;
+            const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + basicDamageBonus + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult * lowHpExploitMult * bearCritMult));
             if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
             const followUpBasicAttack = this.spendBasicAttack(attacker);
             const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
@@ -3548,13 +3581,14 @@ export class ArenaScene extends Phaser.Scene {
               const nextRem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
               if (nextRem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, nextRem - 1);
             }
+            }
           }
         } else if (attackerMeta?.consumeAttack !== false) {
           this.gameState = spendAttack(this.gameState, attacker.instanceId);
         }
 
         if (anyActiveFires) {
-          const sfxKey = attackerMeta?.activeSkillSfxKey ?? attackerMeta?.skillSfxKey ?? AUDIO_KEYS.skillTrigger;
+          const sfxKey = activeSlotMeta?.activeSkillSfxKey ?? activeSlotMeta?.skillSfxKey ?? AUDIO_KEYS.skillTrigger;
           AudioManager.playSfx(this, sfxKey);
         }
         if (activeSlot) await this.applyActiveSkillEffects(attacker, target, activeSlot);
@@ -3891,9 +3925,23 @@ export class ArenaScene extends Phaser.Scene {
             this.gameState = resolvedState;
           }
         }
+        if (!after.isDestroyed && onDamagedResult.shieldGain && onDamagedResult.shieldGain > 0) {
+          this.shieldHpByInstance.set(instanceId, (this.shieldHpByInstance.get(instanceId) ?? 0) + onDamagedResult.shieldGain);
+          this.showHealText(after, onDamagedResult.shieldGain);
+          this.playSkillSfxForDie(after, getRuntimeSkillMeta(definition));
+        }
         if (onDamagedResult.extraEffects?.length) {
           this.combatLog.setText(onDamagedResult.extraEffects.join('; '));
         }
+      }
+    }
+    if (before && after && !after.isDestroyed) {
+      const definition = this.getDefinitionForInstance(before);
+      const meta = definition ? getRuntimeSkillMeta(definition) : undefined;
+      const threshold = meta?.revengeThresholdRate;
+      if (threshold !== undefined && before.currentHealth >= before.maxHealth * threshold && after.currentHealth < after.maxHealth * threshold) {
+        this.triggerBasiliskRevenge(after, meta);
+        resolvedState = this.gameState;
       }
     }
     if (!before || !after?.isDestroyed) return { state: resolvedState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)), defeated: false };
@@ -3921,6 +3969,24 @@ export class ArenaScene extends Phaser.Scene {
       }
     };
   }
+  private triggerBasiliskRevenge(basilisk: DiceInstanceState, meta: ReturnType<typeof getRuntimeSkillMeta>) {
+    const target = this.findNearestFoeIgnoringRange(basilisk);
+    if (!target) return;
+    const classLevel = this.instanceClassLevels.get(basilisk.instanceId) ?? 1;
+    const hits = Math.max(1, Math.floor((meta.revengeHits ?? 5) + Math.floor((classLevel - 1) / 6)));
+    const damage = Math.max(1, Math.floor(meta.revengeDamage ?? 100));
+    for (let i = 0; i < hits; i++) {
+      const freshTarget = this.gameState.dice.find((die) => die.instanceId === target.instanceId && !die.isDestroyed);
+      if (!freshTarget) break;
+      const hit = this.applyDamageWithRevive(freshTarget.instanceId, damage);
+      this.gameState = hit.state;
+      this.showDamageText(freshTarget, hit.dealt, '#6abf69');
+      this.handleDefeatedDie(freshTarget, hit.defeated);
+      if (hit.defeated) break;
+    }
+    this.combatLog.setText(`${basilisk.typeId} unleashes Rapacious Revenge!`);
+  }
+
 
   private getPierceBehindTargets(attacker: DiceInstanceState, target: DiceInstanceState, range: number): DiceInstanceState[] {
     if (!attacker.gridPosition || !target.gridPosition || range <= 0) return [];
@@ -3974,6 +4040,64 @@ export class ArenaScene extends Phaser.Scene {
     if (meta.checkForAdjacentFoes && this.hasAdjacentFoe(attacker)) return 0;
     const bossMitigation = this.isBossDie(target) ? 0.25 : 1;
     return Math.max(1, Math.floor(target.maxHealth * meta.targetMaxHpBonusRate * bossMitigation));
+  }
+
+
+  private getWeakestInjuredAlly(healer: DiceInstanceState): DiceInstanceState | undefined {
+    const boardSide = this.getBoardSideForDie(healer);
+    return this.gameState.dice
+      .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
+        die.ownerId === healer.ownerId && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition) && this.getBoardSideForDie(die) === boardSide && die.currentHealth < die.maxHealth)
+      .sort((a, b) => (a.currentHealth / a.maxHealth) - (b.currentHealth / b.maxHealth) || a.currentHealth - b.currentHealth)[0];
+  }
+
+  private applyDruidBasicHeal(attacker: DiceInstanceState, meta: ReturnType<typeof getRuntimeSkillMeta>): number {
+    const primary = this.getWeakestInjuredAlly(attacker) ?? attacker;
+    const definition = this.getDefinitionForInstance(attacker);
+    const healAmount = Math.max(1, Math.floor((definition?.attack ?? attacker.maxHealth) * this.getTypeUpgradeMultiplier(attacker)));
+    const healedIds = new Set<string>();
+    const healOne = (die: DiceInstanceState) => {
+      if (healedIds.has(die.instanceId)) return;
+      healedIds.add(die.instanceId);
+      this.healDie(die.instanceId, healAmount);
+      this.animateSkillEffect('heal', attacker, die);
+    };
+    healOne(primary);
+    const ricochetCount = Math.max(0, Math.floor((meta.ricochetHealCount ?? 1) + Math.floor(((this.instanceClassLevels.get(attacker.instanceId) ?? 1) - 1) / 9)));
+    const ricochetRange = Math.max(1, meta.ricochetHealRange ?? 2);
+    this.gameState.dice
+      .filter((die) => die.ownerId === attacker.ownerId && die.zone === 'board' && !die.isDestroyed && die.gridPosition && die.instanceId !== primary.instanceId && this.getBoardSideForDie(die) === this.getBoardSideForDie(attacker))
+      .map((die) => ({ die, distance: Math.abs(die.gridPosition!.row - primary.gridPosition!.row) + Math.abs(die.gridPosition!.col - primary.gridPosition!.col) }))
+      .filter(({ distance }) => distance <= ricochetRange)
+      .sort((a, b) => (a.die.currentHealth / a.die.maxHealth) - (b.die.currentHealth / b.die.maxHealth) || a.distance - b.distance)
+      .slice(0, ricochetCount)
+      .forEach(({ die }) => healOne(die));
+    return healAmount * healedIds.size;
+  }
+
+  private transformDruidToBear(attacker: DiceInstanceState) {
+    const definition = this.getDefinitionForInstance(attacker);
+    if (!definition) return;
+    const bearDefinition: DiceDefinition = {
+      ...definition,
+      title: 'Bear Form',
+      attack: 50,
+      health: 1500,
+      range: 2,
+      targetingMode: 'Nearest',
+      skills: definition.skills.filter((skill) => (skill.modifiers?.notes ?? []).includes('runtime:druidBearForm')),
+      accent: '#9b6a3a'
+    };
+    this.instanceDefinitionOverrides.set(attacker.instanceId, bearDefinition);
+    this.gameState = {
+      ...this.gameState,
+      dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId
+        ? { ...die, maxHealth: 1500, currentHealth: 1500 }
+        : die)
+    };
+    const transformed = this.gameState.dice.find((die) => die.instanceId === attacker.instanceId) ?? attacker;
+    this.applyOnTransformedSkillEffects(transformed);
+    this.animateTransformEffect(transformed);
   }
 
   private getLeonFuriousClawDamage(attacker: DiceInstanceState, target: DiceInstanceState): number {
@@ -4123,6 +4247,13 @@ export class ArenaScene extends Phaser.Scene {
       this.addManaToAllActiveSlots(attacker);
     }
 
+    if (result.transformToBear) {
+      this.transformDruidToBear(attacker);
+      this.resetActiveMana(attacker.instanceId, activeSlot.key);
+      this.combatLog.setText(`🐻 ${attacker.typeId} transforms into Bear Form!`);
+      return;
+    }
+
     if (result.summonWizard) {
       const wizard = this.summonMinionForOwner(attacker.ownerId, 'Wizard', this.getSummonedMinionClassLevel(attacker));
       if (wizard) {
@@ -4257,12 +4388,15 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     if (result.directDamage) {
-      const freshTarget = result.directDamage.target;
-      if (!freshTarget.isDestroyed) {
-        const hit = applyDirectDamage(freshTarget, result.directDamage.damage);
+      const damageTargets = result.hitsAllFoes
+        ? this.getBoardDiceOnSide(attacker.ownerId === 'player' ? 'enemy' : 'player', this.getBoardSideForDie(target))
+        : [result.directDamage.target];
+      damageTargets.forEach((freshTarget) => {
+        if (freshTarget.isDestroyed) return;
+        const hit = applyDirectDamage(freshTarget, result.directDamage!.damage);
         this.showDamageText(freshTarget, hit.dealt, '#ffbf80');
         this.handleDefeatedDie(freshTarget, hit.defeated);
-      }
+      });
     }
 
     if (result.attackCountIncrease !== undefined && result.extraAttacksTurns !== undefined) {
@@ -4444,8 +4578,21 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition) return;
     const classLevel = this.instanceClassLevels.get(transformed.instanceId) ?? 1;
     const result = executeOnTransformedSkillEffects(transformed, definition, classLevel);
+    const meta = getRuntimeSkillMeta(definition);
+    if (meta.bearMaulDamage && meta.bearMaulDamage > 0) {
+      const target = this.findNearestFoeIgnoringRange(transformed);
+      if (target) {
+        this.moveLeonBesideTarget(transformed, target);
+        const moved = this.gameState.dice.find((die) => die.instanceId === transformed.instanceId) ?? transformed;
+        const hit = this.applyDamageWithRevive(target.instanceId, meta.bearMaulDamage);
+        this.gameState = hit.state;
+        this.showDamageText(target, hit.dealt, '#d79a4a');
+        this.animateSkillEffect('physical', moved, target);
+        this.handleDefeatedDie(target, hit.defeated);
+      }
+    }
     if (!result.bonusAttacks || result.bonusAttacks <= 0) return;
-    this.playSkillSfxForDie(transformed, getRuntimeSkillMeta(definition));
+    this.playSkillSfxForDie(transformed, meta);
     this.recordAttackCountEffect(transformed.instanceId, result.bonusAttacks);
     const turns = Math.max(1, result.extraAttacksTurns ?? 1);
     const current = this.extraAttackTurnsByInstance.get(transformed.instanceId);
@@ -5285,6 +5432,14 @@ export class ArenaScene extends Phaser.Scene {
       const current = this.basicAttackDamageBonusByInstance.get(attacker.instanceId) ?? 0;
       this.basicAttackDamageBonusByInstance.set(attacker.instanceId, current + result.bonusDamage);
       this.playSkillSfxForDie(attacker, meta);
+    }
+    if (result.healSelfMissingRate && result.healSelfMissingRate > 0) {
+      const freshAttacker = this.gameState.dice.find((die) => die.instanceId === attacker.instanceId && !die.isDestroyed);
+      if (freshAttacker) {
+        const missing = Math.max(0, freshAttacker.maxHealth - freshAttacker.currentHealth);
+        this.healDie(freshAttacker.instanceId, Math.ceil(missing * result.healSelfMissingRate));
+        this.playSkillSfxForDie(freshAttacker, meta);
+      }
     }
     if (result.hammerTarget && result.hammerDamage !== undefined) {
       this.playSkillSfxForDie(attacker, meta);

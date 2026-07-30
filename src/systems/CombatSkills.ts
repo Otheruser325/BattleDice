@@ -35,6 +35,7 @@ export interface OnKillResult extends SkillEffectResult {
   hammerTarget?: DiceInstanceState;
   hammerDamage?: number;
   leonRageBonus?: number;
+  healSelfMissingRate?: number;
 }
 
 export interface OnDamagedResult extends SkillEffectResult {
@@ -79,6 +80,8 @@ export interface ActiveEffectResult extends SkillEffectResult {
   attackDeltaMaxStacks?: number;
   statusEffect?: DiceStatusEffect;
   needsMana?: boolean;
+  transformToBear?: boolean;
+  hitsAllFoes?: boolean;
 }
 
 function createBaseResult(): SkillEffectResult {
@@ -132,6 +135,10 @@ export function executeOnDamagedSkillEffects(
 
   if (meta.onDamagedGrantAttacksToAlly) {
     result.grantAttacksToAlly = true;
+  }
+
+  if ((meta.shield ?? 0) > 0) {
+    result.shieldGain = Math.max(1, Math.ceil(meta.shield ?? 0));
   }
 
   return result;
@@ -199,6 +206,10 @@ export function executeOnKillSkillEffects(
   if (meta.hasJudgmentHammer) {
     result.hammerTarget = defeated;
     result.hammerDamage = meta.hammerDamage ?? 150;
+  }
+
+  if ((meta.onKillMissingHealRate ?? 0) > 0) {
+    result.healSelfMissingRate = meta.onKillMissingHealRate;
   }
 
   if ((meta.leonRageRate ?? 0) > 0 && classLevel >= 6) {
@@ -398,6 +409,15 @@ export function executeActiveSkillEffects(
     return result;
   }
 
+  if (meta.hasDruidBearTransform) {
+    if (canCastActive) {
+      result.transformToBear = true;
+      return result;
+    }
+    if (manaNeeded > 0) result.needsMana = true;
+    return result;
+  }
+
   if (meta.canSummonImp) {
     if (canCastActive) {
       result.summonImp = true;
@@ -453,6 +473,7 @@ export function executeActiveSkillEffects(
 
   if (meta.activeDamage !== undefined && !meta.hasSpearActive && !meta.hasMeteorStrike && !(meta.hasDeathInstakill && isDeathTransformed)) {
     result.directDamage = { target, damage: Math.max(1, Math.ceil(meta.activeDamage ?? 1)) };
+    result.hitsAllFoes = meta.hitsAllFoes;
   }
 
   if ((meta.attackCountIncrease ?? 0) > 0 && meta.activeDurationTurns !== undefined) {

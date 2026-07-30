@@ -75,6 +75,17 @@ export interface DiceSkillModifier {
   growthDelta?: number;
   brokenGrowthDelta?: number;
   skillSfx?: string;
+  hitsAllFoes?: boolean;
+  ricochetHealCount?: number;
+  ricochetHealRange?: number;
+  bearMaulDamage?: number;
+  bearCritChance?: number;
+  bearCritMultiplier?: number;
+  avoidBossAttackChance?: number;
+  onKillMissingHealRate?: number;
+  revengeThresholdRate?: number;
+  revengeHits?: number;
+  revengeDamage?: number;
   attackSfx?: string;
   transformedAttackSfx?: string;
 }

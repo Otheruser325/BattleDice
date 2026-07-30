@@ -29,7 +29,10 @@
     "BrokenGrowth",
     "Solar",
     "Slingshot",
-    "Lock"
+    "Lock",
+    "Drizzle",
+    "Armor",
+    "Druid"
   ],
   "exclusiveTypeIds": [
     {
@@ -51,6 +54,10 @@
     {
       "typeId": "Leon",
       "path": "Bosses/Leon.dice"
+    },
+    {
+      "typeId": "Basilisk",
+      "path": "Bosses/Basilisk.dice"
     }
   ]
 }

@@ -227,6 +227,18 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + 0.02 * classUps;
     }
 
+    if (definition.typeId === 'Basilisk') {
+      if (source.avoidBossAttackChance !== undefined) modifiers.avoidBossAttackChance = Math.min(0.95, source.avoidBossAttackChance + 0.02 * classUps);
+      if (source.onKillMissingHealRate !== undefined) modifiers.onKillMissingHealRate = Math.min(1, source.onKillMissingHealRate + 0.015 * classUps);
+      if (source.revengeThresholdRate !== undefined) modifiers.revengeThresholdRate = Math.min(0.95, source.revengeThresholdRate + 0.01 * classUps);
+      if (source.revengeHits !== undefined) modifiers.revengeHits = source.revengeHits + Math.floor(classUps / 6);
+      modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
+    }
+
+    if (definition.typeId === 'Druid' && source.ricochetHealCount !== undefined) {
+      modifiers.ricochetHealCount = source.ricochetHealCount + Math.floor(classUps / 9);
+    }
+
     const scaledSkill = { ...skill, modifiers };
     return {
       ...scaledSkill,
