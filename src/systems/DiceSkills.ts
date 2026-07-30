@@ -101,6 +101,19 @@ export interface DiceSkillRuntimeMeta {
   isLockedUntilClass6?: boolean;
   disableManaGain?: boolean;
   consumeAttack?: boolean;
+  hitsAllFoes?: boolean;
+  hasDruidicEssence?: boolean;
+  hasDruidBearTransform?: boolean;
+  ricochetHealCount?: number;
+  ricochetHealRange?: number;
+  bearMaulDamage?: number;
+  bearCritChance?: number;
+  bearCritMultiplier?: number;
+  avoidBossAttackChance?: number;
+  onKillMissingHealRate?: number;
+  revengeThresholdRate?: number;
+  revengeHits?: number;
+  revengeDamage?: number;
   growthDelta?: number;
   brokenGrowthDelta?: number;
 }
@@ -288,6 +301,19 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     manaSteal: allNotes.includes('runtime:manaManipulator') ? ((modifiers as { attackDelta?: number } | undefined)?.attackDelta ?? 1) : undefined,
     spellcastManaGain: allNotes.includes('runtime:wizardSpellcast') ? ((modifiers as { manaGain?: number } | undefined)?.manaGain ?? 2) : undefined,
     canSummonWizard: allNotes.includes('runtime:magicianSummonWizard'),
+    hitsAllFoes: Boolean((activeModifiers as { hitsAllFoes?: boolean } | undefined)?.hitsAllFoes),
+    hasDruidicEssence: allNotes.includes('runtime:druidicEssence'),
+    hasDruidBearTransform: allNotes.includes('runtime:druidBearTransform'),
+    ricochetHealCount: (modifiers as { ricochetHealCount?: number } | undefined)?.ricochetHealCount,
+    ricochetHealRange: (modifiers as { ricochetHealRange?: number } | undefined)?.ricochetHealRange,
+    bearMaulDamage: (modifiers as { bearMaulDamage?: number } | undefined)?.bearMaulDamage,
+    bearCritChance: (modifiers as { bearCritChance?: number } | undefined)?.bearCritChance,
+    bearCritMultiplier: (modifiers as { bearCritMultiplier?: number } | undefined)?.bearCritMultiplier,
+    avoidBossAttackChance: (modifiers as { avoidBossAttackChance?: number } | undefined)?.avoidBossAttackChance,
+    onKillMissingHealRate: (modifiers as { onKillMissingHealRate?: number } | undefined)?.onKillMissingHealRate,
+    revengeThresholdRate: (modifiers as { revengeThresholdRate?: number } | undefined)?.revengeThresholdRate,
+    revengeHits: (modifiers as { revengeHits?: number } | undefined)?.revengeHits,
+    revengeDamage: (modifiers as { revengeDamage?: number } | undefined)?.revengeDamage,
     hasLeonFuriousClaw: allNotes.includes('runtime:leonFuriousClaw'),
     hasLeonMightyRoar: allNotes.includes('runtime:leonMightyRoar'),
     hasLeonRage: allNotes.includes('runtime:leonRage'),

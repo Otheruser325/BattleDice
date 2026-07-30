@@ -14,9 +14,7 @@
         "ricochetHealCount": 1,
         "ricochetHealRange": 2,
         "skillTargeting": "Weakest",
-        "notes": [
-          "runtime:druidicEssence"
-        ],
+        "notes": ["runtime:druidicEssence"],
         "skillSfx": "dice_heal_skill"
       }
     },
@@ -27,33 +25,34 @@
       "manaNeeded": 20,
       "modifiers": {
         "consumeAttack": false,
-        "transformSkillIndices": [ 2, 3 ],
-        "notes": [
-          "runtime:druidBearTransform"
-        ],
+        "transformSkillIndices": [2, 3],
+        "transformTitle": "Bear Form",
+        "alternateButton": "Bear Form",
+        "notes": ["runtime:druidBearTransform"],
         "skillSfx": "dice_berserk_skill"
-      },
-      {
-        "type": "OnTransformed",
-        "title": "Uncontrollable Maul",
-        "description": "Teleports onto the nearest enemy and deals 250 damage upon mauling.",
-        "modifiers": {
-          "bearMaulDamage": 250,
-          "notes": ['runtime:druidBearForm']
-        }
-      },
-      {
-        "type": "Passive",
-        "title": "Critical Claw",
-        "description": "Basic attacks have a 20% chance of dealing 100% more damage.",
-        "modifiers": {
-          "bearCritChance": 0.2,
-          "bearCritMultiplier": 2,
-          "notes": ['runtime:druidBearForm']
-        }
+      }
+    },
+    {
+      "type": "OnTransformed",
+      "title": "Uncontrollable Maul",
+      "description": "Teleports onto the nearest enemy and deals 250 damage upon mauling.",
+      "modifiers": {
+        "bearMaulDamage": 250,
+        "notes": ["runtime:druidBearForm"]
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Critical Claw",
+      "description": "Basic attacks have a 20% chance of dealing 100% more damage.",
+      "modifiers": {
+        "bearCritChance": 0.2,
+        "bearCritMultiplier": 2,
+        "notes": ["runtime:druidBearForm"]
       }
     }
   ],
+  "transformDescriptions": ["Bear Form: 1500 HP, 50 damage, range 2. Teleports onto the nearest enemy and mauls for 250 damage, then basic attacks can critically strike."],
   "accent": "#6ec97a",
   "targetingMode": "Nearest"
 }
