@@ -34,7 +34,7 @@
       "title": "Heatwave",
       "description": "In Solar Form, basic attacks trigger a heatwave around Solar Dice, dealing equal damage to adjacent foes.",
       "modifiers": {
-        "heatwaveDamageRate": 1
+        "heatwaveDamageRate": 1.25
       }
     }
   ],
