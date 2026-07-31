@@ -7,7 +7,7 @@
         "Dice additions: Drizzle, Druid and Armor.",
         "Boss additions: Basilisk.",
         "Gameplay improvements: All direct-damaging attacks and abilities have a 5% chance to cause double damage onto hit targets (affects healing)",
-        "Dice balance: --Poison: Poison damage increased from 20 -> 25 --Gamble: Health reduced from 560 -> 540 --Broken: Damage increased from 32 -> 34 --Iron: Health reduced from 800 -> 760 --Slingshot: Health reduced from 560 -> 500 --Solar: Heatwave damage increased from 100% -> 125%",
+        "Dice balance: --Poison: Poison damage increased from 20 -> 25 --Gamble: Health reduced from 560 -> 540 --Broken: Damage increased from 32 -> 34 --Iron: Health reduced from 800 -> 760 --Slingshot: Health reduced from 560 -> 480 --Broken Growth: Health increased from 680 -> 700 --Broken Growth: Damage increased from 24 -> 28 --Growth: Damage increased from 24 -> 26 --Solar: Heatwave damage increased from 100% -> 125%",
         "Bug fixes: --fixed a bug that caused weird dice definition loading behaviour --fixed achievement listing UI being janky --fixed several edge cases related to active skills"
       ]
     },
