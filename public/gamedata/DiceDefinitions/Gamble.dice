@@ -2,7 +2,7 @@
   "typeId": "Gamble",
   "title": "Gamble Dice",
   "attack": 14,
-  "health": 560,
+  "health": 540,
   "range": 5,
   "rarity": "Common",
   "skills": [
