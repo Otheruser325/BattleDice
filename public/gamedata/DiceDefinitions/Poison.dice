@@ -8,12 +8,12 @@
     {
       "type": "Active",
       "title": "Toxic Mark",
-      "description": "Deals direct toxic damage equal to its attack, then applies 20 poison damage per turn for 3 turns (stacks).",
+      "description": "Deals direct toxic damage equal to its attack, then applies 25 poison damage per turn for 3 turns (stacks).",
       "manaNeeded": 5,
       "modifiers": {
-        "activeDamage": 20,
+        "activeDamage": 25,
         "durationTurns": 3,
-        "poisonDamage": 20,
+        "poisonDamage": 25,
         "statusEffect": "poison",
         "skillSfx": "dice_poison_skill"
       }
