@@ -1,7 +1,7 @@
 {
   "typeId": "Growth",
   "title": "Growth Dice",
-  "attack": 24,
+  "attack": 26,
   "health": 720,
   "range": 4,
   "rarity": "Legendary",
