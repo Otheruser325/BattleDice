@@ -1,8 +1,8 @@
 {
   "typeId": "BrokenGrowth",
   "title": "Broken Growth Dice",
-  "attack": 24,
-  "health": 680,
+  "attack": 28,
+  "health": 700,
   "range": 4,
   "rarity": "Epic",
   "skills": [
