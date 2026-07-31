@@ -76,7 +76,15 @@ export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: n
   const scaled = applyClassProgression(die, classLevel);
   const meta = getRuntimeSkillMeta(scaled);
   const transformSkillIndices = meta.transformSkillIndices?.length ? meta.transformSkillIndices : meta.transformSkillIndex === undefined ? [] : [meta.transformSkillIndex];
-  if (!showAlternate) return scaled;
+  if (!showAlternate) {
+    if (scaled.typeId === 'Druid' && meta.hasDruidBearTransform) {
+      return {
+        ...scaled,
+        skills: scaled.skills.filter((skill) => !(skill.modifiers?.notes ?? []).includes('runtime:druidBearForm'))
+      };
+    }
+    return scaled;
+  }
   if (!meta.transformTitle) return scaled;
 
   const transformSkills = transformSkillIndices

@@ -133,6 +133,7 @@ export class ArenaScene extends Phaser.Scene {
   private manaPausedTurnsByInstance: Map<string, number> = new Map();
   private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private damageReductionByInstance: Map<string, number> = new Map();
+  private criticalDamageTextByInstance: Set<string> = new Set();
   private poisonByInstance: Map<string, { stacks: Array<{ damage: number; turns: number; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> }> = new Map();
   private armorShredByInstance: Map<string, { rate: number; turns: number }> = new Map();
   private transcendenceTransformed: Set<string> = new Set();
@@ -3402,7 +3403,7 @@ export class ArenaScene extends Phaser.Scene {
         this.gameState = spendAttack(this.gameState, assassin.instanceId);
         const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
         this.gameState = hit.state;
-        this.showDamageText(target, hit.dealt, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
+        this.showDamageText(target, hit.dealt, hit.critical ? '#ff3333' : this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
         this.applyPassiveSkillEffects(assassin, target);
         this.handleDefeatedDie(target, hit.defeated);
         const rem = this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0;
@@ -3469,6 +3470,7 @@ export class ArenaScene extends Phaser.Scene {
         const beamLine = this.findTranscendenceBeamTarget(attacker, forcedTarget);
         const beamTarget = beamLine?.target;
         let target = forcedTarget ?? beamTarget ?? this.findAttackTargetForArena(attacker);
+        if (!target && attackerMeta?.hasDruidicEssence) target = attacker;
         const activeTarget = activeSlot && activeSlotMeta?.activeOnlyTargetsAllies
           ? (activeSlotMeta.activeHeal !== undefined
             ? this.findActiveHealTargetForArena(attacker, activeSlotMeta.activeSkillTargeting ?? activeSlotMeta.targetingMode ?? 'Nearest')
@@ -3544,15 +3546,15 @@ export class ArenaScene extends Phaser.Scene {
             const lowHpExploitMult = target.currentHealth < target.maxHealth * (attackerMeta?.lowHpThresholdRate ?? 0)
               ? 1 + (attackerMeta?.lowHpDamageBonusRate ?? 0)
               : 1;
-            const bearCritMult = Math.random() < (attackerMeta?.bearCritChance ?? 0) ? (attackerMeta?.bearCritMultiplier ?? 2) : 1;
+            const bearCritMult = Math.random() < this.getCriticalChance(attackerMeta?.bearCritChance ?? 0) ? (attackerMeta?.bearCritMultiplier ?? 2) : 1;
             const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + basicDamageBonus + ironBonus + solitudeBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult * lowHpExploitMult * bearCritMult));
             if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
             const followUpBasicAttack = this.spendBasicAttack(attacker);
-            const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
+            const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage, bearCritMult > 1 ? { allowGlobalCrit: false } : {});
             this.gameState = hit.state;
             damage = hit.dealt;
             targetDefeated = hit.defeated;
-            this.showDamageText(target, damage, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
+            this.showDamageText(target, damage, bearCritMult > 1 || hit.critical ? '#ff3333' : this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
             if (pips % 2 === 1 && (attackerMeta?.deuciferOddSiphonRate ?? 0) > 0) this.healDie(attacker.instanceId, Math.floor(damage * (attackerMeta?.deuciferOddSiphonRate ?? 0)));
             this.applySolarFormEffects(attacker, target, adjustedDamage, pips);
             this.applyPassiveSkillEffects(attacker, target);
@@ -3564,12 +3566,12 @@ export class ArenaScene extends Phaser.Scene {
             const rem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
             if (rem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, rem - 1);
             if (followUpBasicAttack && !targetDefeated) {
-              const followUp = this.applyDamageWithRevive(target.instanceId, adjustedDamage);
+              const followUp = this.applyDamageWithRevive(target.instanceId, adjustedDamage, bearCritMult > 1 ? { allowGlobalCrit: false } : {});
               this.gameState = followUp.state;
               damage += followUp.dealt;
               if (damage > 200) AchievementStore.unlock(this, 'lotta_damage');
               targetDefeated = followUp.defeated;
-              this.showDamageText(target, followUp.dealt, this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
+              this.showDamageText(target, followUp.dealt, bearCritMult > 1 || followUp.critical ? '#ff3333' : this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
               this.applySolarFormEffects(attacker, target, adjustedDamage, pips);
               this.applyPassiveSkillEffects(attacker, target);
               if (targetDefeated) {
@@ -3872,7 +3874,28 @@ export class ArenaScene extends Phaser.Scene {
     return this.gameState.dice.find((die) => die.ownerId === 'player' && die.instanceId === instanceId && die.zone === 'hand' && !die.isDestroyed);
   }
 
-  private applyDamageWithRevive(instanceId: string, damage: number, options: { ignoreDamageReduction?: boolean; ignoreShield?: boolean } = {}): { state: MatchBattleState; dealt: number; defeated: boolean } {
+  private rollGlobalCritical(): boolean {
+    return Math.random() < 0.05;
+  }
+
+  private getCriticalChance(baseChance: number): number {
+    return Phaser.Math.Clamp(baseChance + 0.05, 0, 1);
+  }
+
+  private applyCriticalDamage(damage: number, options: { allowGlobalCrit?: boolean } = {}): { damage: number; critical: boolean } {
+    const critical = options.allowGlobalCrit !== false && this.rollGlobalCritical();
+    return { damage: critical ? damage * 2 : damage, critical };
+  }
+
+  private applyCriticalHealing(amount: number): { amount: number; critical: boolean } {
+    const critical = this.rollGlobalCritical();
+    return { amount: critical ? amount * 2 : amount, critical };
+  }
+
+  private applyDamageWithRevive(instanceId: string, damage: number, options: { ignoreDamageReduction?: boolean; ignoreShield?: boolean; allowGlobalCrit?: boolean } = {}): { state: MatchBattleState; dealt: number; defeated: boolean; critical: boolean } {
+    const criticalDamage = this.applyCriticalDamage(damage, { allowGlobalCrit: options.allowGlobalCrit });
+    damage = criticalDamage.damage;
+    if (criticalDamage.critical) this.criticalDamageTextByInstance.add(instanceId);
     let reduction = options.ignoreDamageReduction ? 0 : (this.damageReductionByInstance.get(instanceId) ?? 0);
     const die = this.gameState.dice.find((d) => d.instanceId === instanceId);
     if (!options.ignoreDamageReduction && die) reduction += this.getSpotlightScale(die);
@@ -3888,6 +3911,18 @@ export class ArenaScene extends Phaser.Scene {
     if (reduction > 0) damage = Math.max(0, Math.floor(damage * (1 - reduction)));
     const armorShred = this.armorShredByInstance.get(instanceId);
     if (armorShred && armorShred.rate > 0) damage = Math.max(1, Math.floor(damage * (1 + armorShred.rate)));
+    const before = this.gameState.dice.find((targetDie) => targetDie.instanceId === instanceId);
+    const grantOnDamagedShield = (targetDie: DiceInstanceState, incomingDamage: number) => {
+      const definition = this.getDefinitionForInstance(targetDie);
+      if (!definition) return;
+      const classLevel = this.instanceClassLevels.get(instanceId) ?? 1;
+      const onDamagedResult = executeOnDamagedSkillEffects(targetDie, definition, classLevel, targetDie, incomingDamage, false);
+      if (onDamagedResult.shieldGain && onDamagedResult.shieldGain > 0) {
+        this.shieldHpByInstance.set(instanceId, (this.shieldHpByInstance.get(instanceId) ?? 0) + onDamagedResult.shieldGain);
+        this.showHealText(targetDie, onDamagedResult.shieldGain);
+        this.playSkillSfxForDie(targetDie, getRuntimeSkillMeta(definition));
+      }
+    };
     const shieldHp = options.ignoreShield ? 0 : (this.shieldHpByInstance.get(instanceId) ?? 0);
     if (shieldHp > 0) {
       const absorbed = Math.min(shieldHp, Math.max(0, damage));
@@ -3895,10 +3930,13 @@ export class ArenaScene extends Phaser.Scene {
       const nextShield = shieldHp - absorbed;
       if (nextShield > 0) this.shieldHpByInstance.set(instanceId, nextShield);
       else this.shieldHpByInstance.delete(instanceId);
-      if (remaining <= 0) return { state: this.gameState, dealt: 0, defeated: false };
+      if (remaining <= 0) {
+        if (before && absorbed > 0) grantOnDamagedShield(before, absorbed);
+        this.criticalDamageTextByInstance.delete(instanceId);
+        return { state: this.gameState, dealt: 0, defeated: false, critical: criticalDamage.critical };
+      }
       damage = remaining;
     }
-    const before = this.gameState.dice.find((die) => die.instanceId === instanceId);
     const beforePosition = before?.gridPosition;
     const nextState = applyDamage(this.gameState, instanceId, damage);
     const after = nextState.dice.find((die) => die.instanceId === instanceId);
@@ -4047,7 +4085,7 @@ export class ArenaScene extends Phaser.Scene {
     const boardSide = this.getBoardSideForDie(healer);
     return this.gameState.dice
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
-        die.ownerId === healer.ownerId && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition) && this.getBoardSideForDie(die) === boardSide && die.currentHealth < die.maxHealth)
+        die.ownerId === healer.ownerId && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition) && this.getBoardSideForDie(die) === boardSide && this.getAttackDistance(healer, die) <= Math.max(1, this.getEffectiveAttackRange(healer, this.getDefinitionForInstance(healer)!)) && die.currentHealth < die.maxHealth)
       .sort((a, b) => (a.currentHealth / a.maxHealth) - (b.currentHealth / b.maxHealth) || a.currentHealth - b.currentHealth)[0];
   }
 
@@ -4100,11 +4138,12 @@ export class ArenaScene extends Phaser.Scene {
     this.animateTransformEffect(transformed);
   }
 
-  private getLeonFuriousClawDamage(attacker: DiceInstanceState, target: DiceInstanceState): number {
+  private getLeonFuriousClawDamage(attacker: DiceInstanceState, target: DiceInstanceState): { damage: number; critical: boolean } {
     const definition = this.getDefinitionForInstance(attacker);
-    if (!definition) return 0;
-    const crit = Math.random() < 0.2 ? 2 : 1;
-    return Math.max(1, Math.floor(definition.attack * this.getOffenseMultiplier(attacker) * this.getDiceCardSkillDamageMultiplier(attacker) * crit));
+    if (!definition) return { damage: 0, critical: false };
+    const critical = Math.random() < this.getCriticalChance(0.2);
+    const crit = critical ? 2 : 1;
+    return { damage: Math.max(1, Math.floor(definition.attack * this.getOffenseMultiplier(attacker) * this.getDiceCardSkillDamageMultiplier(attacker) * crit)), critical };
   }
 
   private async executeLeonFuriousClaw(attacker: DiceInstanceState, target: DiceInstanceState, hitCount = 2) {
@@ -4114,10 +4153,10 @@ export class ArenaScene extends Phaser.Scene {
     for (let hitIndex = 0; hitIndex < hitCount; hitIndex++) {
       const freshTarget = this.gameState.dice.find((die) => die.instanceId === target.instanceId && !die.isDestroyed);
       if (!freshTarget) return;
-      const damage = this.getLeonFuriousClawDamage(attacker, freshTarget);
-      const hit = this.applyDamageWithRevive(freshTarget.instanceId, damage);
+      const leonDamage = this.getLeonFuriousClawDamage(attacker, freshTarget);
+      const hit = this.applyDamageWithRevive(freshTarget.instanceId, leonDamage.damage, { allowGlobalCrit: false });
       this.gameState = hit.state;
-      this.showDamageText(freshTarget, hit.dealt, '#ffbf4a');
+      this.showDamageText(freshTarget, hit.dealt, leonDamage.critical ? '#ff3333' : '#ffbf4a');
       if (hit.defeated) {
         await this.applyOnKillSkillEffects(attacker, freshTarget);
         this.applyOnDeathSkillEffects(freshTarget, attacker);
@@ -4155,13 +4194,14 @@ export class ArenaScene extends Phaser.Scene {
     const heatwaveRate = meta.heatwaveDamageRate ?? 0;
     if (heatwaveRate <= 0) return;
     const enemyOwner = attacker.ownerId === 'player' ? 'enemy' : 'player';
-    const attackerBoardSide = this.getBoardSideForDie(attacker);
-    this.getBoardDiceOnSide(enemyOwner, attackerBoardSide)
+    this.gameState.dice
       .filter((die) =>
+        die.ownerId === enemyOwner &&
+        die.zone === 'board' &&
+        !die.isDestroyed &&
         die.gridPosition &&
         Math.abs(die.gridPosition.row - attacker.gridPosition!.row) <= 1 &&
-        Math.abs(die.gridPosition.col - attacker.gridPosition!.col) <= 1 &&
-        (die.gridPosition.row !== attacker.gridPosition!.row || die.gridPosition.col !== attacker.gridPosition!.col))
+        this.getDistanceWithBoardSides(attacker, die) <= 1)
       .forEach((die) => {
         const damage = Math.max(1, Math.floor(baseDamage * heatwaveRate));
         const hit = this.applyDamageWithRevive(die.instanceId, damage);
@@ -4355,14 +4395,7 @@ export class ArenaScene extends Phaser.Scene {
       const healTarget = result.healTarget;
       const healAmount = Math.max(1, Math.ceil(result.healAmount * this.getCombanityDamageMultiplier(attacker, healTarget) * this.getTypeUpgradeMultiplier(attacker)));
       this.playSkillSfxForDie(attacker, meta);
-      this.gameState = {
-        ...this.gameState,
-        dice: this.gameState.dice.map((die) => {
-          if (die.instanceId !== healTarget.instanceId || die.isDestroyed) return die;
-          return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healAmount) };
-        })
-      };
-      this.showHealText(healTarget, healAmount);
+      this.healDie(healTarget.instanceId, healAmount);
       this.animateSkillEffect('heal', attacker, healTarget);
     }
 
@@ -4750,8 +4783,8 @@ export class ArenaScene extends Phaser.Scene {
         if (die.isDestroyed) return die;
         const rate = this.fountainHealRateByOwner[die.ownerId];
         if (rate <= 0) return die;
-        const healed = Math.max(1, Math.floor(die.maxHealth * rate));
-        return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healed) };
+        const critHeal = this.applyCriticalHealing(Math.max(1, Math.floor(die.maxHealth * rate)));
+        return { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + critHeal.amount) };
       })
     };
   }
@@ -4817,7 +4850,8 @@ export class ArenaScene extends Phaser.Scene {
   private healDie(instanceId: string, amount: number) {
     const target = this.gameState.dice.find((die) => die.instanceId === instanceId && !die.isDestroyed);
     if (!target || amount <= 0) return;
-    const healedAmount = Math.min(amount, Math.max(0, target.maxHealth - target.currentHealth));
+    const critHeal = this.applyCriticalHealing(amount);
+    const healedAmount = Math.min(critHeal.amount, Math.max(0, target.maxHealth - target.currentHealth));
     if (healedAmount <= 0) return;
     this.gameState = {
       ...this.gameState,
@@ -4825,7 +4859,7 @@ export class ArenaScene extends Phaser.Scene {
         ? { ...die, currentHealth: Math.min(die.maxHealth, die.currentHealth + healedAmount) }
         : die)
     };
-    this.showHealText(target, healedAmount);
+    this.showHealText(target, healedAmount, critHeal.critical);
   }
 
   private applyTurnBasedEffects() {
@@ -5671,6 +5705,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a', textOverride?: string) {
+    const critical = this.criticalDamageTextByInstance.delete(target.instanceId);
+    if (critical) color = '#ff3333';
     if (!target.gridPosition || (amount <= 0 && !textOverride)) return;
     const grid = this.getGridContainerForDie(target);
     const x = grid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
@@ -5685,7 +5721,7 @@ export class ArenaScene extends Phaser.Scene {
     this.tweens.add({ targets: text, y: y - 24, alpha: 0, duration: 640, ease: 'Cubic.easeOut', onComplete: () => text.destroy() });
   }
 
-  private showHealText(target: DiceInstanceState, amount: number) {
+  private showHealText(target: DiceInstanceState, amount: number, critical = false) {
     const fallbackHand = target.ownerId === 'player' ? this.handDice.get(target.instanceId) : undefined;
     if (!target.gridPosition && !fallbackHand) return;
     const x = target.gridPosition
@@ -5697,7 +5733,7 @@ export class ArenaScene extends Phaser.Scene {
     const text = this.add.text(x, y, `+${amount}`, {
       fontFamily: 'Orbitron',
       fontSize: '16px',
-      color: '#7dff9f',
+      color: critical ? '#006b2f' : '#7dff9f',
       stroke: '#071018',
       strokeThickness: 4
     }).setOrigin(0.5).setDepth(300);
