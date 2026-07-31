@@ -29,6 +29,36 @@ interface ExclusiveDiceEntry {
   path?: string;
 }
 
+interface LoadedDiceDefinition {
+  typeId: string;
+  definition: unknown;
+}
+
+async function fetchDiceDefinition(typeId: string, path: string, debug: ReturnType<typeof DebugManager.scope>, label: string): Promise<LoadedDiceDefinition | undefined> {
+  try {
+    const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
+    if (!res.ok) {
+      debug.warn(`${label} dice definition HTTP error.`, { typeId, path, status: res.status });
+      return undefined;
+    }
+    const definition = await res.json();
+    return { typeId, definition };
+  } catch (error) {
+    debug.warn(`Failed to fetch ${label.toLowerCase()} dice definition.`, { typeId, path, error });
+    return undefined;
+  }
+}
+
+async function loadDiceDefinitions(entries: { typeId: string; path: string; label: string }[], debug: ReturnType<typeof DebugManager.scope>): Promise<LoadedDiceDefinition[]> {
+  const results = await Promise.allSettled(
+    entries.map((entry) => fetchDiceDefinition(entry.typeId, entry.path, debug, entry.label))
+  );
+
+  return results
+    .map((result) => result.status === 'fulfilled' ? result.value : undefined)
+    .filter((definition): definition is LoadedDiceDefinition => Boolean(definition));
+}
+
 function normalizeExclusiveEntries(flags: DiceFlags): ExclusiveDiceEntry[] {
   return (flags.exclusiveTypeIds ?? [])
     .map((entry): ExclusiveDiceEntry | undefined => {
@@ -71,55 +101,35 @@ export class DiceCatalogLoader {
 
     const fetchableTypeIds = [...new Set(flags.fetchableTypeIds)]
       .map(normalizeTypeId)
-      .filter((typeId): typeId is string => Boolean(typeId))
-      .slice(0, 32);
+      .filter((typeId): typeId is string => Boolean(typeId));
     const exclusiveEntries = normalizeExclusiveEntries(flags);
-    const exclusiveTypeIds = exclusiveEntries.map((entry) => entry.typeId);
-    scene.cache.json.add('dice:flags', { fetchableTypeIds, exclusiveTypeIds });
     debug.log('Loading dice definitions from flags.', { fetchableTypeIds });
 
     if (!fetchableTypeIds.length) return { fetchableTypeIds: [] };
 
-    const loadedTypeIds: string[] = [];
-    for (const typeId of fetchableTypeIds) {
-      const path = getDefinitionPath(typeId);
-      try {
-        const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
-        if (!res.ok) {
-          debug.warn('Dice definition HTTP error.', { typeId, path, status: res.status });
-          continue;
-        }
-        const definition = await res.json();
-        scene.cache.json.add(`dice:${typeId}`, definition);
-        loadedTypeIds.push(typeId);
-      } catch (error) {
-        debug.warn('Failed to fetch dice definition.', { typeId, path, error });
-      }
-    }
+    const loadedDefinitions = await loadDiceDefinitions(
+      fetchableTypeIds.map((typeId) => ({ typeId, path: getDefinitionPath(typeId), label: 'Fetchable' })),
+      debug
+    );
+    const loadedTypeIds = loadedDefinitions.map(({ typeId, definition }) => {
+      scene.cache.json.add(`dice:${typeId}`, definition);
+      return typeId;
+    });
 
     if (!loadedTypeIds.length) {
       throw new Error('No dice definitions were loaded.');
     }
 
-    scene.cache.json.add('dice:flags', { fetchableTypeIds: loadedTypeIds, exclusiveTypeIds });
     debug.log('Loaded dice definitions.', { requested: fetchableTypeIds.length, loaded: loadedTypeIds.length });
 
-    const loadedExclusiveTypeIds: string[] = [];
-    for (const entry of exclusiveEntries) {
-      const path = getSubfolderDefinitionPath(entry.path, entry.typeId);
-      try {
-        const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
-        if (!res.ok) {
-          debug.warn('Exclusive dice definition HTTP error.', { typeId: entry.typeId, path, status: res.status });
-          continue;
-        }
-        const definition = await res.json();
-        scene.cache.json.add(`dice:${entry.typeId}`, definition);
-        loadedExclusiveTypeIds.push(entry.typeId);
-      } catch (error) {
-        debug.warn('Failed to fetch exclusive dice definition.', { typeId: entry.typeId, path, error });
-      }
-    }
+    const loadedExclusiveDefinitions = await loadDiceDefinitions(
+      exclusiveEntries.map((entry) => ({ typeId: entry.typeId, path: getSubfolderDefinitionPath(entry.path, entry.typeId), label: 'Exclusive' })),
+      debug
+    );
+    const loadedExclusiveTypeIds = loadedExclusiveDefinitions.map(({ typeId, definition }) => {
+      scene.cache.json.add(`dice:${typeId}`, definition);
+      return typeId;
+    });
     scene.cache.json.add('dice:flags', { fetchableTypeIds: loadedTypeIds, exclusiveTypeIds: loadedExclusiveTypeIds });
 
     return { fetchableTypeIds: loadedTypeIds, exclusiveTypeIds: loadedExclusiveTypeIds };
