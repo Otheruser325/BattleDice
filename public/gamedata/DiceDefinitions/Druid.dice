@@ -26,8 +26,9 @@
       "modifiers": {
         "consumeAttack": false,
         "transformSkillIndices": [2, 3],
-        "transformTitle": "Bear Form",
-        "alternateButton": "Bear Form",
+        "transformTitle": "Druid Bear",
+        "alternateButton": "View Druid Bear",
+        "baseButton": "View Druid Dice",
         "notes": ["runtime:druidBearTransform"],
         "skillSfx": "dice_berserk_skill"
       }

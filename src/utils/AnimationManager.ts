@@ -147,9 +147,10 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, duration, onComplete: () => g.destroy() });
   }
 
-  static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind', tint?: number) {
+  static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind', tintOrOptions?: number | { tint?: number; animated?: boolean; duration?: number }) {
+    const options = typeof tintOrOptions === 'number' ? { tint: tintOrOptions } : (tintOrOptions ?? {});
     const g = scene.add.graphics().setDepth(255);
-    const color = tint ?? ({ ice: 0x8fd5ff, fire: 0xff8a4c, electric: 0xfff176, poison: 0x74d66f, wind: 0x9fe7d9 } as const)[kind];
+    const color = options.tint ?? ({ ice: 0x8fd5ff, fire: 0xff8a4c, electric: 0xfff176, poison: 0x74d66f, wind: 0x9fe7d9 } as const)[kind];
 
     if (kind === 'wind') {
       for (let i = 0; i < 3; i += 1) {
@@ -178,7 +179,12 @@ export class AnimationManager {
       g.strokePath();
     }
 
-    scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: 320, onComplete: () => g.destroy() });
+    if (options.animated === false) {
+      scene.time.delayedCall(options.duration ?? 320, () => g.destroy());
+      return;
+    }
+
+    scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: options.duration ?? 320, onComplete: () => g.destroy() });
   }
   
   static animateFracture(scene: Phaser.Scene, x: number, y: number) {
