@@ -2,7 +2,7 @@
   "typeId": "Slingshot",
   "title": "Slingshot Dice",
   "attack": 32,
-  "health": 560,
+  "health": 480,
   "range": 6,
   "rarity": "Rare",
   "skills": [
