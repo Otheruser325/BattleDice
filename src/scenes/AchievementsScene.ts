@@ -31,27 +31,51 @@ export class AchievementsScene extends Phaser.Scene {
     }).setOrigin(1, 0);
 
     const content = this.add.container(0, 0);
+    const columnGap = 18;
+    const minColumnWidth = 220;
+    const availableWidth = panel.width - 48;
+    const columnCount = Phaser.Math.Clamp(Math.floor((availableWidth + columnGap) / (minColumnWidth + columnGap)), 1, columns.length);
+    const columnWidth = Math.floor((availableWidth - columnGap * (columnCount - 1)) / columnCount);
+    const itemGap = 10;
+    const itemPaddingY = 10;
+    const titleHeight = 28;
+    const columnBottoms: number[] = [];
+
     columns.forEach((column, index) => {
-      const x = panel.x + 24 + index * 262;
-      const card = this.add.rectangle(x + 118, panel.y + 174, 230, 520, 0x102434, 0.97)
-        .setStrokeStyle(1, 0x406987);
-      const title = this.add.text(x + 24, panel.y + 104, column.title.toUpperCase(), {
+      const columnIndex = index % columnCount;
+      const rowIndex = Math.floor(index / columnCount);
+      const x = panel.x + 24 + columnIndex * (columnWidth + columnGap);
+      let y = panel.y + 104 + rowIndex * 260;
+      if (rowIndex > 0) {
+        y = Math.max(...columnBottoms.slice((rowIndex - 1) * columnCount, rowIndex * columnCount)) + 24;
+      }
+      const title = this.add.text(x, y, column.title.toUpperCase(), {
         fontFamily: 'Orbitron',
         fontSize: '18px',
         color: PALETTE.accentSoft
       });
-      content.add([card, title]);
+      content.add(title);
 
-      column.items.forEach((item, itemIndex) => {
+      let itemY = y + 42;
+      const itemTexts = column.items.map((item) => {
         const done = Boolean(unlocked[item.id]);
-        const text = this.add.text(x + 24, panel.y + 146 + itemIndex * 52, `${done ? '✓' : '•'} ${item.label}`, {
+        const text = this.add.text(x + 12, itemY + itemPaddingY, `${done ? '✓' : '•'} ${item.label}`, {
           fontFamily: 'Orbitron',
           fontSize: '12px',
           color: done ? PALETTE.success : PALETTE.textMuted,
-          wordWrap: { width: 200 }
+          wordWrap: { width: columnWidth - 34 }
         });
-        content.add(text);
+        itemY += Math.max(36, text.height + itemPaddingY * 2) + itemGap;
+        return text;
       });
+
+      const cardTop = y + titleHeight;
+      const cardHeight = Math.max(92, itemY - cardTop - itemGap + 12);
+      const card = this.add.rectangle(x + columnWidth / 2, cardTop + cardHeight / 2, columnWidth, cardHeight, 0x102434, 0.97)
+        .setStrokeStyle(1, 0x406987);
+      content.addAt(card, 0);
+      content.add(itemTexts);
+      columnBottoms[index] = cardTop + cardHeight;
     });
 
     const viewTop = panel.y + 96;
@@ -60,7 +84,8 @@ export class AchievementsScene extends Phaser.Scene {
     const viewWidth = panel.width - 32;
     const maskRect = this.add.rectangle(viewLeft, viewTop, viewWidth, viewHeight, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
     content.setMask(maskRect.createGeometryMask());
-    const maxScroll = 360;
+    const contentBottom = Math.max(...columnBottoms, viewTop + viewHeight);
+    const maxScroll = Math.max(0, contentBottom - (viewTop + viewHeight) + 24);
     let scroll = 0;
     this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       const within = pointer.worldX >= viewLeft && pointer.worldX <= viewLeft + viewWidth && pointer.worldY >= viewTop && pointer.worldY <= viewTop + viewHeight;

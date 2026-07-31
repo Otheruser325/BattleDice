@@ -21,7 +21,7 @@ import type { DiceTypeId, DiceInstanceState, DiceDefinition, DiceTargetingMode }
 import { buildSkillIndex } from '../data/SkillLoader';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeOnTransformedSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, collectCombatStartAuras, computeCombatStartBonus, hasJudgmentHammer, getHammerDamage } from '../systems/CombatSkills';
-import { applyClassProgression, getClassScaledSkillDescription, getClassMultiplier } from '../systems/ClassProgression';
+import { getClassMultiplier, applyClassProgression, getClassScaledSkillDescription } from '../systems/ClassProgression';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
@@ -4080,9 +4080,9 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition) return;
     const bearDefinition: DiceDefinition = {
       ...definition,
-      title: 'Bear Form',
-      attack: 50,
-      health: 1500,
+      title: 'Druid Bear',
+      attack: Math.max(1, Math.round(50 * getClassMultiplier(this.instanceClassLevels.get(attacker.instanceId) ?? 1))),
+      health: Math.max(1, Math.round(1500 * getClassMultiplier(this.instanceClassLevels.get(attacker.instanceId) ?? 1))),
       range: 2,
       targetingMode: 'Nearest',
       skills: definition.skills.filter((skill) => (skill.modifiers?.notes ?? []).includes('runtime:druidBearForm')),
@@ -4092,7 +4092,7 @@ export class ArenaScene extends Phaser.Scene {
     this.gameState = {
       ...this.gameState,
       dice: this.gameState.dice.map((die) => die.instanceId === attacker.instanceId
-        ? { ...die, maxHealth: 1500, currentHealth: 1500 }
+        ? { ...die, maxHealth: bearDefinition.health, currentHealth: bearDefinition.health }
         : die)
     };
     const transformed = this.gameState.dice.find((die) => die.instanceId === attacker.instanceId) ?? attacker;
@@ -4250,7 +4250,7 @@ export class ArenaScene extends Phaser.Scene {
     if (result.transformToBear) {
       this.transformDruidToBear(attacker);
       this.resetActiveMana(attacker.instanceId, activeSlot.key);
-      this.combatLog.setText(`🐻 ${attacker.typeId} transforms into Bear Form!`);
+      this.combatLog.setText(`🐻 ${attacker.typeId} transforms into Druid Bear!`);
       return;
     }
 
@@ -4404,7 +4404,7 @@ export class ArenaScene extends Phaser.Scene {
         const g = this.getGridContainerForDie(attacker);
         const x = g.x + attacker.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
         const y = g.y + attacker.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-        AnimationManager.animateElementalSkill(this, x, y, 'wind', 0x9fe7d9);
+        AnimationManager.animateElementalSkill(this, x, y, 'wind', { tint: 0x9fe7d9, animated: false });
       }
       const count = Math.max(1, 1 + result.attackCountIncrease);
       this.basicAttacksPerAttackByInstance.set(attacker.instanceId, { count, turns: result.extraAttacksTurns });
@@ -4967,7 +4967,7 @@ export class ArenaScene extends Phaser.Scene {
     if (kind === 'heal') { AnimationManager.animateHealingPulse(this, targetCenter.x, targetCenter.y); return; }
     if (kind === 'fracture') { AnimationManager.animateFracture(this, targetCenter.x, targetCenter.y); return; }
     if (kind === 'heatwave') { AnimationManager.animateHeatwave(this, targetCenter.x, targetCenter.y); return; }
-    AnimationManager.animateElementalSkill(this, targetCenter.x, targetCenter.y, kind);
+    AnimationManager.animateElementalSkill(this, targetCenter.x, targetCenter.y, kind, { animated: false });
   }
 
   private pickRandomGridTile(): { row: number; col: number } {

@@ -16,7 +16,7 @@ import {
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
-import { applyClassProgression, getClassProgressionPreview, getClassScaledSkillDescription } from '../systems/ClassProgression';
+import { applyClassProgression, getClassMultiplier, getClassProgressionPreview, getClassScaledSkillDescription } from '../systems/ClassProgression';
 import { getRuntimeSkillMeta } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
@@ -97,10 +97,16 @@ export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: n
     };
   }
   if (transformSkills.length > 0) {
+    const isDruidBear = scaled.typeId === 'Druid' && meta.hasDruidBearTransform;
+    const bearMultiplier = getClassMultiplier(classLevel);
     return {
       ...scaled,
       title: meta.transformTitle,
-      accent: meta.transformAccent ?? scaled.accent,
+      attack: isDruidBear ? Math.max(1, Math.round(50 * bearMultiplier)) : scaled.attack,
+      health: isDruidBear ? Math.max(1, Math.round(1500 * bearMultiplier)) : scaled.health,
+      range: isDruidBear ? 2 : scaled.range,
+      targetingMode: isDruidBear ? 'Nearest' : scaled.targetingMode,
+      accent: meta.transformAccent ?? (isDruidBear ? '#9b6a3a' : scaled.accent),
       skills: transformSkills
     };
   }
