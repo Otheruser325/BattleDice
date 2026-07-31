@@ -1,7 +1,18 @@
 {
   "entries": [
     {
-      "version": "v0.9.0-beta",
+      "version": "v0.6.0-beta",
+      "date": "2026-07-31",
+      "notes": [
+        "Dice additions: Drizzle, Druid and Armor.",
+        "Boss additions: Basilisk.",
+        "Gameplay improvements: All direct-damaging attacks and abilities have a 5% chance to cause double damage onto hit targets (affects healing)",
+        "Dice balance: --Poison: Poison damage increased from 20 -> 25 --Gamble: Health reduced from 560 -> 540 --Broken: Damage increased from 32 -> 34 --Iron: Health reduced from 800 -> 760 --Slingshot: Health reduced from 560 -> 500 --Solar: Heatwave damage increased from 100% -> 125%",
+        "Bug fixes: --fixed a bug that caused weird dice definition loading behaviour --fixed achievement listing UI being janky --fixed several edge cases related to active skills"
+      ]
+    },
+    {
+      "version": "v0.5.0-beta",
       "date": "2026-06-11",
       "notes": [
         "Dice additions: Solar, Slingshot and Lock.",
@@ -14,19 +25,19 @@
       ]
     },
     {
-      "version": "v0.8.0-beta",
+      "version": "v0.4.0-beta",
       "date": "2026-06-07",
       "notes": [
         "Dice additions: Soul and Broken Growth.",
         "Dice Card: added Crowd Attack and Fire Support cards.",
         "Casino: added a Fives gauge bar that guarantees a Five-of-a-kind when it's full in Fives tables.",
         "Improved certain dice descriptions to be more clearer and comprehensive.",
-        "Dice balance: --Wind: Damage increased from 20 -> 22 --Shield: Damage reduced from 18 -> 16 --Iron: Propositional damage reduced from 15% -> 14% --Iron: Propositional damage increase per Class UP reduced from 0.5% -> 0.4% --Skull: Range reduced from 3 -> 2 --Skull: Damage increased from 16 -> 22 --Solitude: Max HP damage increase per Class UP reduced from 0.25% -> 0.2%",
+        "Dice balance: --Wind: Damage increased from 20 -> 22 --Shield: Damage reduced from 18 -> 16 --Iron: Proportional damage reduced from 15% -> 14% --Iron: Proportional damage increase per Class UP reduced from 0.5% -> 0.4% --Skull: Range reduced from 3 -> 2 --Skull: Damage increased from 16 -> 22 --Solitude: Max HP damage increase per Class UP reduced from 0.25% -> 0.2%",
         "Fixed a bug related to freebie shop offers for endgame progression"
       ]
     },
     {
-      "version": "v0.7.0-beta",
+      "version": "v0.3.0-beta",
       "date": "2026-05-28",
       "notes": [
         "New bosses: Magician and Leon, each with class-level scaling skills and a 3rd skill unlocked at Boss Level 6.",
@@ -42,14 +53,14 @@
       ]
     },
     {
-      "version": "v0.6.0-beta",
+      "version": "v0.2.0-beta",
       "date": "2026-05-21",
       "notes": [
         "Several fixes and improvements"
       ]
     },
     {
-      "version": "v0.5.0-beta",
+      "version": "v0.1.0-beta",
       "date": "2026-05-14",
       "notes": [
         "Beta release of Battle Dice."
