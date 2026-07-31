@@ -3219,14 +3219,12 @@ export class ArenaScene extends Phaser.Scene {
     const attackerDef = this.getDefinitionForInstance(attacker);
     if (!attackerDef || !attacker.gridPosition) return undefined;
     const effectiveRange = this.getEffectiveAttackRange(attacker, attackerDef);
-    const attackerBoardSide = this.getBoardSideForDie(attacker);
     const candidates = this.gameState.dice
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
         die.ownerId === attacker.ownerId
         && die.zone === 'board'
         && !die.isDestroyed
-        && Boolean(die.gridPosition)
-        && this.getBoardSideForDie(die) === attackerBoardSide)
+        && Boolean(die.gridPosition))
       .map((die) => ({ die, distance: this.getAttackDistance(attacker, die) }))
       .filter(({ distance }) => distance <= Math.max(1, effectiveRange));
     const injuredAllies = candidates.filter(({ die }) => die.instanceId !== attacker.instanceId && die.currentHealth < die.maxHealth);
@@ -4304,8 +4302,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     if (result.meteorStrike) {
-      const attackerBoardSide = this.getBoardSideForDie(attacker);
-      const targetBoardSide: 'player' | 'enemy' = attackerBoardSide === 'player' ? 'enemy' : 'player';
+      const targetBoardSide = this.getBoardSideForDie(target);
       const enemyOwner: 'player' | 'enemy' = attacker.ownerId === 'player' ? 'enemy' : 'player';
       const meteorCount = Math.max(1, result.meteorStrike.meteorCount);
       const hasRandomOrientation = result.meteorStrike.hasRandomOrientation;

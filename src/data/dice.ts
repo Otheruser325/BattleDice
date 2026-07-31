@@ -388,6 +388,7 @@ export interface ShopOffer {
   copies: number;
   coinAmount: number;
   diamondCost: number;
+  diceTokenCost?: number;
   rarity: string;
   isFreebie: boolean;
   isDiceTokenOffer?: boolean;
@@ -460,6 +461,14 @@ const COPIES_BY_RARITY: Record<string, number> = {
   Mythic: 1
 };
 
+const DICE_TOKEN_COPY_COST_BY_RARITY: Record<string, number> = {
+  Common: 10,
+  Uncommon: 50,
+  Rare: 250,
+  Epic: 1_000,
+  Legendary: 20_000
+};
+
 export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const existing = getShopState(scene);
   const currentDay = getDayNumber();
@@ -467,7 +476,7 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   const eligible = allDefs.filter((d) => canReceiveUsefulCopies(scene, d.typeId));
   const freebieCopiesByRarity: Record<string, number> = { Common: 20, Uncommon: 10, Rare: 5 };
   const fallbackFreebieTokenAmount = 1_000;
-  const diamondFreebieAmount = 50;
+  const diamondFreebieAmount = 10;
   const isCurrentDiceFreebie = (offer: ShopOffer) => Boolean(
     offer.isFreebie &&
     !offer.isCoinOffer &&
@@ -589,14 +598,18 @@ export function generateOrGetShopOffers(scene: Phaser.Scene): ShopState {
   slotDefs.slice(0, 5).forEach((def, i) => {
     const copyMultiplier = 1 + Math.floor(seededRandom() * 10);
     const baseCopies = COPIES_BY_RARITY[def.rarity] ?? 1;
+    const copies = baseCopies * copyMultiplier;
     const baseDiamondCost = DIAMOND_COST_BY_RARITY[def.rarity] ?? 10;
+    const tokenCostPerCopy = DICE_TOKEN_COPY_COST_BY_RARITY[def.rarity];
+    const useDiceTokens = tokenCostPerCopy !== undefined && seededRandom() < 0.5;
     offers.push({
       id: `slot-${i}`,
       typeId: def.typeId,
       isCoinOffer: false,
-      copies: baseCopies * copyMultiplier,
+      copies,
       coinAmount: 0,
-      diamondCost: baseDiamondCost * copyMultiplier,
+      diamondCost: useDiceTokens ? 0 : baseDiamondCost * copyMultiplier,
+      diceTokenCost: useDiceTokens ? tokenCostPerCopy * copies : undefined,
       rarity: def.rarity,
       isFreebie: false,
       purchased: false

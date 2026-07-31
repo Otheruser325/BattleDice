@@ -103,7 +103,8 @@ export class ShopScene extends Phaser.Scene {
         const accent = Phaser.Display.Color.HexStringToColor(accentHex).color;
         const handlePurchase = () => {
           const currentDiamonds = getDiamonds(this);
-          const canAfford = offer.isFreebie ? true : currentDiamonds >= offer.diamondCost;
+          const currentDiceTokens = getDiceTokens(this);
+          const canAfford = offer.isFreebie ? true : (offer.diceTokenCost !== undefined ? currentDiceTokens >= offer.diceTokenCost : currentDiamonds >= offer.diamondCost);
           if (!canAfford) return;
 
           const shopState = getShopState(this);
@@ -136,7 +137,8 @@ export class ShopScene extends Phaser.Scene {
             if (progress.classLevel < 15) grantDiceCopies(this, offer.typeId, offer.copies);
           }
           if (!offer.isFreebie) {
-            setDiamonds(this, currentDiamonds - offer.diamondCost);
+            if (offer.diceTokenCost !== undefined) setDiceTokens(this, currentDiceTokens - offer.diceTokenCost);
+            else setDiamonds(this, currentDiamonds - offer.diamondCost);
             diamonds = getDiamonds(this);
             diamondText.setText(`◆ ${diamonds}`);
           }
@@ -227,7 +229,7 @@ export class ShopScene extends Phaser.Scene {
     const isFrebieClaimed = offer.isFreebie && shopState.freebieClaimedThisSession;
     const isInfiniteOffer = this.isInfiniteCurrencyOffer(offer);
     const effectivelyClaimed = !isInfiniteOffer && (isClaimed || isFrebieClaimed);
-    const canAfford = offer.isFreebie ? true : getDiamonds(this) >= offer.diamondCost;
+    const canAfford = offer.isFreebie ? true : (offer.diceTokenCost !== undefined ? getDiceTokens(this) >= offer.diceTokenCost : getDiamonds(this) >= offer.diamondCost);
 
     const cardColor = offer.isFreebie ? 0x1a3a20 : (offer.isCasinoChipOffer ? 0x2a2438 : 0x173247);
     const borderColor = offer.isFreebie ? 0x2ecc71 : accentColor;
@@ -299,7 +301,7 @@ export class ShopScene extends Phaser.Scene {
       objs.push(progressText);
     }
 
-    const costLine = offer.isFreebie ? 'FREE' : `◆ ${offer.diamondCost}`;
+    const costLine = offer.isFreebie ? 'FREE' : (offer.diceTokenCost !== undefined ? `${offer.diceTokenCost.toLocaleString()} DT` : `◆ ${offer.diamondCost}`);
     const costColor = offer.isFreebie ? '#2ecc71' : (canAfford ? '#7ec8e3' : PALETTE.danger);
     const costText = this.add.text(x + CARD_W - 12, y + 48, costLine, {
       fontFamily: 'Orbitron', fontSize: '18px', color: effectivelyClaimed ? PALETTE.textMuted : costColor
@@ -316,7 +318,7 @@ export class ShopScene extends Phaser.Scene {
       btnLabel = 'CLAIMED';
     } else if (!canAfford) {
       btnColor = 0x5a3a3a;
-      btnLabel = 'NOT ENOUGH ◆';
+      btnLabel = offer.diceTokenCost !== undefined ? 'NOT ENOUGH DT' : 'NOT ENOUGH ◆';
     } else {
       btnColor = offer.isFreebie ? 0x27ae60 : 0x2271b3;
       btnLabel = offer.isFreebie ? 'CLAIM FREE!' : 'BUY';
