@@ -38,7 +38,8 @@
       "modifiers": {
         "damageRatePerKill": 0.2,
         "notes": [
-          "runtime:leonRage"
+          "runtime:leonRage",
+          "runtime:unlockAtClass6"
         ]
       }
     }
