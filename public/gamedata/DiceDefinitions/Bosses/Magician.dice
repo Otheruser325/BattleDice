@@ -29,7 +29,13 @@
         "hasRandomOrientation": true,
         "lavaDamage": 100,
         "durationTurns": 4,
-        "skillSfx": "dice_meteor_skill"
+        "skillSfx": "dice_meteor_skill",
+        "lavaPoolPattern": [
+          [
+            0,
+            0
+          ]
+        ]
       }
     },
     {

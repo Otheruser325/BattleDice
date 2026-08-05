@@ -24,6 +24,7 @@ export interface DiceSkillModifier {
   skillTargeting?: DiceTargetingMode;
   meteorDamage?: number;
   lavaDamage?: number;
+  lavaPoolPattern?: Array<[number, number]>;
   beamDamage?: number;
   pierceBehindRange?: number;
   pierceBehindDamage?: number;
@@ -76,11 +77,15 @@ export interface DiceSkillModifier {
   brokenGrowthDelta?: number;
   skillSfx?: string;
   hitsAllFoes?: boolean;
+  hitsAllAllies?: boolean;
   ricochetHealCount?: number;
   ricochetHealRange?: number;
   bearMaulDamage?: number;
   bearCritChance?: number;
   bearCritMultiplier?: number;
+  criticalChanceIncrease?: number;
+  criticalDamageIncrease?: number;
+  damageRatePerKill?: number;
   avoidBossAttackChance?: number;
   onKillMissingHealRate?: number;
   revengeThresholdRate?: number;

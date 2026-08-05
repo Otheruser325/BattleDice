@@ -108,7 +108,8 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
     'beamDamage',
     'pierceBehindDamage',
     'hammerDamage',
-    'shield'
+    'shield',
+    'bearMaulDamage'
   ];
 
   flatDamageKeys.forEach((key) => {
@@ -167,6 +168,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
     modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
     modifiers.shield = scaleFlatDamage(source.shield, multiplier);
+    modifiers.bearMaulDamage = scaleFlatDamage(source.bearMaulDamage, multiplier);
     modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
 
     if (definition.typeId === 'Skull' && source.reviveChance !== undefined) {
@@ -223,20 +225,12 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.durationTurns = source.durationTurns + Math.floor(classUps / 4);
     }
 
-    if (definition.typeId === 'Leon' && source.targetMaxHpBonusRate !== undefined) {
-      modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + 0.02 * classUps;
-    }
-
     if (definition.typeId === 'Basilisk') {
       if (source.avoidBossAttackChance !== undefined) modifiers.avoidBossAttackChance = Math.min(0.95, source.avoidBossAttackChance + 0.02 * classUps);
       if (source.onKillMissingHealRate !== undefined) modifiers.onKillMissingHealRate = Math.min(1, source.onKillMissingHealRate + 0.015 * classUps);
       if (source.revengeThresholdRate !== undefined) modifiers.revengeThresholdRate = Math.min(0.95, source.revengeThresholdRate + 0.01 * classUps);
       if (source.revengeHits !== undefined) modifiers.revengeHits = source.revengeHits + Math.floor(classUps / 6);
       modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
-    }
-
-    if (definition.typeId === 'Druid' && source.ricochetHealCount !== undefined) {
-      modifiers.ricochetHealCount = source.ricochetHealCount + Math.floor(classUps / 9);
     }
 
     const scaledSkill = { ...skill, modifiers };
@@ -348,6 +342,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Pierce damage', currentModifiers.pierceBehindDamage, nextModifiers.pierceBehindDamage);
   pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
   pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
+  pushNumericDelta('Bear maul damage', currentModifiers.bearMaulDamage, nextModifiers.bearMaulDamage);
   pushNumericDelta('Mana gain', currentModifiers.manaGain, nextModifiers.manaGain);
   pushNumericDelta('Attack count', currentModifiers.numAttacksBoosted, nextModifiers.numAttacksBoosted);
 

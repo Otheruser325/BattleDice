@@ -3467,7 +3467,9 @@ export class ArenaScene extends Phaser.Scene {
         const forcedTarget = this.resolveTauntForcedTarget(attacker);
         const beamLine = this.findTranscendenceBeamTarget(attacker, forcedTarget);
         const beamTarget = beamLine?.target;
-        let target = forcedTarget ?? beamTarget ?? this.findAttackTargetForArena(attacker);
+        let target = forcedTarget ?? beamTarget ?? (attackerMeta?.hasDruidicEssence
+          ? this.findSkillTargetForArena(attacker, attackerMeta.targetingMode ?? 'Weakest', true)
+          : this.findAttackTargetForArena(attacker));
         if (!target && attackerMeta?.hasDruidicEssence) target = attacker;
         const activeTarget = activeSlot && activeSlotMeta?.activeOnlyTargetsAllies
           ? (activeSlotMeta.activeHeal !== undefined
@@ -4099,7 +4101,7 @@ export class ArenaScene extends Phaser.Scene {
       this.animateSkillEffect('heal', attacker, die);
     };
     healOne(primary);
-    const ricochetCount = Math.max(0, Math.floor((meta.ricochetHealCount ?? 1) + Math.floor(((this.instanceClassLevels.get(attacker.instanceId) ?? 1) - 1) / 9)));
+    const ricochetCount = Math.max(0, Math.floor(meta.ricochetHealCount ?? 1));
     const ricochetRange = Math.max(1, meta.ricochetHealRange ?? 2);
     this.gameState.dice
       .filter((die) => die.ownerId === attacker.ownerId && die.zone === 'board' && !die.isDestroyed && die.gridPosition && die.instanceId !== primary.instanceId && this.getBoardSideForDie(die) === this.getBoardSideForDie(attacker))
@@ -4139,8 +4141,9 @@ export class ArenaScene extends Phaser.Scene {
   private getLeonFuriousClawDamage(attacker: DiceInstanceState, target: DiceInstanceState): { damage: number; critical: boolean } {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return { damage: 0, critical: false };
-    const critical = Math.random() < this.getCriticalChance(0.2);
-    const crit = critical ? 2 : 1;
+    const meta = getRuntimeSkillMeta(definition);
+    const critical = Math.random() < this.getCriticalChance(meta.criticalChanceIncrease ?? 0.25);
+    const crit = critical ? 2 + (meta.criticalDamageIncrease ?? 0) : 1;
     return { damage: Math.max(1, Math.floor(definition.attack * this.getOffenseMultiplier(attacker) * this.getDiceCardSkillDamageMultiplier(attacker) * crit)), critical };
   }
 
@@ -4306,7 +4309,7 @@ export class ArenaScene extends Phaser.Scene {
       const enemyOwner: 'player' | 'enemy' = attacker.ownerId === 'player' ? 'enemy' : 'player';
       const meteorCount = Math.max(1, result.meteorStrike.meteorCount);
       const hasRandomOrientation = result.meteorStrike.hasRandomOrientation;
-      const { damage: meteorDamage, lavaDamage, lavaTurns } = result.meteorStrike;
+      const { damage: meteorDamage, lavaDamage, lavaTurns, lavaPoolPattern } = result.meteorStrike;
       let totalHits = 0;
       for (let meteorIndex = 0; meteorIndex < meteorCount; meteorIndex++) {
         const origin = hasRandomOrientation
@@ -4316,7 +4319,11 @@ export class ArenaScene extends Phaser.Scene {
         this.animateMeteorImpact(targetBoardSide, origin);
         await this.delayCombatVisualPaced(1000);
         const impactTiles = this.getPlusPatternTiles(origin);
-        const lavaTiles = hasRandomOrientation ? [origin] : impactTiles;
+        const lavaTiles = lavaDamage === undefined
+          ? []
+          : (lavaPoolPattern?.length
+            ? lavaPoolPattern.map(([rowOffset, colOffset]) => ({ row: origin.row + rowOffset, col: origin.col + colOffset })).filter((tile) => tile.row >= 0 && tile.row < GRID_SIZE && tile.col >= 0 && tile.col < GRID_SIZE)
+            : [origin]);
         lavaTiles.forEach((tile) => {
           const lavaKey = `${targetBoardSide}:${tile.row},${tile.col}`;
           this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: lavaTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
@@ -4419,8 +4426,10 @@ export class ArenaScene extends Phaser.Scene {
 
     if (result.directDamage) {
       const damageTargets = result.hitsAllFoes
-        ? this.getBoardDiceOnSide(attacker.ownerId === 'player' ? 'enemy' : 'player', this.getBoardSideForDie(target))
-        : [result.directDamage.target];
+        ? this.gameState.dice.filter((die) => die.ownerId === (attacker.ownerId === 'player' ? 'enemy' : 'player') && die.zone === 'board' && !die.isDestroyed)
+        : result.hitsAllAllies
+          ? this.gameState.dice.filter((die) => die.ownerId === attacker.ownerId && die.zone === 'board' && !die.isDestroyed)
+          : [result.directDamage.target];
       damageTargets.forEach((freshTarget) => {
         if (freshTarget.isDestroyed) return;
         const hit = applyDirectDamage(freshTarget, result.directDamage!.damage);
@@ -4614,7 +4623,8 @@ export class ArenaScene extends Phaser.Scene {
       if (target) {
         this.moveLeonBesideTarget(transformed, target);
         const moved = this.gameState.dice.find((die) => die.instanceId === transformed.instanceId) ?? transformed;
-        const hit = this.applyDamageWithRevive(target.instanceId, meta.bearMaulDamage);
+        const maulDamage = Math.max(1, Math.floor(meta.bearMaulDamage * this.getDiceCardSkillDamageMultiplier(transformed)));
+        const hit = this.applyDamageWithRevive(target.instanceId, maulDamage);
         this.gameState = hit.state;
         this.showDamageText(target, hit.dealt, '#d79a4a');
         this.animateSkillEffect('physical', moved, target);

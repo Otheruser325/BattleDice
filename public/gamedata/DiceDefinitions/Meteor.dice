@@ -16,7 +16,29 @@
         "meteorCount": 1,
         "meteorDamage": 120,
         "lavaDamage": 50,
-        "skillSfx": "dice_meteor_skill"
+        "skillSfx": "dice_meteor_skill",
+        "lavaPoolPattern": [
+          [
+            0,
+            0
+          ],
+          [
+            -1,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            -1
+          ],
+          [
+            0,
+            1
+          ]
+        ]
       }
     }
   ],

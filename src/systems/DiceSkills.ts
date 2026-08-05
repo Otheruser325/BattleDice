@@ -42,6 +42,7 @@ export interface DiceSkillRuntimeMeta {
   meteorCount?: number;
   hasRandomOrientation?: boolean;
   lavaDamage?: number;
+  lavaPoolPattern?: Array<[number, number]>;
   beamDamage?: number;
   pierceBehindRange?: number;
   activePierceBehindRange?: number;
@@ -102,6 +103,7 @@ export interface DiceSkillRuntimeMeta {
   disableManaGain?: boolean;
   consumeAttack?: boolean;
   hitsAllFoes?: boolean;
+  hitsAllAllies?: boolean;
   hasDruidicEssence?: boolean;
   hasDruidBearTransform?: boolean;
   ricochetHealCount?: number;
@@ -109,6 +111,9 @@ export interface DiceSkillRuntimeMeta {
   bearMaulDamage?: number;
   bearCritChance?: number;
   bearCritMultiplier?: number;
+  criticalChanceIncrease?: number;
+  criticalDamageIncrease?: number;
+  damageRatePerKill?: number;
   avoidBossAttackChance?: number;
   onKillMissingHealRate?: number;
   revengeThresholdRate?: number;
@@ -240,6 +245,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     meteorCount: (activeModifiers as { meteorCount?: number } | undefined)?.meteorCount ?? (modifiers as { meteorCount?: number } | undefined)?.meteorCount,
     hasRandomOrientation: Boolean((activeModifiers as { hasRandomOrientation?: boolean } | undefined)?.hasRandomOrientation ?? (modifiers as { hasRandomOrientation?: boolean } | undefined)?.hasRandomOrientation),
     lavaDamage: (activeModifiers as { lavaDamage?: number } | undefined)?.lavaDamage ?? (modifiers as { lavaDamage?: number } | undefined)?.lavaDamage,
+    lavaPoolPattern: (activeModifiers as { lavaPoolPattern?: Array<[number, number]> } | undefined)?.lavaPoolPattern ?? (modifiers as { lavaPoolPattern?: Array<[number, number]> } | undefined)?.lavaPoolPattern,
     beamDamage: (modifiers as { beamDamage?: number } | undefined)?.beamDamage ?? (Number.isFinite(parsedBeamDamage) ? parsedBeamDamage : undefined),
     pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
     activePierceBehindRange: (activeModifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
@@ -302,6 +308,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     spellcastManaGain: allNotes.includes('runtime:wizardSpellcast') ? ((modifiers as { manaGain?: number } | undefined)?.manaGain ?? 2) : undefined,
     canSummonWizard: allNotes.includes('runtime:magicianSummonWizard'),
     hitsAllFoes: Boolean((activeModifiers as { hitsAllFoes?: boolean } | undefined)?.hitsAllFoes),
+    hitsAllAllies: Boolean((activeModifiers as { hitsAllAllies?: boolean } | undefined)?.hitsAllAllies),
     hasDruidicEssence: allNotes.includes('runtime:druidicEssence'),
     hasDruidBearTransform: allNotes.includes('runtime:druidBearTransform'),
     ricochetHealCount: (modifiers as { ricochetHealCount?: number } | undefined)?.ricochetHealCount,
@@ -309,6 +316,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     bearMaulDamage: (modifiers as { bearMaulDamage?: number } | undefined)?.bearMaulDamage,
     bearCritChance: (modifiers as { bearCritChance?: number } | undefined)?.bearCritChance,
     bearCritMultiplier: (modifiers as { bearCritMultiplier?: number } | undefined)?.bearCritMultiplier,
+    criticalChanceIncrease: (modifiers as { criticalChanceIncrease?: number } | undefined)?.criticalChanceIncrease,
+    criticalDamageIncrease: (modifiers as { criticalDamageIncrease?: number } | undefined)?.criticalDamageIncrease,
+    damageRatePerKill: (modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill,
     avoidBossAttackChance: (modifiers as { avoidBossAttackChance?: number } | undefined)?.avoidBossAttackChance,
     onKillMissingHealRate: (modifiers as { onKillMissingHealRate?: number } | undefined)?.onKillMissingHealRate,
     revengeThresholdRate: (modifiers as { revengeThresholdRate?: number } | undefined)?.revengeThresholdRate,
@@ -317,7 +327,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     hasLeonFuriousClaw: allNotes.includes('runtime:leonFuriousClaw'),
     hasLeonMightyRoar: allNotes.includes('runtime:leonMightyRoar'),
     hasLeonRage: allNotes.includes('runtime:leonRage'),
-    leonRageRate: allNotes.includes('runtime:leonRage') ? ((modifiers as { targetMaxHpBonusRate?: number } | undefined)?.targetMaxHpBonusRate ?? 0.2) : undefined,
+    leonRageRate: allNotes.includes('runtime:leonRage') ? ((modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill ?? 0.2) : undefined,
     isLockedUntilClass6: allNotes.includes('runtime:unlockAtClass6'),
     disableManaGain: Boolean((activeModifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain),
     consumeAttack: (activeModifiers as { consumeAttack?: boolean } | undefined)?.consumeAttack ?? true
