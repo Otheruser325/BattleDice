@@ -44,6 +44,7 @@ function getVisibleSkillCount(definition: DiceDefinition): number {
   const hiddenTransformSkills = getTransformSkillIndexSet(definition);
   return definition.skills.filter((_, index) => !hiddenTransformSkills.has(index)).length;
 }
+
 function formatSkillTypeLine(definition: DiceDefinition): string {
   const hiddenTransformSkills = getTransformSkillIndexSet(definition);
   const visibleSkills = definition.skills.filter((_, index) => !hiddenTransformSkills.has(index));
@@ -448,7 +449,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const stats = this.add.text(width / 2, height / 2 - 116, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
     const rarityLabel = this.add.text(width / 2 - 140, height / 2 - 94, 'RARITY', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'right' }).setOrigin(1, 0.5);
     const rarityColor = RARITY_TEXT_COLORS[displayDie.rarity] ?? PALETTE.text;
-    const rarityStats = this.add.text(width / 2 - 126, height / 2 - 94, displayDie.rarity, { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor, align: 'left' }).setOrigin(0, 0.5);
+    const rarityStats = this.add.text(width / 2 - 126, height / 2 - 94, displayDie.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor, align: 'left' }).setOrigin(0, 0.5);
     const targetStats = this.add.text(width / 2 + 12, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'left' }).setOrigin(0, 0.5);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
