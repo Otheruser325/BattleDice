@@ -10,7 +10,7 @@
     {
       "type": "Passive",
       "title": "Furious Claw",
-      "description": "Enemy dice 2 tiles closer to Leon will be attacked doubly, with a 20% chance to cause critical damage.",
+      "description": "Enemy dice 2 tiles closer to Leon will be attacked doubly, with critical chance increased to 25%.",
       "modifiers": {
         "notes": [
           "runtime:leonFuriousClaw"
