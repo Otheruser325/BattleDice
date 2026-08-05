@@ -34,9 +34,8 @@
       "title": "Rage Or Nothing",
       "description": "Leon gains +20% basic attack damage for each fallen foe.",
       "modifiers": {
-        "targetMaxHpBonusRate": 0.2,
+        "damageRatePerKill": 0.2,
         "notes": [
-          "runtime:leonRage",
           "runtime:unlockAtClass6"
         ]
       }
