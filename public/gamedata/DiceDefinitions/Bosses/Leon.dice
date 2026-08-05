@@ -14,7 +14,9 @@
       "modifiers": {
         "notes": [
           "runtime:leonFuriousClaw"
-        ]
+        ],
+        "criticalChanceIncrease": 0.25,
+        "criticalDamageIncrease": 0
       }
     },
     {
@@ -36,7 +38,7 @@
       "modifiers": {
         "damageRatePerKill": 0.2,
         "notes": [
-          "runtime:unlockAtClass6"
+          "runtime:leonRage"
         ]
       }
     }

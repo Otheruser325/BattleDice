@@ -14,8 +14,9 @@
       "modifiers": {
         "activeDamage": 50,
         "hitsAllFoes": true,
-		"attackSfx": "dice_drizzle_attack",
-        "skillSfx": "dice_drizzle_skill"
+        "attackSfx": "dice_drizzle_attack",
+        "skillSfx": "dice_drizzle_skill",
+        "hitsAllAllies": false
       }
     }
   ],

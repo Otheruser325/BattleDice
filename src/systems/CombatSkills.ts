@@ -58,7 +58,7 @@ export interface PassiveEffectResult extends SkillEffectResult {
 
 export interface ActiveEffectResult extends SkillEffectResult {
   summonWizard?: boolean;
-  meteorStrike?: { damage: number; lavaDamage: number; lavaTurns: number; meteorCount: number; hasRandomOrientation: boolean };
+  meteorStrike?: { damage: number; lavaDamage?: number; lavaTurns: number; meteorCount: number; hasRandomOrientation: boolean; lavaPoolPattern?: Array<[number, number]> };
   deathInstakill?: { damage: number; targetIsBoss: boolean };
   summonImp?: boolean;
   spearStrike?: { damage: number; pierceDamage: number; pierceRange: number };
@@ -82,6 +82,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   needsMana?: boolean;
   transformToBear?: boolean;
   hitsAllFoes?: boolean;
+  hitsAllAllies?: boolean;
 }
 
 function createBaseResult(): SkillEffectResult {
@@ -385,10 +386,11 @@ export function executeActiveSkillEffects(
     if (currentMana >= meteorManaNeeded) {
       result.meteorStrike = {
         damage: meta.meteorDamage ?? 60,
-        lavaDamage: meta.lavaDamage ?? 25,
+        lavaDamage: meta.lavaDamage,
         lavaTurns: meta.activeDurationTurns ?? 3,
         meteorCount: Math.max(1, Math.floor(meta.meteorCount ?? 1)),
-        hasRandomOrientation: meta.hasRandomOrientation ?? false
+        hasRandomOrientation: meta.hasRandomOrientation ?? false,
+        lavaPoolPattern: meta.lavaPoolPattern
       };
       return result;
     }
@@ -474,6 +476,7 @@ export function executeActiveSkillEffects(
   if (meta.activeDamage !== undefined && !meta.hasSpearActive && !meta.hasMeteorStrike && !(meta.hasDeathInstakill && isDeathTransformed)) {
     result.directDamage = { target, damage: Math.max(1, Math.ceil(meta.activeDamage ?? 1)) };
     result.hitsAllFoes = meta.hitsAllFoes;
+    result.hitsAllAllies = meta.hitsAllAllies;
   }
 
   if ((meta.attackCountIncrease ?? 0) > 0 && meta.activeDurationTurns !== undefined) {
