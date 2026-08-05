@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Lonely Dominion",
-      "description": "When no ally occupies any adjacent tile on the same board, basic attacks deal bonus damage equal to 8% of the target's max HP.",
+      "description": "When no ally is adjacent to this dice, basic attacks deal bonus damage equal to 8% of the target's max HP.",
       "modifiers": {
         "targetMaxHpBonusRate": 0.08,
         "checkForAdjacentAllies": true,
