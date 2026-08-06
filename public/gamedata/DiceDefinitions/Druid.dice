@@ -55,10 +55,10 @@
     {
       "type": "Passive",
       "title": "Critical Claw",
-      "description": "Basic attacks have a 20% chance of dealing 100% more damage.",
+      "description": "While in Bear Form, critical chance increases from 5% to 25%.",
       "modifiers": {
-        "bearCritChance": 0.2,
-        "bearCritMultiplier": 2,
+        "criticalChanceIncrease": 0.2,
+        "criticalDamageIncrease": 0,
         "notes": [
           "runtime:druidBearForm"
         ]

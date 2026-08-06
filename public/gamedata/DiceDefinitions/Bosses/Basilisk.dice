@@ -39,7 +39,7 @@
         "revengeDamage": 100,
         "notes": [
           "runtime:basiliskRevenge",
-          "runtime:unlockAtClass6"
+          "runtime:unlockAtClass=6"
         ]
       }
     }

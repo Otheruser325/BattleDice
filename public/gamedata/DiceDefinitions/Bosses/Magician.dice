@@ -46,7 +46,7 @@
       "modifiers": {
         "notes": [
           "runtime:magicianSummonWizard",
-          "runtime:unlockAtClass6"
+          "runtime:unlockAtClass=6"
         ]
       }
     }
