@@ -167,6 +167,15 @@ export function getLivingDiceCount(state: MatchBattleState, ownerId: DiceOwnerId
   return state.dice.filter((die) => die.ownerId === ownerId && !die.isDestroyed).length;
 }
 
+function hasOtherLivingDie(state: MatchBattleState, ownerId: DiceOwnerId, instanceId: string): boolean {
+  return state.dice.some((die) =>
+    die.ownerId === ownerId &&
+    die.instanceId !== instanceId &&
+    !die.isDestroyed &&
+    (die.zone === 'board' || die.zone === 'hand')
+  );
+}
+
 export function endTurn(state: MatchBattleState): MatchBattleState {
   return {
     ...state,
@@ -263,7 +272,12 @@ export function executeAttack(
   let updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
   const targetDefinition = definitionOverrides?.target ?? definitions.get(target.typeId);
   const runtimeMeta = targetDefinition ? getRuntimeSkillMeta(targetDefinition) : undefined;
-  if (updatedTarget?.isDestroyed && runtimeMeta?.reviveChance && Math.random() < runtimeMeta.reviveChance) {
+  if (
+    updatedTarget?.isDestroyed &&
+    hasOtherLivingDie(state, target.ownerId, targetId) &&
+    runtimeMeta?.reviveChance &&
+    Math.random() < runtimeMeta.reviveChance
+  ) {
     newState = {
       ...newState,
       dice: newState.dice.map((die) => (

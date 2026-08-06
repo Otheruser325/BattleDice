@@ -335,6 +335,15 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, scale: 1.8, duration: 320, onComplete: () => g.destroy() });
   }
 
+  static animateHealingBeam(scene: Phaser.Scene, ax: number, ay: number, tx: number, ty: number) {
+    const g = scene.add.graphics().setDepth(259);
+    g.lineStyle(4, 0x8ff0b8, 0.8);
+    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
+    g.lineStyle(9, 0xd2ffe5, 0.22);
+    g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
+    scene.tweens.add({ targets: g, alpha: 0, duration: 300, onComplete: () => g.destroy() });
+  }
+
   static animateSpearStrike(scene: Phaser.Scene, ax: number, ay: number, tx: number, ty: number) {
     const g = scene.add.graphics().setDepth(260);
     g.lineStyle(8, 0x8fd5ff, 0.95);

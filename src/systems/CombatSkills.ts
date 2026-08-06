@@ -1,5 +1,5 @@
 import type { DiceDefinition, DiceInstanceState, DiceSkillType, DiceStatusEffect } from '../types/game';
-import { getRuntimeSkillMeta, type DiceSkillRuntimeMeta } from './DiceSkills';
+import { getRuntimeSkillMeta, getSkillLockClass, type DiceSkillRuntimeMeta } from './DiceSkills';
 
 export interface SkillContext {
   attacker: DiceInstanceState;
@@ -112,7 +112,11 @@ function getUnlockedSkillMeta(
     : definition.skills[selectedActiveSkillIndex]?.type === trigger;
   if (!hasTrigger) return undefined;
   const meta = getRuntimeSkillMeta(definition, selectedActiveSkillIndex);
-  if ((meta.isLockedUntilClass6 ?? false) && classLevel < 6) return undefined;
+  const skill = selectedActiveSkillIndex === undefined
+    ? definition.skills.find((candidate) => candidate.type === trigger)
+    : definition.skills[selectedActiveSkillIndex];
+  const lockClass = skill ? getSkillLockClass(skill) : meta.isLockedUntilClass;
+  if (lockClass !== undefined && classLevel < lockClass) return undefined;
   return meta;
 }
 
@@ -213,7 +217,7 @@ export function executeOnKillSkillEffects(
     result.healSelfMissingRate = meta.onKillMissingHealRate;
   }
 
-  if ((meta.leonRageRate ?? 0) > 0 && classLevel >= 6) {
+  if ((meta.leonRageRate ?? 0) > 0) {
     const bonusDamage = Math.max(1, Math.floor(definition.attack * (meta.leonRageRate ?? 0)));
     result.bonusDamage = bonusDamage;
     result.leonRageBonus = Math.ceil((meta.leonRageRate ?? 0) * 100);
@@ -371,7 +375,7 @@ export function executeActiveSkillEffects(
   const manaNeeded = activeSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 0);
   const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
 
-  if (meta.canSummonWizard && classLevel >= 6) {
+  if (meta.canSummonWizard) {
     const wizardMana = activeSlot?.manaNeeded ?? 18;
     if (currentMana >= wizardMana) {
       result.summonWizard = true;

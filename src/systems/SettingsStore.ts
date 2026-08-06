@@ -7,20 +7,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   music: true,
   sfx: true,
   screenShake: true,
-  reducedMotion: false
+  reducedMotion: false,
+  quickEquipDice: false
 };
 
 export class SettingsStore {
   static get(scene: Phaser.Scene): AppSettings {
     const current = scene.registry.get('settings') as AppSettings | undefined;
-
-    if (current) {
-      return { ...DEFAULT_SETTINGS, ...current };
-    }
-
     const loaded = this.load();
-    scene.registry.set('settings', loaded);
-    return loaded;
+    const settings = { ...DEFAULT_SETTINGS, ...current, ...loaded };
+    scene.registry.set('settings', settings);
+    return settings;
   }
 
   static set(scene: Phaser.Scene, nextSettings: Partial<AppSettings>): AppSettings {

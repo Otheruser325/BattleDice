@@ -1,4 +1,4 @@
-import type { DiceDefinition, DiceInstanceState, DiceSkillType, DiceStatusEffect, DiceTargetingMode } from '../types/game';
+import type { DiceDefinition, DiceInstanceState, DiceSkillDefinition, DiceSkillType, DiceStatusEffect, DiceTargetingMode } from '../types/game';
 import { getBoardSideCombatDistance } from './CombatRange';
 
 const STATUS_EFFECTS: DiceStatusEffect[] = ['slow', 'poison', 'fracture', 'taunt', 'stun', 'berserk'];
@@ -99,18 +99,17 @@ export interface DiceSkillRuntimeMeta {
   hasLeonFuriousClaw?: boolean;
   hasLeonMightyRoar?: boolean;
   leonRageRate?: number;
-  isLockedUntilClass6?: boolean;
+  isLockedUntilClass?: number;
   disableManaGain?: boolean;
   consumeAttack?: boolean;
   hitsAllFoes?: boolean;
   hitsAllAllies?: boolean;
   hasDruidicEssence?: boolean;
   hasDruidBearTransform?: boolean;
+  hasDruidBearForm?: boolean;
   ricochetHealCount?: number;
   ricochetHealRange?: number;
   bearMaulDamage?: number;
-  bearCritChance?: number;
-  bearCritMultiplier?: number;
   criticalChanceIncrease?: number;
   criticalDamageIncrease?: number;
   damageRatePerKill?: number;
@@ -121,6 +120,19 @@ export interface DiceSkillRuntimeMeta {
   revengeDamage?: number;
   growthDelta?: number;
   brokenGrowthDelta?: number;
+}
+
+export function getSkillLockClass(skill: DiceSkillDefinition): number | undefined {
+  const note = skill.modifiers?.notes?.find((value) => {
+    const match = value.match(/^runtime:(?:unlockAtClass|isLockedUntilClassX?)(?:=)?(\d+)$/);
+    if (!match) return false;
+    const level = Number(match[1]);
+    return Number.isInteger(level) && level >= 1 && level <= 15;
+  });
+  if (!note) return undefined;
+  const match = note.match(/^runtime:(?:unlockAtClass|isLockedUntilClassX?)(?:=)?(\d+)$/);
+  const level = match ? Number(match[1]) : NaN;
+  return Number.isInteger(level) && level >= 1 && level <= 15 ? level : undefined;
 }
 
 
@@ -184,11 +196,13 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     .filter((effect): effect is DiceStatusEffect => Boolean(effect))
     .concat(statusNoteEffects))];
   const transformSkillIndices = (() => {
-    const explicit = (modifiers as { transformSkillIndices?: number[] } | undefined)?.transformSkillIndices;
+    const explicit = (modifiers as { transformSkillIndices?: number[] } | undefined)?.transformSkillIndices
+      ?? (activeModifiers as { transformSkillIndices?: number[] } | undefined)?.transformSkillIndices;
     if (Array.isArray(explicit)) {
       return explicit.filter((index) => Number.isInteger(index) && index >= 0);
     }
-    const single = (modifiers as { transformSkillIndex?: number } | undefined)?.transformSkillIndex;
+    const single = (modifiers as { transformSkillIndex?: number } | undefined)?.transformSkillIndex
+      ?? (activeModifiers as { transformSkillIndex?: number } | undefined)?.transformSkillIndex;
     return Number.isInteger(single) && single >= 0 ? [single] : [];
   })();
   const tauntModifiers = allModifiers.find((modifier) =>
@@ -204,6 +218,13 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
   const heatwaveDamageRate = allModifiers
     .map((modifier) => (modifier as { heatwaveDamageRate?: number }).heatwaveDamageRate)
     .find((rate): rate is number => typeof rate === 'number' && Number.isFinite(rate));
+  const isLockedUntilClass = getSkillLockClass(selectedActiveSkill ?? primary);
+  const isDruidBearDefinition = definition.typeId === 'Druid'
+    && definition.skills.length > 0
+    && definition.skills.every((skill) => (skill.modifiers?.notes ?? []).includes('runtime:druidBearForm'));
+  const criticalModifiers = isDruidBearDefinition
+    ? allModifiers.find((modifier) => (modifier.notes ?? []).includes('runtime:druidBearForm'))
+    : modifiers;
 
   return {
     randomDamage: range ? { min: range[0], max: range[1] } : undefined,
@@ -281,11 +302,21 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     hasBrokenGrowthPermanent: modifiers?.brokenGrowthDelta !== undefined || notes.includes('runtime:brokenGrowthPermanent'),
     growthDelta: modifiers?.growthDelta,
     brokenGrowthDelta: modifiers?.brokenGrowthDelta,
-    transformAccent: (modifiers as { transformAccent?: string } | undefined)?.transformAccent ?? getNoteValue('runtime:transformAccent='),
-    transformSymbol: (modifiers as { transformSymbol?: string } | undefined)?.transformSymbol ?? getNoteValue('runtime:transformSymbol='),
-    transformTitle: (modifiers as { transformTitle?: string } | undefined)?.transformTitle ?? getNoteValue('runtime:transformTitle='),
-    alternateButton: (modifiers as { alternateButton?: string } | undefined)?.alternateButton ?? getNoteValue('runtime:alternateButton='),
-    baseButton: (modifiers as { baseButton?: string } | undefined)?.baseButton ?? getNoteValue('runtime:baseButton='),
+     transformAccent: (modifiers as { transformAccent?: string } | undefined)?.transformAccent
+       ?? (activeModifiers as { transformAccent?: string } | undefined)?.transformAccent
+       ?? getActiveNoteValue('runtime:transformAccent=') ?? getNoteValue('runtime:transformAccent='),
+     transformSymbol: (modifiers as { transformSymbol?: string } | undefined)?.transformSymbol
+       ?? (activeModifiers as { transformSymbol?: string } | undefined)?.transformSymbol
+       ?? getActiveNoteValue('runtime:transformSymbol=') ?? getNoteValue('runtime:transformSymbol='),
+     transformTitle: (modifiers as { transformTitle?: string } | undefined)?.transformTitle
+       ?? (activeModifiers as { transformTitle?: string } | undefined)?.transformTitle
+       ?? getActiveNoteValue('runtime:transformTitle=') ?? getNoteValue('runtime:transformTitle='),
+     alternateButton: (modifiers as { alternateButton?: string } | undefined)?.alternateButton
+       ?? (activeModifiers as { alternateButton?: string } | undefined)?.alternateButton
+       ?? getActiveNoteValue('runtime:alternateButton=') ?? getNoteValue('runtime:alternateButton='),
+     baseButton: (modifiers as { baseButton?: string } | undefined)?.baseButton
+       ?? (activeModifiers as { baseButton?: string } | undefined)?.baseButton
+       ?? getActiveNoteValue('runtime:baseButton='),
     skillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx=') ?? getAnyNoteValue('runtime:skillSfx=') ?? getNoteValue('runtime:skillSfx='),
     activeSkillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx='),
     passiveSkillSfxKey: (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getNoteValue('runtime:skillSfx='),
@@ -310,14 +341,13 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     hitsAllFoes: Boolean((activeModifiers as { hitsAllFoes?: boolean } | undefined)?.hitsAllFoes),
     hitsAllAllies: Boolean((activeModifiers as { hitsAllAllies?: boolean } | undefined)?.hitsAllAllies),
     hasDruidicEssence: allNotes.includes('runtime:druidicEssence'),
-    hasDruidBearTransform: allNotes.includes('runtime:druidBearTransform'),
+     hasDruidBearTransform: allNotes.includes('runtime:druidBearTransform'),
+     hasDruidBearForm: allNotes.includes('runtime:druidBearForm'),
     ricochetHealCount: (modifiers as { ricochetHealCount?: number } | undefined)?.ricochetHealCount,
     ricochetHealRange: (modifiers as { ricochetHealRange?: number } | undefined)?.ricochetHealRange,
     bearMaulDamage: (modifiers as { bearMaulDamage?: number } | undefined)?.bearMaulDamage,
-    bearCritChance: (modifiers as { bearCritChance?: number } | undefined)?.bearCritChance,
-    bearCritMultiplier: (modifiers as { bearCritMultiplier?: number } | undefined)?.bearCritMultiplier,
-    criticalChanceIncrease: (modifiers as { criticalChanceIncrease?: number } | undefined)?.criticalChanceIncrease,
-    criticalDamageIncrease: (modifiers as { criticalDamageIncrease?: number } | undefined)?.criticalDamageIncrease,
+     criticalChanceIncrease: (criticalModifiers as { criticalChanceIncrease?: number } | undefined)?.criticalChanceIncrease,
+     criticalDamageIncrease: (criticalModifiers as { criticalDamageIncrease?: number } | undefined)?.criticalDamageIncrease,
     damageRatePerKill: (modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill,
     avoidBossAttackChance: (modifiers as { avoidBossAttackChance?: number } | undefined)?.avoidBossAttackChance,
     onKillMissingHealRate: (modifiers as { onKillMissingHealRate?: number } | undefined)?.onKillMissingHealRate,
@@ -328,7 +358,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     hasLeonMightyRoar: allNotes.includes('runtime:leonMightyRoar'),
     hasLeonRage: allNotes.includes('runtime:leonRage'),
     leonRageRate: allNotes.includes('runtime:leonRage') ? ((modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill ?? 0.2) : undefined,
-    isLockedUntilClass6: allNotes.includes('runtime:unlockAtClass6'),
+     isLockedUntilClass,
     disableManaGain: Boolean((activeModifiers as { disableManaGain?: boolean } | undefined)?.disableManaGain),
     consumeAttack: (activeModifiers as { consumeAttack?: boolean } | undefined)?.consumeAttack ?? true
   };

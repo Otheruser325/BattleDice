@@ -22,6 +22,8 @@ import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AchievementStore } from '../systems/AchievementStore';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
+import { SettingsStore } from '../systems/SettingsStore';
+import { applyDiceTalent, getEquippedTalentId, setEquippedTalentId } from '../systems/DiceTalents';
 
 function formatSkillType(type: string | undefined): string {
   if (!type) return 'Passive';
@@ -198,14 +200,15 @@ export class DiceScene extends Phaser.Scene {
     this.debug.log('Dice scene rendered.', { diceCount: definitions.length });
 
     let tokens = getDiceTokens(this);
-    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Pick deck 1-3, then click cards to assign selected slot`, {
+    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Select a loadout slot, then choose a die to equip`, {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft
     });
     const slotText = this.add.text(panel.x + 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text });
     const ownedCountText = this.add.text(panel.right - 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(1,0);
     const slotBoxes: Phaser.GameObjects.Rectangle[] = [];
     const slotLabels: Phaser.GameObjects.Text[] = [];
-    let selectedSlot = 0;
+    let pendingEquipTypeId: string | null = null;
+    let selectedSlot: number | null = null;
     let selectedDeckSlot = getActiveLoadoutSlot(this);
     const deckBoxes: Phaser.GameObjects.Rectangle[] = [];
     for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
@@ -216,7 +219,8 @@ export class DiceScene extends Phaser.Scene {
         setActiveLoadoutSlot(this, i);
         selectedDeckSlot = i;
         loadout = getSelectedLoadout(this);
-        selectedSlot = 0;
+        pendingEquipTypeId = null;
+        selectedSlot = null;
         refreshSlots();
       });
       deckBoxes.push(box);
@@ -228,20 +232,49 @@ export class DiceScene extends Phaser.Scene {
       const x = slotStartX + i * 112;
       const box = this.add.rectangle(x, panel.y + 118, 104, 46, 0x173247, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
       const lbl = this.add.text(x, panel.y + 118, loadout[i]?.slice(0, 4).toUpperCase() ?? '-', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5);
-      box.on('pointerdown', () => {
+      const selectSlot = () => {
+        if (!pendingEquipTypeId) {
+          selectedSlot = i;
+          refreshSlots();
+          return;
+        }
+        const typeId = pendingEquipTypeId;
+        pendingEquipTypeId = null;
         selectedSlot = i;
-        refreshSlots();
+        if (equipDieInSlot(typeId, i)) {
+          this.scene.restart();
+        } else {
+          refreshSlots();
+        }
+      };
+      box.on('pointerdown', selectSlot);
+      box.on('pointerover', () => {
+        if (pendingEquipTypeId) box.setFillStyle(0x315e7a, 1);
       });
+      box.on('pointerout', () => box.setFillStyle(0x173247, 0.95));
+      lbl.setInteractive({ useHandCursor: true }).on('pointerdown', selectSlot);
       slotBoxes.push(box);
       slotLabels.push(lbl);
     }
 
     const refreshSlots = () => {
-      slotText.setText(`DECK ${selectedDeckSlot + 1}: ${loadout.join(' | ')}  •  Editing dice slot: ${selectedSlot + 1}`);
+      slotText.setText(
+        `DECK ${selectedDeckSlot + 1}: ${loadout.join(' | ')}  •  ${
+          pendingEquipTypeId
+            ? `Select a slot for ${pendingEquipTypeId}`
+            : selectedSlot === null
+              ? 'Select a slot, then choose a die'
+              : `Equip target: slot ${selectedSlot + 1}`
+        }`
+      );
       const owned = definitions.filter((d)=>!this.isDiceLocked(d.typeId)).length;
       ownedCountText.setText(`OWNED ${owned}/${definitions.length}`);
-      slotBoxes.forEach((box, i) => box.setStrokeStyle(2, i === selectedSlot ? 0xf4b860 : 0x406987));
       deckBoxes.forEach((box, i) => box.setStrokeStyle(2, i === selectedDeckSlot ? 0xf4b860 : 0x406987));
+      slotBoxes.forEach((box, i) => {
+        const selected = i === selectedSlot;
+        box.setStrokeStyle(2, selected || pendingEquipTypeId ? 0xf4b860 : 0x406987);
+        box.setFillStyle(selected ? 0x315e7a : 0x173247, 0.95);
+      });
       slotLabels.forEach((lbl, i) => {
         if (i < LOADOUT_SLOT_COUNT) return;
         const loadoutIndex = i - LOADOUT_SLOT_COUNT;
@@ -249,6 +282,21 @@ export class DiceScene extends Phaser.Scene {
       });
     };
     refreshSlots();
+
+    const equipDieInSlot = (typeId: string, slot: number): boolean => {
+      const nextLoadout = getSelectedLoadout(this);
+      const existingIndex = nextLoadout.findIndex((entry) => entry === typeId);
+      if (existingIndex === slot) return false;
+      if (existingIndex >= 0) {
+        [nextLoadout[slot], nextLoadout[existingIndex]] = [nextLoadout[existingIndex], nextLoadout[slot]];
+      } else {
+        nextLoadout[slot] = typeId;
+      }
+      setSelectedLoadout(this, nextLoadout);
+      loadout = getSelectedLoadout(this);
+      refreshSlots();
+      return true;
+    };
 
     const cardsContainer = this.add.container(0, 0).setDepth(6);
     const interactiveCards: Phaser.GameObjects.Rectangle[] = [];
@@ -263,7 +311,7 @@ export class DiceScene extends Phaser.Scene {
       const y = cardsTopY + row * cardPitch;
       const accent = Phaser.Display.Color.HexStringToColor(die.accent).color;
       const cls = getDiceProgress(this, die.typeId).classLevel;
-      const displayedDie = applyClassProgression(die, cls);
+       const displayedDie = applyDiceTalent(applyClassProgression(die, cls), getEquippedTalentId(this, die.typeId));
       const locked = this.isDiceLocked(die.typeId);
 
       const cardFill = locked ? 0x111e28 : 0x173247;
@@ -291,7 +339,7 @@ export class DiceScene extends Phaser.Scene {
         color: rarityColor
       });
       const statLine = this.add.text(x + 106, y + 52, `ATK ${displayedDie.attack}  |  HP ${displayedDie.health}
-RANGE ${die.range} (${getRangeLabel(die.range)})`, {
+        RANGE ${displayedDie.range} (${getRangeLabel(displayedDie.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.textMuted
@@ -316,10 +364,10 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`, {
 
       const refreshCardStatLine = () => {
         const nextCls = getDiceProgress(this, die.typeId).classLevel;
-        const nextDisplayedDie = applyClassProgression(die, nextCls);
+        const nextDisplayedDie = applyDiceTalent(applyClassProgression(die, nextCls), getEquippedTalentId(this, die.typeId));
         classTag.setText(this.isDiceLocked(die.typeId) ? 'LOCKED' : `C${nextCls}`);
         statLine.setText(`ATK ${nextDisplayedDie.attack}  |  HP ${nextDisplayedDie.health}
-RANGE ${die.range} (${getRangeLabel(die.range)})`);
+RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         skillTypeLine.setText(formatSkillTypeLine(nextDisplayedDie));
         skillDesc.setText(formatSkillInfo(nextDisplayedDie, this.isDiceLocked(die.typeId)));
       };
@@ -334,14 +382,30 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       interactiveCards.push(card);
       card.on('pointerdown', () => {
         if (this.isDiceLocked(die.typeId)) return;
+        const quickEquipDice = SettingsStore.get(this).quickEquipDice;
+        if (quickEquipDice && selectedSlot !== null) {
+          if (equipDieInSlot(die.typeId, selectedSlot)) {
+            this.scene.restart();
+          }
+          return;
+        }
         this.openDiceModal(die.typeId, tokenText, () => {
           loadout = getSelectedLoadout(this);
           refreshSlots();
           tokens = getDiceTokens(this);
-          tokenText.setText(`DICE TOKENS: ${tokens}  •  Pick deck 1-3, then click cards to assign selected slot`);
+          tokenText.setText(`DICE TOKENS: ${tokens}  •  Select a loadout slot, then choose a die to equip`);
           refreshCardStats.forEach((refresh) => refresh());
           refreshVisibleCardInteractivity();
-        }, selectedSlot);
+        }, () => {
+          if (selectedSlot !== null) {
+            if (equipDieInSlot(die.typeId, selectedSlot)) {
+              this.scene.restart();
+            }
+            return;
+          }
+          pendingEquipTypeId = die.typeId;
+          refreshSlots();
+        });
       });
       card.on('pointerover', () => {
         if (this.isDiceLocked(die.typeId)) return;
@@ -400,12 +464,6 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       refreshVisibleCardInteractivity();
     });
 
-    this.input.keyboard?.on('keydown-TAB', (event: KeyboardEvent) => {
-      event.preventDefault();
-      selectedSlot = (selectedSlot + 1) % 5;
-      refreshSlots();
-    });
-
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.modalEscHandler) this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
       if (this.modalWheelHandler) this.input.off('wheel', this.modalWheelHandler);
@@ -423,7 +481,13 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     return getDiceModalDisplayDefinition(die, classLevel, showAlternate);
   }
 
-  private openDiceModal(typeId: string, tokenText: Phaser.GameObjects.Text, onUpdate: () => void, selectedSlot: number, showAlternate = false) {
+  private openDiceModal(
+    typeId: string,
+    tokenText: Phaser.GameObjects.Text,
+    onUpdate: () => void,
+    onEquipRequest: () => void,
+    showAlternate = false
+  ) {
     this.modalElements.forEach((el) => el.destroy());
     this.modalElements = [];
     if (this.modalEscHandler) {
@@ -437,7 +501,10 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const die = getAllDiceDefinitions(this).find((definition) => definition.typeId === typeId);
     if (!die) return;
     const progress = getDiceProgress(this, typeId);
-    const displayDie = this.getModalDisplayDie(die, progress.classLevel, showAlternate);
+    const displayDie = applyDiceTalent(
+      this.getModalDisplayDie(die, progress.classLevel, showAlternate),
+      getEquippedTalentId(this, typeId)
+    );
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 540, 390, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
@@ -496,9 +563,32 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
       costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} (+10% multiplicative stats/skills) | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
     }
 
-    const assignable = !getSelectedLoadout(this).includes(typeId);
-    const assignBtn = this.add.rectangle(width / 2 - 110, height / 2 + 110, 180, 40, assignable ? 0x3498db : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: assignable });
-    const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, assignable ? 'ASSIGN!' : 'IN LOADOUT', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
+    const currentTalentId = getEquippedTalentId(this, typeId);
+    const talentsAvailable = Boolean(die.talents?.length);
+    const talentsComingSoon = !talentsAvailable && Boolean(die.talentsComingSoon);
+    let talentBtn: Phaser.GameObjects.Text | null = null;
+    if (talentsAvailable || talentsComingSoon) {
+      const talentButtonLabel = talentsAvailable
+        ? `DICE TALENTS${currentTalentId ? ' • EQUIPPED' : ''}`
+        : 'DICE TALENTS • COMING SOON...';
+      talentBtn = this.add.text(width / 2, height / 2 + 78, talentButtonLabel, {
+        fontFamily: 'Orbitron',
+        fontSize: '11px',
+        color: talentsAvailable ? '#ffffff' : PALETTE.textMuted,
+        backgroundColor: talentsAvailable ? '#315e7a' : '#5a6268',
+        fixedWidth: 470,
+        align: 'center',
+        padding: { left: 10, right: 10, top: 7, bottom: 7 }
+      }).setOrigin(0.5);
+      if (talentsAvailable) {
+        talentBtn.setInteractive({ useHandCursor: true });
+        talentBtn.on('pointerdown', () => this.openTalentSelectionModal(typeId, tokenText, onUpdate, onEquipRequest, showAlternate));
+      }
+    }
+
+    const assignBtn = this.add.rectangle(width / 2 - 110, height / 2 + 110, 180, 40, 0x3498db, 0.95)
+      .setInteractive({ useHandCursor: true });
+    const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, 'EQUIP', { fontFamily: 'Orbitron', fontSize: '11px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upgradePreview = getClassProgressionPreview(die, cls);
@@ -515,7 +605,7 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     const altBtn = this.add.text(width / 2, height / 2 + 142, alternateLabel ?? '', { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft, backgroundColor: '#224b66', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5);
     if (alternateLabel) {
       altBtn.setInteractive({ useHandCursor: true });
-      altBtn.on('pointerdown', () => this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot, !showAlternate));
+      altBtn.on('pointerdown', () => this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, !showAlternate));
     } else {
       altBtn.setVisible(false);
     }
@@ -536,23 +626,15 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
         if (newClassLevel >= 6) AchievementStore.unlock(this, 'getting_stronger');
         if (newClassLevel >= 11) AchievementStore.unlock(this, 'augmented');
         if (newClassLevel >= 15) AchievementStore.unlock(this, 'maximum_power');
-        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Pick deck 1-3, then click cards to assign selected slot`);
+        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Select a loadout slot, then choose a die to equip`);
         onUpdate();
-        this.openDiceModal(typeId, tokenText, onUpdate, selectedSlot, showAlternate);
+        this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, showAlternate);
       });
     }
-    if (assignable) {
-      assignBtn.on('pointerdown', () => {
-        const loadout = getSelectedLoadout(this);
-        const existingIndex = loadout.findIndex((entry) => entry === typeId);
-        if (existingIndex >= 0) return;
-        loadout[selectedSlot] = typeId;
-        setSelectedLoadout(this, loadout);
-        closeModal();
-        onUpdate();
-        this.scene.restart();
-      });
-    }
+    assignBtn.on('pointerdown', () => {
+      closeModal();
+      onEquipRequest();
+    });
     const closeModal = () => {
       this.modalElements.forEach((el) => el.destroy());
       this.modalElements = [];
@@ -569,7 +651,97 @@ RANGE ${die.range} (${getRangeLabel(die.range)})`);
     close.on('pointerdown', closeModal);
     this.modalEscHandler = () => closeModal();
     this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
-    this.modalElements = [overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, skillContainer, skillMaskShape, skillScrollHint, costText, assignBtn, assignTxt, upBtn, upTxt, upgradeTooltip, altBtn, close];
+    this.modalElements = [
+      overlay, panel, title, stats, rarityLabel, rarityStats, targetStats, skillContainer, skillMaskShape,
+      skillScrollHint, costText, ...(talentBtn ? [talentBtn] : []), assignBtn, assignTxt, upBtn, upTxt,
+      upgradeTooltip, altBtn, close
+    ];
     this.modalElements.forEach((el) => (el as any).setDepth?.(450));
+  }
+
+  private openTalentSelectionModal(
+    typeId: string,
+    tokenText: Phaser.GameObjects.Text,
+    onUpdate: () => void,
+    onEquipRequest: () => void,
+    showAlternate: boolean
+  ) {
+    this.modalElements.forEach((el) => el.destroy());
+    this.modalElements = [];
+    if (this.modalEscHandler) {
+      this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+      this.modalEscHandler = null;
+    }
+    if (this.modalWheelHandler) {
+      this.input.off('wheel', this.modalWheelHandler);
+      this.modalWheelHandler = null;
+    }
+    const definition = getAllDiceDefinitions(this).find((die) => die.typeId === typeId);
+    if (!definition?.talents?.length) return;
+
+    const { width, height } = this.scale;
+    const centerY = height / 2;
+    const overlay = this.add.rectangle(width / 2, centerY, width, height, 0x000000, 0.68).setInteractive();
+    const panel = this.add.rectangle(width / 2, centerY, 540, 390, 0x163246, 0.98).setStrokeStyle(2, 0x4f7ea1);
+    const title = this.add.text(width / 2, centerY - 160, `${definition.title} • DICE TALENTS`, {
+      fontFamily: 'Orbitron', fontSize: '18px', color: definition.accent
+    }).setOrigin(0.5);
+    const hint = this.add.text(width / 2, centerY - 132, 'Equip one talent per die. Equipping another replaces the current talent.', {
+      fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted, align: 'center'
+    }).setOrigin(0.5);
+    const elements: Phaser.GameObjects.GameObject[] = [overlay, panel, title, hint];
+    const currentTalentId = getEquippedTalentId(this, typeId);
+
+    const close = () => {
+      elements.forEach((element) => element.destroy());
+      this.modalElements = [];
+      if (this.modalEscHandler) {
+        this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+        this.modalEscHandler = null;
+      }
+      if (this.modalWheelHandler) {
+        this.input.off('wheel', this.modalWheelHandler);
+        this.modalWheelHandler = null;
+      }
+    };
+    const choose = (talentId: string | null) => {
+      setEquippedTalentId(this, definition, talentId);
+      close();
+      onUpdate();
+      this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, showAlternate);
+    };
+
+    definition.talents.forEach((talent, index) => {
+      const y = centerY - 72 + index * 62;
+      const active = talent.id === currentTalentId;
+      const row = this.add.rectangle(width / 2, y, 470, 50, active ? 0x315e7a : 0x173247, 0.98)
+        .setStrokeStyle(1, active ? 0xf4b860 : 0x406987)
+        .setInteractive({ useHandCursor: true });
+      const name = this.add.text(width / 2 - 210, y - 11, `${active ? '● ' : ''}${talent.title}`, {
+        fontFamily: 'Orbitron', fontSize: '11px', color: active ? '#fff1c2' : PALETTE.text
+      }).setOrigin(0, 0.5);
+      const description = this.add.text(width / 2 - 210, y + 11, talent.description, {
+        fontFamily: 'Orbitron', fontSize: '9px', color: PALETTE.textMuted, wordWrap: { width: 340 }
+      }).setOrigin(0, 0.5);
+      const action = this.add.text(width / 2 + 180, y, active ? 'UNEQUIP' : 'EQUIP', {
+        fontFamily: 'Orbitron', fontSize: '9px', color: active ? '#ffb5b5' : '#b8ffd1',
+        backgroundColor: active ? '#702f3d' : '#246044',
+        padding: { left: 5, right: 5, top: 4, bottom: 4 }
+      }).setOrigin(0.5);
+      row.on('pointerdown', () => choose(active ? null : talent.id));
+      elements.push(row, name, description, action);
+    });
+
+    const closeButton = this.add.text(width / 2, centerY + 148, 'CLOSE', {
+      fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted,
+      backgroundColor: '#173247', padding: { left: 10, right: 10, top: 5, bottom: 5 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    closeButton.on('pointerdown', close);
+    overlay.on('pointerdown', close);
+    elements.push(closeButton);
+    this.modalElements = elements;
+    elements.forEach((element) => (element as any).setDepth?.(450));
+    this.modalEscHandler = close;
+    this.input.keyboard?.on('keydown-ESC', close);
   }
 }

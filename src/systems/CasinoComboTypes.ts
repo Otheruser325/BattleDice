@@ -9,6 +9,22 @@ export interface ComboPayout {
   layout: string;
 }
 
+export const FIVES_REWARD_DESCRIPTIONS: Array<{
+  combo: FivesComboType;
+  chestType: ChestType;
+  description: string;
+}> = [
+  { combo: 'Five-of-a-kind', chestType: 'Master', description: 'All five dice match' },
+  { combo: 'Four-of-a-kind', chestType: 'Diamond', description: 'Four dice match plus a kicker' },
+  { combo: 'Full House', chestType: 'Diamond', description: 'Three of one value plus two of another' },
+  { combo: 'Large Straight', chestType: 'Gold', description: '1-2-3-4-5 or 2-3-4-5-6' },
+  { combo: 'Three-of-a-kind', chestType: 'Gold', description: 'Three dice match plus two kickers' },
+  { combo: 'Small Straight', chestType: 'Silver', description: 'Four dice in a row plus any fifth die' },
+  { combo: 'Two Pair', chestType: 'Silver', description: 'Two matching pairs plus a kicker' },
+  { combo: 'Pair', chestType: 'Bronze', description: 'One matching pair plus three kickers' },
+  { combo: 'No combo', chestType: 'Bronze', description: 'No pair or straight; awards five Bronze chests' }
+];
+
 interface ComboRule {
   combo: FivesComboType;
   chestType: ChestType;

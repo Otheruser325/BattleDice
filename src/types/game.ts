@@ -81,8 +81,6 @@ export interface DiceSkillModifier {
   ricochetHealCount?: number;
   ricochetHealRange?: number;
   bearMaulDamage?: number;
-  bearCritChance?: number;
-  bearCritMultiplier?: number;
   criticalChanceIncrease?: number;
   criticalDamageIncrease?: number;
   damageRatePerKill?: number;
@@ -104,6 +102,24 @@ export interface DiceSkillDefinition {
   modifiers?: DiceSkillModifier;
 }
 
+export interface DiceTalentModifier extends DiceSkillModifier {
+  attackDelta?: number;
+  healthDelta?: number;
+  attackMultiplier?: number;
+  healthMultiplier?: number;
+  rangeDelta?: number;
+  targetingMode?: DiceTargetingMode;
+  skillIndex?: number;
+  skillModifiers?: DiceSkillModifier;
+}
+
+export interface DiceTalentDefinition {
+  id: string;
+  title: string;
+  description: string;
+  modifiers?: DiceTalentModifier;
+}
+
 export interface DiceDefinition {
   typeId: DiceTypeId;
   title: string;
@@ -114,6 +130,8 @@ export interface DiceDefinition {
   targetingMode: DiceTargetingMode;
   rarity: DiceRarity;
   skills: DiceSkillDefinition[];
+  talents?: DiceTalentDefinition[];
+  talentsComingSoon?: boolean;
   accent: string;
   transformDescriptions?: string[];
   isBoss?: boolean;
@@ -155,4 +173,5 @@ export interface AppSettings {
   sfx: boolean;
   screenShake: boolean;
   reducedMotion: boolean;
+  quickEquipDice: boolean;
 }

@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgressStore';
-import { evaluateFivesCombo, type ChestType } from '../systems/CasinoComboTypes';
+import { evaluateFivesCombo, FIVES_REWARD_DESCRIPTIONS, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
-import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, DEFAULT_LOADOUT_IDS, getRangeLabel } from '../data/dice';
+import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, setDiamonds, DEFAULT_LOADOUT_IDS, getRangeLabel } from '../data/dice';
 import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition } from './DiceScene';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
@@ -21,6 +21,7 @@ interface ChestRewardEntry {
 interface ChestOpenRewards {
   entries: ChestRewardEntry[];
   diceTokens: number;
+  diamonds: number;
 }
 
 const CHEST_TYPES: ChestType[] = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Master'];
@@ -31,6 +32,14 @@ const CHEST_TOKEN_REWARDS: Record<ChestType, [number, number]> = {
   Gold: [60, 120],
   Diamond: [150, 360],
   Master: [500, 1500]
+};
+
+const CHEST_DIAMOND_REWARDS: Record<ChestType, { chance: number; copies: [number, number] }> = {
+  Bronze: { chance: 0.05, copies: [1, 3] },
+  Silver: { chance: 0.10, copies: [1, 3] },
+  Gold: { chance: 0.15, copies: [1, 5] },
+  Diamond: { chance: 0.20, copies: [3, 10] },
+  Master: { chance: 0.25, copies: [5, 25] }
 };
 
 type RewardRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
@@ -103,10 +112,6 @@ export class CasinoScene extends Phaser.Scene {
   private activeRewardDetailClose: (() => void) | null = null;
   private casinoGrantChipsHandler: (() => void) | null = null;
 
-  private gaugeBg!: Phaser.GameObjects.Rectangle;
-  private gaugeFill!: Phaser.GameObjects.Rectangle;
-  private gaugeText!: Phaser.GameObjects.Text;
-
   create() {
     if (this.casinoGrantChipsHandler) this.registry.events.off('casino:grantChips', this.casinoGrantChipsHandler);
     this.casinoGrantChipsHandler = () => {
@@ -157,26 +162,8 @@ export class CasinoScene extends Phaser.Scene {
 
     this.drawButtons(panel.centerX, panel.centerY + 32);
     this.drawChestSidebar(panel.right - 145, panel.y + 112);
-
-    const gaugeY = panel.centerY + 85;
-    this.add.text(panel.centerX, gaugeY - 18, 'FIVES GAUGE (1000 = GUARANTEED FIVE-OF-A-KIND)', {
-      fontFamily: 'Orbitron',
-      fontSize: '10px',
-      color: PALETTE.textMuted
-    }).setOrigin(0.5);
-
-    this.gaugeBg = this.add.rectangle(panel.centerX, gaugeY, 400, 16, 0x0d2231, 0.95)
-      .setStrokeStyle(1, 0x3a6688);
-
-    this.gaugeFill = this.add.rectangle(panel.centerX - 200, gaugeY, 0, 14, 0xf4b860, 0.85)
-      .setOrigin(0, 0.5);
-
-    this.gaugeText = this.add.text(panel.centerX, gaugeY, '', {
-      fontFamily: 'Orbitron',
-      fontSize: '11px',
-      color: '#ffffff',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
+    this.drawTableInfoButton(panel.centerX - 270, panel.y + 62, 'FIVES INFO');
+    this.drawTableInfoButton(panel.centerX + 270, panel.y + 62, 'CRAPS INFO');
 
     this.render();
   }
@@ -273,6 +260,80 @@ export class CasinoScene extends Phaser.Scene {
     this.rollButton = makeButton(cx - 40, 'ROLL', () => this.rollDice());
     makeButton(cx + 70, 'CASH OUT', () => this.cashOut());
     makeButton(cx + 190, 'CRAPS (2)', () => this.playCraps());
+  }
+
+  private drawTableInfoButton(x: number, y: number, label: string) {
+    const info = this.add.text(x, y, 'INFO', {
+      fontFamily: 'Orbitron',
+      fontSize: '10px',
+      color: '#0b1520',
+      backgroundColor: PALETTE.accent,
+      padding: { left: 8, right: 8, top: 4, bottom: 4 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    info.setText(label);
+    const section = label.startsWith('FIVES') ? 'fives' : 'craps';
+    info.on('pointerdown', () => this.showTableInfoModal(section));
+  }
+
+  private showTableInfoModal(section: 'fives' | 'craps') {
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.62)
+      .setInteractive()
+      .setDepth(500);
+    const panel = this.add.rectangle(width / 2, height / 2, 900, 570, 0x153449, 0.98)
+      .setStrokeStyle(2, 0x4f7ea1)
+      .setDepth(501);
+    const title = this.add.text(width / 2, height / 2 - 255, 'CASINO TABLE REWARDS', {
+      fontFamily: 'Orbitron',
+      fontSize: '23px',
+      color: PALETTE.accent
+    }).setOrigin(0.5).setDepth(502);
+    const body = section === 'fives'
+      ? [
+        'FIVES — roll five dice, lock dice between rolls, then CASH OUT.',
+        ...FIVES_REWARD_DESCRIPTIONS.map((reward) =>
+          `${reward.combo} → ${reward.combo === 'No combo' ? `${reward.chestType} chest ×5` : `${reward.chestType} chest × pip sum`} (${reward.description})`),
+        '',
+        'CHEST DIAMOND BONUS (chance per chest):',
+        'Bronze 5%: 1–3  •  Silver 10%: 1–3  •  Gold 15%: 1–5',
+        'Diamond 20%: 3–10  •  Master 25%: 5–25'
+      ].join('\n')
+      : [
+        'CRAPS — pay 2 chips for two dice.',
+        'Natural 7 or 11 → GOLD chest × roll total.',
+        'A hard point (matching dice) → GOLD chest × point.',
+        'A non-hard point → SILVER chest × point.',
+        'Craps or seven-out → no chest.',
+        'A point that runs 60 rolls → BRONZE chest × point.',
+        '',
+        'Chest diamond bonuses are rolled when chests are opened:',
+        'Bronze 5%: 1–3  •  Silver 10%: 1–3  •  Gold 15%: 1–5',
+        'Diamond 20%: 3–10  •  Master 25%: 5–25'
+      ].join('\n');
+    const text = this.add.text(width / 2, height / 2 - 8, body, {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.text,
+      lineSpacing: 7,
+      align: 'center',
+      wordWrap: { width: 820 }
+    }).setOrigin(0.5).setDepth(502);
+    let close = () => undefined;
+    const closeButton = this.add.text(width / 2, height / 2 + 245, 'CLOSE', {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: PALETTE.textMuted,
+      backgroundColor: '#173247',
+      padding: { left: 10, right: 10, top: 5, bottom: 5 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(502);
+    const escHandler = () => close();
+    this.input.keyboard?.on('keydown-ESC', escHandler);
+    close = () => {
+      this.input.keyboard?.off('keydown-ESC', escHandler);
+      [overlay, panel, title, text, closeButton].forEach((element) => element.destroy());
+    };
+    overlay.on('pointerdown', close);
+    closeButton.on('pointerdown', close);
   }
 
   private getLockedDiceCount(): number {
@@ -484,10 +545,11 @@ export class CasinoScene extends Phaser.Scene {
 
   private getChestDropRateText(type: ChestType) {
     const [minTokens, maxTokens] = CHEST_TOKEN_REWARDS[type];
+    const diamondReward = CHEST_DIAMOND_REWARDS[type];
     const cardRates = CHEST_DROP_RATES[type]
       .map((entry) => `${entry.rarity}: ${entry.rate}% • ${entry.copies[0]}-${entry.copies[1]} cards`)
       .join('\n');
-    return `${cardRates}\nDice Tokens: +${minTokens}-${maxTokens}`;
+    return `${cardRates}\nDice Tokens: +${minTokens}-${maxTokens}\nDiamonds: ${Math.round(diamondReward.chance * 100)}% • ${diamondReward.copies[0]}-${diamondReward.copies[1]}`;
   }
 
   private openChestModal(type: ChestType) {
@@ -594,18 +656,23 @@ export class CasinoScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xffffff)
       .setDepth(9999);
     this.tweens.add({ targets: burst, scale: isAll ? 4 : 2, alpha: 0, duration: isAll ? 520 : 320, onComplete: () => burst.destroy() });
-    this.showRewardsModal(type, entries, rewards.diceTokens);
+    this.showRewardsModal(type, entries, rewards.diceTokens, rewards.diamonds);
     this.render();
   }
 
   private rollChestOpenRewards(type: ChestType, openCount: number): ChestOpenRewards {
     const merged = new Map<string, ChestRewardEntry>();
     const tokenRange = CHEST_TOKEN_REWARDS[type];
+    const diamondReward = CHEST_DIAMOND_REWARDS[type];
     let diceTokens = 0;
+    let diamonds = 0;
     let emptyRewardRolls = 0;
 
     for (let i = 0; i < openCount; i++) {
       diceTokens += Phaser.Math.Between(tokenRange[0], tokenRange[1]);
+      if (Math.random() < diamondReward.chance) {
+        diamonds += Phaser.Math.Between(diamondReward.copies[0], diamondReward.copies[1]);
+      }
       const reward = this.rollChestReward(type);
       if (!reward) {
         emptyRewardRolls += 1;
@@ -625,8 +692,9 @@ export class CasinoScene extends Phaser.Scene {
     }
 
     setDiceTokens(this, getDiceTokens(this) + diceTokens);
+    if (diamonds > 0) setDiamonds(this, getDiamonds(this) + diamonds);
 
-    return { entries: [...merged.values()], diceTokens };
+    return { entries: [...merged.values()], diceTokens, diamonds };
   }
 
   private getRemainingChestCopyCapacity(typeId: string): number {
@@ -713,7 +781,7 @@ export class CasinoScene extends Phaser.Scene {
     return null;
   }
 
-  private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number) {
+  private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number, diamonds: number) {
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.58).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 930, 560, 0x153449, 0.98).setStrokeStyle(2, 0x4f7ea1);
@@ -727,6 +795,11 @@ export class CasinoScene extends Phaser.Scene {
       fontSize: '16px',
       color: PALETTE.accentSoft
     }).setOrigin(0.5);
+    const diamondSummary = this.add.text(width / 2, height / 2 - 188, `Diamonds: +${diamonds.toLocaleString()} (now ${getDiamonds(this).toLocaleString()})`, {
+      fontFamily: 'Orbitron',
+      fontSize: '14px',
+      color: '#7ddcff'
+    }).setOrigin(0.5);
     const closeBtn = this.add.text(width / 2, height / 2 + 252, 'Close', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
@@ -735,7 +808,7 @@ export class CasinoScene extends Phaser.Scene {
       padding: { left: 10, right: 10, top: 5, bottom: 5 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    const rewardsTop = height / 2 - 178;
+    const rewardsTop = height / 2 - 160;
     const rewardsHeight = 408;
     const container = this.add.container(width / 2 - 430, rewardsTop);
     const mask = this.add.rectangle(width / 2 - 430, rewardsTop, 860, rewardsHeight, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
@@ -807,7 +880,7 @@ export class CasinoScene extends Phaser.Scene {
     close = () => {
       this.input.off('wheel', wheelHandler);
       this.input.keyboard?.off('keydown-ESC', escHandler);
-      [overlay, panel, title, tokenSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
+      [overlay, panel, title, tokenSummary, diamondSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
     };
     closeBtn.on('pointerdown', close);
     overlay.on('pointerdown', () => undefined);
@@ -1002,29 +1075,12 @@ export class CasinoScene extends Phaser.Scene {
       : (this.tableActive ? `Rolls left: ${this.rollsLeft}  •  Locked dice reroll cost: ${lockedCost} chips` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
 
-    // Render Fives Gauge
-    const currentGauge = progress.fivesGauge;
-    const progressPct = Phaser.Math.Clamp(currentGauge / 1000, 0, 1);
-    this.gaugeFill.width = progressPct * 400;
-
-    if (currentGauge >= 1000) {
-      this.gaugeFill.setFillStyle(0x27ae60, 0.9); // Green when ready
-      this.gaugeText.setText(`READY! GUARANTEED 5-OF-A-KIND`);
-      if (!this.tweens.isTweening(this.gaugeFill)) {
-        this.gaugeFill.setAlpha(0.9);
-        this.tweens.add({
-          targets: this.gaugeFill,
-          alpha: 0.5,
-          duration: 600,
-          yoyo: true,
-          repeat: -1
-        });
-      }
+    if (progress.fivesGauge >= FIVES_GAUGE_MAX) {
+      this.fivesGaugeFill.setFillStyle(0x27ae60, 0.9);
+      this.fivesGaugeText.setColor('#b8ffd1');
     } else {
-      this.gaugeFill.setFillStyle(0xf4b860, 0.85); // Gold
-      this.gaugeText.setText(`${currentGauge} / 1000`);
-      this.gaugeFill.setAlpha(0.85);
-      this.tweens.killTweensOf(this.gaugeFill);
+      this.fivesGaugeFill.setFillStyle(0xf4b860, 0.95);
+      this.fivesGaugeText.setColor(PALETTE.textMuted);
     }
   }
 

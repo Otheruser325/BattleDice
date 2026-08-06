@@ -334,7 +334,9 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Splash damage', currentModifiers.splashDamage, nextModifiers.splashDamage);
   pushNumericDelta('Chain damage', currentModifiers.chainDamage, nextModifiers.chainDamage);
   pushNumericDelta('Active damage', currentModifiers.activeDamage, nextModifiers.activeDamage);
-  pushNumericDelta('Healing', currentModifiers.activeHeal, nextModifiers.activeHeal);
+  if (definition.typeId !== 'Druid') {
+    pushNumericDelta('Healing', currentModifiers.activeHeal, nextModifiers.activeHeal);
+  }
   pushNumericDelta('Poison damage', currentModifiers.poisonDamage, nextModifiers.poisonDamage);
   pushNumericDelta('Meteor damage', currentModifiers.meteorDamage, nextModifiers.meteorDamage);
   pushNumericDelta('Lava damage', currentModifiers.lavaDamage, nextModifiers.lavaDamage);
@@ -342,7 +344,9 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Pierce damage', currentModifiers.pierceBehindDamage, nextModifiers.pierceBehindDamage);
   pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
   pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
-  pushNumericDelta('Bear maul damage', currentModifiers.bearMaulDamage, nextModifiers.bearMaulDamage);
+  if (definition.typeId !== 'Druid') {
+    pushNumericDelta('Bear maul damage', currentModifiers.bearMaulDamage, nextModifiers.bearMaulDamage);
+  }
   pushNumericDelta('Mana gain', currentModifiers.manaGain, nextModifiers.manaGain);
   pushNumericDelta('Attack count', currentModifiers.numAttacksBoosted, nextModifiers.numAttacksBoosted);
 
@@ -383,6 +387,18 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   if (currentModifiers.berserkThresholdRate !== undefined && nextModifiers.berserkThresholdRate !== undefined) {
     const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;
     if (delta > 0) skillDeltas.push(`Berserk threshold +${formatPercent(delta)}`);
+  }
+
+  if (definition.typeId === 'Druid') {
+    if (currentModifiers.ricochetHealCount !== undefined && nextModifiers.ricochetHealCount !== undefined) {
+      skillDeltas.push(`Ricochet count: ${formatValue(currentModifiers.ricochetHealCount)} ally`);
+    }
+    const healingDelta = next.attack - current.attack;
+    skillDeltas.push(`Healing: ${formatValue(current.attack)} -> ${formatValue(next.attack)} HP (+${formatValue(healingDelta)})`);
+    if (currentModifiers.bearMaulDamage !== undefined && nextModifiers.bearMaulDamage !== undefined) {
+      const maulDelta = nextModifiers.bearMaulDamage - currentModifiers.bearMaulDamage;
+      skillDeltas.push(`Bear maul damage: ${formatValue(currentModifiers.bearMaulDamage)} -> ${formatValue(nextModifiers.bearMaulDamage)} (+${formatValue(maulDelta)})`);
+    }
   }
 
   return {

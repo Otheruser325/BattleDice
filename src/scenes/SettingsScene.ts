@@ -108,7 +108,7 @@ export class SettingsScene extends Phaser.Scene {
       .setInteractive()
       .setDepth(41);
  
-    const panel = this.add.rectangle(width - 196, 196, 288, 292, 0x102434, 0.97)
+    const panel = this.add.rectangle(width - 196, 230, 288, 350, 0x102434, 0.97)
       .setStrokeStyle(1, 0x496a84)
       .setDepth(42);
  
@@ -124,7 +124,8 @@ export class SettingsScene extends Phaser.Scene {
       ['music', 'Music playback'],
       ['sfx', 'Button + combat SFX'],
       ['screenShake', 'Screen shake'],
-      ['reducedMotion', 'Reduced motion']
+      ['reducedMotion', 'Reduced motion'],
+      ['quickEquipDice', 'Quick-equip dice']
     ];
  
     this.modalElements.push(overlay, panel, title, subtitle);
@@ -135,7 +136,7 @@ export class SettingsScene extends Phaser.Scene {
       this.modalElements.push(...row);
     });
  
-    const changelogBtn = this.add.text(width - 314, 275, 'Changelog', {
+    const changelogBtn = this.add.text(width - 314, 330, 'Changelog', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#f4b860', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     changelogBtn.on('pointerdown', () => {
@@ -145,7 +146,7 @@ export class SettingsScene extends Phaser.Scene {
       this.openChangelogModal();
     });
  
-    const nameBtn = this.add.text(width - 314, 305, 'Change Name', {
+    const nameBtn = this.add.text(width - 314, 360, 'Change Name', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#9fe6ff', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     nameBtn.on('pointerdown', () => {
@@ -155,7 +156,7 @@ export class SettingsScene extends Phaser.Scene {
       this.promptForNameChange();
     });
  
-    const close = this.add.text(width - 154, 305, 'Close', {
+    const close = this.add.text(width - 154, 360, 'Close', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     close.on('pointerdown', () => {
