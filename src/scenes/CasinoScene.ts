@@ -554,6 +554,7 @@ export class CasinoScene extends Phaser.Scene {
 
   private openChestModal(type: ChestType) {
     const amount = CasinoProgressStore.get(this).chests[type];
+    let close = () => undefined;
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 680, 420, 0x153449, 0.97).setStrokeStyle(2, 0x4f7ea1);

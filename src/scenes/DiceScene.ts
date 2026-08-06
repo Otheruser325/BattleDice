@@ -200,7 +200,7 @@ export class DiceScene extends Phaser.Scene {
     this.debug.log('Dice scene rendered.', { diceCount: definitions.length });
 
     let tokens = getDiceTokens(this);
-    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Select a loadout slot, then choose a die to equip`, {
+    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Click a die, then EQUIP to assign it to a slot`, {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft
     });
     const slotText = this.add.text(panel.x + 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text });
@@ -239,9 +239,8 @@ export class DiceScene extends Phaser.Scene {
           return;
         }
         const typeId = pendingEquipTypeId;
-        pendingEquipTypeId = null;
-        selectedSlot = i;
         if (equipDieInSlot(typeId, i)) {
+          pendingEquipTypeId = null;
           this.scene.restart();
         } else {
           refreshSlots();
@@ -263,7 +262,7 @@ export class DiceScene extends Phaser.Scene {
           pendingEquipTypeId
             ? `Select a slot for ${pendingEquipTypeId}`
             : selectedSlot === null
-              ? 'Select a slot, then choose a die'
+              ? 'Click a die, then EQUIP to assign it to a slot'
               : `Equip target: slot ${selectedSlot + 1}`
         }`
       );
@@ -285,13 +284,8 @@ export class DiceScene extends Phaser.Scene {
 
     const equipDieInSlot = (typeId: string, slot: number): boolean => {
       const nextLoadout = getSelectedLoadout(this);
-      const existingIndex = nextLoadout.findIndex((entry) => entry === typeId);
-      if (existingIndex === slot) return false;
-      if (existingIndex >= 0) {
-        [nextLoadout[slot], nextLoadout[existingIndex]] = [nextLoadout[existingIndex], nextLoadout[slot]];
-      } else {
-        nextLoadout[slot] = typeId;
-      }
+      if (nextLoadout.includes(typeId)) return false;
+      nextLoadout[slot] = typeId;
       setSelectedLoadout(this, nextLoadout);
       loadout = getSelectedLoadout(this);
       refreshSlots();
@@ -382,28 +376,23 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       interactiveCards.push(card);
       card.on('pointerdown', () => {
         if (this.isDiceLocked(die.typeId)) return;
-        const quickEquipDice = SettingsStore.get(this).quickEquipDice;
-        if (quickEquipDice && selectedSlot !== null) {
-          if (equipDieInSlot(die.typeId, selectedSlot)) {
-            this.scene.restart();
-          }
-          return;
-        }
         this.openDiceModal(die.typeId, tokenText, () => {
           loadout = getSelectedLoadout(this);
           refreshSlots();
           tokens = getDiceTokens(this);
-          tokenText.setText(`DICE TOKENS: ${tokens}  •  Select a loadout slot, then choose a die to equip`);
+          tokenText.setText(`DICE TOKENS: ${tokens}  •  Click a die, then EQUIP to assign it to a slot`);
           refreshCardStats.forEach((refresh) => refresh());
           refreshVisibleCardInteractivity();
         }, () => {
-          if (selectedSlot !== null) {
+          const quickEquipDice = SettingsStore.get(this).quickEquipDice;
+          if (quickEquipDice && selectedSlot !== null) {
             if (equipDieInSlot(die.typeId, selectedSlot)) {
               this.scene.restart();
             }
             return;
           }
           pendingEquipTypeId = die.typeId;
+          selectedSlot = null;
           refreshSlots();
         });
       });
@@ -586,9 +575,10 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       }
     }
 
-    const assignBtn = this.add.rectangle(width / 2 - 110, height / 2 + 110, 180, 40, 0x3498db, 0.95)
-      .setInteractive({ useHandCursor: true });
-    const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, 'EQUIP', { fontFamily: 'Orbitron', fontSize: '11px', color: '#ffffff' }).setOrigin(0.5);
+    const alreadyEquipped = getSelectedLoadout(this).includes(typeId);
+    const assignBtn = this.add.rectangle(width / 2 - 110, height / 2 + 110, 180, 40, alreadyEquipped ? 0x7f8c8d : 0x3498db, 0.95)
+      .setInteractive({ useHandCursor: !alreadyEquipped });
+    const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, alreadyEquipped ? 'EQUIPPED' : 'EQUIP', { fontFamily: 'Orbitron', fontSize: '11px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upgradePreview = getClassProgressionPreview(die, cls);
@@ -626,7 +616,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         if (newClassLevel >= 6) AchievementStore.unlock(this, 'getting_stronger');
         if (newClassLevel >= 11) AchievementStore.unlock(this, 'augmented');
         if (newClassLevel >= 15) AchievementStore.unlock(this, 'maximum_power');
-        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Select a loadout slot, then choose a die to equip`);
+        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click a die, then EQUIP to assign it to a slot`);
         onUpdate();
         this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, showAlternate);
       });

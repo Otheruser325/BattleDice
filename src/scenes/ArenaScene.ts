@@ -319,7 +319,7 @@ export class ArenaScene extends Phaser.Scene {
     ].filter((die): die is DiceDefinition => Boolean(die)).map((die) => [die.typeId, die]));
     this.skillIndex = buildSkillIndex([...this.definitions.values()]);
 
-    AudioManager.playMusic(this, 'arena-music');
+    AudioManager.playMusic(this, AUDIO_KEYS.menuMusic);
     this.createBackground(layout);
     this.createLobbyUI();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -978,7 +978,7 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns (+10 vs boss)\nReward: 7500 Tokens + 50 Chips`, () => {
+    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns — Deucifer joins at round 10 (+10 vs boss)\nReward: 7500 Tokens + 50 Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
@@ -1918,6 +1918,15 @@ export class ArenaScene extends Phaser.Scene {
 
     if (this.activeChallenge === 'deucifer') this.enemyDisplayName = 'Deucifer';
     if (this.activeChallenge === 'bossfight') this.enemyDisplayName = `${this.bossfightCurrentBoss} Lv.${this.bossfightLevel}`;
+    if (this.activeChallenge === 'bossfight') {
+      AudioManager.playMusic(this, this.bossfightCurrentBoss === 'Magician'
+        ? AUDIO_KEYS.magicianMusic
+        : this.bossfightCurrentBoss === 'Leon'
+        ? AUDIO_KEYS.leonMusic
+        : AUDIO_KEYS.basiliskMusic);
+    } else {
+      AudioManager.playMusic(this, AUDIO_KEYS.arenaMusic);
+    }
     this.generateEnemyPositions();
 
     this.turnText.setVisible(false);
@@ -3805,12 +3814,7 @@ export class ArenaScene extends Phaser.Scene {
     if (
       this.activeChallenge === 'deucifer' &&
       this.gameState.turn === 10 &&
-      !this.deuciferBossSummoned &&
-      this.deuciferMinionInstanceIds.size > 0 &&
-      [...this.deuciferMinionInstanceIds].every((instanceId) => {
-        const die = this.gameState.dice.find((candidate) => candidate.instanceId === instanceId);
-        return Boolean(die && !die.isDestroyed);
-      })
+      !this.deuciferBossSummoned
     ) {
       this.deuciferBossPending = true;
     }
@@ -3923,9 +3927,7 @@ export class ArenaScene extends Phaser.Scene {
     const playerLiving = getLivingDiceCount(this.gameState, 'player');
     const enemyLiving = getLivingDiceCount(this.gameState, 'enemy');
     if (this.activeChallenge === 'deucifer' && enemyLiving > 0) {
-      this.endGame('defeat', this.deuciferBossSummoned
-        ? 'Defeat: Deucifer and his minions survived the 10 bonus rounds.'
-        : 'Defeat: the minions survived round 10, so Deucifer never spawned.');
+      this.endGame('defeat', 'Defeat: Deucifer and his minions survived the 10 bonus rounds.');
       return;
     }
     if (playerLiving > enemyLiving) {
@@ -3995,7 +3997,7 @@ export class ArenaScene extends Phaser.Scene {
     };
   }
 
-  private getStatusStackCount(die: DiceInstanceState, effect: 'slow' | 'poison'): number {
+  private getStatusStackCount(die: DiceInstanceState, effect: 'slow' | 'poison' | 'fracture' | 'taunt' | 'stun' | 'berserk'): number {
     if (effect === 'poison') return this.getPoisonSummary(die.instanceId)?.stacks ?? 0;
     if (effect === 'slow') return this.getAttackDeltaSummary(die.instanceId)?.stacks ?? 0;
     return 0;
@@ -4151,7 +4153,7 @@ export class ArenaScene extends Phaser.Scene {
         resolvedState = this.gameState;
       }
     }
-    if (!before || !after?.isDestroyed) return { state: resolvedState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)), defeated: false };
+    if (!before || !after?.isDestroyed) return { state: resolvedState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)), defeated: false, critical: criticalDamage.critical };
     AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
     const reviveChance = before ? getRuntimeSkillMeta(this.getDefinitionForInstance(before)!).reviveChance : undefined;
     const canRevive = before ? nextState.dice.some((die) =>
@@ -4161,13 +4163,14 @@ export class ArenaScene extends Phaser.Scene {
       (die.zone === 'board' || die.zone === 'hand')
     ) : false;
     if (!reviveChance || !canRevive || Math.random() >= reviveChance) {
-      return { state: resolvedState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), defeated: true };
+      return { state: resolvedState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), defeated: true, critical: criticalDamage.critical };
     }
 
     this.animateSkullRevive(before);
     return {
       dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)),
       defeated: true,
+      critical: criticalDamage.critical,
       state: {
       ...nextState,
       dice: nextState.dice.map((die) => die.instanceId === instanceId
@@ -5191,7 +5194,7 @@ export class ArenaScene extends Phaser.Scene {
     AnimationManager.animateGrowthTurn(this, center.x, center.y, this.getDieAccentColor(die), broken);
   }
 
-  private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal' | 'fracture' | 'heatwave', attacker: DiceInstanceState, target: DiceInstanceState) {
+  private animateSkillEffect(kind: 'ice' | 'fire' | 'poison' | 'electric' | 'heal' | 'fracture' | 'heatwave' | 'physical', attacker: DiceInstanceState, target: DiceInstanceState) {
     const liveAttacker = this.gameState.dice.find((die) => die.instanceId === attacker.instanceId) ?? attacker;
     const liveTarget = this.gameState.dice.find((die) => die.instanceId === target.instanceId) ?? target;
     const attackerCenter = this.getTileCenter(liveAttacker);

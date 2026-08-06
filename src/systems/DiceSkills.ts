@@ -98,6 +98,7 @@ export interface DiceSkillRuntimeMeta {
   canSummonWizard?: boolean;
   hasLeonFuriousClaw?: boolean;
   hasLeonMightyRoar?: boolean;
+  hasLeonRage?: boolean;
   leonRageRate?: number;
   isLockedUntilClass?: number;
   disableManaGain?: boolean;
