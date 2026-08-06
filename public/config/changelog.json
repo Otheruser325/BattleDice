@@ -7,8 +7,9 @@
         "Casino: --Added table info renders to check how each table rewards you based on specific dice rolls --Diamonds can now be obtained from chests with a certain probability range (depending on type)",
         "Dice Catalogue: --Equipping a die on your loadout is now much easier — select the slot you want to put it on! --Added a new setting that enables the old-fashioned slot equip as before",
         "Challenge improvements: --Deucifer's Challenge: Boss phase turn limit exceeded from 15 -> 20 --Deucifer's Challenge: Boss phase now commences at the final turn even when all minions are not fully defeated",
+        "Bosses: --Added boss-specific music during boss fights",
         "Dice balance: --Iron: Fixed unintended interaction where its proportional current HP damage would scale with damage multipliers --Solitude: Fixed unintended interaction where its proportional max HP damage would scale with damage multipliers",
-        "Bug fixes: --fixed incorrect visual targeting for certain abilities --fixed Druid Dice's Uncontrollable Maul skill damage not being scalable with class --fixed Druid Dice not having a view-form modal"
+        "Bug fixes: --fixed incorrect visual targeting for certain abilities --fixed Druid Dice's Uncontrollable Maul skill damage not being scalable with class --fixed Druid Dice not having a view-form modal --fixed crit-specific skills performing worse than intended"
       ]
     },
     {
