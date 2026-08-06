@@ -147,10 +147,10 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, duration, onComplete: () => g.destroy() });
   }
 
-  static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind', tintOrOptions?: number | { tint?: number; animated?: boolean; duration?: number }) {
+  static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind' | 'physical', tintOrOptions?: number | { tint?: number; animated?: boolean; duration?: number }) {
     const options = typeof tintOrOptions === 'number' ? { tint: tintOrOptions } : (tintOrOptions ?? {});
     const g = scene.add.graphics().setDepth(255);
-    const color = options.tint ?? ({ ice: 0x8fd5ff, fire: 0xff8a4c, electric: 0xfff176, poison: 0x74d66f, wind: 0x9fe7d9 } as const)[kind];
+    const color = options.tint ?? ({ ice: 0x8fd5ff, fire: 0xff8a4c, electric: 0xfff176, poison: 0x74d66f, wind: 0x9fe7d9, physical: 0xe8eef4 } as const)[kind];
 
     if (kind === 'wind') {
       for (let i = 0; i < 3; i += 1) {
@@ -177,6 +177,11 @@ export class AnimationManager {
       g.lineTo(x - 2, y + 2);
       g.lineTo(x + 10, y - 4);
       g.strokePath();
+    } else if (kind === 'physical') {
+      g.fillStyle(0xe8eef4, 0.3);
+      g.fillCircle(x, y, 12);
+      g.lineStyle(3, 0xffffff, 0.9);
+      g.strokeCircle(x, y, 16);
     }
 
     if (options.animated === false) {

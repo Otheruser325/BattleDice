@@ -5,6 +5,9 @@ import { withBasePath } from './BuildEnv';
 export const AUDIO_KEYS = {
   menuMusic: 'menu-music',
   arenaMusic: 'arena-music',
+  magicianMusic: 'boss-music-magician',
+  leonMusic: 'boss-music-leon',
+  basiliskMusic: 'boss-music-basilisk',
   uiClick: 'ui-click',
   classUp: 'class-up',
   chestOpen: 'chest-open',
@@ -29,14 +32,23 @@ export const AUDIO_KEYS = {
   soulHarvest: 'dice_soul_skill_01'
 } as const;
 
-const MUSIC_KEYS = new Set<string>([AUDIO_KEYS.menuMusic, AUDIO_KEYS.arenaMusic]);
+const MUSIC_KEYS = new Set<string>([
+  AUDIO_KEYS.menuMusic,
+  AUDIO_KEYS.arenaMusic,
+  AUDIO_KEYS.magicianMusic,
+  AUDIO_KEYS.leonMusic,
+  AUDIO_KEYS.basiliskMusic
+]);
 
 export class AudioManager {
   private static currentMusicKey: string | null = null;
 
   static preload(scene: Phaser.Scene) {
     scene.load.audio(AUDIO_KEYS.menuMusic, withBasePath('assets/music/dice_league.mp3'));
-    scene.load.audio(AUDIO_KEYS.arenaMusic, withBasePath('assets/music/basilisk_theme.mp3'));
+    scene.load.audio(AUDIO_KEYS.arenaMusic, withBasePath('assets/music/arena_theme.mp3'));
+    scene.load.audio(AUDIO_KEYS.magicianMusic, withBasePath('assets/music/magician_theme.mp3'));
+    scene.load.audio(AUDIO_KEYS.leonMusic, withBasePath('assets/music/leon_theme.mp3'));
+    scene.load.audio(AUDIO_KEYS.basiliskMusic, withBasePath('assets/music/basilisk_theme.mp3'));
     scene.load.audio(AUDIO_KEYS.uiClick, withBasePath('assets/audio/button.mp3'));
     scene.load.audio(AUDIO_KEYS.classUp, withBasePath('assets/audio/combo_pair.mp3'));
     scene.load.audio(AUDIO_KEYS.chestOpen, withBasePath('assets/audio/dice.mp3'));
