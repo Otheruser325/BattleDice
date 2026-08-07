@@ -10,9 +10,9 @@
     {
       "type": "Passive",
       "title": "Distorting Appearance",
-      "description": "Enemy dice in Basilisk's range have a 50% chance to ignore attacking the boss outright until the next turn.",
+      "description": "Enemy dice in Basilisk's range have a 30% chance to ignore attacking the boss outright until the next turn.",
       "modifiers": {
-        "avoidBossAttackChance": 0.5,
+        "avoidAttackChance": 0.3,
         "notes": [
           "runtime:basiliskDistortion"
         ]

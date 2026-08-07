@@ -11,14 +11,12 @@
       "title": "Druidic Essence",
       "description": "Instead of attacking enemies, basic attacks heal the weakest ally for the full attack power, and orbs ricochet onto 1 nearby ally within 2 tiles.",
       "modifiers": {
-        "ricochetHealCount": 1,
-        "ricochetHealRange": 2,
+        "ricochetCount": 1,
+        "ricochetRange": 2,
+        "healOnAttack": true,
+		"onlyTargetsAllies": true,
         "skillTargeting": "Weakest",
-        "notes": [
-          "runtime:druidicEssence"
-        ],
-        "skillSfx": "dice_heal_skill",
-        "onlyTargetsAllies": true
+        "attackSfx": "dice_heal_skill"
       }
     },
     {
@@ -28,46 +26,42 @@
       "manaNeeded": 20,
       "modifiers": {
         "consumeAttack": false,
-        "transformSkillIndices": [
-          2,
-          3
-        ],
-        "transformTitle": "Druid Bear",
-        "alternateButton": "View Druid Bear",
-        "baseButton": "View Druid Dice",
-        "notes": [
-          "runtime:druidBearTransform"
-        ],
+        "transformToNextForm": true,
         "skillSfx": "dice_berserk_skill"
-      }
-    },
-    {
-      "type": "OnTransformed",
-      "title": "Uncontrollable Maul",
-      "description": "Teleports onto the nearest enemy and deals 250 damage upon mauling.",
-      "modifiers": {
-        "bearMaulDamage": 250,
-        "notes": [
-          "runtime:druidBearForm"
-        ]
-      }
-    },
-    {
-      "type": "Passive",
-      "title": "Critical Claw",
-      "description": "While in Bear Form, critical chance increases from 5% to 25%.",
-      "modifiers": {
-        "criticalChanceIncrease": 0.2,
-        "criticalDamageIncrease": 0,
-        "notes": [
-          "runtime:druidBearForm"
-        ]
       }
     }
   ],
-  "transformDescriptions": [
-    "Bear Form: 1500 HP, 50 damage, range 2. Teleports onto the nearest enemy and mauls for 250 damage, then basic attacks can critically strike."
-  ],
+  "transformStats": [{
+    "title": "Druid Bear",
+    "attack": 50,
+    "health": 1500,
+    "range": 2,
+    "targetingMode": "Nearest",
+    "accent": "#9b6a3a",
+    "recoveryRate": 1,
+    "skills": [
+      {
+        "type": "OnTransformed",
+        "title": "Uncontrollable Maul",
+        "description": "Teleports onto the nearest enemy and deals 250 damage upon mauling.",
+        "modifiers": {
+          "transformAttackDamage": 250
+        }
+      },
+      {
+        "type": "Passive",
+        "title": "Critical Claw",
+        "description": "While in Bear Form, critical chance is increased to 25%.",
+        "modifiers": {
+          "criticalChanceIncrease": 0.2,
+          "criticalDamageIncrease": 0
+        }
+      }
+    ]
+  }],
+  "transformFlags": ["bearForm"],
+  "alternateButton": ["View Bear Form"],
+  "baseButton": ["View Druid Dice"],
   "accent": "#6ec97a",
   "targetingMode": "Nearest"
 }

@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "v0.6.2-beta",
+      "date": "2026-08-07",
+      "notes": [
+	    "General changes: --added transformed log feedback for Transcendence Dice and Solar Dice --added skill visuals for Drizzle Dice --improved visual effect on Electric Dice",
+        "Bug fixes: --fixed an issue that caused a die's active skill to gain mana if the die has no way to attack during its turn --fixed Druid Dice's passive healing not being boostable by damage multipliers --fixed Transcendence beam targeting against backline infiltrators --fixed clunky Transcendence beam visual geometry --fixed both of Growth Dice growth visuals --fixed an issue that caused inconsistent transformed dice states --fixed the history log so it doesn't stutter while combat is initiated --stability fixes regarding transformation states"
+      ]
+    },
+    {
       "version": "v0.6.1-beta",
       "date": "2026-08-06",
       "notes": [

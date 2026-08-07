@@ -14,30 +14,32 @@
         "canConjureSouls": true,
         "conjureType": "ally",
         "maxSouls": 2,
-        "deathTransform": true,
-        "transformSkillIndex": 1,
-        "transformSkillIndices": [1],
-        "transformAccent": "#c06bdb",
-        "transformSymbol": "\u2620",
-        "transformTitle": "Death Dice \u2014 Instakill Form",
-        "alternateButton": "View Instakill Form",
-        "baseButton": "View Death Dice",
-        "skillSfx": "dice_death_skill_01",
-        "transformedAttackSfx": "dice_death_t_attack"
+        "transformSoulCount": 2
       }
-    },
-    {
+    }
+  ],
+  "transformStats": [{
+    "title": "Death Dice — Instakill Form",
+    "attackMultiplier": 1,
+    "healthMultiplier": 2,
+    "accent": "#c06bdb",
+    "symbol": "☠",
+    "recoveryRate": 1,
+    "skills": [{
       "type": "Active",
       "title": "Reaper's Touch",
       "description": "Instantly kills a target. Bosses instead take 10x Death Dice's attack as damage.",
       "manaNeeded": 12,
       "modifiers": {
         "deathInstakill": true,
-        "skillSfx": "dice_death_skill_01"
+        "skillSfx": "dice_death_skill_01",
+        "attackSfx": "dice_death_t_attack"
       }
-    }
-  ],
+    }]
+  }],
+  "transformFlags": ["instakillForm"],
+  "alternateButton": ["View Instakill Form"],
+  "baseButton": ["View Death Dice"],
   "accent": "#9b59b6",
-  "transformDescriptions": ["Instakill Form"] ,
   "targetingMode": "Nearest"
 }
