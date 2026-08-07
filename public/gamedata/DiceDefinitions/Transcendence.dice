@@ -11,7 +11,7 @@
       "title": "Perpendicular Beam",
       "description": "If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for 600 damage.",
       "modifiers": {
-        "beamDamage": 600,
+	    "beamDamage": 600,
         "transformPipCount": 6,
 		"attackSfx": "dice_transcendence_attack"
       }
@@ -22,12 +22,14 @@
     "range": 9,
     "accent": "#6ff6ff",
     "symbol": "✦",
+    "transformDuration": 1,
     "skills": [{
       "type": "Passive",
       "title": "Perpendicular Beam",
       "description": "If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for 600 damage.",
       "modifiers": {
         "beamDamage": 600,
+        "hasBeam": true,
 		"attackSfx": "dice_transcendence_t_attack"
       }
     }]

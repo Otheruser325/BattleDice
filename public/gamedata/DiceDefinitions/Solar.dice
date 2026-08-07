@@ -20,6 +20,7 @@
     "title": "Solar Dice — Solar Form",
     "accent": "#ffd34d",
     "symbol": "☀",
+    "transformDuration": 1,
     "skills": [
       {
         "type": "Passive",
