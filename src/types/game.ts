@@ -26,6 +26,7 @@ export interface DiceSkillModifier {
   lavaDamage?: number;
   lavaPoolPattern?: Array<[number, number]>;
   beamDamage?: number;
+  hasBeam?: boolean;
   pierceBehindRange?: number;
   pierceBehindDamage?: number;
   hammerDamage?: number;
@@ -129,6 +130,7 @@ export interface DiceTransformStats {
   attackMultiplier?: number;
   healthMultiplier?: number;
   recoveryRate?: number;
+  transformDuration?: number;
   symbol?: string;
   skills?: DiceSkillDefinition[];
 }

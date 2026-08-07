@@ -17,7 +17,6 @@ import {
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { applyClassProgression, applyTransformStats, getClassProgressionPreview, getClassScaledSkillDescription } from '../systems/ClassProgression';
-import { getInitialTransformIndex } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AchievementStore } from '../systems/AchievementStore';
@@ -30,10 +29,10 @@ function formatSkillType(type: string | undefined): string {
   return type.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number, definition?: DiceDefinition, skillDamageMultiplier = 1): string {
+function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number, definition?: DiceDefinition, skillDamageMultiplier = 1, descriptorDefinition?: DiceDefinition, sourceModifiers?: DiceSkillDefinition['modifiers']): string {
   const prefix = total > 1 ? `${index + 1}. ` : '';
   const manaLine = skill.type === 'Active' && (skill.manaNeeded ?? 0) > 0 ? `\nMana needed: ${skill.manaNeeded}` : '';
-  const description = definition ? getClassScaledSkillDescription(definition, skill, skillDamageMultiplier) : skill.description;
+  const description = definition ? getClassScaledSkillDescription(definition, skill, skillDamageMultiplier, sourceModifiers) : skill.description;
   return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${description}`;
 }
 
@@ -58,32 +57,58 @@ function formatSkillTypeLine(definition: DiceDefinition): string {
   return `${visibleSkills.length} SKILLS`;
 }
 
-export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1, transformIndex?: number): string {
+export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1, transformIndex?: number, descriptorDefinition?: DiceDefinition): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
   const visibleSkills = getFormSkills(definition, transformIndex).map((skill, index) => ({ skill, index }));
   if (visibleSkills.length === 0) return 'No skill';
-  return visibleSkills.map(({ skill }, visibleIndex) => formatSkillEntry(skill, visibleIndex, visibleSkills.length, {
-    ...definition,
-    skills: definition.skills
-  }, skillDamageMultiplier)).join('\n\n');
+  const sourceSkills = descriptorDefinition ? getFormSkills(descriptorDefinition, transformIndex) : [];
+  return visibleSkills.map(({ skill }, visibleIndex) => {
+    const sourceSkill = sourceSkills.find((candidate) => candidate.title === skill.title && candidate.type === skill.type)
+      ?? sourceSkills[visibleIndex];
+    return formatSkillEntry(skill, visibleIndex, visibleSkills.length, {
+      ...definition,
+      skills: definition.skills
+    }, skillDamageMultiplier, descriptorDefinition, sourceSkill?.modifiers);
+  }).join('\n\n');
 }
 
-export function getDiceAlternateFormLabel(die: DiceDefinition, showingAlternate: boolean): string | null {
-  const alternateButton = die.alternateButton?.[0];
-  const baseButton = die.baseButton?.[0];
-  if (!alternateButton || !baseButton || !die.transformStats?.length) return null;
-  return showingAlternate ? baseButton : alternateButton;
+function normalizeDiceFormIndex(die: DiceDefinition, formIndexOrShowAlternate: number | boolean): number {
+  const transformCount = die.transformStats?.length ?? 0;
+  const requested = typeof formIndexOrShowAlternate === 'boolean'
+    ? (formIndexOrShowAlternate ? 1 : 0)
+    : Math.floor(formIndexOrShowAlternate);
+  return Phaser.Math.Clamp(Number.isFinite(requested) ? requested : 0, 0, transformCount);
 }
 
-export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: number, showAlternate: boolean): DiceDefinition {
+export function getNextDiceFormIndex(die: DiceDefinition, formIndexOrShowAlternate: number | boolean): number {
+  const current = normalizeDiceFormIndex(die, formIndexOrShowAlternate);
+  const transformCount = die.transformStats?.length ?? 0;
+  return transformCount === 0 || current >= transformCount ? 0 : current + 1;
+}
+
+export function getDiceAlternateFormLabel(die: DiceDefinition, formIndexOrShowAlternate: number | boolean): string | null {
+  const transformCount = die.transformStats?.length ?? 0;
+  if (transformCount === 0 || !die.baseButton?.[0]) return null;
+  const nextIndex = getNextDiceFormIndex(die, formIndexOrShowAlternate);
+  if (nextIndex === 0) return die.baseButton[0];
+  return die.alternateButton?.[nextIndex - 1] ?? `View ${die.transformStats?.[nextIndex - 1]?.title ?? 'Next Form'}`;
+}
+
+export function getDiceBaseTitle(die: DiceDefinition): string {
+  const transformTitles = new Set((die.transformStats ?? []).map((stats) => stats.title).filter((title): title is string => Boolean(title)));
+  return transformTitles.has(die.title) ? (die.baseButton?.[0]?.replace(/^View\s+/i, '') ?? die.typeId) : die.title;
+}
+
+export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: number, formIndexOrShowAlternate: number | boolean): DiceDefinition {
   const scaled = applyClassProgression(die, classLevel);
-  if (!showAlternate) {
+  const formIndex = normalizeDiceFormIndex(scaled, formIndexOrShowAlternate);
+  if (formIndex === 0) {
     return scaled.transformStats?.length
       ? { ...scaled, typeId: die.typeId, skills: scaled.skills }
       : { ...scaled, typeId: die.typeId };
   }
 
-  const transformIndex = getInitialTransformIndex(scaled) ?? -1;
+  const transformIndex = formIndex - 1;
   const transformStats = transformIndex >= 0 ? scaled.transformStats?.[transformIndex] : undefined;
   if (!transformStats || transformIndex < 0) return { ...scaled, typeId: die.typeId };
 
@@ -97,11 +122,12 @@ export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: n
   };
 }
 
-export function getDiceClassProgressionPreview(die: DiceDefinition, classLevel: number, showAlternate: boolean) {
-  const transformIndex = getInitialTransformIndex(die);
-  const form = showAlternate && transformIndex !== undefined
-    ? applyTransformStats(die, transformIndex)
-    : die;
+export function getDiceClassProgressionPreview(die: DiceDefinition, classLevel: number, formIndexOrShowAlternate: number | boolean) {
+  const formIndex = normalizeDiceFormIndex(die, formIndexOrShowAlternate);
+  const transformIndex = formIndex > 0 ? formIndex - 1 : undefined;
+  const form = transformIndex === undefined
+    ? die
+    : applyTransformStats(die, transformIndex);
   return getClassProgressionPreview({ ...form, typeId: die.typeId }, classLevel);
 }
 
@@ -281,7 +307,7 @@ export class DiceScene extends Phaser.Scene {
       const header = this.add.rectangle(x + 160, cardTopY + 22, cardWidth, 42, locked ? 0x1a2535 : accent, locked ? 0.08 : 0.14);
 
       const titleColor = locked ? PALETTE.textMuted : die.accent;
-      const title = this.add.text(x + 20, y + 10, die.title.toUpperCase(), {
+      const title = this.add.text(x + 20, y + 10, getDiceBaseTitle(die).toUpperCase(), {
         fontFamily: 'Orbitron',
         fontSize: '20px',
         color: titleColor
@@ -428,12 +454,12 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     });
   }
 
-  private getAlternateFormLabel(die: ReturnType<typeof getAllDiceDefinitions>[number], showingAlternate: boolean): string | null {
-    return getDiceAlternateFormLabel(die, showingAlternate);
+  private getAlternateFormLabel(die: ReturnType<typeof getAllDiceDefinitions>[number], formIndex: number): string | null {
+    return getDiceAlternateFormLabel(die, formIndex);
   }
 
-  private getModalDisplayDie(die: ReturnType<typeof getAllDiceDefinitions>[number], classLevel: number, showAlternate: boolean) {
-    return getDiceModalDisplayDefinition(die, classLevel, showAlternate);
+  private getModalDisplayDie(die: ReturnType<typeof getAllDiceDefinitions>[number], classLevel: number, formIndex: number) {
+    return getDiceModalDisplayDefinition(die, classLevel, formIndex);
   }
 
   private openDiceModal(
@@ -441,7 +467,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     tokenText: Phaser.GameObjects.Text,
     onUpdate: () => void,
     onEquipRequest: () => void,
-    showAlternate = false
+    formIndex = 0
   ) {
     this.modalElements.forEach((el) => el.destroy());
     this.modalElements = [];
@@ -457,7 +483,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     if (!die) return;
     const progress = getDiceProgress(this, typeId);
     const displayDie = applyDiceTalent(
-      this.getModalDisplayDie(die, progress.classLevel, showAlternate),
+      this.getModalDisplayDie(die, progress.classLevel, formIndex),
       getEquippedTalentId(this, typeId)
     );
     const { width, height } = this.scale;
@@ -476,7 +502,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;
-    const skillTextContent = formatSkillInfo(displayDie, false, 1, showAlternate ? getInitialTransformIndex(die) : undefined);
+    const skillTextContent = formatSkillInfo(displayDie, false, 1, formIndex > 0 ? formIndex - 1 : undefined, die);
     const skillContainer = this.add.container(width / 2, skillViewportTop);
     const skill = this.add.text(0, 0, skillTextContent, {
       fontFamily: 'Orbitron',
@@ -537,7 +563,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       }).setOrigin(0.5);
       if (talentsAvailable) {
         talentBtn.setInteractive({ useHandCursor: true });
-        talentBtn.on('pointerdown', () => this.openTalentSelectionModal(typeId, tokenText, onUpdate, onEquipRequest, showAlternate));
+        talentBtn.on('pointerdown', () => this.openTalentSelectionModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex));
       }
     }
 
@@ -547,7 +573,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, alreadyEquipped ? 'EQUIPPED' : 'EQUIP', { fontFamily: 'Orbitron', fontSize: '11px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
-    const upgradePreview = getDiceClassProgressionPreview(die, cls, showAlternate);
+    const upgradePreview = getDiceClassProgressionPreview(die, cls, formIndex);
     const previewLines = [`ATK +${upgradePreview.attackDelta}`, `HP +${upgradePreview.healthDelta}`, ...upgradePreview.skillDeltas];
     const upgradeTooltip = this.add.text(width / 2 + 110, height / 2 + 62, previewLines.join('\n'), {
       fontFamily: 'Orbitron',
@@ -557,11 +583,11 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       backgroundColor: '#0d2231',
       padding: { left: 8, right: 8, top: 6, bottom: 6 }
     }).setOrigin(0.5).setVisible(false);
-    const alternateLabel = this.getAlternateFormLabel(die, showAlternate);
+    const alternateLabel = this.getAlternateFormLabel(die, formIndex);
     const altBtn = this.add.text(width / 2, height / 2 + 142, alternateLabel ?? '', { fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft, backgroundColor: '#224b66', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5);
     if (alternateLabel) {
       altBtn.setInteractive({ useHandCursor: true });
-      altBtn.on('pointerdown', () => this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, !showAlternate));
+      altBtn.on('pointerdown', () => this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, getNextDiceFormIndex(die, formIndex)));
     } else {
       altBtn.setVisible(false);
     }
@@ -584,7 +610,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         if (newClassLevel >= 15) AchievementStore.unlock(this, 'maximum_power');
         tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click a die, then EQUIP to assign it to a slot`);
         onUpdate();
-        this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, showAlternate);
+        this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
       });
     }
     assignBtn.on('pointerdown', () => {
@@ -620,7 +646,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     tokenText: Phaser.GameObjects.Text,
     onUpdate: () => void,
     onEquipRequest: () => void,
-    showAlternate: boolean
+    formIndex: number
   ) {
     this.modalElements.forEach((el) => el.destroy());
     this.modalElements = [];
@@ -664,7 +690,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       setEquippedTalentId(this, definition, talentId);
       close();
       onUpdate();
-      this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, showAlternate);
+      this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
     };
 
     definition.talents.forEach((talent, index) => {

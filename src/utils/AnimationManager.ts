@@ -134,17 +134,41 @@ export class AnimationManager {
     });
   }
 
-  static animateJudgmentHammer(scene: Phaser.Scene, x: number, y: number, duration = 420) {
-    const g = scene.add.graphics().setDepth(260);
-    g.lineStyle(2, 0xff4d4d, 0.95);
-    g.strokeCircle(x, y, 64 * 1.4);
-    g.fillStyle(0xff4d4d, 0.16);
-    g.fillCircle(x, y, 64 * 1.35);
-    g.fillStyle(0xd8d8d8, 0.95);
-    g.fillRect(x - 7, y - 100, 14, 52);
-    g.fillStyle(0x8c8c8c, 1);
-    g.fillRect(x - 20, y - 56, 40, 26);
-    scene.tweens.add({ targets: g, alpha: 0, duration, onComplete: () => g.destroy() });
+  static async animateJudgmentHammer(scene: Phaser.Scene, x: number, y: number, duration = 250): Promise<void> {
+    const impact = scene.add.graphics().setDepth(260).setAlpha(0);
+    impact.lineStyle(3, 0xff4d4d, 0.95);
+    impact.strokeCircle(x, y, 64 * 1.35);
+    impact.fillStyle(0xff4d4d, 0.18);
+    impact.fillCircle(x, y, 64 * 1.25);
+
+    const hammer = scene.add.graphics().setDepth(261).setPosition(x, y - 250);
+    hammer.fillStyle(0xd8d8d8, 0.98);
+    hammer.fillRect(-7, -190, 14, 180);
+    hammer.fillStyle(0x8c8c8c, 1);
+    hammer.fillRoundedRect(-34, -16, 68, 32, 7);
+    hammer.lineStyle(3, 0xffffff, 0.75);
+    hammer.strokeRoundedRect(-34, -16, 68, 32, 7);
+
+    await new Promise<void>((resolve) => {
+      scene.tweens.add({
+        targets: hammer,
+        y,
+        duration,
+        ease: 'Quad.easeIn',
+        onComplete: () => {
+          impact.setAlpha(1);
+          scene.tweens.add({
+            targets: impact,
+            alpha: 0,
+            scale: 1.18,
+            duration: 140,
+            onComplete: () => impact.destroy()
+          });
+          hammer.destroy();
+          resolve();
+        }
+      });
+    });
   }
 
   static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind' | 'physical', tintOrOptions?: number | { tint?: number; animated?: boolean; duration?: number }) {
@@ -203,13 +227,20 @@ export class AnimationManager {
     const splash = scene.add.graphics().setDepth(265).setPosition(x, y + 15).setAlpha(0);
     splash.lineStyle(2, tint, 0.9);
     splash.arc(0, 0, 16, Phaser.Math.DegToRad(205), Phaser.Math.DegToRad(335), false);
+    let completed = 0;
+    const finish = () => {
+      completed += 1;
+      if (completed < 2) return;
+      if (rain.active) rain.destroy();
+      if (splash.active) splash.destroy();
+    };
     scene.tweens.add({
       targets: rain,
       y: y + 8,
       alpha: 0,
       duration: 280,
       ease: 'Cubic.easeIn',
-      onComplete: () => rain.destroy()
+      onComplete: finish
     });
     scene.tweens.add({
       targets: splash,
@@ -218,7 +249,7 @@ export class AnimationManager {
       duration: 110,
       delay: 170,
       yoyo: true,
-      onComplete: () => splash.destroy()
+      onComplete: finish
     });
   }
 
@@ -397,23 +428,23 @@ export class AnimationManager {
     };
     redraw();
     scene.tweens.add({
-      targets: progress,
-      value: 1,
-      duration,
-      ease: 'Cubic.easeOut',
-      onUpdate: redraw,
-      onComplete: () => {
-        scene.tweens.add({
-          targets: [chain, glow],
-          alpha: 0,
-          duration: 100,
-          onComplete: () => {
-            chain.destroy();
-            glow.destroy();
-          }
-        });
-      }
-    });
+        targets: progress,
+        value: 1,
+        duration,
+        ease: 'Cubic.easeOut',
+        onUpdate: redraw,
+        onComplete: () => {
+          scene.tweens.add({
+            targets: [chain, glow],
+            alpha: 0,
+            duration: 100,
+            onComplete: () => {
+              chain.destroy();
+              glow.destroy();
+            }
+          });
+        }
+      });
   }
 
   static animateHeatwave(scene: Phaser.Scene, x: number, y: number) {
@@ -439,12 +470,35 @@ export class AnimationManager {
   }
 
   static animateDeathTransform(scene: Phaser.Scene, x: number, y: number) {
-    const g = scene.add.graphics().setDepth(260);
-    g.lineStyle(3, 0xc06bdb, 0.95);
-    g.strokeCircle(x, y, 20);
-    g.lineStyle(2, 0xe7b6ff, 0.95);
-    g.strokeCircle(x + 20, y, 6);
-    scene.tweens.add({ targets: g, alpha: 0, scale: 3, duration: 500, onComplete: () => g.destroy() });
+    this.animateTransform(scene, x, y, 0xc06bdb, '☠');
+  }
+
+  static animateTransform(scene: Phaser.Scene, x: number, y: number, color: number, symbol = '✦') {
+    const burst = scene.add.graphics().setDepth(260);
+    burst.lineStyle(3, color, 0.95);
+    burst.strokeCircle(x, y, 20);
+    burst.lineStyle(2, 0xffffff, 0.75);
+    burst.strokeCircle(x, y, 29);
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (Math.PI * 2 * index) / 8;
+      burst.lineBetween(x + Math.cos(angle) * 23, y + Math.sin(angle) * 23, x + Math.cos(angle) * 34, y + Math.sin(angle) * 34);
+    }
+    const label = scene.add.text(x, y, symbol, {
+      fontFamily: 'Orbitron',
+      fontSize: '22px',
+      color: `#${color.toString(16).padStart(6, '0')}`
+    }).setOrigin(0.5).setDepth(261);
+    scene.tweens.add({
+      targets: [burst, label],
+      alpha: 0,
+      scale: 1.8,
+      duration: 500,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        burst.destroy();
+        label.destroy();
+      }
+    });
   }
 
   static animateBatteryCharge(scene: Phaser.Scene, x: number, y: number, color: number) {

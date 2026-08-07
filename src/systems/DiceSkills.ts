@@ -46,6 +46,7 @@ export interface DiceSkillRuntimeMeta {
   lavaDamage?: number;
   lavaPoolPattern?: Array<[number, number]>;
   beamDamage?: number;
+  hasBeam?: boolean;
   pierceBehindRange?: number;
   activePierceBehindRange?: number;
   pierceBehindDamage?: number;
@@ -154,7 +155,7 @@ export function matchesTransformPipTrigger(definition: DiceDefinition, pips: num
   return trigger === 'odd' ? pips % 2 === 1 : trigger === 'even' ? pips % 2 === 0 : pips > 0;
 }
 
-function getAvailableTransformIndices(definition: DiceDefinition): number[] {
+export function getAvailableTransformIndices(definition: DiceDefinition): number[] {
   const stages = definition.transformStats;
   const flags = definition.transformFlags;
   if (!stages?.[0] || !flags?.[0] || Object.keys(stages[0]).length === 0) return [];
@@ -179,16 +180,29 @@ export function getPipTriggeredTransformIndex(definition: DiceDefinition, pips: 
 
   if (currentIndex < 0) {
     const baseTrigger = getTransformPipTrigger(definition);
+    const basePipCount = getTransformTriggerModifiers(definition)
+      .map((modifier) => (modifier as { transformPipCount?: number }).transformPipCount)
+      .find((value): value is number => typeof value === 'number' && Number.isInteger(value));
     const firstStage = available[0];
+    if (basePipCount !== undefined) return pips === basePipCount ? firstStage : undefined;
     const initialTriggerMatches = baseTrigger
       ? matchesTransformPipTrigger(definition, pips)
       : firstStage !== undefined && matchesTransformPipTrigger(definition, pips, firstStage);
     return initialTriggerMatches ? firstStage : undefined;
   }
 
-  if (!getTransformPipTrigger(definition, currentIndex) || !matchesTransformPipTrigger(definition, pips, currentIndex)) return undefined;
+  // A transformed form may carry its own trigger metadata; when it does not,
+  // inherit the base-form trigger so odd/even transformations work generically.
+  const currentTrigger = getTransformPipTrigger(definition, currentIndex) ?? getTransformPipTrigger(definition);
+  if (!currentTrigger) return undefined;
+  const matches = currentTrigger === 'odd'
+    ? pips % 2 === 1
+    : currentTrigger === 'even'
+      ? pips % 2 === 0
+      : pips > 0;
+  if (!matches) return undefined;
   const next = available.find((index) => index > currentIndex);
-  return next ?? available[available.length - 1] ?? currentIndex;
+  return next ?? currentIndex;
 }
 
 export function getSkillLockClass(skill: DiceSkillDefinition): number | undefined {
@@ -239,7 +253,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
   const parsedRate = rateNote ? Number(rateNote.split('=')[1]) : undefined;
   const currentRateNote = notes.find((note) => note.startsWith('runtime:targetCurrentHpBonusRate='));
   const parsedCurrentRate = currentRateNote ? Number(currentRateNote.split('=')[1]) : undefined;
-  const beamNote = notes.find((note) => note.startsWith('runtime:beamOnSix='));
+  const beamNote = allModifiers.flatMap((modifier) => modifier.notes ?? []).find((note) => note.startsWith('runtime:beamOnSix='));
   const parsedBeamDamage = beamNote ? Number(beamNote.split('=')[1]) : undefined;
 
   const getNoteValue = (prefix: string) => notes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
@@ -332,6 +346,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     lavaDamage: (activeModifiers as { lavaDamage?: number } | undefined)?.lavaDamage ?? (modifiers as { lavaDamage?: number } | undefined)?.lavaDamage,
     lavaPoolPattern: (activeModifiers as { lavaPoolPattern?: Array<[number, number]> } | undefined)?.lavaPoolPattern ?? (modifiers as { lavaPoolPattern?: Array<[number, number]> } | undefined)?.lavaPoolPattern,
     beamDamage: (modifiers as { beamDamage?: number } | undefined)?.beamDamage ?? (Number.isFinite(parsedBeamDamage) ? parsedBeamDamage : undefined),
+    hasBeam: Boolean(allModifiers.some((modifier) => (modifier as { hasBeam?: boolean }).hasBeam === true) || allNotes.some((note) => note === 'runtime:hasBeam')),
     pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
     activePierceBehindRange: (activeModifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
     pierceBehindDamage: (activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage ?? (modifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage,

@@ -199,6 +199,11 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     : getClassMultiplier(boundedClassLevel);
   const classUps = boundedClassLevel - 1;
 
+  const scaledDefinitionForDescription: DiceDefinition = {
+    ...definition,
+    attack: Math.max(1, Math.round(definition.attack * multiplier)),
+    health: Math.max(1, Math.round(definition.health * multiplier))
+  };
   const skills = definition.skills.map((skill) => {
     const source = skill.modifiers as DiceSkillModifier | undefined;
     if (!source) return skill;
@@ -287,7 +292,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     const scaledSkill = { ...skill, modifiers };
     return {
       ...scaledSkill,
-      description: getClassScaledSkillDescription(definition, scaledSkill, 1, source)
+      description: getClassScaledSkillDescription(scaledDefinitionForDescription, scaledSkill, 1, source)
     };
   });
 
@@ -317,7 +322,12 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
         modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
         modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
         const scaledSkill = { ...skill, modifiers };
-        return { ...scaledSkill, description: getClassScaledSkillDescription(definition, scaledSkill, 1, source) };
+        const descriptionDefinition: DiceDefinition = {
+          ...definition,
+          attack: Math.max(1, Math.round(definition.attack * multiplier)),
+          health: Math.max(1, Math.round(definition.health * multiplier))
+        };
+        return { ...scaledSkill, description: getClassScaledSkillDescription(descriptionDefinition, scaledSkill, 1, source) };
       })
     })),
     skills
@@ -329,7 +339,17 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 export function getClassScaledSkillDescription(definition: DiceDefinition, skill = definition.skills[0], skillDamageMultiplier = 1, sourceModifiers?: DiceSkillModifier): string {
   const modifiers = getModifier(skill);
   const description = skill?.description ?? '';
-  let dynamicDescription = getDynamicSkillDescription(description, sourceModifiers ?? modifiers, modifiers, skillDamageMultiplier);
+  const source = sourceModifiers ?? modifiers;
+  let dynamicDescription = getDynamicSkillDescription(description, source, modifiers, skillDamageMultiplier);
+  // Some transformed forms intentionally reuse the base description. If the
+  // transformed descriptor has no beamDamage of its own, use its current attack
+  // as the displayed beam value instead of leaking the base form's C1 value.
+  if (source.beamDamage === undefined && modifiers.beamDamage === undefined && (modifiers.hasBeam === true || /beam attacks?/i.test(description))) {
+    const displayAttack = definition.attack;
+    if (Number.isFinite(displayAttack)) {
+      dynamicDescription = replaceLiteralNumber(dynamicDescription, 600, scaleDisplayDamage(displayAttack, skillDamageMultiplier));
+    }
+  }
   if (modifiers.ricochetCount !== undefined) {
     dynamicDescription = formatDruidRicochetDescriptor(dynamicDescription, modifiers.ricochetCount);
   }

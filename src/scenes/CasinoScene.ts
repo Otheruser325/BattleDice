@@ -4,8 +4,7 @@ import { CasinoProgressStore, type FivesHandState } from '../systems/CasinoProgr
 import { evaluateFivesCombo, FIVES_REWARD_DESCRIPTIONS, type ChestType } from '../systems/CasinoComboTypes';
 import { AlertManager } from '../utils/AlertManager';
 import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, setDiamonds, DEFAULT_LOADOUT_IDS, getRangeLabel } from '../data/dice';
-import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition } from './DiceScene';
-import { getInitialTransformIndex } from '../systems/DiceSkills';
+import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition, getNextDiceFormIndex } from './DiceScene';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
@@ -191,6 +190,7 @@ export class CasinoScene extends Phaser.Scene {
     this.rollsLeft = hand.rollsLeft;
     this.tableActive = hand.tableActive;
     this.crapsTableActive = false;
+    if (this.hasCompletedFiveOfAKind()) this.locks = [true, true, true, true, true];
   }
 
   private clearFivesHandRuntime() {
@@ -233,7 +233,7 @@ export class CasinoScene extends Phaser.Scene {
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
       lock.on('pointerdown', () => {
-        if (!this.tableActive || this.rollsLeft >= 3 || this.rollsLeft <= 0 || this.isRolling) return;
+        if (!this.tableActive || this.rollsLeft >= 3 || this.rollsLeft <= 0 || this.isRolling || this.hasCompletedFiveOfAKind()) return;
         this.locks[i] = !this.locks[i];
         this.saveFivesHand();
         this.render();
@@ -345,8 +345,12 @@ export class CasinoScene extends Phaser.Scene {
     return this.getLockedDiceCount() * 5;
   }
 
+  private hasCompletedFiveOfAKind(): boolean {
+    return this.tableActive && this.rollsLeft < 3 && evaluateFivesCombo(this.dice).combo === 'Five-of-a-kind';
+  }
+
   private canRollFives(progress = CasinoProgressStore.get(this)): boolean {
-    return this.tableActive && this.rollsLeft > 0 && !this.isRolling && this.getLockedDiceCount() < 5 && progress.chips >= this.getLockedDiceRerollCost();
+    return this.tableActive && this.rollsLeft > 0 && !this.isRolling && !this.hasCompletedFiveOfAKind() && this.getLockedDiceCount() < 5 && progress.chips >= this.getLockedDiceRerollCost();
   }
 
   private drawChestSidebar(x: number, y: number) {
@@ -405,6 +409,7 @@ export class CasinoScene extends Phaser.Scene {
     const lockedCost = this.getLockedDiceRerollCost();
     const progress = CasinoProgressStore.get(this);
     if (!this.tableActive || this.rollsLeft <= 0 || this.isRolling) return;
+    if (this.hasCompletedFiveOfAKind()) return AlertManager.toast(this, { type: 'success', message: 'Five-of-a-kind secured — cash out to claim the jackpot.' });
     if (this.getLockedDiceCount() >= 5) return AlertManager.toast(this, { type: 'warning', message: 'Unlock at least one die before re-rolling.' });
     if (progress.chips < lockedCost) return AlertManager.toast(this, { type: 'warning', message: `Need ${lockedCost} chips to re-roll with locked dice.` });
     if (lockedCost > 0) CasinoProgressStore.mutate(this, (current) => ({ ...current, chips: current.chips - lockedCost }));
@@ -420,7 +425,8 @@ export class CasinoScene extends Phaser.Scene {
     }
 
     this.rollsLeft -= 1;
-    const rollSum = this.dice.reduce((a, b) => a + b, 0);
+    const combo = evaluateFivesCombo(this.dice);
+    if (combo.combo === 'Five-of-a-kind') this.locks = [true, true, true, true, true];
 
     CasinoProgressStore.mutate(this, (current) => ({
       ...current,
@@ -434,11 +440,13 @@ export class CasinoScene extends Phaser.Scene {
     }));
 
     try {
-      await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, { locked: this.locks, jitter: 8 });
+      await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, {
+        locked: isGuaranteed ? [false, false, false, false, false] : this.locks,
+        jitter: 8
+      });
     } finally {
       this.isRolling = false;
     }
-    const combo = evaluateFivesCombo(this.dice);
     const comboSfxKey = this.getComboSfxKey(combo.combo);
     if (comboSfxKey) AudioManager.playSfx(this, comboSfxKey);
     this.render();
@@ -888,13 +896,13 @@ export class CasinoScene extends Phaser.Scene {
     overlay.on('pointerdown', () => undefined);
   }
 
-  private showRewardDiceDetails(typeId: string, showAlternate = false) {
+  private showRewardDiceDetails(typeId: string, formIndex = 0) {
     const definition = getAllDiceDefinitions(this).find((d) => d.typeId === typeId);
     if (!definition) return;
     const progress = getDiceProgress(this, definition.typeId);
     const { width, height } = this.scale;
     
-    const displayDie = getDiceModalDisplayDefinition(definition, progress.classLevel, showAlternate);
+    const displayDie = getDiceModalDisplayDefinition(definition, progress.classLevel, formIndex);
     
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 540, 340, 0x163246, 0.96).setStrokeStyle(2, 0x4f7ea1);
@@ -952,7 +960,7 @@ export class CasinoScene extends Phaser.Scene {
     const skillViewportWidth = 470;
     const skillViewportHeight = 132;
     const skillViewportTop = height / 2 - 70;
-    const skillTextContent = formatSkillInfo(displayDie, false, 1, showAlternate ? getInitialTransformIndex(definition) : undefined);
+    const skillTextContent = formatSkillInfo(displayDie, false, 1, formIndex > 0 ? formIndex - 1 : undefined, definition);
     const skillContainer = this.add.container(width / 2, skillViewportTop);
     const skill = this.add.text(0, 0, skillTextContent, {
       fontFamily: 'Orbitron',
@@ -985,7 +993,7 @@ export class CasinoScene extends Phaser.Scene {
     this.input.on('wheel', wheelHandler);
     
     let close = () => undefined;
-    const alternateLabel = getDiceAlternateFormLabel(definition, showAlternate);
+    const alternateLabel = getDiceAlternateFormLabel(definition, formIndex);
     const altBtn = this.add.text(width / 2, height / 2 + 120, alternateLabel ?? '', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
@@ -997,7 +1005,7 @@ export class CasinoScene extends Phaser.Scene {
       altBtn.setInteractive({ useHandCursor: true });
       altBtn.on('pointerdown', () => {
         close();
-        this.showRewardDiceDetails(typeId, !showAlternate);
+        this.showRewardDiceDetails(typeId, getNextDiceFormIndex(definition, formIndex));
       });
     } else {
       altBtn.setVisible(false);
