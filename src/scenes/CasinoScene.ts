@@ -5,6 +5,7 @@ import { evaluateFivesCombo, FIVES_REWARD_DESCRIPTIONS, type ChestType } from '.
 import { AlertManager } from '../utils/AlertManager';
 import { canReceiveUsefulCopies, getAllDiceDefinitions, getDiceProgress, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, setDiamonds, DEFAULT_LOADOUT_IDS, getRangeLabel } from '../data/dice';
 import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition } from './DiceScene';
+import { getInitialTransformIndex } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
@@ -951,7 +952,7 @@ export class CasinoScene extends Phaser.Scene {
     const skillViewportWidth = 470;
     const skillViewportHeight = 132;
     const skillViewportTop = height / 2 - 70;
-    const skillTextContent = formatSkillInfo(displayDie);
+    const skillTextContent = formatSkillInfo(displayDie, false, 1, showAlternate ? getInitialTransformIndex(definition) : undefined);
     const skillContainer = this.add.container(width / 2, skillViewportTop);
     const skill = this.add.text(0, 0, skillTextContent, {
       fontFamily: 'Orbitron',

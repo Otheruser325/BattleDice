@@ -47,16 +47,11 @@ export interface DiceSkillModifier {
   maxSouls?: number;
   noMaxSouls?: boolean;
   soulBoostPercent?: number;
-  deathTransform?: boolean;
+  transformSoulCount?: number;
+  transformPipCount?: number;
   transformOnOddPip?: boolean;
+  transformOnEvenPip?: boolean;
   deathInstakill?: boolean;
-  transformSkillIndex?: number;
-  transformSkillIndices?: number[];
-  transformAccent?: string;
-  transformSymbol?: string;
-  transformTitle?: string;
-  alternateButton?: string;
-  baseButton?: string;
   meteorCount?: number;
   hasRandomOrientation?: boolean;
   checkForAdjacentAllies?: boolean;
@@ -78,19 +73,20 @@ export interface DiceSkillModifier {
   skillSfx?: string;
   hitsAllFoes?: boolean;
   hitsAllAllies?: boolean;
-  ricochetHealCount?: number;
-  ricochetHealRange?: number;
-  bearMaulDamage?: number;
+  ricochetCount?: number;
+  ricochetRange?: number;
+  healOnAttack?: boolean;
+  transformToNextForm?: boolean;
+  transformAttackDamage?: number;
   criticalChanceIncrease?: number;
   criticalDamageIncrease?: number;
   damageRatePerKill?: number;
-  avoidBossAttackChance?: number;
+  avoidAttackChance?: number;
   onKillMissingHealRate?: number;
   revengeThresholdRate?: number;
   revengeHits?: number;
   revengeDamage?: number;
   attackSfx?: string;
-  transformedAttackSfx?: string;
 }
 
 
@@ -120,6 +116,23 @@ export interface DiceTalentDefinition {
   modifiers?: DiceTalentModifier;
 }
 
+export interface DiceTransformStats {
+  title?: string;
+  attack?: number;
+  health?: number;
+  range?: number;
+  footprint?: number;
+  targetingMode?: DiceTargetingMode;
+  accent?: string;
+  rarity?: DiceRarity;
+  isBoss?: boolean;
+  attackMultiplier?: number;
+  healthMultiplier?: number;
+  recoveryRate?: number;
+  symbol?: string;
+  skills?: DiceSkillDefinition[];
+}
+
 export interface DiceDefinition {
   typeId: DiceTypeId;
   title: string;
@@ -133,7 +146,10 @@ export interface DiceDefinition {
   talents?: DiceTalentDefinition[];
   talentsComingSoon?: boolean;
   accent: string;
-  transformDescriptions?: string[];
+  alternateButton?: string[];
+  baseButton?: string[];
+  transformStats?: DiceTransformStats[];
+  transformFlags?: string[];
   isBoss?: boolean;
 }
 

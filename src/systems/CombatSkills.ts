@@ -80,7 +80,7 @@ export interface ActiveEffectResult extends SkillEffectResult {
   attackDeltaMaxStacks?: number;
   statusEffect?: DiceStatusEffect;
   needsMana?: boolean;
-  transformToBear?: boolean;
+  transformToAlternateForm?: boolean;
   hitsAllFoes?: boolean;
   hitsAllAllies?: boolean;
 }
@@ -415,9 +415,9 @@ export function executeActiveSkillEffects(
     return result;
   }
 
-  if (meta.hasDruidBearTransform) {
+  if (meta.transformToNextForm) {
     if (canCastActive) {
-      result.transformToBear = true;
+      result.transformToAlternateForm = true;
       return result;
     }
     if (manaNeeded > 0) result.needsMana = true;

@@ -4,6 +4,8 @@ import { getBoardSideCombatDistance } from './CombatRange';
 const STATUS_EFFECTS: DiceStatusEffect[] = ['slow', 'poison', 'fracture', 'taunt', 'stun', 'berserk'];
 
 export interface DiceSkillRuntimeMeta {
+  transformFlags: string[];
+  [key: `has${string}`]: boolean | undefined;
   randomDamage?: { min: number; max: number };
   targetMaxHpBonusRate?: number;
   targetCurrentHpBonusRate?: number;
@@ -62,32 +64,25 @@ export interface DiceSkillRuntimeMeta {
   checkForAdjacentAllies?: boolean;
   checkForAdjacentFoes?: boolean;
   hasJudgmentHammer?: boolean;
-  hasTranscendence?: boolean;
   hasMeteorStrike?: boolean;
-  hasDeathTransform?: boolean;
+  transformSoulCount?: number;
+  transformPipCount?: number;
   transformOnOddPip?: boolean;
+  transformOnEvenPip?: boolean;
   hasDeathInstakill?: boolean;
   deathInstakillMana?: number;
   hasGrowthPermanent?: boolean;
   hasBrokenGrowthPermanent?: boolean;
-  transformAccent?: string;
-  transformSymbol?: string;
-  transformTitle?: string;
-  alternateButton?: string;
-  baseButton?: string;
   skillSfxKey?: string;
   activeSkillSfxKey?: string;
   passiveSkillSfxKey?: string;
   attackSfxKey?: string;
-  transformedAttackSfxKey?: string;
   canConjureSouls?: boolean;
   conjureType?: 'ally' | 'enemy' | 'both';
   maxSouls?: number;
   noMaxSouls?: boolean;
   soulBoostPercent?: number;
   hasSoulHarvestPassive?: boolean;
-  transformSkillIndex?: number;
-  transformSkillIndices?: number[];
   onTransformedExtraAttacks?: number;
   onTransformedDurationTurns?: number;
   deuciferOddSiphonRate?: number;
@@ -105,22 +100,95 @@ export interface DiceSkillRuntimeMeta {
   consumeAttack?: boolean;
   hitsAllFoes?: boolean;
   hitsAllAllies?: boolean;
-  hasDruidicEssence?: boolean;
-  hasDruidBearTransform?: boolean;
-  hasDruidBearForm?: boolean;
-  ricochetHealCount?: number;
-  ricochetHealRange?: number;
-  bearMaulDamage?: number;
+  ricochetCount?: number;
+  ricochetRange?: number;
+  healOnAttack?: boolean;
+  transformToNextForm?: boolean;
+  transformAttackDamage?: number;
   criticalChanceIncrease?: number;
   criticalDamageIncrease?: number;
   damageRatePerKill?: number;
-  avoidBossAttackChance?: number;
+  avoidAttackChance?: number;
   onKillMissingHealRate?: number;
   revengeThresholdRate?: number;
   revengeHits?: number;
   revengeDamage?: number;
   growthDelta?: number;
   brokenGrowthDelta?: number;
+}
+
+export function hasTransformFlag(meta: DiceSkillRuntimeMeta, flag: string): boolean {
+  return meta.transformFlags.includes(flag);
+}
+
+export function getTransformFlagName(flag: string): `has${string}` {
+  return `has${flag.slice(0, 1).toUpperCase()}${flag.slice(1)}` as `has${string}`;
+}
+
+export function getTransformIndex(meta: DiceSkillRuntimeMeta, flag: string): number {
+  return meta.transformFlags.indexOf(flag);
+}
+
+export type TransformPipTrigger = 'odd' | 'even' | 'both';
+
+function getTransformTriggerModifiers(definition: DiceDefinition, transformIndex?: number) {
+  const skills = transformIndex === undefined
+    ? definition.skills
+    : definition.transformStats?.[transformIndex]?.skills ?? [];
+  return skills.map((skill) => skill.modifiers).filter((modifiers): modifiers is NonNullable<typeof modifiers> => Boolean(modifiers));
+}
+
+export function getTransformPipTrigger(definition: DiceDefinition, transformIndex?: number): TransformPipTrigger | undefined {
+  const modifiers = getTransformTriggerModifiers(definition, transformIndex);
+  const odd = modifiers.some((modifier) => modifier.transformOnOddPip === true);
+  const even = modifiers.some((modifier) => modifier.transformOnEvenPip === true);
+  if (odd && even) return 'both';
+  if (odd) return 'odd';
+  if (even) return 'even';
+  return undefined;
+}
+
+export function matchesTransformPipTrigger(definition: DiceDefinition, pips: number, transformIndex?: number): boolean {
+  const trigger = getTransformPipTrigger(definition, transformIndex);
+  if (!trigger || pips <= 0) return false;
+  return trigger === 'odd' ? pips % 2 === 1 : trigger === 'even' ? pips % 2 === 0 : pips > 0;
+}
+
+function getAvailableTransformIndices(definition: DiceDefinition): number[] {
+  const stages = definition.transformStats;
+  const flags = definition.transformFlags;
+  if (!stages?.[0] || !flags?.[0] || Object.keys(stages[0]).length === 0) return [];
+
+  const available: number[] = [];
+  for (let index = 0; index < stages.length; index++) {
+    const stats = stages[index];
+    if (!stats || !flags[index] || Object.keys(stats).length === 0) break;
+    available.push(index);
+  }
+  return available;
+}
+
+export function getInitialTransformIndex(definition: DiceDefinition): number | undefined {
+  const available = getAvailableTransformIndices(definition);
+  return available[0];
+}
+
+export function getPipTriggeredTransformIndex(definition: DiceDefinition, pips: number, currentIndex = -1): number | undefined {
+  const available = getAvailableTransformIndices(definition);
+  if (available.length === 0 || pips <= 0) return undefined;
+
+  if (currentIndex < 0) {
+    const baseTrigger = getTransformPipTrigger(definition);
+    const firstStage = available[0];
+    const initialTriggerMatches = baseTrigger
+      ? matchesTransformPipTrigger(definition, pips)
+      : firstStage !== undefined && matchesTransformPipTrigger(definition, pips, firstStage);
+    return initialTriggerMatches ? firstStage : undefined;
+  }
+
+  if (!getTransformPipTrigger(definition, currentIndex) || !matchesTransformPipTrigger(definition, pips, currentIndex)) return undefined;
+  const next = available.find((index) => index > currentIndex);
+  return next ?? available[available.length - 1] ?? currentIndex;
 }
 
 export function getSkillLockClass(skill: DiceSkillDefinition): number | undefined {
@@ -196,16 +264,6 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     .map((modifier) => parseStatusEffect((modifier as { statusEffect?: string }).statusEffect))
     .filter((effect): effect is DiceStatusEffect => Boolean(effect))
     .concat(statusNoteEffects))];
-  const transformSkillIndices = (() => {
-    const explicit = (modifiers as { transformSkillIndices?: number[] } | undefined)?.transformSkillIndices
-      ?? (activeModifiers as { transformSkillIndices?: number[] } | undefined)?.transformSkillIndices;
-    if (Array.isArray(explicit)) {
-      return explicit.filter((index) => Number.isInteger(index) && index >= 0);
-    }
-    const single = (modifiers as { transformSkillIndex?: number } | undefined)?.transformSkillIndex
-      ?? (activeModifiers as { transformSkillIndex?: number } | undefined)?.transformSkillIndex;
-    return Number.isInteger(single) && single >= 0 ? [single] : [];
-  })();
   const tauntModifiers = allModifiers.find((modifier) =>
     parseStatusEffect((modifier as { statusEffect?: string }).statusEffect) === 'taunt'
     || (modifier.notes ?? []).includes('runtime:shieldTaunt'));
@@ -220,14 +278,19 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     .map((modifier) => (modifier as { heatwaveDamageRate?: number }).heatwaveDamageRate)
     .find((rate): rate is number => typeof rate === 'number' && Number.isFinite(rate));
   const isLockedUntilClass = getSkillLockClass(selectedActiveSkill ?? primary);
-  const isDruidBearDefinition = definition.typeId === 'Druid'
-    && definition.skills.length > 0
-    && definition.skills.every((skill) => (skill.modifiers?.notes ?? []).includes('runtime:druidBearForm'));
-  const criticalModifiers = isDruidBearDefinition
-    ? allModifiers.find((modifier) => (modifier.notes ?? []).includes('runtime:druidBearForm'))
-    : modifiers;
+  const criticalModifiers = allModifiers.find((modifier) =>
+    (modifier as { criticalChanceIncrease?: number }).criticalChanceIncrease !== undefined
+    || (modifier as { criticalDamageIncrease?: number }).criticalDamageIncrease !== undefined
+  ) ?? modifiers;
+
+  const transformFlags = [...(definition.transformFlags ?? [])];
+  const generatedTransformBooleans = Object.fromEntries(
+    transformFlags.map((flag) => [getTransformFlagName(flag), true])
+  ) as Record<string, boolean>;
 
   return {
+    transformFlags,
+    ...generatedTransformBooleans,
     randomDamage: range ? { min: range[0], max: range[1] } : undefined,
     targetMaxHpBonusRate: explicitRate ?? (Number.isFinite(parsedRate) ? parsedRate : undefined),
     targetCurrentHpBonusRate: explicitCurrentRate ?? (Number.isFinite(parsedCurrentRate) ? parsedCurrentRate : undefined),
@@ -293,44 +356,31 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     checkForAdjacentAllies: Boolean((modifiers as { checkForAdjacentAllies?: boolean } | undefined)?.checkForAdjacentAllies ?? notes.includes('runtime:solitudePreCombat')),
     checkForAdjacentFoes: Boolean((modifiers as { checkForAdjacentFoes?: boolean } | undefined)?.checkForAdjacentFoes),
     hasJudgmentHammer: notes.includes('runtime:judgmentHammer'),
-    hasTranscendence: notes.includes('runtime:hasTranscendence') || definition.typeId === 'Transcendence',
     hasMeteorStrike: Boolean(allModifiers.some((modifier) => (modifier as { meteorDamage?: number }).meteorDamage !== undefined) || allNotes.includes('runtime:meteorStrike')),
-    hasDeathTransform: Boolean((modifiers as { deathTransform?: boolean } | undefined)?.deathTransform ?? notes.includes('runtime:deathTransform')),
+    transformSoulCount: allModifiers
+      .map((modifier) => (modifier as { transformSoulCount?: number }).transformSoulCount)
+      .find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    transformPipCount: allModifiers
+      .map((modifier) => (modifier as { transformPipCount?: number }).transformPipCount)
+      .find((value): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 6),
     transformOnOddPip: Boolean((modifiers as { transformOnOddPip?: boolean } | undefined)?.transformOnOddPip),
+    transformOnEvenPip: Boolean((modifiers as { transformOnEvenPip?: boolean } | undefined)?.transformOnEvenPip),
     hasDeathInstakill,
     deathInstakillMana: hasDeathInstakill ? (activeSkill?.manaNeeded ?? primary?.manaNeeded ?? 12) : undefined,
     hasGrowthPermanent: modifiers?.growthDelta !== undefined || notes.includes('runtime:growthPermanent'),
     hasBrokenGrowthPermanent: modifiers?.brokenGrowthDelta !== undefined || notes.includes('runtime:brokenGrowthPermanent'),
     growthDelta: modifiers?.growthDelta,
     brokenGrowthDelta: modifiers?.brokenGrowthDelta,
-     transformAccent: (modifiers as { transformAccent?: string } | undefined)?.transformAccent
-       ?? (activeModifiers as { transformAccent?: string } | undefined)?.transformAccent
-       ?? getActiveNoteValue('runtime:transformAccent=') ?? getNoteValue('runtime:transformAccent='),
-     transformSymbol: (modifiers as { transformSymbol?: string } | undefined)?.transformSymbol
-       ?? (activeModifiers as { transformSymbol?: string } | undefined)?.transformSymbol
-       ?? getActiveNoteValue('runtime:transformSymbol=') ?? getNoteValue('runtime:transformSymbol='),
-     transformTitle: (modifiers as { transformTitle?: string } | undefined)?.transformTitle
-       ?? (activeModifiers as { transformTitle?: string } | undefined)?.transformTitle
-       ?? getActiveNoteValue('runtime:transformTitle=') ?? getNoteValue('runtime:transformTitle='),
-     alternateButton: (modifiers as { alternateButton?: string } | undefined)?.alternateButton
-       ?? (activeModifiers as { alternateButton?: string } | undefined)?.alternateButton
-       ?? getActiveNoteValue('runtime:alternateButton=') ?? getNoteValue('runtime:alternateButton='),
-     baseButton: (modifiers as { baseButton?: string } | undefined)?.baseButton
-       ?? (activeModifiers as { baseButton?: string } | undefined)?.baseButton
-       ?? getActiveNoteValue('runtime:baseButton='),
     skillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx=') ?? getAnyNoteValue('runtime:skillSfx=') ?? getNoteValue('runtime:skillSfx='),
     activeSkillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx='),
     passiveSkillSfxKey: (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getNoteValue('runtime:skillSfx='),
     attackSfxKey: (modifiers as { attackSfx?: string } | undefined)?.attackSfx ?? getNoteValue('runtime:attackSfx='),
-    transformedAttackSfxKey: (modifiers as { transformedAttackSfx?: string } | undefined)?.transformedAttackSfx ?? getNoteValue('runtime:attackSfxTransformed='),
     canConjureSouls: Boolean((modifiers as { canConjureSouls?: boolean } | undefined)?.canConjureSouls),
     conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' | 'both' } | undefined)?.conjureType),
     maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls,
     noMaxSouls: Boolean((modifiers as { noMaxSouls?: boolean } | undefined)?.noMaxSouls),
     soulBoostPercent: (modifiers as { soulBoostPercent?: number } | undefined)?.soulBoostPercent,
     hasSoulHarvestPassive: Boolean((modifiers as { soulBoostPercent?: number } | undefined)?.soulBoostPercent !== undefined || notes.includes('runtime:soulHarvestPassive')),
-    transformSkillIndex: transformSkillIndices[0],
-    transformSkillIndices,
     onTransformedExtraAttacks: onTransformedModifiers?.extraAttacks ?? 0,
     onTransformedDurationTurns: onTransformedModifiers?.durationTurns,
     deuciferOddSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
@@ -341,16 +391,19 @@ export function getRuntimeSkillMeta(definition: DiceDefinition, activeSkillIndex
     canSummonWizard: allNotes.includes('runtime:magicianSummonWizard'),
     hitsAllFoes: Boolean((activeModifiers as { hitsAllFoes?: boolean } | undefined)?.hitsAllFoes),
     hitsAllAllies: Boolean((activeModifiers as { hitsAllAllies?: boolean } | undefined)?.hitsAllAllies),
-    hasDruidicEssence: allNotes.includes('runtime:druidicEssence'),
-     hasDruidBearTransform: allNotes.includes('runtime:druidBearTransform'),
-     hasDruidBearForm: allNotes.includes('runtime:druidBearForm'),
-    ricochetHealCount: (modifiers as { ricochetHealCount?: number } | undefined)?.ricochetHealCount,
-    ricochetHealRange: (modifiers as { ricochetHealRange?: number } | undefined)?.ricochetHealRange,
-    bearMaulDamage: (modifiers as { bearMaulDamage?: number } | undefined)?.bearMaulDamage,
+    ricochetCount: allModifiers
+      .map((modifier) => (modifier as { ricochetCount?: number }).ricochetCount)
+      .find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    ricochetRange: allModifiers
+      .map((modifier) => (modifier as { ricochetRange?: number }).ricochetRange)
+      .find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    healOnAttack: Boolean(allModifiers.some((modifier) => (modifier as { healOnAttack?: boolean }).healOnAttack === true)),
+    transformToNextForm: Boolean(allModifiers.some((modifier) => (modifier as { transformToNextForm?: boolean }).transformToNextForm === true)),
+    transformAttackDamage: (modifiers as { transformAttackDamage?: number } | undefined)?.transformAttackDamage,
      criticalChanceIncrease: (criticalModifiers as { criticalChanceIncrease?: number } | undefined)?.criticalChanceIncrease,
      criticalDamageIncrease: (criticalModifiers as { criticalDamageIncrease?: number } | undefined)?.criticalDamageIncrease,
     damageRatePerKill: (modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill,
-    avoidBossAttackChance: (modifiers as { avoidBossAttackChance?: number } | undefined)?.avoidBossAttackChance,
+    avoidAttackChance: (modifiers as { avoidAttackChance?: number } | undefined)?.avoidAttackChance,
     onKillMissingHealRate: (modifiers as { onKillMissingHealRate?: number } | undefined)?.onKillMissingHealRate,
     revengeThresholdRate: (modifiers as { revengeThresholdRate?: number } | undefined)?.revengeThresholdRate,
     revengeHits: (modifiers as { revengeHits?: number } | undefined)?.revengeHits,

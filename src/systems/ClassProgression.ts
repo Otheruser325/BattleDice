@@ -1,4 +1,39 @@
-import type { DiceDefinition, DiceSkillDefinition, DiceSkillModifier } from '../types/game';
+import type { DiceDefinition, DiceSkillDefinition, DiceSkillModifier, DiceTransformStats } from '../types/game';
+
+export function getTransformStats(definition: DiceDefinition, transformIndex = 0): DiceTransformStats | undefined {
+  return definition.transformStats?.[transformIndex];
+}
+
+export function getTransformRecoveryRate(definition: DiceDefinition, transformIndex = 0): number | undefined {
+  const rate = getTransformStats(definition, transformIndex)?.recoveryRate;
+  return rate === undefined ? undefined : Math.max(0, Math.min(1, rate));
+}
+
+export function applyTransformStats(definition: DiceDefinition, transformIndex = 0): DiceDefinition {
+  const stats = getTransformStats(definition, transformIndex);
+  if (!stats) return definition;
+  if (stats.title && definition.title === stats.title) return definition;
+  const transformedSkills = stats.skills ?? definition.skills;
+  const skills = transformedSkills.map((skill) => ({ ...skill }));
+
+  return {
+    ...definition,
+    title: stats.title ?? definition.title,
+    attack: Math.max(1, Math.round((stats.attack ?? definition.attack) * (stats.attackMultiplier ?? 1))),
+    health: Math.max(1, Math.round((stats.health ?? definition.health) * (stats.healthMultiplier ?? 1))),
+    range: stats.range ?? definition.range,
+    footprint: stats.footprint ?? definition.footprint,
+    targetingMode: stats.targetingMode ?? definition.targetingMode,
+    accent: stats.accent ?? definition.accent,
+    rarity: stats.rarity ?? definition.rarity,
+    isBoss: stats.isBoss ?? definition.isBoss,
+    skills,
+    transformStats: definition.transformStats,
+    transformFlags: definition.transformFlags,
+    alternateButton: definition.alternateButton,
+    baseButton: definition.baseButton
+  };
+}
 
 export const MAX_CLASS_LEVEL = 15;
 export const CLASS_UP_STAT_MULTIPLIER = 1.1;
@@ -83,6 +118,11 @@ function replaceLiteralPercent(text: string, sourceValue: number | undefined, di
   return text.replace(new RegExp(escapeRegExp(from), 'g'), to);
 }
 
+function formatDruidRicochetDescriptor(description: string, ricochetCount: number | undefined): string {
+  if (ricochetCount === undefined || ricochetCount <= 1) return description;
+  return description.replace(/\d+\s+nearby\s+ally\b/g, `${formatValue(ricochetCount)} nearby allies`);
+}
+
 function replaceTurnCount(text: string, sourceValue: number | undefined, displayValue: number | undefined): string {
   if (sourceValue === undefined || displayValue === undefined || !Number.isFinite(sourceValue) || !Number.isFinite(displayValue)) return text;
   const from = formatValue(sourceValue);
@@ -109,7 +149,7 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
     'pierceBehindDamage',
     'hammerDamage',
     'shield',
-    'bearMaulDamage'
+    'transformAttackDamage'
   ];
 
   flatDamageKeys.forEach((key) => {
@@ -130,6 +170,7 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
   text = replaceLiteralNumber(text, source.attackCountIncrease, display.attackCountIncrease);
   text = replaceLiteralNumber(text, source.growthDelta, display.growthDelta);
   text = replaceLiteralNumber(text, source.brokenGrowthDelta, display.brokenGrowthDelta);
+  text = replaceLiteralNumber(text, source.meteorCount, display.meteorCount);
 
   text = replaceLiteralPercent(text, source.reviveChance, display.reviveChance);
   text = replaceLiteralPercent(text, source.targetMaxHpBonusRate, display.targetMaxHpBonusRate);
@@ -141,6 +182,12 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
   text = replaceLiteralPercent(text, source.berserkDamageMultiplier !== undefined ? source.berserkDamageMultiplier - 1 : undefined, display.berserkDamageMultiplier !== undefined ? display.berserkDamageMultiplier - 1 : undefined);
   text = replaceLiteralPercent(text, source.soulBoostPercent, display.soulBoostPercent);
   text = replaceLiteralPercent(text, source.armorReduction, display.armorReduction);
+  text = replaceLiteralPercent(text, source.criticalChanceIncrease, display.criticalChanceIncrease);
+  text = replaceLiteralPercent(text, source.criticalDamageIncrease, display.criticalDamageIncrease);
+  text = replaceLiteralPercent(text, source.damageRatePerKill, display.damageRatePerKill);
+  text = replaceLiteralPercent(text, source.onKillMissingHealRate, display.onKillMissingHealRate);
+  text = replaceLiteralPercent(text, source.revengeThresholdRate, display.revengeThresholdRate);
+  text = replaceLiteralPercent(text, source.avoidAttackChance, display.avoidAttackChance);
 
   return text;
 }
@@ -168,7 +215,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
     modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
     modifiers.shield = scaleFlatDamage(source.shield, multiplier);
-    modifiers.bearMaulDamage = scaleFlatDamage(source.bearMaulDamage, multiplier);
+    modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
     modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
 
     if (definition.typeId === 'Skull' && source.reviveChance !== undefined) {
@@ -226,11 +273,15 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     }
 
     if (definition.typeId === 'Basilisk') {
-      if (source.avoidBossAttackChance !== undefined) modifiers.avoidBossAttackChance = Math.min(0.95, source.avoidBossAttackChance + 0.02 * classUps);
+      if (source.avoidAttackChance !== undefined) modifiers.avoidAttackChance = Math.min(0.95, source.avoidAttackChance + 0.03 * classUps);
       if (source.onKillMissingHealRate !== undefined) modifiers.onKillMissingHealRate = Math.min(1, source.onKillMissingHealRate + 0.015 * classUps);
       if (source.revengeThresholdRate !== undefined) modifiers.revengeThresholdRate = Math.min(0.95, source.revengeThresholdRate + 0.01 * classUps);
       if (source.revengeHits !== undefined) modifiers.revengeHits = source.revengeHits + Math.floor(classUps / 6);
       modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
+    }
+
+    if (source.ricochetCount !== undefined && definition.typeId === 'Druid' && boundedClassLevel >= 10) {
+      modifiers.ricochetCount = source.ricochetCount + 1;
     }
 
     const scaledSkill = { ...skill, modifiers };
@@ -244,6 +295,31 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     ...definition,
     attack: Math.max(1, Math.round(definition.attack * multiplier)),
     health: Math.max(1, Math.round(definition.health * multiplier)),
+    transformStats: definition.transformStats?.map((stats) => ({
+      ...stats,
+      attack: stats.attack === undefined ? undefined : Math.max(1, Math.round(stats.attack * multiplier)),
+      health: stats.health === undefined ? undefined : Math.max(1, Math.round(stats.health * multiplier)),
+      skills: stats.skills?.map((skill) => {
+        const source = skill.modifiers;
+        if (!source) return skill;
+        const modifiers: DiceSkillModifier = { ...source };
+        modifiers.splashDamage = scaleFlatDamage(source.splashDamage, multiplier);
+        modifiers.chainDamage = scaleFlatDamage(source.chainDamage, multiplier);
+        modifiers.poisonDamage = scaleFlatDamage(source.poisonDamage, multiplier);
+        modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
+        modifiers.activeHeal = scaleFlatDamage(source.activeHeal, multiplier);
+        modifiers.meteorDamage = scaleFlatDamage(source.meteorDamage, multiplier);
+        modifiers.lavaDamage = scaleFlatDamage(source.lavaDamage, multiplier);
+        modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
+        modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
+        modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
+        modifiers.shield = scaleFlatDamage(source.shield, multiplier);
+        modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
+        modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
+        const scaledSkill = { ...skill, modifiers };
+        return { ...scaledSkill, description: getClassScaledSkillDescription(definition, scaledSkill, 1, source) };
+      })
+    })),
     skills
   };
 
@@ -253,7 +329,10 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 export function getClassScaledSkillDescription(definition: DiceDefinition, skill = definition.skills[0], skillDamageMultiplier = 1, sourceModifiers?: DiceSkillModifier): string {
   const modifiers = getModifier(skill);
   const description = skill?.description ?? '';
-  const dynamicDescription = getDynamicSkillDescription(description, sourceModifiers ?? modifiers, modifiers, skillDamageMultiplier);
+  let dynamicDescription = getDynamicSkillDescription(description, sourceModifiers ?? modifiers, modifiers, skillDamageMultiplier);
+  if (modifiers.ricochetCount !== undefined) {
+    dynamicDescription = formatDruidRicochetDescriptor(dynamicDescription, modifiers.ricochetCount);
+  }
   if (dynamicDescription.trim() && dynamicDescription !== description) return dynamicDescription;
   if (definition.typeId === 'Solitude' && modifiers.targetMaxHpBonusRate !== undefined) {
     return `When no ally is adjacent to this dice, deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
@@ -334,9 +413,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Splash damage', currentModifiers.splashDamage, nextModifiers.splashDamage);
   pushNumericDelta('Chain damage', currentModifiers.chainDamage, nextModifiers.chainDamage);
   pushNumericDelta('Active damage', currentModifiers.activeDamage, nextModifiers.activeDamage);
-  if (definition.typeId !== 'Druid') {
-    pushNumericDelta('Healing', currentModifiers.activeHeal, nextModifiers.activeHeal);
-  }
+  pushNumericDelta('Healing', currentModifiers.activeHeal, nextModifiers.activeHeal);
   pushNumericDelta('Poison damage', currentModifiers.poisonDamage, nextModifiers.poisonDamage);
   pushNumericDelta('Meteor damage', currentModifiers.meteorDamage, nextModifiers.meteorDamage);
   pushNumericDelta('Lava damage', currentModifiers.lavaDamage, nextModifiers.lavaDamage);
@@ -344,9 +421,7 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Pierce damage', currentModifiers.pierceBehindDamage, nextModifiers.pierceBehindDamage);
   pushNumericDelta('Hammer damage', currentModifiers.hammerDamage, nextModifiers.hammerDamage);
   pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
-  if (definition.typeId !== 'Druid') {
-    pushNumericDelta('Bear maul damage', currentModifiers.bearMaulDamage, nextModifiers.bearMaulDamage);
-  }
+  pushNumericDelta('Transform attack damage', currentModifiers.transformAttackDamage, nextModifiers.transformAttackDamage);
   pushNumericDelta('Mana gain', currentModifiers.manaGain, nextModifiers.manaGain);
   pushNumericDelta('Attack count', currentModifiers.numAttacksBoosted, nextModifiers.numAttacksBoosted);
 
@@ -388,17 +463,10 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
     const delta = nextModifiers.berserkThresholdRate - currentModifiers.berserkThresholdRate;
     if (delta > 0) skillDeltas.push(`Berserk threshold +${formatPercent(delta)}`);
   }
-
-  if (definition.typeId === 'Druid') {
-    if (currentModifiers.ricochetHealCount !== undefined && nextModifiers.ricochetHealCount !== undefined) {
-      skillDeltas.push(`Ricochet count: ${formatValue(currentModifiers.ricochetHealCount)} ally`);
-    }
-    const healingDelta = next.attack - current.attack;
-    skillDeltas.push(`Healing: ${formatValue(current.attack)} -> ${formatValue(next.attack)} HP (+${formatValue(healingDelta)})`);
-    if (currentModifiers.bearMaulDamage !== undefined && nextModifiers.bearMaulDamage !== undefined) {
-      const maulDelta = nextModifiers.bearMaulDamage - currentModifiers.bearMaulDamage;
-      skillDeltas.push(`Bear maul damage: ${formatValue(currentModifiers.bearMaulDamage)} -> ${formatValue(nextModifiers.bearMaulDamage)} (+${formatValue(maulDelta)})`);
-    }
+  
+  if (currentModifiers.ricochetCount !== undefined && nextModifiers.ricochetCount !== undefined) {
+    const ricochetDelta = nextModifiers.ricochetCount - currentModifiers.ricochetCount;
+    if (ricochetDelta > 0) skillDeltas.push(`Ricochet count +${formatValue(ricochetDelta)}`);
   }
 
   return {

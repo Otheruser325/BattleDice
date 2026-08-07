@@ -16,8 +16,8 @@ import {
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
-import { applyClassProgression, getClassMultiplier, getClassProgressionPreview, getClassScaledSkillDescription } from '../systems/ClassProgression';
-import { getRuntimeSkillMeta } from '../systems/DiceSkills';
+import { applyClassProgression, applyTransformStats, getClassProgressionPreview, getClassScaledSkillDescription } from '../systems/ClassProgression';
+import { getInitialTransformIndex } from '../systems/DiceSkills';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AchievementStore } from '../systems/AchievementStore';
@@ -37,31 +37,30 @@ function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: numb
   return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${description}`;
 }
 
-function getTransformSkillIndexSet(definition: DiceDefinition): Set<number> {
-  const meta = getRuntimeSkillMeta(definition);
-  return new Set(meta.transformSkillIndices?.length ? meta.transformSkillIndices : meta.transformSkillIndex === undefined ? [] : [meta.transformSkillIndex]);
-}
-
-function getVisibleSkillCount(definition: DiceDefinition): number {
-  const hiddenTransformSkills = getTransformSkillIndexSet(definition);
-  return definition.skills.filter((_, index) => !hiddenTransformSkills.has(index)).length;
+function getFormSkills(definition: DiceDefinition, transformIndex?: number): DiceSkillDefinition[] {
+  if (transformIndex !== undefined) {
+    const skills = definition.transformStats?.[transformIndex]?.skills;
+    return skills?.length ? skills : definition.skills;
+  }
+  const activeTransformIndex = definition.transformStats?.findIndex((stats) => stats.title && stats.title === definition.title) ?? -1;
+  if (activeTransformIndex >= 0) {
+    const skills = definition.transformStats?.[activeTransformIndex]?.skills;
+    return skills?.length ? skills : definition.skills;
+  }
+  return definition.skills;
 }
 
 function formatSkillTypeLine(definition: DiceDefinition): string {
-  const hiddenTransformSkills = getTransformSkillIndexSet(definition);
-  const visibleSkills = definition.skills.filter((_, index) => !hiddenTransformSkills.has(index));
+  const visibleSkills = getFormSkills(definition);
   if (visibleSkills.length === 1) {
     return formatSkillType(visibleSkills[0]?.type).toUpperCase();
   }
   return `${visibleSkills.length} SKILLS`;
 }
 
-export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1): string {
+export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1, transformIndex?: number): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
-  const hiddenTransformSkills = getTransformSkillIndexSet(definition);
-  const visibleSkills = definition.skills
-    .map((skill, index) => ({ skill, index }))
-    .filter(({ index }) => !hiddenTransformSkills.has(index));
+  const visibleSkills = getFormSkills(definition, transformIndex).map((skill, index) => ({ skill, index }));
   if (visibleSkills.length === 0) return 'No skill';
   return visibleSkills.map(({ skill }, visibleIndex) => formatSkillEntry(skill, visibleIndex, visibleSkills.length, {
     ...definition,
@@ -70,73 +69,40 @@ export function formatSkillInfo(definition: DiceDefinition, locked = false, skil
 }
 
 export function getDiceAlternateFormLabel(die: DiceDefinition, showingAlternate: boolean): string | null {
-  const meta = getRuntimeSkillMeta(die);
-  if (!meta.alternateButton || !meta.baseButton) return null;
-  return showingAlternate ? meta.baseButton : meta.alternateButton;
+  const alternateButton = die.alternateButton?.[0];
+  const baseButton = die.baseButton?.[0];
+  if (!alternateButton || !baseButton || !die.transformStats?.length) return null;
+  return showingAlternate ? baseButton : alternateButton;
 }
 
 export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: number, showAlternate: boolean): DiceDefinition {
   const scaled = applyClassProgression(die, classLevel);
-  const meta = getRuntimeSkillMeta(scaled);
-  const transformSkillIndices = meta.transformSkillIndices?.length ? meta.transformSkillIndices : meta.transformSkillIndex === undefined ? [] : [meta.transformSkillIndex];
   if (!showAlternate) {
-    if (scaled.typeId === 'Druid' && meta.hasDruidBearTransform) {
-      return {
-        ...scaled,
-        skills: scaled.skills.filter((skill) => !(skill.modifiers?.notes ?? []).includes('runtime:druidBearForm'))
-      };
-    }
-    return scaled;
-  }
-  if (!meta.transformTitle) return scaled;
-
-  const transformSkills = transformSkillIndices
-    .map((index) => scaled.skills[index])
-    .filter((skill): skill is DiceSkillDefinition => Boolean(skill));
-  if (meta.hasDeathTransform && transformSkills.length > 0) {
-    return {
-      ...scaled,
-      title: meta.transformTitle,
-      health: scaled.health * 2,
-      accent: meta.transformAccent ?? scaled.accent,
-      skills: transformSkills.map((skill) => ({
-        ...skill,
-        description: skill.title === "Reaper's Touch"
-          ? `Instantly kills a target. Bosses instead take ${scaled.attack * 10} damage.`
-          : skill.description
-      }))
-    };
-  }
-  if (transformSkills.length > 0) {
-    const isDruidBear = scaled.typeId === 'Druid' && meta.hasDruidBearTransform;
-    const bearMultiplier = getClassMultiplier(classLevel);
-    return {
-      ...scaled,
-      title: meta.transformTitle,
-      attack: isDruidBear ? Math.max(1, Math.round(50 * bearMultiplier)) : scaled.attack,
-      health: isDruidBear ? Math.max(1, Math.round(1500 * bearMultiplier)) : scaled.health,
-      range: isDruidBear ? 2 : scaled.range,
-      targetingMode: isDruidBear ? 'Nearest' : scaled.targetingMode,
-      accent: meta.transformAccent ?? (isDruidBear ? '#9b6a3a' : scaled.accent),
-      skills: transformSkills
-    };
+    return scaled.transformStats?.length
+      ? { ...scaled, typeId: die.typeId, skills: scaled.skills }
+      : { ...scaled, typeId: die.typeId };
   }
 
-  if (meta.hasTranscendence) {
-    return {
-      ...scaled,
-      title: meta.transformTitle,
-      accent: meta.transformAccent ?? scaled.accent,
-      skills: [{
-        type: 'Passive' as const,
-        title: scaled.skills[0]?.title ?? 'Perpendicular Beam',
-        description: `If it rolls 6, transforms into The Transcendence and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for ${meta.beamDamage ?? 600} damage.`,
-        modifiers: { beamDamage: meta.beamDamage, notes: ['runtime:hasTranscendence'] }
-      }]
-    };
-  }
+  const transformIndex = getInitialTransformIndex(scaled) ?? -1;
+  const transformStats = transformIndex >= 0 ? scaled.transformStats?.[transformIndex] : undefined;
+  if (!transformStats || transformIndex < 0) return { ...scaled, typeId: die.typeId };
 
-  return scaled;
+  const transformed = applyTransformStats(scaled, transformIndex);
+  return {
+    ...transformed,
+    typeId: die.typeId,
+    title: transformStats.title ?? die.title,
+    accent: transformStats.accent ?? die.accent,
+    skills: transformStats.skills?.length ? transformStats.skills : transformed.skills
+  };
+}
+
+export function getDiceClassProgressionPreview(die: DiceDefinition, classLevel: number, showAlternate: boolean) {
+  const transformIndex = getInitialTransformIndex(die);
+  const form = showAlternate && transformIndex !== undefined
+    ? applyTransformStats(die, transformIndex)
+    : die;
+  return getClassProgressionPreview({ ...form, typeId: die.typeId }, classLevel);
 }
 
 
@@ -510,7 +476,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;
-    const skillTextContent = formatSkillInfo(displayDie);
+    const skillTextContent = formatSkillInfo(displayDie, false, 1, showAlternate ? getInitialTransformIndex(die) : undefined);
     const skillContainer = this.add.container(width / 2, skillViewportTop);
     const skill = this.add.text(0, 0, skillTextContent, {
       fontFamily: 'Orbitron',
@@ -581,7 +547,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const assignTxt = this.add.text(width / 2 - 110, height / 2 + 110, alreadyEquipped ? 'EQUIPPED' : 'EQUIP', { fontFamily: 'Orbitron', fontSize: '11px', color: '#ffffff' }).setOrigin(0.5);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
-    const upgradePreview = getClassProgressionPreview(die, cls);
+    const upgradePreview = getDiceClassProgressionPreview(die, cls, showAlternate);
     const previewLines = [`ATK +${upgradePreview.attackDelta}`, `HP +${upgradePreview.healthDelta}`, ...upgradePreview.skillDeltas];
     const upgradeTooltip = this.add.text(width / 2 + 110, height / 2 + 62, previewLines.join('\n'), {
       fontFamily: 'Orbitron',

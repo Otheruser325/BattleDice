@@ -192,6 +192,84 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: options.duration ?? 320, onComplete: () => g.destroy() });
   }
   
+  static animateDrizzleRain(scene: Phaser.Scene, x: number, y: number, tint = 0x6fb7ff) {
+    const rain = scene.add.graphics().setDepth(264).setPosition(x, y - 34);
+    rain.lineStyle(2, tint, 0.78);
+    const drops = [-24, -16, -7, 3, 13, 23];
+    drops.forEach((offset, index) => {
+      const dropY = (index % 3) * 8;
+      rain.lineBetween(offset, dropY, offset - 3, dropY + 13);
+    });
+    const splash = scene.add.graphics().setDepth(265).setPosition(x, y + 15).setAlpha(0);
+    splash.lineStyle(2, tint, 0.9);
+    splash.arc(0, 0, 16, Phaser.Math.DegToRad(205), Phaser.Math.DegToRad(335), false);
+    scene.tweens.add({
+      targets: rain,
+      y: y + 8,
+      alpha: 0,
+      duration: 280,
+      ease: 'Cubic.easeIn',
+      onComplete: () => rain.destroy()
+    });
+    scene.tweens.add({
+      targets: splash,
+      alpha: 0.9,
+      scale: 1.25,
+      duration: 110,
+      delay: 170,
+      yoyo: true,
+      onComplete: () => splash.destroy()
+    });
+  }
+
+  static animateDoubleSwipe(scene: Phaser.Scene, x: number, y: number, color: number, duration = 280) {
+    const leftSlash = scene.add.graphics().setDepth(266).setPosition(x, y);
+    const rightSlash = scene.add.graphics().setDepth(266).setPosition(x, y);
+    const glow = scene.add.graphics().setDepth(265).setPosition(x, y);
+    leftSlash.lineStyle(4, color, 0.95);
+    leftSlash.beginPath();
+    leftSlash.moveTo(-30, -20);
+    leftSlash.lineTo(7, 20);
+    leftSlash.strokePath();
+    rightSlash.lineStyle(4, color, 0.95);
+    rightSlash.beginPath();
+    rightSlash.moveTo(30, -20);
+    rightSlash.lineTo(-7, 20);
+    rightSlash.strokePath();
+    glow.lineStyle(8, color, 0.22);
+    glow.strokeCircle(0, 0, 22);
+    [leftSlash, rightSlash].forEach((slash) => slash.setAlpha(0));
+    scene.tweens.add({
+      targets: leftSlash,
+      alpha: 1,
+      scaleX: 1.12,
+      duration: duration * 0.42,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        scene.tweens.add({ targets: leftSlash, alpha: 0, duration: duration * 0.38, onComplete: () => leftSlash.destroy() });
+      }
+    });
+    scene.tweens.add({
+      targets: rightSlash,
+      alpha: 1,
+      scaleX: 1.12,
+      duration: duration * 0.42,
+      delay: duration * 0.25,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        scene.tweens.add({ targets: rightSlash, alpha: 0, duration: duration * 0.38, onComplete: () => rightSlash.destroy() });
+      }
+    });
+    scene.tweens.add({
+      targets: glow,
+      alpha: 0,
+      scale: 1.35,
+      duration,
+      ease: 'Quad.easeOut',
+      onComplete: () => glow.destroy()
+    });
+  }
+
   static animateFracture(scene: Phaser.Scene, x: number, y: number) {
     const g = scene.add.graphics().setDepth(260);
     g.fillStyle(0xff4da6, 0.22);
@@ -241,26 +319,101 @@ export class AnimationManager {
     });
   }
   
-  static animateGrowthTurn(scene: Phaser.Scene, x: number, y: number, color: number, broken = false) {
-    const g = scene.add.graphics().setDepth(262);
-    g.lineStyle(4, color, 0.95);
-    g.beginPath();
-    g.arc(x, y, 20, Phaser.Math.DegToRad(35), Phaser.Math.DegToRad(320), false);
-    g.strokePath();
-    g.fillStyle(color, 0.95);
-    g.fillTriangle(x + 16, y - 16, x + 29, y - 15, x + 21, y - 3);
-    scene.tweens.add({ targets: g, angle: 360, duration: 900, ease: 'Sine.easeInOut', onComplete: () => g.destroy() });
-
-    if (!broken) return;
-    const burst = scene.add.graphics().setDepth(263);
-    burst.fillStyle(0xb86cff, 0.32);
-    burst.fillCircle(x, y, 12);
-    burst.lineStyle(3, 0xe1b4ff, 0.9);
-    for (let i = 0; i < 8; i += 1) {
-      const angle = (Math.PI * 2 * i) / 8;
-      burst.lineBetween(x, y, x + Math.cos(angle) * 26, y + Math.sin(angle) * 26);
+  static animateGrowthTurn(scene: Phaser.Scene, x: number, y: number, color: number, success = true) {
+    if (success) {
+      const arrow = scene.add.graphics().setDepth(262).setPosition(x, y);
+      arrow.lineStyle(4, color, 0.95);
+      arrow.beginPath();
+      arrow.arc(0, 0, 20, Phaser.Math.DegToRad(35), Phaser.Math.DegToRad(320), false);
+      arrow.strokePath();
+      arrow.fillStyle(color, 0.95);
+      arrow.fillTriangle(16, -16, 29, -15, 21, -3);
+      scene.tweens.add({
+        targets: arrow,
+        angle: 360,
+        duration: 900,
+        ease: 'Sine.easeInOut',
+        onComplete: () => arrow.destroy()
+      });
+      return;
     }
-    scene.tweens.add({ targets: burst, alpha: 0, scale: 1.45, duration: 360, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
+
+    const burst = scene.add.graphics().setDepth(263).setPosition(x, y);
+    burst.fillStyle(0xb86cff, 0.34);
+    burst.fillCircle(0, 0, 13);
+    burst.lineStyle(3, 0xe1b4ff, 0.95);
+    for (let i = 0; i < 10; i += 1) {
+      const angle = (Math.PI * 2 * i) / 10;
+      const inner = 9 + (i % 2) * 4;
+      const outer = 26 + (i % 3) * 5;
+      burst.lineBetween(Math.cos(angle) * inner, Math.sin(angle) * inner, Math.cos(angle) * outer, Math.sin(angle) * outer);
+    }
+    burst.lineStyle(2, 0xffffff, 0.7);
+    burst.strokeCircle(0, 0, 18);
+    scene.tweens.add({
+      targets: burst,
+      alpha: 0,
+      scale: 1.45,
+      duration: 420,
+      ease: 'Back.easeOut',
+      onComplete: () => burst.destroy()
+    });
+  }
+
+  static animateElectricChain(scene: Phaser.Scene, fromX: number, fromY: number, toX: number, toY: number, duration = 220) {
+    const chain = scene.add.graphics().setDepth(264);
+    const glow = scene.add.graphics().setDepth(263);
+    const progress = { value: 0 };
+    const redraw = () => {
+      chain.clear();
+      glow.clear();
+      const endX = Phaser.Math.Linear(fromX, toX, progress.value);
+      const endY = Phaser.Math.Linear(fromY, toY, progress.value);
+      const distance = Phaser.Math.Distance.Between(fromX, fromY, endX, endY);
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      const normalX = -Math.sin(angle);
+      const normalY = Math.cos(angle);
+      const segments = Math.max(2, Math.ceil(distance / 18));
+      const points = [{ x: fromX, y: fromY }];
+      for (let i = 1; i < segments; i += 1) {
+        const fraction = i / segments;
+        const jitter = (i % 2 === 0 ? 5 : -5) * Math.min(1, progress.value * 2);
+        points.push({
+          x: Phaser.Math.Linear(fromX, endX, fraction) + normalX * jitter,
+          y: Phaser.Math.Linear(fromY, endY, fraction) + normalY * jitter
+        });
+      }
+      points.push({ x: endX, y: endY });
+      glow.lineStyle(10, 0xffd83d, 0.22);
+      glow.beginPath();
+      glow.moveTo(points[0].x, points[0].y);
+      points.slice(1).forEach((point) => glow.lineTo(point.x, point.y));
+      glow.strokePath();
+      chain.lineStyle(3, 0xfff176, 0.98);
+      chain.beginPath();
+      chain.moveTo(points[0].x, points[0].y);
+      points.slice(1).forEach((point) => chain.lineTo(point.x, point.y));
+      chain.strokePath();
+    };
+    redraw();
+    scene.tweens.add({
+      targets: progress,
+      value: 1,
+      duration,
+      ease: 'Cubic.easeOut',
+      onUpdate: redraw,
+      onComplete: () => {
+        scene.tweens.add({
+          targets: [chain, glow],
+          alpha: 0,
+          duration: 100,
+          onComplete: () => {
+            chain.destroy();
+            glow.destroy();
+          }
+        });
+      }
+    });
   }
 
   static animateHeatwave(scene: Phaser.Scene, x: number, y: number) {
