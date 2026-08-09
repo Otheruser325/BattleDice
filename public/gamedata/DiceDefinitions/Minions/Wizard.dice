@@ -12,10 +12,7 @@
       "title": "Spellcast",
       "description": "Feeds the Magician +2 mana.",
       "modifiers": {
-        "manaGain": 2,
-        "notes": [
-          "runtime:wizardSpellcast"
-        ]
+        "allyManaGain": 2
       }
     },
     {

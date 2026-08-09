@@ -1,6 +1,16 @@
 {
   "entries": [
     {
+      "version": "v0.7.0-beta",
+      "date": "2026-08-09",
+      "notes": [
+	    "Dice additions: Sword, Discharge and Reverse.",
+	    "General changes: --improved value formatting across different ranges --refactored skill data to reduce edge-case malformed behaviour --improved Electric Die's chain targeting behaviour",
+		"Dice balance: --Skull: Last Rattle rework: ---revive chance is guaranteed for the first attempt ---revive chance halved for each successful revive ---can only revive up to five times before perishing",
+        "Bug fixes: --fixed an issue that caused Meteor Dice's active skill to not recognise infiltrators --fixed Leon's Furious Claw skill not working --fixed Leon's Mighty Roar skill not properly executing Furious Claw --fixed Deucifer's Challenge ending too early when his entire cast of dice were defeated --fixed status stack display not separating respective durations on ice and poison effects --fixed an issue that caused poison DoT to pretty much cancel Skull Die's revive when he was defeated by it --fixed incorrect history log text for certain effects --fixed an issue where combat start/end abilities could use the wrong SFX --fixed several hardcoded instances related to active skills and bosses"
+      ]
+    },
+    {
       "version": "v0.6.2-beta",
       "date": "2026-08-07",
       "notes": [

@@ -27,6 +27,7 @@
       "modifiers": {
         "consumeAttack": false,
         "transformToNextForm": true,
+        "canFireWithNoTargets": true,
         "skillSfx": "dice_berserk_skill"
       }
     }

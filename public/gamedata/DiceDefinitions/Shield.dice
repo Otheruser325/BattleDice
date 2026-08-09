@@ -24,10 +24,10 @@
       "manaNeeded": 8,
       "modifiers": {
         "shield": 300,
-        "durationTurns": 2
+        "statusDuration": 2
       }
     }
   ],
-  "accent": "#7db8d9",
+  "accent": "#8b5a2b",
   "targetingMode": "Nearest"
 }

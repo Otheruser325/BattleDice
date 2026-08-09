@@ -12,14 +12,14 @@
       "manaNeeded": 10,
       "modifiers": {
         "attackCountIncrease": 1,
-        "durationTurns": 2,
+        "statusDuration": 2,
         "disableManaGain": true,
         "consumeAttack": false,
         "skillSfx": "dice_wind_skill"
       }
     }
   ],
-  "accent": "#d1f0ff",
+  "accent": "#78e6a8",
   "rarity": "Common",
   "targetingMode": "Nearest"
 }

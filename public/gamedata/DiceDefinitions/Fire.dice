@@ -11,9 +11,7 @@
       "description": "Attacks cause 12 splash damage to adjacent foes on the target's board.",
       "modifiers": {
         "splashDamage": 12,
-        "notes": [
-          "runtime:skillSfx=dice_fire_skill"
-        ]
+		"skillSfx": "dice_fire_skill"
       }
     }
   ],

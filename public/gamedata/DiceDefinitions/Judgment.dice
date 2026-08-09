@@ -11,11 +11,12 @@
       "title": "Judge Hammer",
       "description": "Summons a judge hammer on the weakest foe, dealing 150 damage in a 3x3 radius. Hammer kills can retrigger this effect.",
       "modifiers": {
-        "notes": [
-          "runtime:judgmentHammer",
-          "runtime:skillSfx=dice_judgment_skill"
-        ],
-        "hammerDamage": 150
+        "hammerDamage": 150,
+        "hammerRadius": 1,
+        "canRetriggerSkill": true,
+        "maxSkillRetriggers": 10,
+        "hasHammer": true,
+        "skillSfx": "dice_judgment_skill"
       }
     }
   ],

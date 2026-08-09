@@ -11,8 +11,9 @@
       "title": "Backline Breach",
       "description": "Teleports to a nearby free tile by the furthest enemy on the opposite board and strikes first while hidden.",
       "modifiers": {
-        "jumpRange": -1,
-        "notes": ["runtime:assassinBacklineTeleport", "runtime:assassinInvisibleOnStart"]
+        "teleportRange": -1,
+        "isInfiltrator": true,
+        "strikeFirst": true
       }
     },
     {
@@ -25,6 +26,6 @@
       }
     }
   ],
-  "accent": "#c57cff",
+  "accent": "#993399",
   "targetingMode": "Nearest"
 }

@@ -15,11 +15,10 @@
         "activeDamage": 50,
         "hitsAllFoes": true,
         "attackSfx": "dice_drizzle_attack",
-        "skillSfx": "dice_drizzle_skill",
-        "hitsAllAllies": false
+        "skillSfx": "dice_drizzle_skill"
       }
     }
   ],
-  "accent": "#6fb7ff",
+  "accent": "#b7ff4a",
   "targetingMode": "Nearest"
 }

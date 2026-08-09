@@ -12,7 +12,7 @@
       "manaNeeded": 5,
       "modifiers": {
         "activeDamage": 25,
-        "durationTurns": 3,
+        "statusDuration": 3,
         "poisonDamage": 25,
         "statusEffect": "poison",
         "skillSfx": "dice_poison_skill"

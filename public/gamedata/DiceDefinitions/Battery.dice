@@ -11,11 +11,8 @@
       "title": "Quick Charge",
       "description": "All friendly charging active skills gain +1 mana.",
       "modifiers": {
-        "manaGain": 1,
-        "notes": [
-          "runtime:skillSfx=dice_battery_skill",
-          "runtime:batteryManaAura"
-        ]
+        "allyManaGain": 1,
+        "skillSfx": "dice_battery_skill"
       }
     }
   ],

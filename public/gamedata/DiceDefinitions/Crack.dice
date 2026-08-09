@@ -13,7 +13,7 @@
       "manaNeeded": 5,
       "modifiers": {
         "activeDamage": 60,
-        "durationTurns": 2,
+        "statusDuration": 2,
         "armorReduction": 0.2,
         "statusEffect": "fracture",
         "skillSfx": "dice_crack_skill"

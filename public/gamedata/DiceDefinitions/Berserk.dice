@@ -13,9 +13,7 @@
       "modifiers": {
         "berserkThresholdRate": 0.3,
         "berserkDamageMultiplier": 2.5,
-        "notes": [
-          "runtime:skillSfx=dice_berserk_skill"
-        ]
+		"skillSfx": "dice_berserk_skill"
       }
     }
   ],

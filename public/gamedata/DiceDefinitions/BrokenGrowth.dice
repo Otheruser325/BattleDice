@@ -11,10 +11,12 @@
       "title": "Corrupted Growth",
       "description": "50% chance to increase or decrease attack count by 1 for the remainder of the match.",
       "modifiers": {
-        "brokenGrowthDelta": 1
+        "hasGrowth": true,
+        "growthDelta": 1,
+        "growthChance": 0.5
       }
     }
   ],
-  "accent": "#b86cff",
+  "accent": "#c8a2ff",
   "targetingMode": "Nearest"
 }

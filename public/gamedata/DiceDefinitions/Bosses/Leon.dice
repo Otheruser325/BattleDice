@@ -12,11 +12,9 @@
       "title": "Furious Claw",
       "description": "Enemy dice 2 tiles closer to Leon will be attacked doubly, with critical chance increased to 25%.",
       "modifiers": {
-        "notes": [
-          "runtime:leonFuriousClaw"
-        ],
-        "criticalChanceIncrease": 0.25,
-        "criticalDamageIncrease": 0
+        "attackCountIncrease": 1,
+        "criticalChanceIncrease": 0.2,
+        "skillRangeThreshold": 2
       }
     },
     {
@@ -25,10 +23,8 @@
       "description": "If no dice are in range, teleports close to the nearest enemy die and immediately executes Furious Claw, stunning its target for 2 turns.",
       "modifiers": {
         "statusEffect": "stun",
-        "durationTurns": 2,
-        "notes": [
-          "runtime:leonMightyRoar"
-        ]
+        "stunDuration": 2,
+        "teleportSkillFireIndex": 0
       }
     },
     {
@@ -37,10 +33,7 @@
       "description": "Leon gains +20% basic attack damage for each fallen foe.",
       "modifiers": {
         "damageRatePerKill": 0.2,
-        "notes": [
-          "runtime:leonRage",
-          "runtime:unlockAtClass=6"
-        ]
+        "unlockAtClass": 6
       }
     }
   ],

@@ -37,6 +37,6 @@
   "transformFlags": ["transcendentForm"],
   "alternateButton": ["View The Transcendence"],
   "baseButton": ["View Base Form"],
-  "accent": "#b18cff",
+  "accent": "#7099d6",
   "targetingMode": "Nearest"
 }

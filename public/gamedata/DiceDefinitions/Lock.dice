@@ -9,12 +9,14 @@
     {
       "type": "CombatStart",
       "title": "Sealed In",
-      "description": "Locks the nearest foe in chains within a 2-tile radius, preventing it from attacking until combat ends. Other allies cannot target chained enemies.",
+      "description": "Locks the nearest foe in chains within a 2-tile radius, preventing it from attacking until combat ends.",
       "modifiers": {
-        "lockRange": 2
+        "lockRange": 2,
+        "canLockFoes": true,
+        "numLocks": 1
       }
     }
   ],
-  "accent": "#9ed0ff",
+  "accent": "#626262",
   "targetingMode": "Nearest"
 }

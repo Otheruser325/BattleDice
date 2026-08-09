@@ -31,7 +31,8 @@
       "description": "Instantly kills a target. Bosses instead take 10x Death Dice's attack as damage.",
       "manaNeeded": 12,
       "modifiers": {
-        "deathInstakill": true,
+        "instakill": true,
+        "bossDamageRate": 10,
         "skillSfx": "dice_death_skill_01",
         "attackSfx": "dice_death_t_attack"
       }
@@ -40,6 +41,6 @@
   "transformFlags": ["instakillForm"],
   "alternateButton": ["View Instakill Form"],
   "baseButton": ["View Death Dice"],
-  "accent": "#9b59b6",
+  "accent": "#000000",
   "targetingMode": "Nearest"
 }

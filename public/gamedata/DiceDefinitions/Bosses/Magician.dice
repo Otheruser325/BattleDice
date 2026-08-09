@@ -12,10 +12,8 @@
       "title": "Mana Manipulator",
       "description": "Steals 1 mana from all enemy charging actives.",
       "modifiers": {
-        "attackDelta": 1,
-        "notes": [
-          "runtime:manaManipulator"
-        ]
+        "manaSteal": 1,
+        "manaStealType": "enemy"
       }
     },
     {
@@ -26,9 +24,9 @@
       "modifiers": {
         "meteorDamage": 200,
         "meteorCount": 3,
-        "hasRandomOrientation": true,
+        "meteorRandomOrientation": true,
         "lavaDamage": 100,
-        "durationTurns": 4,
+        "statusDuration": 4,
         "skillSfx": "dice_meteor_skill",
         "lavaPoolPattern": [
           [
@@ -44,10 +42,10 @@
       "description": "Summons a friendly Wizard Dice.",
       "manaNeeded": 18,
       "modifiers": {
-        "notes": [
-          "runtime:magicianSummonWizard",
-          "runtime:unlockAtClass=6"
-        ]
+        "summonType": "Wizard",
+        "summonCount": 1,
+        "allowSummonedDieToRoll": true,
+        "unlockAtClass": 6
       }
     }
   ],

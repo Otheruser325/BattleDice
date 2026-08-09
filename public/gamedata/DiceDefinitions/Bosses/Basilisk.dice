@@ -12,10 +12,7 @@
       "title": "Distorting Appearance",
       "description": "Enemy dice in Basilisk's range have a 30% chance to ignore attacking the boss outright until the next turn.",
       "modifiers": {
-        "avoidAttackChance": 0.3,
-        "notes": [
-          "runtime:basiliskDistortion"
-        ]
+        "avoidAttackChance": 0.3
       }
     },
     {
@@ -23,10 +20,7 @@
       "title": "Delicious Appetite",
       "description": "Dice defeated by Basilisk restore 25% of Basilisk's missing max HP.",
       "modifiers": {
-        "onKillMissingHealRate": 0.25,
-        "notes": [
-          "runtime:basiliskAppetite"
-        ]
+        "missingHealRate": 0.25
       }
     },
     {
@@ -37,10 +31,7 @@
         "revengeThresholdRate": 0.2,
         "revengeHits": 5,
         "revengeDamage": 100,
-        "notes": [
-          "runtime:basiliskRevenge",
-          "runtime:unlockAtClass=6"
-        ]
+        "unlockAtClass": 6
       }
     }
   ],

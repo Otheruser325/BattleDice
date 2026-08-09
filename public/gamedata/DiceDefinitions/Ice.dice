@@ -12,7 +12,7 @@
       "manaNeeded": 6,
       "modifiers": {
         "attackDelta": -1,
-        "durationTurns": 2,
+        "statusDuration": 2,
         "maxStacks": 3,
         "activeDamage": 32,
         "statusEffect": "slow",

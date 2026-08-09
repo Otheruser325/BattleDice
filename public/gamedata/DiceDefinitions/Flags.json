@@ -32,7 +32,10 @@
     "Lock",
     "Drizzle",
     "Armor",
-    "Druid"
+    "Druid",
+	"Sword",
+	"Discharge",
+	"Reverse"
   ],
   "exclusiveTypeIds": [
     {

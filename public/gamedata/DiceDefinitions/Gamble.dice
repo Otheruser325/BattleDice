@@ -11,9 +11,6 @@
       "title": "Loaded Odds",
       "description": "Deals random damage from 7 to 77 to a foe.",
       "modifiers": {
-        "notes": [
-          "runtime:randomDamage"
-        ],
         "attackDelta": 0,
         "damageRange": [
           7,
@@ -22,6 +19,6 @@
       }
     }
   ],
-  "accent": "#f7b267",
+  "accent": "#c57cff",
   "targetingMode": "Nearest"
 }
