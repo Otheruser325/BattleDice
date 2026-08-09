@@ -66,7 +66,10 @@ export function rollDiceCards(
     { key: `Vanguard:${rarity}`, title: 'Vanguard', rarity, kind: 'Vanguard' },
     { key: `Centreline:${rarity}`, title: 'Centreline', rarity, kind: 'Centreline' }
   ];
-  const upgrades: DiceCard[] = upgradeTypes.map((typeId) => ({ key: `${typeId} Upgrade:${rarity}`, title: `${typeId} Upgrade`, rarity, kind: 'Type Upgrade', typeId }));
+  const upgrades: DiceCard[] = upgradeTypes.map((typeId) => {
+    const displayName = definitions.get(typeId)?.title?.replace(/\s+Dice$/i, '') ?? typeId;
+    return { key: `${typeId} Upgrade:${rarity}`, title: `${displayName} Upgrade`, rarity, kind: 'Type Upgrade', typeId };
+  });
   const pool: DiceCard[] = [...base, ...upgrades].filter((card) => !activeKeys.has(card.key));
 
   const out: DiceCard[] = [];

@@ -9,6 +9,7 @@ import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { AchievementStore } from '../systems/AchievementStore';
+import { formatCompact, formatPercent } from '../utils/FormatManager';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -556,9 +557,9 @@ export class CasinoScene extends Phaser.Scene {
     const [minTokens, maxTokens] = CHEST_TOKEN_REWARDS[type];
     const diamondReward = CHEST_DIAMOND_REWARDS[type];
     const cardRates = CHEST_DROP_RATES[type]
-      .map((entry) => `${entry.rarity}: ${entry.rate}% • ${entry.copies[0]}-${entry.copies[1]} cards`)
+      .map((entry) => `${entry.rarity}: ${formatPercent(entry.rate / 100, 2)} • ${formatCompact(entry.copies[0])}-${formatCompact(entry.copies[1])} cards`)
       .join('\n');
-    return `${cardRates}\nDice Tokens: +${minTokens}-${maxTokens}\nDiamonds: ${Math.round(diamondReward.chance * 100)}% • ${diamondReward.copies[0]}-${diamondReward.copies[1]}`;
+    return `${cardRates}\nDice Tokens: +${formatCompact(minTokens)}-${formatCompact(maxTokens)}\nDiamonds: ${formatPercent(diamondReward.chance, 2)} • ${formatCompact(diamondReward.copies[0])}-${formatCompact(diamondReward.copies[1])}`;
   }
 
   private openChestModal(type: ChestType) {
@@ -800,12 +801,12 @@ export class CasinoScene extends Phaser.Scene {
       fontSize: '28px',
       color: PALETTE.accent
     }).setOrigin(0.5);
-    const tokenSummary = this.add.text(width / 2, height / 2 - 214, `Dice Tokens: +${diceTokens.toLocaleString()} (now ${getDiceTokens(this).toLocaleString()})`, {
+    const tokenSummary = this.add.text(width / 2, height / 2 - 214, `Dice Tokens: +${formatCompact(diceTokens)} (now ${formatCompact(getDiceTokens(this))})`, {
       fontFamily: 'Orbitron',
       fontSize: '16px',
       color: PALETTE.accentSoft
     }).setOrigin(0.5);
-    const diamondSummary = this.add.text(width / 2, height / 2 - 188, `Diamonds: +${diamonds.toLocaleString()} (now ${getDiamonds(this).toLocaleString()})`, {
+    const diamondSummary = this.add.text(width / 2, height / 2 - 188, `Diamonds: +${formatCompact(diamonds)} (now ${formatCompact(getDiamonds(this))})`, {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: '#7ddcff'
@@ -849,7 +850,7 @@ export class CasinoScene extends Phaser.Scene {
         fontSize: '13px',
         color: rarityColor
       });
-      const copiesText = this.add.text(x + 16, y + 50, `+${entry.copies} copies`, {
+      const copiesText = this.add.text(x + 16, y + 50, `+${formatCompact(entry.copies)} copies`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.accentSoft
@@ -927,7 +928,7 @@ export class CasinoScene extends Phaser.Scene {
     }).setOrigin(0.5);
     
     // Stats with class progression
-    const stats = this.add.text(width / 2, height / 2 - 106, `ATK ${displayDie.attack}  |  HP ${displayDie.health}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, {
+    const stats = this.add.text(width / 2, height / 2 - 106, `ATK ${formatCompact(displayDie.attack)}  |  HP ${formatCompact(displayDie.health)}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
@@ -949,7 +950,7 @@ export class CasinoScene extends Phaser.Scene {
     }).setOrigin(0, 0.5);
     
     // Target and copies (matching DiceScene style)
-    const targetStats = this.add.text(width / 2 + 12, height / 2 - 84, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, {
+    const targetStats = this.add.text(width / 2 + 12, height / 2 - 84, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${formatCompact(progress.copies)}`, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.text,
@@ -1059,10 +1060,10 @@ export class CasinoScene extends Phaser.Scene {
       text.setColor(this.locks[i] ? PALETTE.accentSoft : PALETTE.textMuted);
     });
     const progress = CasinoProgressStore.get(this);
-    this.chipText.setText(`CHIPS: ${progress.chips}`);
+    this.chipText.setText(`CHIPS: ${formatCompact(progress.chips)}`);
     const gaugeWidth = Math.round(178 * Phaser.Math.Clamp(progress.fivesGauge / FIVES_GAUGE_MAX, 0, 1));
     this.fivesGaugeFill.setDisplaySize(gaugeWidth, 8);
-    this.fivesGaugeText.setText(`FIVES GAUGE: ${progress.fivesGauge}/${FIVES_GAUGE_MAX}`);
+    this.fivesGaugeText.setText(`FIVES GAUGE: ${formatCompact(progress.fivesGauge)}/${formatCompact(FIVES_GAUGE_MAX)}`);
     const lockedCost = this.getLockedDiceRerollCost();
     const canRoll = this.canRollFives(progress);
     this.rollButton.setText(lockedCost > 0 ? `ROLL (-${lockedCost})` : 'ROLL');
@@ -1082,7 +1083,7 @@ export class CasinoScene extends Phaser.Scene {
     }
     this.statusText.setText(crapsSummary
       ? `Craps: ${crapsSummary} • ${crapsChestText}`
-      : (this.tableActive ? `Rolls left: ${this.rollsLeft}  •  Locked dice reroll cost: ${lockedCost} chips` : `CHIPS AVAILABLE: ${progress.chips}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
+      : (this.tableActive ? `Rolls left: ${this.rollsLeft}  •  Locked dice reroll cost: ${lockedCost} chips` : `CHIPS AVAILABLE: ${formatCompact(progress.chips)}  •  Fives Roller: pay 10 chips. Craps: pay 2 chips, two dice, natural 7/11 wins.`));
     this.chestTexts.forEach((text, type) => text.setText(`${type}: ${progress.chests[type]}`));
 
     if (progress.fivesGauge >= FIVES_GAUGE_MAX) {

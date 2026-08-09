@@ -23,6 +23,7 @@ import { AchievementStore } from '../systems/AchievementStore';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
 import { SettingsStore } from '../systems/SettingsStore';
 import { applyDiceTalent, getEquippedTalentId, setEquippedTalentId } from '../systems/DiceTalents';
+import { formatCompact } from '../utils/FormatManager';
 
 function formatSkillType(type: string | undefined): string {
   if (!type) return 'Passive';
@@ -51,6 +52,7 @@ function getFormSkills(definition: DiceDefinition, transformIndex?: number): Dic
 
 function formatSkillTypeLine(definition: DiceDefinition): string {
   const visibleSkills = getFormSkills(definition);
+  if (visibleSkills.length === 0) return 'NO SKILLS';
   if (visibleSkills.length === 1) {
     return formatSkillType(visibleSkills[0]?.type).toUpperCase();
   }
@@ -60,7 +62,7 @@ function formatSkillTypeLine(definition: DiceDefinition): string {
 export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1, transformIndex?: number, descriptorDefinition?: DiceDefinition): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
   const visibleSkills = getFormSkills(definition, transformIndex).map((skill, index) => ({ skill, index }));
-  if (visibleSkills.length === 0) return 'No skill';
+  if (visibleSkills.length === 0) return 'This dice does not have any special skills.';
   const sourceSkills = descriptorDefinition ? getFormSkills(descriptorDefinition, transformIndex) : [];
   return visibleSkills.map(({ skill }, visibleIndex) => {
     const sourceSkill = sourceSkills.find((candidate) => candidate.title === skill.title && candidate.type === skill.type)
@@ -192,7 +194,7 @@ export class DiceScene extends Phaser.Scene {
     this.debug.log('Dice scene rendered.', { diceCount: definitions.length });
 
     let tokens = getDiceTokens(this);
-    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${tokens}  •  Click a die, then EQUIP to assign it to a slot`, {
+    const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${formatCompact(tokens)}  •  Click a die, then EQUIP to assign it to a slot`, {
       fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.accentSoft
     });
     const slotText = this.add.text(panel.x + 28, panel.y + 78, '', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text });
@@ -324,7 +326,7 @@ export class DiceScene extends Phaser.Scene {
         fontSize: '12px',
         color: rarityColor
       });
-      const statLine = this.add.text(x + 106, y + 52, `ATK ${displayedDie.attack}  |  HP ${displayedDie.health}
+      const statLine = this.add.text(x + 106, y + 52, `ATK ${formatCompact(displayedDie.attack)}  |  HP ${formatCompact(displayedDie.health)}
         RANGE ${displayedDie.range} (${getRangeLabel(displayedDie.range)})`, {
         fontFamily: 'Orbitron',
         fontSize: '12px',
@@ -352,7 +354,7 @@ export class DiceScene extends Phaser.Scene {
         const nextCls = getDiceProgress(this, die.typeId).classLevel;
         const nextDisplayedDie = applyDiceTalent(applyClassProgression(die, nextCls), getEquippedTalentId(this, die.typeId));
         classTag.setText(this.isDiceLocked(die.typeId) ? 'LOCKED' : `C${nextCls}`);
-        statLine.setText(`ATK ${nextDisplayedDie.attack}  |  HP ${nextDisplayedDie.health}
+        statLine.setText(`ATK ${formatCompact(nextDisplayedDie.attack)}  |  HP ${formatCompact(nextDisplayedDie.health)}
 RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         skillTypeLine.setText(formatSkillTypeLine(nextDisplayedDie));
         skillDesc.setText(formatSkillInfo(nextDisplayedDie, this.isDiceLocked(die.typeId)));
@@ -372,7 +374,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
           loadout = getSelectedLoadout(this);
           refreshSlots();
           tokens = getDiceTokens(this);
-          tokenText.setText(`DICE TOKENS: ${tokens}  •  Click a die, then EQUIP to assign it to a slot`);
+          tokenText.setText(`DICE TOKENS: ${formatCompact(tokens)}  •  Click a die, then EQUIP to assign it to a slot`);
           refreshCardStats.forEach((refresh) => refresh());
           refreshVisibleCardInteractivity();
         }, () => {
@@ -494,11 +496,11 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const atk = displayDie.attack;
     const isMaxed = cls >= 15;
     const title = this.add.text(width / 2, height / 2 - 155, `${displayDie.title} • CLASS ${cls}/15${isMaxed ? ' (MAX)' : ''}`, { fontFamily: 'Orbitron', fontSize: '20px', color: displayDie.accent }).setOrigin(0.5);
-    const stats = this.add.text(width / 2, height / 2 - 116, `ATK ${atk}  |  HP ${hp}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
+    const stats = this.add.text(width / 2, height / 2 - 116, `ATK ${formatCompact(atk)}  |  HP ${formatCompact(hp)}  |  RANGE ${displayDie.range} (${getRangeLabel(displayDie.range)})`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'center' }).setOrigin(0.5);
     const rarityLabel = this.add.text(width / 2 - 140, height / 2 - 94, 'RARITY', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'right' }).setOrigin(1, 0.5);
     const rarityColor = RARITY_TEXT_COLORS[displayDie.rarity] ?? PALETTE.text;
     const rarityStats = this.add.text(width / 2 - 126, height / 2 - 94, displayDie.rarity.toUpperCase(), { fontFamily: 'Orbitron', fontSize: '12px', color: rarityColor, align: 'left' }).setOrigin(0, 0.5);
-    const targetStats = this.add.text(width / 2 + 12, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${progress.copies}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'left' }).setOrigin(0, 0.5);
+    const targetStats = this.add.text(width / 2 + 12, height / 2 - 94, `TARGET ${displayDie.targetingMode.toUpperCase()}  |  COPIES ${formatCompact(progress.copies)}`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.text, align: 'left' }).setOrigin(0, 0.5);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;
@@ -541,7 +543,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     if (isMaxed) {
       costText = this.add.text(width / 2, height / 2 + 40, 'MAX CLASS REACHED — No more copies needed', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.success }).setOrigin(0.5);
     } else {
-      costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} (+10% multiplicative stats/skills) | Cost: ${tokenCost} tokens + ${copyCost} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
+      costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} (+10% multiplicative stats/skills) | Cost: ${formatCompact(tokenCost)} tokens + ${formatCompact(copyCost)} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
     }
 
     const currentTalentId = getEquippedTalentId(this, typeId);
@@ -574,7 +576,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const upBtn = this.add.rectangle(width / 2 + 110, height / 2 + 110, 180, 40, canUpgrade ? 0x2ecc71 : 0x7f8c8d, 0.95).setInteractive({ useHandCursor: canUpgrade });
     const upTxt = this.add.text(width / 2 + 110, height / 2 + 110, isMaxed ? 'MAXED' : (canUpgrade ? 'CLASS UP' : 'LOCKED'), { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffffff' }).setOrigin(0.5);
     const upgradePreview = getDiceClassProgressionPreview(die, cls, formIndex);
-    const previewLines = [`ATK +${upgradePreview.attackDelta}`, `HP +${upgradePreview.healthDelta}`, ...upgradePreview.skillDeltas];
+    const previewLines = [`ATK +${formatCompact(upgradePreview.attackDelta)}`, `HP +${formatCompact(upgradePreview.healthDelta)}`, ...upgradePreview.skillDeltas];
     const upgradeTooltip = this.add.text(width / 2 + 110, height / 2 + 62, previewLines.join('\n'), {
       fontFamily: 'Orbitron',
       fontSize: '11px',
@@ -608,7 +610,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         if (newClassLevel >= 6) AchievementStore.unlock(this, 'getting_stronger');
         if (newClassLevel >= 11) AchievementStore.unlock(this, 'augmented');
         if (newClassLevel >= 15) AchievementStore.unlock(this, 'maximum_power');
-        tokenText.setText(`DICE TOKENS: ${getDiceTokens(this)}  •  Click a die, then EQUIP to assign it to a slot`);
+        tokenText.setText(`DICE TOKENS: ${formatCompact(getDiceTokens(this))}  •  Click a die, then EQUIP to assign it to a slot`);
         onUpdate();
         this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
       });

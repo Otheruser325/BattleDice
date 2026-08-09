@@ -37,6 +37,7 @@ export function createMatchBattleState(
   return {
     turn: 1,
     combatPhase: 'idle',
+    reviveCounts: {},
     dice: [
       ...createLoadoutInstances('player', playerDefinitions),
       ...createLoadoutInstances('enemy', enemyDefinitions)
@@ -272,14 +273,20 @@ export function executeAttack(
   let updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
   const targetDefinition = definitionOverrides?.target ?? definitions.get(target.typeId);
   const runtimeMeta = targetDefinition ? getRuntimeSkillMeta(targetDefinition) : undefined;
-  if (
-    updatedTarget?.isDestroyed &&
-    hasOtherLivingDie(state, target.ownerId, targetId) &&
-    runtimeMeta?.reviveChance &&
-    Math.random() < runtimeMeta.reviveChance
-  ) {
+  const previousRevives = state.reviveCounts?.[targetId] ?? 0;
+  const reviveChance = runtimeMeta?.reviveChance === undefined
+    ? undefined
+    : Math.max(0, Math.min(1, runtimeMeta.reviveChance * Math.pow(runtimeMeta.reviveChanceRate ?? 1, previousRevives)));
+  const hasOtherLiving = hasOtherLivingDie(state, target.ownerId, targetId);
+  const canRevive = Boolean(
+    reviveChance !== undefined
+    && (runtimeMeta?.maxRevives === undefined || previousRevives < runtimeMeta.maxRevives)
+    && (!runtimeMeta.dontReviveWhenLastOneStanding || hasOtherLiving)
+  );
+  if (updatedTarget?.isDestroyed && canRevive && Math.random() < reviveChance!) {
     newState = {
       ...newState,
+      reviveCounts: { ...state.reviveCounts, [targetId]: previousRevives + 1 },
       dice: newState.dice.map((die) => (
         die.instanceId === targetId
           ? {

@@ -55,14 +55,16 @@ export class FormatManager {
   }
 
   static formatCompact(value: number | null | undefined): string {
-    if (value === null || value === undefined) {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
       return '0';
     }
 
     const absolute = Math.abs(value);
 
-    if (absolute < 1000) {
-      return value.toString();
+    // Keep ordinary gameplay values readable with separators. Compact units
+    // begin at one million, so 1,000 remains "1,000" rather than "1.000K".
+    if (absolute < 1e6) {
+      return this.formatWithCommas(value);
     }
 
     const maxUnit = this.UNITS[0];
@@ -76,6 +78,12 @@ export class FormatManager {
     }
 
     return `${(value / unit.threshold).toFixed(3)}${unit.short}`;
+  }
+
+  static formatPercent(rate: number | null | undefined, decimals = 2): string {
+    if (rate === null || rate === undefined || !Number.isFinite(rate)) return '0%';
+    const percentage = Number((rate * 100).toFixed(Math.max(0, decimals)));
+    return `${percentage}%`;
   }
 
   static formatCompactFull(value: number | null | undefined): string {
@@ -108,4 +116,8 @@ export function formatCompact(value: number | null | undefined): string {
 
 export function formatCompactFull(value: number | null | undefined): string {
   return FormatManager.formatCompactFull(value);
+}
+
+export function formatPercent(rate: number | null | undefined, decimals = 2): string {
+  return FormatManager.formatPercent(rate, decimals);
 }

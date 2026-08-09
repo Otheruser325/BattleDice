@@ -4,6 +4,7 @@ import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { AlertManager } from '../utils/AlertManager';
 import { SCENE_KEYS } from './sceneKeys';
+import { formatCompact } from '../utils/FormatManager';
 
 export class DevScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Dev;
@@ -170,8 +171,8 @@ export class DevScene extends Phaser.Scene {
       return;
     }
     grantDiceCopies(this, definition.typeId, grantAmount);
-    const cappedSuffix = grantAmount < copies ? ` (requested ${copies}, capped at ${grantAmount})` : '';
-    AlertManager.toast(this, { type: 'success', message: `Granted ${grantAmount} ${definition.title} card${grantAmount === 1 ? '' : 's'}${cappedSuffix}.` });
+    const cappedSuffix = grantAmount < copies ? ` (requested ${formatCompact(copies)}, capped at ${formatCompact(grantAmount)})` : '';
+    AlertManager.toast(this, { type: 'success', message: `Granted ${formatCompact(grantAmount)} ${definition.title} card${grantAmount === 1 ? '' : 's'}${cappedSuffix}.` });
     this.refresh();
   }
 
@@ -191,7 +192,7 @@ export class DevScene extends Phaser.Scene {
       return;
     }
     grantDiceCopies(this, definition.typeId, copiesNeeded);
-    AlertManager.toast(this, { type: 'success', message: `Granted ${copiesNeeded} ${definition.title} card${copiesNeeded === 1 ? '' : 's'} to reach max class progression.` });
+    AlertManager.toast(this, { type: 'success', message: `Granted ${formatCompact(copiesNeeded)} ${definition.title} card${copiesNeeded === 1 ? '' : 's'} to reach max class progression.` });
     this.refresh();
   }
 
@@ -233,31 +234,31 @@ export class DevScene extends Phaser.Scene {
 
   private grantChips(amount: number) {
     CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + amount }));
-    AlertManager.toast(this, { type: 'success', message: `Granted ${amount} casino chips.` });
+    AlertManager.toast(this, { type: 'success', message: `Granted ${formatCompact(amount)} casino chips.` });
     this.refresh();
   }
 
   private grantTokens(amount: number) {
     setDiceTokens(this, getDiceTokens(this) + amount);
-    AlertManager.toast(this, { type: 'success', message: `Granted ${amount} dice tokens.` });
+    AlertManager.toast(this, { type: 'success', message: `Granted ${formatCompact(amount)} dice tokens.` });
     this.refresh();
   }
 
   private grantDiamonds(amount: number) {
     setDiamonds(this, getDiamonds(this) + amount);
-    AlertManager.toast(this, { type: 'success', message: `Granted ${amount} diamonds.` });
+    AlertManager.toast(this, { type: 'success', message: `Granted ${formatCompact(amount)} diamonds.` });
     this.refresh();
   }
 
   private grantGauge(amount: number) {
     CasinoProgressStore.mutate(this, (progress) => ({ ...progress, fivesGauge: progress.fivesGauge + amount }));
-    AlertManager.toast(this, { type: 'success', message: `Granted ${amount} to Fives gauge.` });
+    AlertManager.toast(this, { type: 'success', message: `Granted ${formatCompact(amount)} to Fives gauge.` });
     this.refresh();
   }
 
   private setGauge(amount: number) {
     CasinoProgressStore.mutate(this, (progress) => ({ ...progress, fivesGauge: amount }));
-    AlertManager.toast(this, { type: 'success', message: `Set Fives gauge to ${amount}.` });
+    AlertManager.toast(this, { type: 'success', message: `Set Fives gauge to ${formatCompact(amount)}.` });
     this.refresh();
   }
 
@@ -266,7 +267,7 @@ export class DevScene extends Phaser.Scene {
     if (definition) {
       const progress = getDiceProgress(this, definition.typeId);
       this.diceNameText.setText(`${definition.title} (${definition.rarity})`);
-      this.diceProgressText.setText(`Type ID: ${definition.typeId}  •  Class ${progress.classLevel}  •  ${progress.copies} cards`);
+      this.diceProgressText.setText(`Type ID: ${definition.typeId}  •  Class ${progress.classLevel}  •  ${formatCompact(progress.copies)} cards`);
     } else {
       this.diceNameText.setText('No dice loaded');
       this.diceProgressText.setText('Dice catalog unavailable.');
@@ -274,10 +275,10 @@ export class DevScene extends Phaser.Scene {
 
     const casino = CasinoProgressStore.get(this);
     this.walletText.setText([
-      `Casino Chips: ${casino.chips}`,
-      `Dice Tokens: ${getDiceTokens(this)}`,
-      `Diamonds: ${getDiamonds(this)}`,
-      `Fives Gauge: ${casino.fivesGauge}/1000`
+      `Casino Chips: ${formatCompact(casino.chips)}`,
+      `Dice Tokens: ${formatCompact(getDiceTokens(this))}`,
+      `Diamonds: ${formatCompact(getDiamonds(this))}`,
+      `Fives Gauge: ${formatCompact(casino.fivesGauge)}/${formatCompact(1000)}`
     ].join('\n'));
   }
 }

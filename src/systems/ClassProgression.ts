@@ -1,4 +1,5 @@
 import type { DiceDefinition, DiceSkillDefinition, DiceSkillModifier, DiceTransformStats } from '../types/game';
+import { formatCompact, formatPercent as formatPercentValue } from '../utils/FormatManager';
 
 export function getTransformStats(definition: DiceDefinition, transformIndex = 0): DiceTransformStats | undefined {
   return definition.transformStats?.[transformIndex];
@@ -47,6 +48,7 @@ export const CRACK_ARMOR_SHRED_RATE_PER_CLASS = 0.01;
 export const BATTERY_MANA_GAIN_PER_5_CLASS = 1;
 export const SOUL_BOOST_RATIO_PER_CLASS = 0.005;
 export const LOW_HP_DAMAGE_RATE_PER_CLASS = 0.02;
+export const DISCHARGE_STATUS_BONUS_PER_CLASS = 0.005;
 
 export interface ClassProgressionPreview {
   attackDelta: number;
@@ -67,8 +69,7 @@ function isBossDefinition(definition: DiceDefinition): boolean {
 }
 
 function formatPercent(rate: number): string {
-  const pct = rate * 100;
-  return Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
+  return formatPercentValue(rate, 2);
 }
 
 function scaleFlatDamage(value: number | undefined, multiplier: number): number | undefined {
@@ -95,7 +96,11 @@ function parseRuntimeRate(notes: string[] | undefined, key: string): number | un
 }
 
 function formatValue(value: number): string {
-  return Number.isInteger(value) ? `${value}` : `${Number(value.toFixed(2))}`;
+  return formatCompact(value);
+}
+
+function getNumberVariants(value: number): string[] {
+  return [...new Set([value.toString(), formatValue(value)])].sort((a, b) => b.length - a.length);
 }
 
 function escapeRegExp(value: string): string {
@@ -104,10 +109,11 @@ function escapeRegExp(value: string): string {
 
 function replaceLiteralNumber(text: string, sourceValue: number | undefined, displayValue: number | undefined): string {
   if (sourceValue === undefined || displayValue === undefined || !Number.isFinite(sourceValue) || !Number.isFinite(displayValue)) return text;
-  const from = formatValue(sourceValue);
   const to = formatValue(displayValue);
-  if (from === to) return text;
-  return text.replace(new RegExp(`(^|[^\\d.])${escapeRegExp(from)}(?![\\d.])`, 'g'), `$1${to}`);
+  const fromVariants = getNumberVariants(sourceValue);
+  if (fromVariants.includes(to)) return text;
+  const fromPattern = fromVariants.map(escapeRegExp).join('|');
+  return text.replace(new RegExp(`(^|[^\\d.,])(?:${fromPattern})(?![\\d.,])`, 'g'), `$1${to}`);
 }
 
 function replaceLiteralPercent(text: string, sourceValue: number | undefined, displayValue: number | undefined): string {
@@ -125,10 +131,10 @@ function formatDruidRicochetDescriptor(description: string, ricochetCount: numbe
 
 function replaceTurnCount(text: string, sourceValue: number | undefined, displayValue: number | undefined): string {
   if (sourceValue === undefined || displayValue === undefined || !Number.isFinite(sourceValue) || !Number.isFinite(displayValue)) return text;
-  const from = formatValue(sourceValue);
   const to = formatValue(displayValue);
-  if (from === to) return text;
-  return text.replace(new RegExp(`(for\\s+)${escapeRegExp(from)}(\\s+turns?)`, 'gi'), `$1${to}$2`);
+  const fromPattern = getNumberVariants(sourceValue).map(escapeRegExp).join('|');
+  if (fromPattern === escapeRegExp(to)) return text;
+  return text.replace(new RegExp(`(for\\s+)(?:${fromPattern})(\\s+turns?)`, 'gi'), `$1${to}$2`);
 }
 
 function scaleDisplayDamage(value: number | undefined, multiplier: number): number | undefined {
@@ -148,6 +154,8 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
     'beamDamage',
     'pierceBehindDamage',
     'hammerDamage',
+    'bossDamage',
+    'revengeDamage',
     'shield',
     'transformAttackDamage'
   ];
@@ -161,16 +169,23 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
 
   text = replaceLiteralNumber(text, source.damageRange?.[0], scaleDisplayDamage(display.damageRange?.[0], skillDamageMultiplier));
   text = replaceLiteralNumber(text, source.damageRange?.[1], scaleDisplayDamage(display.damageRange?.[1], skillDamageMultiplier));
-  text = replaceTurnCount(text, source.durationTurns, display.durationTurns);
+  text = replaceTurnCount(text, source.statusDuration, display.statusDuration);
   text = replaceLiteralNumber(text, Math.abs(source.attackDelta ?? Number.NaN), Math.abs(display.attackDelta ?? Number.NaN));
   text = replaceLiteralNumber(text, source.numAttacksBoosted, display.numAttacksBoosted);
   text = replaceLiteralNumber(text, source.manaGain, display.manaGain);
+  text = replaceLiteralNumber(text, source.allyManaGain, display.allyManaGain);
+  text = replaceLiteralNumber(text, source.foeManaGain, display.foeManaGain);
+  text = replaceLiteralNumber(text, source.manaSteal, display.manaSteal);
   text = replaceLiteralNumber(text, source.pierceBehindRange, display.pierceBehindRange);
+  text = replaceLiteralNumber(text, source.allyExtraAttacks, display.allyExtraAttacks);
   text = replaceLiteralNumber(text, source.allyExtraAttacks, display.allyExtraAttacks);
   text = replaceLiteralNumber(text, source.attackCountIncrease, display.attackCountIncrease);
   text = replaceLiteralNumber(text, source.growthDelta, display.growthDelta);
-  text = replaceLiteralNumber(text, source.brokenGrowthDelta, display.brokenGrowthDelta);
+  text = replaceLiteralNumber(text, source.growthDelta, display.growthDelta);
+  text = replaceLiteralPercent(text, source.growthChance, display.growthChance);
   text = replaceLiteralNumber(text, source.meteorCount, display.meteorCount);
+  text = replaceLiteralNumber(text, source.revengeHits, display.revengeHits);
+  text = replaceLiteralNumber(text, source.revengeRange, display.revengeRange);
 
   text = replaceLiteralPercent(text, source.reviveChance, display.reviveChance);
   text = replaceLiteralPercent(text, source.targetMaxHpBonusRate, display.targetMaxHpBonusRate);
@@ -178,6 +193,7 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
   text = replaceLiteralPercent(text, source.lowHpThresholdRate, display.lowHpThresholdRate);
   text = replaceLiteralPercent(text, source.lowHpDamageBonusRate, display.lowHpDamageBonusRate);
   text = replaceLiteralPercent(text, source.distanceDamageBonusRatePerTile, display.distanceDamageBonusRatePerTile);
+  text = replaceLiteralPercent(text, source.bonusDamagePerStatus, display.bonusDamagePerStatus);
   text = replaceLiteralPercent(text, source.berserkThresholdRate, display.berserkThresholdRate);
   text = replaceLiteralPercent(text, source.berserkDamageMultiplier !== undefined ? source.berserkDamageMultiplier - 1 : undefined, display.berserkDamageMultiplier !== undefined ? display.berserkDamageMultiplier - 1 : undefined);
   text = replaceLiteralPercent(text, source.soulBoostPercent, display.soulBoostPercent);
@@ -185,7 +201,7 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
   text = replaceLiteralPercent(text, source.criticalChanceIncrease, display.criticalChanceIncrease);
   text = replaceLiteralPercent(text, source.criticalDamageIncrease, display.criticalDamageIncrease);
   text = replaceLiteralPercent(text, source.damageRatePerKill, display.damageRatePerKill);
-  text = replaceLiteralPercent(text, source.onKillMissingHealRate, display.onKillMissingHealRate);
+  text = replaceLiteralPercent(text, source.missingHealRate, display.missingHealRate);
   text = replaceLiteralPercent(text, source.revengeThresholdRate, display.revengeThresholdRate);
   text = replaceLiteralPercent(text, source.avoidAttackChance, display.avoidAttackChance);
 
@@ -210,6 +226,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
     const modifiers: DiceSkillModifier = { ...source };
     modifiers.splashDamage = scaleFlatDamage(source.splashDamage, multiplier);
+    modifiers.heatwaveDamage = scaleFlatDamage(source.heatwaveDamage, multiplier);
     modifiers.chainDamage = scaleFlatDamage(source.chainDamage, multiplier);
     modifiers.poisonDamage = scaleFlatDamage(source.poisonDamage, multiplier);
     modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
@@ -219,16 +236,21 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
     modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
     modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
+    modifiers.bossDamage = scaleFlatDamage(source.bossDamage, multiplier);
     modifiers.shield = scaleFlatDamage(source.shield, multiplier);
     modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
     modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
 
     if (definition.typeId === 'Skull' && source.reviveChance !== undefined) {
-      modifiers.reviveChance = Math.min(0.95, source.reviveChance + SKULL_REVIVE_CHANCE_PER_CLASS * classUps);
+      modifiers.reviveChance = Math.min(1, source.reviveChance + SKULL_REVIVE_CHANCE_PER_CLASS * classUps);
     }
 
     if (definition.typeId === 'Sniper' && source.distanceDamageBonusRatePerTile !== undefined) {
       modifiers.distanceDamageBonusRatePerTile = source.distanceDamageBonusRatePerTile + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
+    }
+
+    if (definition.typeId === 'Discharge' && source.bonusDamagePerStatus !== undefined) {
+      modifiers.bonusDamagePerStatus = source.bonusDamagePerStatus + DISCHARGE_STATUS_BONUS_PER_CLASS * classUps;
     }
 
     if (definition.typeId === 'Iron' && source.targetCurrentHpBonusRate !== undefined) {
@@ -257,33 +279,39 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.notes = (source.notes ?? []).filter((note) => !note.startsWith('runtime:armorShredRate='));
     }
 
-    if (definition.typeId === 'Battery' && source.manaGain !== undefined) {
-      modifiers.manaGain = source.manaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
+    if (definition.typeId === 'Battery' && source.allyManaGain !== undefined) {
+      modifiers.allyManaGain = source.allyManaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
     }
 
     if (source.soulBoostPercent !== undefined) {
       modifiers.soulBoostPercent = source.soulBoostPercent + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
     }
 
-    if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && source.manaGain !== undefined) {
-      modifiers.manaGain = source.manaGain + Math.floor(classUps / 4);
+    if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && source.allyManaGain !== undefined) {
+      modifiers.allyManaGain = source.allyManaGain + Math.floor(classUps / 4);
     }
 
-    if (definition.typeId === 'Magician' && source.attackDelta !== undefined) {
-      modifiers.attackDelta = source.attackDelta + Math.floor(classUps / 5);
+    if (definition.typeId === 'Magician' && source.manaSteal !== undefined) {
+      modifiers.manaSteal = source.manaSteal + Math.floor(classUps / 5);
     }
 
-    if (definition.typeId === 'Magician' && source.durationTurns !== undefined) {
-      modifiers.durationTurns = source.durationTurns + Math.floor(classUps / 4);
+    if (definition.typeId === 'Magician' && source.statusDuration !== undefined) {
+      modifiers.statusDuration = source.statusDuration + Math.floor(classUps / 4);
     }
 
-    if (definition.typeId === 'Basilisk') {
-      if (source.avoidAttackChance !== undefined) modifiers.avoidAttackChance = Math.min(0.95, source.avoidAttackChance + 0.03 * classUps);
-      if (source.onKillMissingHealRate !== undefined) modifiers.onKillMissingHealRate = Math.min(1, source.onKillMissingHealRate + 0.015 * classUps);
-      if (source.revengeThresholdRate !== undefined) modifiers.revengeThresholdRate = Math.min(0.95, source.revengeThresholdRate + 0.01 * classUps);
-      if (source.revengeHits !== undefined) modifiers.revengeHits = source.revengeHits + Math.floor(classUps / 6);
-      modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
+    if (definition.typeId === 'Basilisk' && source.avoidAttackChance !== undefined) {
+      modifiers.avoidAttackChance = Math.min(0.95, source.avoidAttackChance + 0.03 * classUps);
     }
+    if (source.missingHealRate !== undefined) {
+      modifiers.missingHealRate = Math.min(1, source.missingHealRate + 0.015 * classUps);
+    }
+    if (source.revengeThresholdRate !== undefined) {
+      modifiers.revengeThresholdRate = Math.min(0.95, source.revengeThresholdRate + 0.01 * classUps);
+    }
+    if (source.revengeHits !== undefined) {
+      modifiers.revengeHits = source.revengeHits + Math.floor(classUps / 6);
+    }
+    modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
 
     if (source.ricochetCount !== undefined && definition.typeId === 'Druid' && boundedClassLevel >= 10) {
       modifiers.ricochetCount = source.ricochetCount + 1;
@@ -309,6 +337,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
         if (!source) return skill;
         const modifiers: DiceSkillModifier = { ...source };
         modifiers.splashDamage = scaleFlatDamage(source.splashDamage, multiplier);
+        modifiers.heatwaveDamage = scaleFlatDamage(source.heatwaveDamage, multiplier);
         modifiers.chainDamage = scaleFlatDamage(source.chainDamage, multiplier);
         modifiers.poisonDamage = scaleFlatDamage(source.poisonDamage, multiplier);
         modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
@@ -318,6 +347,8 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
         modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
         modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
         modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
+        modifiers.bossDamage = scaleFlatDamage(source.bossDamage, multiplier);
+        modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
         modifiers.shield = scaleFlatDamage(source.shield, multiplier);
         modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
         modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
@@ -371,47 +402,56 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.damageRange) {
     const min = scaleDisplayDamage(modifiers.damageRange[0], skillDamageMultiplier) ?? modifiers.damageRange[0];
     const max = scaleDisplayDamage(modifiers.damageRange[1], skillDamageMultiplier) ?? modifiers.damageRange[1];
-    return `Deals random damage from ${min} to ${max} to a foe.`;
+    return `Deals random damage from ${formatValue(min)} to ${formatValue(max)} to a foe.`;
   }
   if (modifiers.splashDamage !== undefined) {
-    return `Attacks cause ${scaleDisplayDamage(modifiers.splashDamage, skillDamageMultiplier)} splash damage to adjacent foes on the target's board.`;
+    return `Attacks cause ${formatValue(scaleDisplayDamage(modifiers.splashDamage, skillDamageMultiplier) ?? 0)} splash damage to adjacent foes on the target's board.`;
   }
   if (modifiers.chainDamage !== undefined) {
-    return `Attacks chain onto another foe on the target's board within 2 tiles for ${scaleDisplayDamage(modifiers.chainDamage, skillDamageMultiplier)} bonus damage.`;
+    return `Attacks chain onto another foe on the target's board within 2 tiles for ${formatValue(scaleDisplayDamage(modifiers.chainDamage, skillDamageMultiplier) ?? 0)} bonus damage.`;
   }
   if (modifiers.activeHeal !== undefined) {
-    return `Heals the weakest ally for ${scaleDisplayDamage(modifiers.activeHeal, skillDamageMultiplier)} HP.`;
+    return `Heals the weakest ally for ${formatValue(scaleDisplayDamage(modifiers.activeHeal, skillDamageMultiplier) ?? 0)} HP.`;
   }
   if (modifiers.activeDamage !== undefined && modifiers.attackDelta !== undefined) {
-    return `Deals ${scaleDisplayDamage(modifiers.activeDamage, skillDamageMultiplier)} damage and immediately changes the target's current attack count by ${modifiers.attackDelta} for ${modifiers.durationTurns ?? 1} turns.`;
+    return `Deals ${formatValue(scaleDisplayDamage(modifiers.activeDamage, skillDamageMultiplier) ?? 0)} damage and immediately changes the target's current attack count by ${formatValue(modifiers.attackDelta)} for ${formatValue(modifiers.statusDuration ?? 1)} turns.`;
   }
   if (modifiers.activeDamage !== undefined && modifiers.armorReduction !== undefined) {
     const shredRate = modifiers.armorReduction;
-    return `Deal ${scaleDisplayDamage(modifiers.activeDamage, skillDamageMultiplier)} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${modifiers.durationTurns ?? 2} turns.`;
+    return `Deal ${formatValue(scaleDisplayDamage(modifiers.activeDamage, skillDamageMultiplier) ?? 0)} damage and apply Fracture (${formatPercent(shredRate)} armor reduction) for ${formatValue(modifiers.statusDuration ?? 2)} turns.`;
   }
   if (modifiers.poisonDamage !== undefined) {
-    return `Applies ${scaleDisplayDamage(modifiers.poisonDamage, skillDamageMultiplier)} poison damage per turn for ${modifiers.durationTurns ?? 3} turns (stacks).`;
+    return `Applies ${formatValue(scaleDisplayDamage(modifiers.poisonDamage, skillDamageMultiplier) ?? 0)} poison damage per turn for ${formatValue(modifiers.statusDuration ?? 3)} turns (stacks).`;
   }
   if (modifiers.berserkThresholdRate !== undefined && modifiers.berserkDamageMultiplier !== undefined) {
     return `Below ${formatPercent(modifiers.berserkThresholdRate)} HP, deals ${formatPercent(modifiers.berserkDamageMultiplier - 1)} more damage.`;
   }
   if (modifiers.shield !== undefined) {
-    return `Gain +${scaleDisplayDamage(modifiers.shield, skillDamageMultiplier)} shield for ${modifiers.durationTurns ?? 2} turns.`;
+    return `Gain +${formatValue(scaleDisplayDamage(modifiers.shield, skillDamageMultiplier) ?? 0)} shield for ${formatValue(modifiers.statusDuration ?? 2)} turns.`;
   }
   if (modifiers.numAttacksBoosted !== undefined && modifiers.numAttacksDamageMult !== undefined) {
-    return `The next ${modifiers.numAttacksBoosted} basic attacks deal ${formatPercent(modifiers.numAttacksDamageMult - 1)} more damage.`;
+    return `The next ${formatValue(modifiers.numAttacksBoosted)} basic attacks deal ${formatPercent(modifiers.numAttacksDamageMult - 1)} more damage.`;
   }
   if (modifiers.distanceDamageBonusRatePerTile !== undefined) {
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
   }
+  if (modifiers.bonusDamagePerStatus !== undefined) {
+    return `Gains +${formatPercent(modifiers.bonusDamagePerStatus)} damage for each active status stack.`;
+  }
   if (modifiers.soulBoostPercent !== undefined) {
     return `Conjures defeated ally souls. Soul Dice gains +${formatPercent(modifiers.soulBoostPercent)} damage and health for each soul conjured.`;
   }
-  if (definition.typeId === 'Battery' && modifiers.manaGain !== undefined) {
-    return `All friendly charging active skills gain +${modifiers.manaGain} mana.`;
+  if (definition.typeId === 'Battery' && modifiers.allyManaGain !== undefined) {
+    return `All friendly charging active skills gain +${formatValue(modifiers.allyManaGain)} mana.`;
   }
   if (modifiers.reviveChance !== undefined) {
-    return `When defeated, it comes back to life with a ${formatPercent(modifiers.reviveChance)} chance.`;
+    const chanceText = `starts at a ${formatPercent(modifiers.reviveChance)} chance`;
+    const decayText = modifiers.reviveChanceRate !== undefined && modifiers.reviveChanceRate !== 1
+      ? `, then changes by ×${formatValue(modifiers.reviveChanceRate)} after each successful revival`
+      : '';
+    const limitText = modifiers.maxRevives !== undefined ? `, up to ${formatValue(modifiers.maxRevives)} revivals` : '';
+    const lastStandingText = modifiers.dontReviveWhenLastOneStanding ? ', but not when it is the last ally standing' : '';
+    return `When defeated, it ${chanceText}${decayText}${limitText}${lastStandingText}.`;
   }
 
   return description;
@@ -427,7 +467,10 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   const pushNumericDelta = (label: string, currentValue: number | undefined, nextValue: number | undefined, suffix = '') => {
     if (currentValue === undefined || nextValue === undefined) return;
     const delta = nextValue - currentValue;
-    if (delta > 0) skillDeltas.push(`${label} +${Number.isInteger(delta) ? delta : delta.toFixed(1)}${suffix}`);
+    if (delta > 0) {
+      const displayDelta = Number.isInteger(delta) ? formatValue(delta) : formatValue(Number(delta.toFixed(1)));
+      skillDeltas.push(`${label} +${displayDelta}${suffix}`);
+    }
   };
 
   pushNumericDelta('Splash damage', currentModifiers.splashDamage, nextModifiers.splashDamage);
@@ -443,12 +486,15 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   pushNumericDelta('Shield gain', currentModifiers.shield, nextModifiers.shield);
   pushNumericDelta('Transform attack damage', currentModifiers.transformAttackDamage, nextModifiers.transformAttackDamage);
   pushNumericDelta('Mana gain', currentModifiers.manaGain, nextModifiers.manaGain);
+  pushNumericDelta('Ally mana gain', currentModifiers.allyManaGain, nextModifiers.allyManaGain);
+  pushNumericDelta('Foe mana gain', currentModifiers.foeManaGain, nextModifiers.foeManaGain);
+  pushNumericDelta('Mana steal', currentModifiers.manaSteal, nextModifiers.manaSteal);
   pushNumericDelta('Attack count', currentModifiers.numAttacksBoosted, nextModifiers.numAttacksBoosted);
 
   if (currentModifiers.damageRange && nextModifiers.damageRange) {
     const minDelta = nextModifiers.damageRange[0] - currentModifiers.damageRange[0];
     const maxDelta = nextModifiers.damageRange[1] - currentModifiers.damageRange[1];
-    if (minDelta > 0 || maxDelta > 0) skillDeltas.push(`Random damage +${minDelta}/+${maxDelta}`);
+    if (minDelta > 0 || maxDelta > 0) skillDeltas.push(`Random damage +${formatValue(minDelta)}/+${formatValue(maxDelta)}`);
   }
   if (currentModifiers.reviveChance !== undefined && nextModifiers.reviveChance !== undefined) {
     const delta = nextModifiers.reviveChance - currentModifiers.reviveChance;
@@ -457,6 +503,10 @@ export function getClassProgressionPreview(definition: DiceDefinition, classLeve
   if (currentModifiers.distanceDamageBonusRatePerTile !== undefined && nextModifiers.distanceDamageBonusRatePerTile !== undefined) {
     const delta = nextModifiers.distanceDamageBonusRatePerTile - currentModifiers.distanceDamageBonusRatePerTile;
     if (delta > 0) skillDeltas.push(`Distance damage +${formatPercent(delta)} / tile`);
+  }
+  if (currentModifiers.bonusDamagePerStatus !== undefined && nextModifiers.bonusDamagePerStatus !== undefined) {
+    const delta = nextModifiers.bonusDamagePerStatus - currentModifiers.bonusDamagePerStatus;
+    if (delta > 0) skillDeltas.push(`Status damage +${formatPercent(delta)} / stack`);
   }
   if (currentModifiers.targetMaxHpBonusRate !== undefined && nextModifiers.targetMaxHpBonusRate !== undefined) {
     const delta = nextModifiers.targetMaxHpBonusRate - currentModifiers.targetMaxHpBonusRate;

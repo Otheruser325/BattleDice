@@ -469,11 +469,7 @@ export class AnimationManager {
     scene.tweens.add({ targets: g, y: y - 8, alpha: 0, duration: 500, onComplete: () => g.destroy() });
   }
 
-  static animateDeathTransform(scene: Phaser.Scene, x: number, y: number) {
-    this.animateTransform(scene, x, y, 0xc06bdb, '☠');
-  }
-
-  static animateTransform(scene: Phaser.Scene, x: number, y: number, color: number, symbol = '✦') {
+  static animateTransform(scene: Phaser.Scene, x: number, y: number, color: number, symbol?: string) {
     const burst = scene.add.graphics().setDepth(260);
     burst.lineStyle(3, color, 0.95);
     burst.strokeCircle(x, y, 20);
@@ -483,20 +479,22 @@ export class AnimationManager {
       const angle = (Math.PI * 2 * index) / 8;
       burst.lineBetween(x + Math.cos(angle) * 23, y + Math.sin(angle) * 23, x + Math.cos(angle) * 34, y + Math.sin(angle) * 34);
     }
-    const label = scene.add.text(x, y, symbol, {
-      fontFamily: 'Orbitron',
-      fontSize: '22px',
-      color: `#${color.toString(16).padStart(6, '0')}`
-    }).setOrigin(0.5).setDepth(261);
+    const label = symbol
+      ? scene.add.text(x, y, symbol, {
+        fontFamily: 'Orbitron',
+        fontSize: '22px',
+        color: `#${color.toString(16).padStart(6, '0')}`
+      }).setOrigin(0.5).setDepth(261)
+      : undefined;
     scene.tweens.add({
-      targets: [burst, label],
+      targets: label ? [burst, label] : [burst],
       alpha: 0,
       scale: 1.8,
       duration: 500,
       ease: 'Quad.easeOut',
       onComplete: () => {
         burst.destroy();
-        label.destroy();
+        label?.destroy();
       }
     });
   }

@@ -73,6 +73,7 @@ export class AudioManager {
     scene.load.audio('dice_transcendence_attack', withBasePath('assets/audio/dice/dice_transcendence_attack.ogg'));
     scene.load.audio('dice_transcendence_t_attack', withBasePath('assets/audio/dice/dice_transcendence_t_attack.ogg'));
     scene.load.audio('dice_death_t_attack', withBasePath('assets/audio/dice/dice_death_t_attack.ogg'));
+    scene.load.audio('dice_death_skill_01', withBasePath('assets/audio/dice/dice_death_skill_01.ogg'));
     scene.load.audio('dice_meteor_skill', withBasePath('assets/audio/dice/dice_meteor_skill.ogg'));
     scene.load.audio('dice_soul_skill_01', withBasePath('assets/audio/dice/dice_soul_skill_01.ogg'));
     scene.load.audio('dice_wind_skill', withBasePath('assets/audio/dice/dice_wind_skill.ogg'));

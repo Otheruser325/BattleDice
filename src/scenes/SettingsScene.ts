@@ -9,6 +9,7 @@ import { ProfileStore } from '../systems/ProfileStore';
 import { getDiamonds } from '../data/dice';
 import { AlertManager } from '../utils/AlertManager';
 import { withBasePath } from '../utils/BuildEnv';
+import { formatCompact } from '../utils/FormatManager';
  
 type SettingKey = keyof AppSettings;
  
@@ -377,12 +378,12 @@ export class SettingsScene extends Phaser.Scene {
       const next = entry.trim();
       if (!next) { AlertManager.toast(this, { type: 'warning', message: 'Name cannot be empty.' }); return; }
       if (!ProfileStore.canAffordNameChange(this)) {
-        AlertManager.toast(this, { type: 'warning', message: `Not enough diamonds. Need 50, have ${getDiamonds(this)}.` });
+        AlertManager.toast(this, { type: 'warning', message: `Not enough diamonds. Need ${formatCompact(50)}, have ${formatCompact(getDiamonds(this))}.` });
         return;
       }
       const result = ProfileStore.applyNameChange(this, next);
       if (!result.ok) { AlertManager.toast(this, { type: 'warning', message: 'Name change failed.' }); return; }
-      AlertManager.toast(this, { type: 'success', message: `Name changed to ${next}${result.cost > 0 ? ` (-${result.cost} diamonds)` : ' (free)'}.` });
+      AlertManager.toast(this, { type: 'success', message: `Name changed to ${next}${result.cost > 0 ? ` (-${formatCompact(result.cost)} diamonds)` : ' (free)'}.` });
     } finally {
       this.subModalOpen = false;
     }
