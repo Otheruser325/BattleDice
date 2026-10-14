@@ -2,7 +2,7 @@
   "typeId": "Sword",
   "title": "Sword Dice",
   "attack": 50,
-  "health": 850,
+  "health": 880,
   "range": 2,
   "rarity": "Common",
   "skills": [],

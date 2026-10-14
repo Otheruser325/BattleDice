@@ -2,7 +2,7 @@ name: Deploy Vite App to GitHub Pages
 
 on:
   push:
-    branches: ['main'] # Change to 'master' if needed
+    branches: ['main']
   workflow_dispatch:
 
 permissions:
@@ -37,7 +37,7 @@ jobs:
         env:
           REPO_FIX: ${{ vars.REPO_FIX }}
           VITE_RIVALIS_WS_URL: ${{ vars.VITE_RIVALIS_WS_URL }}
-          VITE_RIVALIS_TICKET: ${{ secrets.VITE_RIVALIS_TICKET }}
+          VITE_RIVALIS_TICKET_ENDPOINT: ${{ vars.VITE_RIVALIS_TICKET_ENDPOINT }}
           VITE_RIVALIS_TICKET_SOURCE: ${{ vars.VITE_RIVALIS_TICKET_SOURCE }}
           VITE_RIVALIS_RECONNECT_MAX: ${{ vars.VITE_RIVALIS_RECONNECT_MAX }}
         run: npm run build
@@ -45,7 +45,7 @@ jobs:
       - name: Upload Build Artifacts
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist' # Vite outputs to 'dist' by default
+          path: './dist'
 
       - name: Deploy to GitHub Pages
         id: deployment

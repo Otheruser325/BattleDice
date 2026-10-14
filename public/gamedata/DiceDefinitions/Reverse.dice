@@ -1,8 +1,8 @@
 {
   "typeId": "Reverse",
   "title": "Reverse Dice",
-  "attack": 20,
-  "health": 600,
+  "attack": 22,
+  "health": 620,
   "range": 5,
   "rarity": "Epic",
   "skills": [

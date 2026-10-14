@@ -32,6 +32,7 @@ import { ArenaMultiplayerClient, type ArenaMultiplayerStatus } from '../systems/
 import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition, getNextDiceFormIndex } from './DiceScene';
 import { applyDiceTalent, getEquippedTalentId } from '../systems/DiceTalents';
 import { formatCompact, formatPercent } from '../utils/FormatManager';
+import { secureChance, secureLobbyCode, securePick, secureRandom, secureRandomBetween } from '../utils/RandomManager';
 
 
 type BotDifficulty = 'Baby' | 'Easy' | 'Medium' | 'Hard' | 'Nightmare';
@@ -58,6 +59,8 @@ const GRID_SIZE = 5;
 const TILE_SIZE = 64;
 const TILE_GAP = 8;
 const MATCH_TOKEN_REWARDS: Record<MatchResultStage, number> = { victory: 500, defeat: 50, draw: 200 };
+const LOBBY_JOIN_ATTEMPT_LIMIT = 5;
+const LOBBY_JOIN_LOCKOUT_MS = 30_000;
 const BOT_FIRST_WIN_REWARDS: Record<BotDifficulty, { tokens: number; chips: number }> = {
   Baby: { tokens: 500, chips: 20 },
   Easy: { tokens: 1_000, chips: 40 },
@@ -251,6 +254,10 @@ export class ArenaScene extends Phaser.Scene {
   private reverseUsesByInstance: Map<string, number> = new Map();
   private reverseLastUsedTurnByInstance: Map<string, number> = new Map();
   private reverseCooldownUntilTurnByInstance: Map<string, number> = new Map();
+  private lobbyJoinAttempts = 0;
+  private lobbyJoinBlockedUntilMs = 0;
+  private pendingMultiplayerMatch = false;
+  private isMultiplayerMatch = false;
   private activePostCombatDragProxy: Phaser.GameObjects.Container | null = null;
 
   constructor() {
@@ -314,6 +321,10 @@ export class ArenaScene extends Phaser.Scene {
     this.reverseUsesByInstance.clear();
     this.reverseLastUsedTurnByInstance.clear();
     this.reverseCooldownUntilTurnByInstance.clear();
+	this.lobbyJoinAttempts = 0;
+    this.lobbyJoinBlockedUntilMs = 0;
+    this.pendingMultiplayerMatch = false;
+    this.isMultiplayerMatch = false;
     this.activePostCombatDragProxy?.destroy();
     this.activePostCombatDragProxy = null;
     this.deathAlliesDefeatedCount.clear();
@@ -1300,7 +1311,7 @@ export class ArenaScene extends Phaser.Scene {
       const legendaries = getAllDiceDefinitions(this)
         .filter((d) => d.rarity === 'Legendary')
         .filter((d) => canReceiveUsefulCopies(this, d.typeId));
-      const pick = legendaries.length > 0 ? legendaries[Math.floor(Math.random() * legendaries.length)] : undefined;
+      const pick = legendaries.length > 0 ? securePick(legendaries) : undefined;
       if (pick) {
         grantDiceCopies(this, pick.typeId, 1);
         message = `Legendary Dice: ${pick.title}`;
@@ -1503,9 +1514,12 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private openMultiplayerJoinModal() {
+	if (!this.canAttemptLobbyJoin()) return;
     const rawCode = window.prompt('Enter 6-digit lobby code', '');
-    const lobbyCode = this.normalizeLobbyCode(rawCode ?? '');
+    if (rawCode === null) return;
+    const lobbyCode = this.normalizeLobbyCode(rawCode);
     if (!lobbyCode) {
+	  this.registerFailedLobbyJoin();
       AlertManager.toast(this, { type: 'warning', message: 'Enter a valid 6-character lobby code.' });
       return;
     }
@@ -1613,19 +1627,43 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private generateLobbyCode(): string {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    return Array.from({ length: 6 }, () => alphabet[Phaser.Math.Between(0, alphabet.length - 1)] ?? 'A').join('');
+    return secureLobbyCode(6);
   }
 
   private normalizeLobbyCode(code: string): string {
     const normalized = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
     return normalized.length === 6 ? normalized : '';
   }
+  
+  private getLobbyJoinThrottleRemainingMs(): number {
+    if (this.lobbyJoinBlockedUntilMs <= 0) return 0;
+    return Math.max(0, this.lobbyJoinBlockedUntilMs - Date.now());
+  }
+
+  private registerFailedLobbyJoin(): void {
+    this.lobbyJoinAttempts += 1;
+    if (this.lobbyJoinAttempts >= LOBBY_JOIN_ATTEMPT_LIMIT) {
+      this.lobbyJoinBlockedUntilMs = Date.now() + LOBBY_JOIN_LOCKOUT_MS;
+      this.lobbyJoinAttempts = 0;
+    }
+  }
+
+  private canAttemptLobbyJoin(): boolean {
+    const remainingMs = this.getLobbyJoinThrottleRemainingMs();
+    if (remainingMs <= 0) return true;
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+    AlertManager.toast(this, {
+      type: 'warning',
+      message: `Too many invalid lobby codes. Try again in ${remainingSeconds}s.`
+    });
+    return false;
+  }
 
   private queueArenaMultiplayer(options: { mode: 'matchmaking' | 'multiplayer'; lobbyAction?: 'create' | 'join'; lobbyCode?: string; randomMode: boolean }) {
     const profile = ProfileStore.get(this);
     this.playerDisplayName = profile.username || 'Player';
     const loadoutTypeIds = getDiceDefinitions(this).map((definition) => definition.typeId);
+	this.pendingMultiplayerMatch = true;
     this.enemyDisplayName = options.mode === 'matchmaking' ? 'Rivalis Opponent' : 'Friend';
     this.turnLimit = options.mode === 'matchmaking' ? 10 : this.configTurnCount;
     this.activeChallenge = null;
@@ -1639,6 +1677,13 @@ export class ArenaScene extends Phaser.Scene {
         type: status.state === 'failed' || status.state === 'disabled' ? 'warning' : 'success',
         message: status.message
       });
+	  if (status.state === 'lobby' || status.state === 'matched') {
+        this.lobbyJoinAttempts = 0;
+        this.lobbyJoinBlockedUntilMs = 0;
+      }
+      if (status.state === 'failed' && options.lobbyAction === 'join') {
+        this.registerFailedLobbyJoin();
+      }
       if (status.state === 'connected') {
         this.multiplayerClient.join({
           mode: options.mode,
@@ -1657,7 +1702,7 @@ export class ArenaScene extends Phaser.Scene {
       AlertManager.toast(this, { type: 'warning', message: this.multiplayerClient.getStatus().message });
       return;
     }
-    this.multiplayerClient.connect(setStatus);
+    void this.multiplayerClient.connect(setStatus);
     this.multiplayerStatus = this.multiplayerClient.getStatus();
     if (this.multiplayerStatus.state === 'disabled') {
       AlertManager.toast(this, { type: 'warning', message: this.multiplayerStatus.message });
@@ -1716,6 +1761,7 @@ export class ArenaScene extends Phaser.Scene {
   // ── GAME START ───────────────────────────────────────────────────────────────
 
   private startGame() {
+	const multiplayerMatch = this.pendingMultiplayerMatch;
     const selectedTurnLimit = this.turnLimit;
     const selectedChallenge = this.activeChallenge;
     const selectedDailyKey = this.activeDailyKey;
@@ -1743,6 +1789,7 @@ export class ArenaScene extends Phaser.Scene {
     this.playerDisplayName = selectedPlayerDisplayName;
     this.bossfightCurrentBoss = selectedBossfightBoss;
     this.bossfightLevel = selectedBossfightLevel;
+	this.isMultiplayerMatch = multiplayerMatch;
     this.combatLogMatchId += 1;
     this.gamePhase = { stage: 'placement' };
     const loading = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x050d14, 0.95).setDepth(500);
@@ -1973,8 +2020,6 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
 
-    // Store per-instance class-scaled definitions so duplicate type IDs retain
-    // their own slot class, including copies created by Duality.
     this.instanceDefinitionOverrides.clear();
     this.gameState.dice.forEach((die) => {
       const sourceId = die.instanceId.split(':')[0];
@@ -2411,13 +2456,9 @@ export class ArenaScene extends Phaser.Scene {
     this.currentHandOrder.forEach((instanceId) => {
       const handDie = this.gameState.dice.find((d) => d.instanceId === instanceId);
       if (!handDie) return;
-      const rolledPips = Math.floor(Math.random() * 6) + 1;
+      const rolledPips = secureRandomBetween(1, 6);
       this.dicePips.set(instanceId, rolledPips);
       rollResults.push(`${handDie.typeId}:${rolledPips}`);
-
-      // Pip-driven forms are decided when the die is rolled, not only when
-      // combat starts, so the hand and placement previews show the same form
-      // that will be used on the board.
       const transformed = this.tryAdvancePipTriggeredTransform(handDie, rolledPips);
       const visualDie = transformed ?? (this.gameState.dice.find((candidate) => candidate.instanceId === instanceId) ?? handDie);
       const container = this.handDice.get(instanceId);
@@ -2561,6 +2602,8 @@ export class ArenaScene extends Phaser.Scene {
     }
     this.setPipsForDie(reverseDie, targetPips);
     this.setPipsForDie(target, reversePips);
+	this.reconcilePipTriggeredTransform(reverseDie, targetPips);
+    this.reconcilePipTriggeredTransform(target, reversePips);
     this.reverseLastUsedTurnByInstance.set(reverseDie.instanceId, currentTurn);
     const nextUses = uses + 1;
     if (reverseLimit !== undefined) {
@@ -2579,6 +2622,7 @@ export class ArenaScene extends Phaser.Scene {
     const pipText = container.list.find((object) => object.name === 'pipText') as Phaser.GameObjects.Text | undefined;
     pipText?.setText(`${targetPips}♦`);
     this.updateHandPipText(target);
+	this.refreshHandDieVisuals();
     this.renderDice();
     const liveReverseDie = this.gameState.dice.find((die) => die.instanceId === reverseDie.instanceId) ?? reverseDie;
     this.updateReverseIndicator(container, liveReverseDie);
@@ -2854,7 +2898,7 @@ export class ArenaScene extends Phaser.Scene {
   private invisiRollForEnemies() {
     const enemyDice = this.gameState.dice.filter(die => die.ownerId === 'enemy' && die.zone === 'board');
     enemyDice.forEach(die => {
-      const rolled = Math.floor(Math.random() * 6) + 1;
+      const rolled = secureRandomBetween(1, 6);
       this.enemyDicePips.set(die.instanceId, rolled);
     });
     this.debug.log('Enemy invisiroll complete', { count: enemyDice.length });
@@ -3046,6 +3090,20 @@ export class ArenaScene extends Phaser.Scene {
     this.activePostCombatDragProxy?.destroy();
     this.activePostCombatDragProxy = null;
   }
+  
+  private async confirmTurnWithServer(payload: unknown): Promise<boolean> {
+    if (!this.isMultiplayerMatch) return true;
+    const resolution = await this.multiplayerClient.submitTurn(payload);
+    if (resolution.accepted) return true;
+    this.writeCombatLog(`Server rejected the turn${resolution.message ? `: ${resolution.message}` : '.'}`);
+    AlertManager.toast(this, {
+      type: 'warning',
+      message: resolution.message ?? 'Multiplayer server did not accept the turn.'
+    });
+    this.startCombatButton.setInteractive({ useHandCursor: true });
+    this.startCombatButton.setFillStyle(0xe74c3c, 0.9);
+    return false;
+  }
 
   private async startCombat() {
     const requiredDice = Math.min(25, this.currentHandOrder.length);
@@ -3055,6 +3113,14 @@ export class ArenaScene extends Phaser.Scene {
       this.updateCombatButtonState();
       return;
     }
+	const turnPayload = {
+      turn: this.gameState.turn,
+      playerName: this.playerDisplayName,
+      dice: this.gameState.dice
+        .filter((die) => die.zone === 'board' && !die.isDestroyed)
+        .map((die) => ({ ownerId: die.ownerId, typeId: die.typeId, gridPosition: die.gridPosition }))
+    };
+    if (!(await this.confirmTurnWithServer(turnPayload))) return;
     this.startCombatButton.disableInteractive();
     this.startCombatButton.setFillStyle(0x7f8c8d, 0.5);
     this.rollAllButton.setVisible(false);
@@ -3072,14 +3138,6 @@ export class ArenaScene extends Phaser.Scene {
     this.renderDice();
     this.clearRangeHighlights();
     this.placeEnemyDiceForTurn();
-    this.multiplayerClient.syncTurn({
-      turn: this.gameState.turn,
-      playerName: this.playerDisplayName,
-      dice: this.gameState.dice
-        .filter((die) => die.zone === 'board' && !die.isDestroyed)
-        .map((die) => ({ ownerId: die.ownerId, typeId: die.typeId, gridPosition: die.gridPosition }))
-    });
-
     this.enemyDicePips.clear();
     this.attackCapacityByInstance.clear();
     this.chainedByInstance.clear();
@@ -3185,9 +3243,6 @@ export class ArenaScene extends Phaser.Scene {
   ) {
     if (this.specialSkillAttackDepth >= 8) return;
     const liveSource = this.gameState.dice.find((die) => die.instanceId === source.instanceId && !die.isDestroyed);
-    // On-death skills intentionally use the defeated snapshot as their source;
-    // it preserves the die's board position and lets the final attack resolve
-    // before the defeat event is fully retired.
     const attackSource = liveSource ?? (label === 'On-death attack' ? source : undefined);
     if (!attackSource) return;
     const target = explicitTarget && !explicitTarget.isDestroyed
@@ -3566,8 +3621,6 @@ export class ArenaScene extends Phaser.Scene {
         const basePips = rolledPipsFor(die);
         const definition = this.getDefinitionForInstance(die);
         if (definition) {
-          // Player dice may already have transformed while rolling in the hand.
-          // Enemy dice still transform here after their hidden roll is generated.
           const pipTransform = this.pipTransformTriggeredThisTurn.has(die.instanceId)
             ? undefined
             : this.tryAdvancePipTriggeredTransform(die, basePips);
@@ -3599,9 +3652,6 @@ export class ArenaScene extends Phaser.Scene {
         };
       })
     };
-    // Time's pip auras are also visible, temporary statuses. Keep one stack
-    // per matching Time source so Discharge and the UI can count them without
-    // changing the existing attack-count calculation.
     nextState.dice
       .filter((die) => die.zone === 'board' && !die.isDestroyed)
       .forEach((die) => {
@@ -3809,13 +3859,13 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.configRandomMode || this.activeRandomModifier !== 'DiceCard') return;
     if (!canOfferDiceCards(this.gameState.turn, this.diceCardPicksUsed)) return;
 
-    const rarity = getDiceCardRarityRoll(() => Math.random());
-    const playerCards = rollDiceCards(3, rarity, 'player', this.gameState.dice, this.definitions, this.activeDiceCardKeys, () => Math.random());
+    const rarity = getDiceCardRarityRoll(() => secureRandom());
+    const playerCards = rollDiceCards(3, rarity, 'player', this.gameState.dice, this.definitions, this.activeDiceCardKeys, () => secureRandom());
     if (playerCards.length === 0) return;
     const picked = await this.showDiceCardPicker(playerCards);
     this.applyDiceCard(picked, 'player');
 
-    const enemyCards = rollDiceCards(3, rarity, 'enemy', this.gameState.dice, this.definitions, this.activeDiceCardKeys, () => Math.random());
+    const enemyCards = rollDiceCards(3, rarity, 'enemy', this.gameState.dice, this.definitions, this.activeDiceCardKeys, () => secureRandom());
     if (enemyCards.length > 0) this.applyDiceCard(enemyCards[Phaser.Math.Between(0, enemyCards.length - 1)], 'enemy');
 
     this.diceCardPicksUsed += 1;
@@ -3938,9 +3988,6 @@ export class ArenaScene extends Phaser.Scene {
     let candidates = this.gameState.dice
       .filter((die) => die.zone === 'board' && !die.isDestroyed && !this.healingWaitByInstance.has(die.instanceId) && !die.hasFinishedAttacking && die.attacksRemaining > 0 && die.gridPosition);
     if (candidates.length === 0 && this.healingWaitByInstance.size > 0) {
-      // Healing dice keep their attack available while the rest of the board
-      // gets a chance to create an injured ally. Retry them once afterward;
-      // if nobody needs healing, the normal no-target path consumes the hold.
       this.healingWaitByInstance.forEach((instanceId) => this.healingRetryReadyByInstance.add(instanceId));
       this.healingWaitByInstance.clear();
       candidates = this.gameState.dice
@@ -3948,12 +3995,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (candidates.length === 0) return undefined;
 
-    // Chained dice are deferred until every unchained die has had a chance to
-    // act. They remain in the queue rather than being discarded: if the Lock
-    // dies before this final pass, the chain disappears and the die attacks.
     const unchained = candidates.filter((die) => !this.getActiveLockSource(die));
-    // Keep chained dice for a final pass so they can be marked finished and
-    // returned to hand; the combat loop still skips them unconditionally.
     const orderedCandidates = unchained.length > 0 ? unchained : candidates;
     return orderedCandidates.sort((a, b) => {
       const aDeferred = this.getActiveLockSource(a) ? 1 : 0;
@@ -4189,7 +4231,7 @@ export class ArenaScene extends Phaser.Scene {
     if (mode === 'Furthest') return byFar[0].die;
     if (mode === 'Strongest') return [...candidates].sort((a, b) => b.die.currentHealth - a.die.currentHealth || a.distance - b.distance)[0].die;
     if (mode === 'Weakest') return [...candidates].sort((a, b) => a.die.currentHealth - b.die.currentHealth || a.distance - b.distance)[0].die;
-    return candidates[Math.floor(Math.random() * candidates.length)].die;
+    return securePick(candidates)!.die;
   }
 
   private isBlockedByAllyChain(attacker: DiceInstanceState, target: DiceInstanceState): boolean {
@@ -4228,7 +4270,7 @@ export class ArenaScene extends Phaser.Scene {
         const avoidMeta = getRuntimeSkillMeta({ ...targetDefinition, skills: [avoidSkill] });
         const avoidChance = Phaser.Math.Clamp(avoidMeta.avoidAttackChance ?? 0, 0, 1);
         const avoidRange = Math.max(1, Number.isFinite(targetDefinition.range) ? targetDefinition.range : effectiveRange);
-        if (distance <= avoidRange && avoidChance > 0 && Math.random() < avoidChance) {
+        if (distance <= avoidRange && avoidChance > 0 && secureChance(avoidChance)) {
           ignoredTargetId ??= die.instanceId;
           return false;
         }
@@ -4701,7 +4743,7 @@ export class ArenaScene extends Phaser.Scene {
               : 1;
             const criticalChance = attackerMeta?.criticalChanceIncrease ?? 0;
             const criticalDamageMultiplier = 2 + (attackerMeta?.criticalDamageIncrease ?? 0);
-            const bearCrit = Math.random() < this.getCriticalChance(criticalChance, attacker.typeId === 'Druid');
+            const bearCrit = secureChance(this.getCriticalChance(criticalChance, attacker.typeId === 'Druid'));
             const bearCritMult = bearCrit ? criticalDamageMultiplier : 1;
              const proportionalDamage = ironBonus + solitudeBonus;
              const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + basicDamageBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult * lowHpExploitMult * bearCritMult) + proportionalDamage);
@@ -5072,7 +5114,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private rollGlobalCritical(): boolean {
-    return Math.random() < 0.05;
+    return secureChance(0.05);
   }
 
   private getCriticalChance(criticalChance: number, includesBaseChance = false): number {
@@ -5248,7 +5290,7 @@ export class ArenaScene extends Phaser.Scene {
       && (maxRevives === undefined || previousRevives < maxRevives)
       && (!reviveMeta?.dontReviveWhenLastOneStanding || hasOtherLivingAlly)
     );
-    if (!canRevive || Math.random() >= reviveChance!) {
+    if (!canRevive || !secureChance(reviveChance!)) {
       this.defeatEventIdByInstance.set(instanceId, ++this.nextDefeatEventId);
       return { state: resolvedState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), defeated: true, killed: true, critical: criticalDamage.critical };
     }
@@ -5458,7 +5500,7 @@ export class ArenaScene extends Phaser.Scene {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition) return { damage: 0, critical: false };
     const meta = getRuntimeSkillMeta(definition);
-    const critical = Math.random() < this.getCriticalChance(meta.criticalChanceIncrease ?? 0, true);
+    const critical = secureChance(this.getCriticalChance(meta.criticalChanceIncrease ?? 0, true));
     const crit = critical ? 2 + (meta.criticalDamageIncrease ?? 0) : 1;
     return { damage: Math.max(1, Math.floor(definition.attack * this.getOffenseMultiplier(attacker) * this.getDiceCardSkillDamageMultiplier(attacker) * crit)), critical };
   }
@@ -5496,21 +5538,13 @@ export class ArenaScene extends Phaser.Scene {
     if (this.processedDefeatEventIds.has(resolvedEventId)) return;
     this.processedDefeatEventIds.add(resolvedEventId);
     await this.applyOnKillSkillEffects(attacker, defeated, context);
-    // Soul capture is tied to the kill event, not to the final destroyed state.
-    // A revival therefore still feeds Death/Soul before the normal death-only
-    // hooks are skipped below.
     this.checkDeathTransformCondition(defeated);
     const liveDefeated = this.gameState.dice.find((die) => die.instanceId === defeated.instanceId);
     if (!liveDefeated?.isDestroyed) {
-      // A revival still counts as a kill, but the next lethal hit must receive
-      // a fresh event ID so it can trigger OnKill again.
       this.defeatEventIdByInstance.delete(defeated.instanceId);
       return;
     }
     await this.applyOnDeathSkillEffects(defeated, attacker);
-    // Damage resolution is the single owner of defeat hooks. Poison and other
-    // turn-based effects call this same path below, so don't also count the
-    // defeated die from a second state sweep.
   }
 
   private applyStatusApplications(applications: StatusEffectApplication[] | undefined) {
@@ -5573,9 +5607,6 @@ export class ArenaScene extends Phaser.Scene {
     if (!definition || !skill) return;
     if (skill.type === 'Passive') {
       const firedMeta = getRuntimeSkillMetaForTrigger(definition, 'Passive', skillIndex);
-      // Furious Claw is the opening attack itself plus its bonus claw. Keep
-      // the teleport path equivalent to the normal two-hit resolution while
-      // still selecting the skill through explicit metadata.
       if (firedMeta.attackCountIncrease !== undefined && firedMeta.skillRangeThreshold !== undefined) {
         await this.executeLeonFuriousClaw(attacker, target, 2);
       } else {
@@ -6520,8 +6551,6 @@ export class ArenaScene extends Phaser.Scene {
   private setTransformDuration(instanceId: string, definition: DiceDefinition, transformIndex: number) {
     const duration = definition.transformStats?.[transformIndex]?.transformDuration;
     if (duration !== undefined && Number.isFinite(duration) && duration >= 0) {
-      // Positive values are turns. Zero is an explicitly immediate-expiry
-      // duration, while omitted and -1 are the permanent-transform values.
       this.transformDurationByInstance.set(instanceId, Math.floor(duration));
     } else {
       this.transformDurationByInstance.delete(instanceId);
@@ -6881,12 +6910,12 @@ export class ArenaScene extends Phaser.Scene {
     const constrained = (columns: number[]) => this.pickRandomColumn(columns.filter((column) => column >= minimumColumn));
     switch (this.configDifficulty) {
       case 'Baby':
-        return Math.random() < 0.85 ? constrained([0, 1, 2]) : Phaser.Math.Between(minimumColumn, GRID_SIZE - 1);
+        return secureChance(0.85) ? constrained([0, 1, 2]) : secureRandomBetween(minimumColumn, GRID_SIZE - 1);
       case 'Easy':
-        return Math.random() < 0.82 ? constrained([1, 2]) : Math.max(minimumColumn, 0);
+        return secureChance(0.82) ? constrained([1, 2]) : Math.max(minimumColumn, 0);
       case 'Hard':
-        if (range <= 3) return Math.random() < 0.75 ? constrained([0, 1]) : Phaser.Math.Between(minimumColumn, GRID_SIZE - 1);
-        if (range >= 5) return Math.random() < 0.8 ? constrained([2, 3, 4]) : Phaser.Math.Between(minimumColumn, GRID_SIZE - 1);
+        if (range <= 3) return secureChance(0.75) ? constrained([0, 1]) : secureRandomBetween(minimumColumn, GRID_SIZE - 1);
+        if (range >= 5) return secureChance(0.8) ? constrained([2, 3, 4]) : secureRandomBetween(minimumColumn, GRID_SIZE - 1);
         return Phaser.Math.Between(minimumColumn, GRID_SIZE - 1);
       case 'Nightmare':
 		if (this.shouldNightmareTakeInitiative()) {
@@ -7047,12 +7076,10 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private pickRandomLoadout(pool: DiceDefinition[], useDifficultyRarityRules: boolean): DiceDefinition[] {
-    // Player random decks can draw from every rarity. Bot decks continue to
-    // use the selected difficulty's rarity restrictions and weighting.
     const weightedPool = useDifficultyRarityRules ? this.buildDifficultyWeightedPool(pool) : [...pool];
     const arr = [...weightedPool];
     for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = secureRandomBetween(0, i);
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
 
@@ -7068,7 +7095,7 @@ export class ArenaScene extends Phaser.Scene {
 
     let safety = 0;
     while (selected.length < 5 && arr.length > 0 && safety++ < 100) {
-      const pick = arr[Math.floor(Math.random() * arr.length)];
+      const pick = securePick(arr);
       if (!pick) continue;
       selected.push(pick);
     }
@@ -7247,8 +7274,6 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private playSplashSfxForDie(_die: DiceInstanceState, meta: ReturnType<typeof getRuntimeSkillMeta>) {
-    // Area damage is still a skill effect; never substitute a basic attack SFX
-    // when the skill did not explicitly provide one.
     if (meta.skillSfxKey) AudioManager.playSfx(this, meta.skillSfxKey);
   }
 
@@ -7269,9 +7294,6 @@ export class ArenaScene extends Phaser.Scene {
     const colDelta = target.col - source.col;
     const crossProduct = rowDelta * pattern.colStep - colDelta * pattern.rowStep;
     if (crossProduct === 0) return true;
-    // Rasterize the geometric line by accepting cells whose centers are within
-    // half a tile of it. This keeps shallow/steep perpendicular beams useful
-    // on a discrete 5x5 board instead of reducing them to the primary target.
     const lineLength = Math.hypot(pattern.rowStep, pattern.colStep);
     return Math.abs(crossProduct) <= lineLength * 0.5;
   }
@@ -7286,9 +7308,6 @@ export class ArenaScene extends Phaser.Scene {
     const colDiff = targetPosition.col - attackerPosition.col;
     if (rowDiff === 0 && colDiff === 0) return null;
 
-    // The beam is perpendicular to the attack vector in normalized arena
-    // coordinates. Normalizing opposing-board columns prevents infiltrators
-    // and backline targets from flipping the beam direction incorrectly.
     const gcd = (a: number, b: number): number => {
       let left = Math.abs(a);
       let right = Math.abs(b);
@@ -7393,7 +7412,7 @@ export class ArenaScene extends Phaser.Scene {
       return weakest ? { target: weakest.die, pattern: weakest.pattern } : undefined;
     }
     if (mode === 'Random') {
-      const random = candidates[Math.floor(Math.random() * candidates.length)];
+      const random = securePick(candidates);
       return random ? { target: random.die, pattern: random.pattern } : undefined;
     }
     return byNear[0] ? { target: byNear[0].die, pattern: byNear[0].pattern } : undefined;
@@ -7436,6 +7455,24 @@ export class ArenaScene extends Phaser.Scene {
 
   private getActiveTransformIndex(die: DiceInstanceState, _definition: DiceDefinition): number | undefined {
     return this.transformIndexByInstance.get(die.instanceId);
+  }
+  
+  private reconcilePipTriggeredTransform(die: DiceInstanceState, pips: number): void {
+    const currentIndex = this.transformIndexByInstance.get(die.instanceId);
+    if (currentIndex === undefined || !this.pipTransformTriggeredThisTurn.has(die.instanceId)) return;
+    const baseDefinition = this.getBaseDefinitionForInstance(die) ?? this.getDefinitionForInstance(die);
+    if (!baseDefinition?.transformStats?.length) return;
+    const stillValid = getPipTriggeredTransformIndex(baseDefinition, pips, currentIndex - 1);
+    if (stillValid === currentIndex) return;
+    this.expireTransform(die.instanceId);
+    this.pipTransformTriggeredThisTurn.delete(die.instanceId);
+  }
+
+  private refreshHandDieVisuals() {
+    this.handDice.forEach((container, instanceId) => {
+      const die = this.getPlayerHandDie(instanceId);
+      if (die) this.applyHandDieTransformVisual(container, die);
+    });
   }
 
   private getTransformedVisual(die: DiceInstanceState): { accent: string; symbol?: string } | null {

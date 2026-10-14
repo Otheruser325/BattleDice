@@ -1,7 +1,7 @@
 {
   "typeId": "Discharge",
   "title": "Discharge Dice",
-  "attack": 25,
+  "attack": 28,
   "health": 650,
   "range": 4,
   "rarity": "Rare",

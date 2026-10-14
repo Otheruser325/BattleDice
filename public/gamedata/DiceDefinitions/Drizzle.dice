@@ -2,7 +2,7 @@
   "typeId": "Drizzle",
   "title": "Drizzle Dice",
   "attack": 20,
-  "health": 560,
+  "health": 540,
   "range": 6,
   "rarity": "Uncommon",
   "skills": [

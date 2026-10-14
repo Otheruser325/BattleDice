@@ -1,16 +1,16 @@
 {
   "typeId": "Fire",
   "title": "Fire Dice",
-  "attack": 24,
+  "attack": 26,
   "health": 800,
   "range": 4,
   "skills": [
     {
       "type": "Passive",
       "title": "Splash Ember",
-      "description": "Attacks cause 12 splash damage to adjacent foes on the target's board.",
+      "description": "Attacks cause 13 splash damage to adjacent foes on the target's board.",
       "modifiers": {
-        "splashDamage": 12,
+        "splashDamage": 13,
 		"skillSfx": "dice_fire_skill"
       }
     }

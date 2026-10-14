@@ -122,34 +122,39 @@ export function getDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
 
 export function getAllDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {
   const flags = getDiceFlags(scene);
-  return flags.fetchableTypeIds
-    .map((typeId) => {
-      const cached = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
-      if (!cached) {
-        return reloadDiceDefinition(scene, typeId);
-      }
-      return cached;
-    })
-    .filter((definition): definition is DiceDefinition => Boolean(definition));
+  const definitions: DiceDefinition[] = [];
+  const missingTypeIds: DiceTypeId[] = [];
+  for (const typeId of flags.fetchableTypeIds) {
+    const cached = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
+    if (cached) definitions.push(cached);
+    else missingTypeIds.push(typeId);
+  }
+  if (missingTypeIds.length > 0) {
+    void hydrateMissingDiceDefinitions(scene, missingTypeIds);
+  }
+  return definitions;
 }
 
-function reloadDiceDefinition(scene: Phaser.Scene, typeId: DiceTypeId): DiceDefinition | undefined {
-  try {
-    const path = withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', path, false);
-    xhr.send(null);
-    if (xhr.status === 200) {
-      const definition = JSON.parse(xhr.responseText) as DiceDefinition;
-      if (definition && definition.typeId === typeId) {
+const pendingDiceDefinitionLoads = new Set<DiceTypeId>();
+
+async function hydrateMissingDiceDefinitions(scene: Phaser.Scene, typeIds: DiceTypeId[]): Promise<void> {
+  await Promise.all(typeIds.map(async (typeId) => {
+    if (scene.cache.json.exists(`dice:${typeId}`) || pendingDiceDefinitionLoads.has(typeId)) return;
+    pendingDiceDefinitionLoads.add(typeId);
+    try {
+      const path = withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
+      const res = await fetch(path, { credentials: 'same-origin', cache: 'no-store' });
+      if (!res.ok) return;
+      const definition = await res.json() as DiceDefinition;
+	  if (definition && definition.typeId === typeId) {
         scene.cache.json.add(`dice:${typeId}`, definition);
-        return definition;
       }
+    } catch {
+    return;
+    } finally {
+      pendingDiceDefinitionLoads.delete(typeId);
     }
-  } catch {
-    // Silently fail reload attempt
-  }
-  return undefined;
+  }));
 }
 
 export function getExclusiveDiceDefinitions(scene: Phaser.Scene): DiceDefinition[] {

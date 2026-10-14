@@ -20,6 +20,11 @@ function readTrimmedEnv(key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readRuntimeTicket(): string {
+  const injected = (globalThis as { __RIVALIS_TICKET__?: unknown }).__RIVALIS_TICKET__;
+  return typeof injected === 'string' ? injected.trim() : '';
+}
+
 function getRivalisEndpointError(endpoint: string): string {
   if (!endpoint) return 'Rivalis endpoint must be configured for multiplayer.';
 
@@ -62,31 +67,51 @@ type ArenaMultiplayerServerEvent = {
   opponentName?: string;
 };
 
+export interface ArenaMultiplayerTurnResolution {
+  accepted: boolean;
+  message?: string;
+  state?: unknown;
+}
+
+type ArenaMultiplayerTurnEvent = {
+  accepted?: boolean;
+  status?: 'accepted' | 'rejected' | 'failed';
+  message?: string;
+  state?: unknown;
+};
+
+interface PendingTurnResolution {
+  resolve: (resolution: ArenaMultiplayerTurnResolution) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
 export class ArenaMultiplayerClient {
   private readonly debug = DebugManager.scope('ArenaMultiplayer');
   private readonly encoder = new TextEncoder();
   private readonly decoder = new TextDecoder();
   private readonly endpoint = readTrimmedEnv('VITE_RIVALIS_WS_URL');
-  private readonly ticket = readTrimmedEnv('VITE_RIVALIS_TICKET');
+  private readonly ticketEndpoint = readTrimmedEnv('VITE_RIVALIS_TICKET_ENDPOINT');
   private readonly endpointError = getRivalisEndpointError(this.endpoint);
   private readonly ticketSource: RivalisTicketSource = RIVALIS_TICKET_SOURCES.find((source) => source === BUILD_ENV.VITE_RIVALIS_TICKET_SOURCE) ?? 'query';
+  private runtimeTicket = readRuntimeTicket();
   private client: WSClient<ArenaMultiplayerTopic> | null = null;
   private socketOpen = false;
   private pendingJoin: ArenaMultiplayerJoinOptions | null = null;
+  private pendingTurnResolution: PendingTurnResolution | null = null;
   private status: ArenaMultiplayerStatus = {
     state: this.configured ? 'disconnected' : 'disabled',
     message: this.configured ? 'Rivalis ready.' : this.getConfigurationMessage()
   };
 
   get configured(): boolean {
-    return Boolean(!this.endpointError && this.ticket);
+    return Boolean(!this.endpointError && (this.runtimeTicket || this.ticketEndpoint));
   }
 
   getStatus(): ArenaMultiplayerStatus {
     return { ...this.status };
   }
 
-  connect(onStatus?: (status: ArenaMultiplayerStatus) => void) {
+  async connect(onStatus?: (status: ArenaMultiplayerStatus) => void): Promise<void> {
     if (!this.configured) {
       this.setStatus('disabled', this.getConfigurationMessage(), onStatus);
       return;
@@ -99,6 +124,12 @@ export class ArenaMultiplayerClient {
 
     if (this.client) {
       this.setStatus('connecting', 'Connecting to Rivalis...', onStatus);
+      return;
+    }
+	
+	const ticket = await this.resolveTicket();
+    if (!ticket) {
+      this.setStatus('failed', 'Rivalis ticket could not be obtained from the server.', onStatus);
       return;
     }
 
@@ -130,10 +161,10 @@ export class ArenaMultiplayerClient {
     });
     this.client.on('arena:matchmaking:state', (payload) => this.handleServerState(payload, onStatus));
     this.client.on('arena:multiplayer:state', (payload) => this.handleServerState(payload, onStatus));
-    this.client.on('arena:turn:state', () => this.debug.log('Received Rivalis turn state.'));
+    this.client.on('arena:turn:state', (payload) => this.handleTurnResolution(payload));
     this.setStatus('connecting', 'Connecting to Rivalis...', onStatus);
     try {
-      this.client.connect(this.ticket);
+      this.client.connect(ticket);
     } catch (error) {
       this.socketOpen = false;
       this.client = null;
@@ -143,6 +174,7 @@ export class ArenaMultiplayerClient {
   }
 
   disconnect() {
+	this.resolvePendingTurn({ accepted: false, message: 'Multiplayer session disconnected.' });
     this.client?.disconnect();
     this.client = null;
     this.socketOpen = false;
@@ -165,6 +197,27 @@ export class ArenaMultiplayerClient {
   syncTurn(payload: unknown) {
     if (!this.socketOpen || !this.client) return;
     this.client.send('arena:turn:sync', this.encodeJson(payload));
+  }
+  
+  async submitTurn(payload: unknown, timeoutMs = 8_000): Promise<ArenaMultiplayerTurnResolution> {
+    if (!this.configured) {
+      return { accepted: false, message: 'Multiplayer server is not configured.' };
+    }
+    if (!this.socketOpen || !this.client) {
+      return { accepted: false, message: 'Multiplayer server is not connected.' };
+    }
+    if (this.pendingTurnResolution) {
+      return { accepted: false, message: 'A turn is already awaiting server confirmation.' };
+    }
+
+    return new Promise<ArenaMultiplayerTurnResolution>((resolve) => {
+      const timeout = setTimeout(() => {
+        if (this.pendingTurnResolution?.timeout === timeout) this.pendingTurnResolution = null;
+        resolve({ accepted: false, message: 'Multiplayer server did not confirm the turn in time.' });
+      }, timeoutMs);
+      this.pendingTurnResolution = { resolve, timeout };
+      this.client!.send('arena:turn:sync', this.encodeJson(payload));
+    });
   }
 
   private sendJoin(options: ArenaMultiplayerJoinOptions) {
@@ -196,8 +249,31 @@ export class ArenaMultiplayerClient {
 
   private getConfigurationMessage(): string {
     if (this.endpointError) return this.endpointError;
-    if (!this.ticket) return 'Rivalis ticket must be configured for multiplayer.';
+    if (!this.runtimeTicket && !this.ticketEndpoint) return 'Rivalis ticket must be provided by the server for multiplayer.';
     return 'Rivalis endpoint and ticket must be configured for multiplayer.';
+  }
+  
+  private async resolveTicket(): Promise<string> {
+    if (this.runtimeTicket) return this.runtimeTicket;
+    if (!this.ticketEndpoint) return '';
+    try {
+      const response = await fetch(this.ticketEndpoint, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+      });
+      if (!response.ok) {
+        this.debug.warn(`Rivalis ticket request failed with status ${response.status}.`);
+        return '';
+      }
+      const payload = await response.json() as { ticket?: unknown };
+      if (typeof payload.ticket !== 'string') return '';
+      this.runtimeTicket = payload.ticket.trim();
+      return this.runtimeTicket;
+    } catch (error) {
+      this.debug.warn('Unable to fetch Rivalis ticket from the server.', error);
+      return '';
+    }
   }
 
   private handleServerState(payload: Uint8Array, onStatus?: (status: ArenaMultiplayerStatus) => void) {
@@ -214,6 +290,29 @@ export class ArenaMultiplayerClient {
       const message = this.decoder.decode(payload);
       if (message) this.setStatus('connected', message, onStatus);
     }
+  }
+  
+  private handleTurnResolution(payload: Uint8Array) {
+    let event: ArenaMultiplayerTurnEvent | undefined;
+    try {
+      event = JSON.parse(this.decoder.decode(payload)) as ArenaMultiplayerTurnEvent;
+    } catch {
+      this.debug.warn('Received malformed Rivalis turn resolution.');
+    }
+    const accepted = event?.accepted ?? event?.status === 'accepted';
+    this.resolvePendingTurn({
+      accepted,
+      message: event?.message,
+      state: event?.state
+    });
+  }
+
+  private resolvePendingTurn(resolution: ArenaMultiplayerTurnResolution) {
+    const pending = this.pendingTurnResolution;
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    this.pendingTurnResolution = null;
+    pending.resolve(resolution);
   }
 
   private setStatus(state: ConnectionState, message: string, onStatus?: (status: ArenaMultiplayerStatus) => void, extra?: Pick<ArenaMultiplayerStatus, 'lobbyCode' | 'roomId'>) {

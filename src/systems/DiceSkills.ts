@@ -1,5 +1,6 @@
 import { DICE_STATUS_EFFECT_POOL, type DiceDefinition, type DiceInstanceState, type DiceSkillDefinition, type DiceSkillModifier, type DiceSkillType, type DiceStatusEffect, type DiceStatusEffectDurationEffect, type DiceStatusEffectDurationKey, type DiceStatusEffectDurationProperties, type DiceTargetingMode } from '../types/game';
 import { getBoardSideCombatDistance } from './CombatRange';
+import { secureRandomBetween } from '../utils/RandomManager';
 
 const STATUS_EFFECTS: DiceStatusEffect[] = [...DICE_STATUS_EFFECT_POOL];
 const STATUS_DURATION_TYPES: DiceStatusEffectDurationEffect[] = [...DICE_STATUS_EFFECT_POOL];
@@ -260,8 +261,6 @@ function getPipRequirements(definition: DiceDefinition): Array<number | undefine
     .map((modifier) => (modifier as { transformPipRequirements?: unknown }).transformPipRequirements)
     .find((candidate): candidate is unknown[] => Array.isArray(candidate));
   if (!values) return undefined;
-  // Keep invalid entries in place: an invalid value is an intentional no-op,
-  // not a reason to shift later requirements onto an earlier transform.
   return values.map((value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 6 ? value : undefined);
 }
 
@@ -276,16 +275,12 @@ function getPipRequirement(definition: DiceDefinition, transformIndex: number): 
 export function getPipTriggeredTransformIndex(definition: DiceDefinition, pips: number, currentIndex = -1): number | undefined {
   const available = getAvailableTransformIndices(definition);
   if (available.length === 0 || pips < 1 || pips > 6) return undefined;
-
   const nextIndex = currentIndex < 0 ? available[0] : available.find((index) => index > currentIndex);
   if (nextIndex === undefined) return undefined;
   const requirements = getPipRequirements(definition);
   const explicitRequirement = getPipRequirement(definition, nextIndex);
   if (requirements) return explicitRequirement !== undefined && pips === explicitRequirement ? nextIndex : undefined;
   if (explicitRequirement !== undefined) return pips === explicitRequirement ? nextIndex : undefined;
-
-  // A transformed form may carry its own trigger metadata; when it does not,
-  // inherit the base-form trigger so odd/even transformations work generically.
   const triggerIndex = currentIndex < 0 ? undefined : currentIndex;
   const trigger = getTransformPipTrigger(definition, triggerIndex) ?? getTransformPipTrigger(definition);
   if (!trigger || (trigger === 'odd' && pips % 2 !== 1) || (trigger === 'even' && pips % 2 !== 0)) return undefined;
@@ -446,9 +441,6 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     .map((note) => note.startsWith('runtime:statusEffect=') ? note.slice('runtime:statusEffect='.length) : note.startsWith('runtime:status=') ? note.slice('runtime:status='.length) : undefined)
     .map(parseStatusEffect)
     .filter((effect): effect is DiceStatusEffect => Boolean(effect));
-  // Trigger metadata is intentionally scoped to the selected skill. Merging
-  // status effects from every passive made Leon's Mighty Roar stun fire on
-  // every Furious Claw attack.
   const primaryStatusEffect = parseStatusEffect((modifiers as { statusEffect?: string } | undefined)?.statusEffect);
   const statusEffects = [...new Set((primaryStatusEffect ? [primaryStatusEffect] : []).concat(statusNoteEffects))];
   const selectedStatusModifiers = activeSkill ? activeModifiers : modifiers;
@@ -484,8 +476,6 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
       const pipNumber = Number(pip);
       return Number.isInteger(pipNumber) && pipNumber >= 1 && pipNumber <= 6 && typeof rate === 'number' && Number.isFinite(rate);
     });
-    // Preserve an explicitly supplied, but incomplete/invalid, map as an empty
-    // object so effect resolution can apply its documented fallback chain.
     return Object.fromEntries(valid) as Record<string, number>;
   };
   const splashDamageRatesByPip = getPipRateObject('splashDamageRatesByPip');
@@ -727,7 +717,7 @@ export function resolveDamage(
   const meta = getRuntimeSkillMeta(definition);
   if (meta.randomDamage) {
     const { min, max } = meta.randomDamage;
-    damage = Math.floor(Math.random() * (max - min + 1)) + min;
+    damage = secureRandomBetween(min, max);
   }
   if (meta.targetMaxHpBonusRate && !meta.checkForAdjacentAllies) {
     damage += Math.floor(target.maxHealth * meta.targetMaxHpBonusRate);

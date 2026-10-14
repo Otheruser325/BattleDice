@@ -2,7 +2,7 @@
   "typeId": "Spear",
   "title": "Spear Dice",
   "attack": 26,
-  "health": 880,
+  "health": 900,
   "range": 2,
   "rarity": "Uncommon",
   "skills": [

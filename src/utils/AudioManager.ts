@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SettingsStore } from '../systems/SettingsStore';
 import { withBasePath } from './BuildEnv';
+import { securePick } from './RandomManager';
 
 export const AUDIO_KEYS = {
   menuMusic: 'menu-music',
@@ -104,7 +105,7 @@ export class AudioManager {
   static playRandomSfx(scene: Phaser.Scene, keys: string[], config: Phaser.Types.Sound.SoundConfig = {}) {
     const available = keys.filter((key) => scene.cache.audio.exists(key));
     if (available.length === 0) return;
-    const key = available[Math.floor(Math.random() * available.length)];
+    const key = securePick(available)!;
     this.playSfx(scene, key, config);
   }
 

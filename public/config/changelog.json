@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "v0.7.1-beta",
+      "date": "2026-10-14",
+      "notes": [
+		"Dice balance: --Fire: Damage increased from 24 -> 26 --Fire: Splash damage increased from 12 -> 13 ---A small buff to Fire's damage output to make it feel more impactful early on. --Ice: Mana charge rate reduced from 6 -> 5 ---Ice is struggling in the current meta due to its low value, so allowing it to get freezes more frequently to bolster its viability as a control option. --Sword: Health increased from 850 -> 880 ---Sword Die's HP is a little too low for a frontline damage dealer, while also being the only Dice that has no direct skills, so it has eaten enough healthy food to sustain more in battle. --Drizzle: Health reduced from 560 -> 540 ---A small HP nerf so Drizzle can be answered more often by mid-range units. --Spear: Health increased from 880 -> 900 ---Much like Sword, Spear needs just a little more to survive the frontline as a bruiser. --Discharge: Damage increased from 25 -> 28 --Discharge's skill is often hard to get value out of and is generally awkward in a lot of situations, so we're upping its basic attack damage. --Slingshot: Health reduced from 480 -> 450 ---Slingshot is still a polarising Dice that can quickly shred low-health units with ease, so it needs some added counterplay --Broken Growth: Damage increased from 28 -> 30 ---Broken Growth Die's major downside is being able to downgrade its attack count to lower its overall damage it can deal per turn, so it needs a little more love --Reverse: Damage increased from 20 -> 22 --Reverse: Health increased from 600 -> 620 ---Reverse is fun to use with a lot of creative decks, but it just lacked sufficient stats on its own, so increasing its stats so it can hold on for a bit longer --Druid: Bear Form: Health decreased from 1,500 -> 1,400 ---The Bear was quite tanky for the opponents to deal with after finishing supporting its team, so lowering that so the opponents have a better chance at mauling it down. --Transcendence: Transformed beam damage reduced from 600 -> 520 ---It never really make sense as to why the Transcendence is truly capable of sniping enemy Dice with such an incredibly powerful attack, so lowering that to a more appropriate balance point.",
+        "Bug fixes: --hardened randomness security across multiplayer states --fixed an edge case related to dice definition fetching --server-side multiplayer and lobby generation should now behave normally --fixed an issue that caused transformed dice to retain their usual form with the unmatching requirements whilst swapping pips with Reverse Dice"
+      ]
+    },
+    {
       "version": "v0.7.0-beta",
       "date": "2026-08-09",
       "notes": [

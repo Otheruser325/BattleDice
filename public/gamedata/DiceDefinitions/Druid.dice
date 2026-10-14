@@ -35,7 +35,7 @@
   "transformStats": [{
     "title": "Druid Bear",
     "attack": 50,
-    "health": 1500,
+    "health": 1400,
     "range": 2,
     "targetingMode": "Nearest",
     "accent": "#9b6a3a",
