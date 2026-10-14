@@ -2,6 +2,7 @@ import type { DiceDefinition, DiceInstanceState, DiceSkillType, DiceStatusEffect
 import { getPipMappedRate, resolvePipScaledDamage, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getSkillLockClass, type DiceSkillRuntimeMeta } from './DiceSkills';
 import { getBoardSideCombatDistance } from './CombatRange';
 import { formatCompact } from '../utils/FormatManager';
+import { secureChance, securePick } from '../utils/SecureRandom';
 
 export type CombatFlowPhase = DiceSkillType | 'Attack';
 
@@ -228,7 +229,7 @@ function applyGrowth(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): voi
   const delta = Math.max(1, Math.abs(meta.growthDelta ?? 1));
   const chance = Math.max(0, Math.min(1, meta.growthChance ?? 1));
   result.applyGrowth = true;
-  result.growthDelta = Math.random() < chance ? delta : -delta;
+  result.growthDelta = secureChance(chance) ? delta : -delta;
 }
 
 function applySummon(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): void {
@@ -265,7 +266,7 @@ function selectChainTarget(
   mode: DiceTargetingMode
 ): DiceInstanceState | undefined {
   if (candidates.length === 0) return undefined;
-  if (mode === 'Random') return candidates[Math.floor(Math.random() * candidates.length)]?.die;
+  if (mode === 'Random') return securePick(candidates)?.die;
   const sorted = [...candidates].sort((a, b) => {
     if (mode === 'Strongest') return b.die.currentHealth - a.die.currentHealth || a.distance - b.distance;
     if (mode === 'Weakest') return a.die.currentHealth - b.die.currentHealth || a.distance - b.distance;

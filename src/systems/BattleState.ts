@@ -6,6 +6,7 @@ import type {
 } from '../types/game';
 import { getRuntimeSkillMeta, resolveDamage } from './DiceSkills';
 import { getCombatDistance } from './CombatRange';
+import { secureChance, securePick } from '../utils/SecureRandom';
 
 export type { MatchBattleState };
 
@@ -241,7 +242,7 @@ export function findAttackTarget(
     return [...reachable]
       .sort((a, b) => a.die.currentHealth - b.die.currentHealth || a.die.maxHealth - b.die.maxHealth || a.distance - b.distance)[0]?.die;
   }
-  if (mode === 'Random') return reachable[Math.floor(Math.random() * reachable.length)]?.die;
+  if (mode === 'Random') return securePick(reachable)?.die;
   return sortedByDistance[0]?.die;
 }
 
@@ -283,7 +284,7 @@ export function executeAttack(
     && (runtimeMeta?.maxRevives === undefined || previousRevives < runtimeMeta.maxRevives)
     && (!runtimeMeta.dontReviveWhenLastOneStanding || hasOtherLiving)
   );
-  if (updatedTarget?.isDestroyed && canRevive && Math.random() < reviveChance!) {
+  if (updatedTarget?.isDestroyed && canRevive && secureChance(reviveChance!)) {
     newState = {
       ...newState,
       reviveCounts: { ...state.reviveCounts, [targetId]: previousRevives + 1 },

@@ -10,6 +10,7 @@ import { AudioManager } from '../utils/AudioManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { AchievementStore } from '../systems/AchievementStore';
 import { formatCompact, formatPercent } from '../utils/FormatManager';
+import { secureChance, secureRandom, secureRandomBetween } from '../utils/SecureRandom';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -418,11 +419,11 @@ export class CasinoScene extends Phaser.Scene {
     AudioManager.playSfx(this, 'chest-open');
     const isGuaranteed = progress.fivesGauge >= FIVES_GAUGE_MAX;
     if (isGuaranteed) {
-      const guaranteedPip = Phaser.Math.Between(1, 6);
+      const guaranteedPip = secureRandomBetween(1, 6);
       this.dice = [guaranteedPip, guaranteedPip, guaranteedPip, guaranteedPip, guaranteedPip];
       this.locks = [false, false, false, false, false];
     } else {
-      this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : Phaser.Math.Between(1, 6)));
+      this.dice = this.dice.map((pip, i) => (this.locks[i] ? pip : secureRandomBetween(1, 6)));
     }
 
     this.rollsLeft -= 1;
@@ -517,7 +518,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private rollCrapsDice(): [number, number] {
-    return [Phaser.Math.Between(1, 6), Phaser.Math.Between(1, 6)];
+    return [secureRandomBetween(1, 6), secureRandomBetween(1, 6)];
   }
 
   private resolveCrapsRound(): { finalRoll: [number, number]; summary: string; chestType: ChestType | null; chestCount: number } {
@@ -680,9 +681,9 @@ export class CasinoScene extends Phaser.Scene {
     let emptyRewardRolls = 0;
 
     for (let i = 0; i < openCount; i++) {
-      diceTokens += Phaser.Math.Between(tokenRange[0], tokenRange[1]);
-      if (Math.random() < diamondReward.chance) {
-        diamonds += Phaser.Math.Between(diamondReward.copies[0], diamondReward.copies[1]);
+      diceTokens += secureRandomBetween(tokenRange[0], tokenRange[1]);
+      if (secureChance(diamondReward.chance)) {
+        diamonds += secureRandomBetween(diamondReward.copies[0], diamondReward.copies[1]);
       }
       const reward = this.rollChestReward(type);
       if (!reward) {
@@ -699,7 +700,7 @@ export class CasinoScene extends Phaser.Scene {
     if (emptyRewardRolls > 0) {
       const fallbackMin = Math.max(10, Math.floor(tokenRange[0] * 0.5));
       const fallbackMax = Math.max(fallbackMin, Math.floor(tokenRange[1] * 0.5));
-      for (let i = 0; i < emptyRewardRolls; i++) diceTokens += Phaser.Math.Between(fallbackMin, fallbackMax);
+      for (let i = 0; i < emptyRewardRolls; i++) diceTokens += secureRandomBetween(fallbackMin, fallbackMax);
     }
 
     setDiceTokens(this, getDiceTokens(this) + diceTokens);
@@ -742,7 +743,7 @@ export class CasinoScene extends Phaser.Scene {
         });
         const die = remainingPool[0];
         const capacity = this.getRemainingChestCopyCapacity(die.typeId);
-        const copies = Math.min(Phaser.Math.Between(copyRange[0], copyRange[1]), capacity);
+        const copies = Math.min(secureRandomBetween(copyRange[0], copyRange[1]), capacity);
         if (copies <= 0) {
           remainingPool.shift();
           continue;
@@ -778,7 +779,7 @@ export class CasinoScene extends Phaser.Scene {
     let remainingEntries = [...weightedTable];
     while (remainingEntries.length > 0) {
       const totalRate = remainingEntries.reduce((sum, entry) => sum + entry.adjustedRate, 0);
-      let roll = Math.random() * totalRate;
+      let roll = secureRandom() * totalRate;
       const selected = remainingEntries.find((entry) => {
         roll -= entry.adjustedRate;
         return roll < 0;

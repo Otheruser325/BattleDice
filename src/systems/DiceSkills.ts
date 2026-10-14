@@ -1,5 +1,6 @@
 import { DICE_STATUS_EFFECT_POOL, type DiceDefinition, type DiceInstanceState, type DiceSkillDefinition, type DiceSkillModifier, type DiceSkillType, type DiceStatusEffect, type DiceStatusEffectDurationEffect, type DiceStatusEffectDurationKey, type DiceStatusEffectDurationProperties, type DiceTargetingMode } from '../types/game';
 import { getBoardSideCombatDistance } from './CombatRange';
+import { secureRandomBetween } from '../utils/SecureRandom';
 
 const STATUS_EFFECTS: DiceStatusEffect[] = [...DICE_STATUS_EFFECT_POOL];
 const STATUS_DURATION_TYPES: DiceStatusEffectDurationEffect[] = [...DICE_STATUS_EFFECT_POOL];
@@ -727,7 +728,7 @@ export function resolveDamage(
   const meta = getRuntimeSkillMeta(definition);
   if (meta.randomDamage) {
     const { min, max } = meta.randomDamage;
-    damage = Math.floor(Math.random() * (max - min + 1)) + min;
+    damage = secureRandomBetween(min, max);
   }
   if (meta.targetMaxHpBonusRate && !meta.checkForAdjacentAllies) {
     damage += Math.floor(target.maxHealth * meta.targetMaxHpBonusRate);
