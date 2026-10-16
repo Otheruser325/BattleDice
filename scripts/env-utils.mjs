@@ -52,8 +52,8 @@ export function loadViteEnv({ mode, cwd = process.cwd(), defaults = {} }) {
 
   return {
     MODE: mode,
-    DEV: mode !== 'production',
-    PROD: mode === 'production',
+    DEV: mode === 'development',
+    PROD: mode !== 'development',
     ...defaults,
     ...fileEnv,
     ...processEnv

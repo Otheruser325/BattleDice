@@ -2,6 +2,7 @@ import type Phaser from 'phaser';
 import type { DiceDefinition, DiceTypeId, DiceFlags } from '../types/game';
 import { AchievementStore } from '../systems/AchievementStore';
 import { withBasePath } from '../utils/BuildEnv';
+import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
 
 export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'] as const;
 export const DEFAULT_LOADOUT_IDS = new Set<string>(['Fire', 'Ice', 'Poison', 'Electric', 'Wind']);
@@ -72,7 +73,15 @@ function getMaxUsefulCopiesForType(scene: Phaser.Scene, typeId: DiceTypeId, clas
   return remaining;
 }
 
+const INTEGRITY_CRITICAL_KEYS = new Set<string>([
+  DICE_TOKENS_KEY,
+  DIAMONDS_KEY,
+  DICE_PROGRESS_KEY,
+  SHOP_STATE_KEY
+]);
+
 function readStored<T>(key: string): T | undefined {
+  if (INTEGRITY_CRITICAL_KEYS.has(key)) return readIntegrityChecked<T>(key);
   try {
     if (typeof localStorage === 'undefined') return undefined;
     const raw = localStorage.getItem(key);
@@ -83,6 +92,10 @@ function readStored<T>(key: string): T | undefined {
 }
 
 function writeStored<T>(key: string, value: T) {
+  if (INTEGRITY_CRITICAL_KEYS.has(key)) {
+    writeIntegrityChecked(key, value);
+    return;
+  }
   try {
     if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(value));
   } catch {}
@@ -290,7 +303,7 @@ function sanitizeDiceProgressStore(scene: Phaser.Scene, store: Record<string, Di
   const sanitized = { ...store };
   Object.entries(store).forEach(([key, value]) => {
     const typeId = key as DiceTypeId;
-    if (!isTypeIdFetchable(scene, typeId)) {
+    if (!isTypeIdFetchable(scene, typeId) || !value || typeof value !== 'object') {
       delete sanitized[key];
       changed = true;
       return;

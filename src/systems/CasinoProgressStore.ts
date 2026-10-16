@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { ChestType } from './CasinoComboTypes';
+import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
 
 export interface FivesHandState {
   dice: number[];
@@ -57,7 +58,7 @@ export class CasinoProgressStore {
   static set(scene: Phaser.Scene, next: CasinoProgress): CasinoProgress {
     const normalized = normalizeProgress(next);
     scene.registry.set('casinoProgress', normalized);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    writeIntegrityChecked(STORAGE_KEY, normalized);
     return normalized;
   }
 
@@ -68,9 +69,9 @@ export class CasinoProgressStore {
 
   static load(): CasinoProgress {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return normalizeProgress(DEFAULT_PROGRESS);
-      return normalizeProgress(JSON.parse(raw) as Partial<CasinoProgress>);
+      const parsed = readIntegrityChecked<Partial<CasinoProgress>>(STORAGE_KEY);
+      if (!parsed) return normalizeProgress(DEFAULT_PROGRESS);
+      return normalizeProgress(parsed);
     } catch {
       return normalizeProgress(DEFAULT_PROGRESS);
     }

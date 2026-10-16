@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "v0.7.2-beta",
+      "date": "2026-10-16",
+      "notes": [
+        "Security: --hardened local save integrity so edited or corrupted save data is rejected and reset to safe defaults --hardened multiplayer turn handling so the server's authoritative battle state is validated before it is applied --closed a case where the playtest/dev menu could ship inside a production build",
+        "Bug fixes: --fixed a crash when a save file contained a malformed dice-progress entry"
+      ]
+    },
+    {
       "version": "v0.7.1-beta",
       "date": "2026-10-14",
       "notes": [

@@ -46,6 +46,86 @@ export function createMatchBattleState(
   };
 }
 
+const GRID_LIMIT = 5;
+const OWNER_IDS: DiceOwnerId[] = ['player', 'enemy'];
+const ZONES: DiceInstanceState['zone'][] = ['hand', 'board', 'eliminated'];
+
+function isOwnerId(value: unknown): value is DiceOwnerId {
+  return typeof value === 'string' && (OWNER_IDS as string[]).includes(value);
+}
+
+function isZone(value: unknown): value is DiceInstanceState['zone'] {
+  return typeof value === 'string' && (ZONES as string[]).includes(value);
+}
+
+function sanitizeGridPosition(value: unknown): DiceInstanceState['gridPosition'] {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as { row?: unknown; col?: unknown };
+  const row = Math.floor(Number(candidate.row));
+  const col = Math.floor(Number(candidate.col));
+  if (!Number.isInteger(row) || !Number.isInteger(col)) return undefined;
+  if (row < 0 || col < 0 || row >= GRID_LIMIT || col >= GRID_LIMIT) return undefined;
+  return { row, col };
+}
+
+function sanitizeServerDie(value: unknown, knownInstanceIds: Set<string>): DiceInstanceState | null {
+  if (!value || typeof value !== 'object') return null;
+  const die = value as Partial<DiceInstanceState>;
+  if (typeof die.instanceId !== 'string' || !knownInstanceIds.has(die.instanceId)) return null;
+  if (typeof die.typeId !== 'string' || die.typeId.length === 0) return null;
+  if (!isOwnerId(die.ownerId)) return null;
+  if (!isZone(die.zone)) return null;
+  if (die.zone === 'board' && sanitizeGridPosition(die.gridPosition) === undefined) return null;
+
+  const maxHealth = Math.max(1, Math.floor(Number(die.maxHealth) || 0));
+  const clampedHealth = Math.max(0, Math.min(maxHealth, Math.floor(Number(die.currentHealth) || 0)));
+  const isDestroyed = die.isDestroyed === true || clampedHealth === 0;
+  const currentHealth = isDestroyed ? 0 : clampedHealth;
+  const zone = isDestroyed ? 'eliminated' : die.zone;
+  const attacksRemaining = Math.max(0, Math.floor(Number(die.attacksRemaining) || 0));
+
+  return {
+    instanceId: die.instanceId,
+    typeId: die.typeId as DiceInstanceState['typeId'],
+    ownerId: die.ownerId,
+    zone,
+    maxHealth,
+    currentHealth,
+    isDestroyed,
+    hasFinishedAttacking: die.hasFinishedAttacking === true || attacksRemaining === 0,
+    attacksRemaining,
+    gridPosition: zone === 'board' ? sanitizeGridPosition(die.gridPosition) : undefined
+  };
+}
+
+export function sanitizeServerBattleState(value: unknown, current: MatchBattleState): MatchBattleState | null {
+  if (!value || typeof value !== 'object') return null;
+  const incoming = value as Partial<MatchBattleState>;
+  if (!Array.isArray(incoming.dice)) return null;
+
+  const knownInstanceIds = new Set(current.dice.map((die) => die.instanceId));
+  const sanitized: DiceInstanceState[] = [];
+  for (const entry of incoming.dice) {
+    const die = sanitizeServerDie(entry, knownInstanceIds);
+    if (!die) return null;
+    sanitized.push(die);
+  }
+  if (sanitized.length !== current.dice.length) return null;
+
+  const turn = Math.floor(Number(incoming.turn));
+  if (!Number.isFinite(turn) || turn < 1) return null;
+
+  const combatPhase: MatchBattleState['combatPhase'] =
+    incoming.combatPhase === 'attacking' || incoming.combatPhase === 'resolved' ? incoming.combatPhase : 'idle';
+
+  return {
+    turn,
+    combatPhase,
+    dice: sanitized,
+    reviveCounts: incoming.reviveCounts && typeof incoming.reviveCounts === 'object' ? { ...incoming.reviveCounts } : current.reviveCounts
+  };
+}
+
 export function beginCombatPhase(state: MatchBattleState, attacksPerDie = 1): MatchBattleState {
   return {
     ...state,

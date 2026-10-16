@@ -11,9 +11,11 @@ import {
   spendAttack,
   resolveCombatPhase,
   endTurn,
+  sanitizeServerBattleState,
   type MatchBattleState
 } from '../systems/BattleState';
 import { DebugManager } from '../utils/DebugManager';
+import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
 import { AlertManager } from '../utils/AlertManager';
 import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition, DiceTargetingMode } from '../types/game';
@@ -841,7 +843,7 @@ export class ArenaScene extends Phaser.Scene {
       return normalized;
     }
     try {
-      const parsed = JSON.parse(localStorage.getItem(BOSSFIGHT_PROGRESS_KEY) ?? '{}') as Partial<BossfightProgress>;
+      const parsed = readIntegrityChecked<Partial<BossfightProgress>>(BOSSFIGHT_PROGRESS_KEY) ?? {};
       const normalized = this.normalizeBossfightProgress(parsed);
       this.registry.set(BOSSFIGHT_PROGRESS_KEY, normalized);
       return normalized;
@@ -853,7 +855,7 @@ export class ArenaScene extends Phaser.Scene {
   private setBossfightProgress(progress: BossfightProgress) {
     const normalized = this.normalizeBossfightProgress(progress);
     this.registry.set(BOSSFIGHT_PROGRESS_KEY, normalized);
-    localStorage.setItem(BOSSFIGHT_PROGRESS_KEY, JSON.stringify(normalized));
+    writeIntegrityChecked(BOSSFIGHT_PROGRESS_KEY, normalized);
   }
 
   private getBossfightHighestUnlockedLevel(boss: BossfightBossType): number {
@@ -1093,7 +1095,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private getChallengeStatusStore(): Record<string, ChallengeStatus> {
     try {
-      return JSON.parse(localStorage.getItem(CHALLENGE_STATUS_KEY) ?? '{}') as Record<string, ChallengeStatus>;
+      return readIntegrityChecked<Record<string, ChallengeStatus>>(CHALLENGE_STATUS_KEY) ?? {};
     } catch {
       return {};
     }
@@ -1109,7 +1111,7 @@ export class ArenaScene extends Phaser.Scene {
     const store = this.getChallengeStatusStore();
     const key = challenge === 'daily' ? `daily:${this.activeDailyKey || new Date().toISOString().slice(0, 10)}` : challenge;
     store[key] = status;
-    localStorage.setItem(CHALLENGE_STATUS_KEY, JSON.stringify(store));
+    writeIntegrityChecked(CHALLENGE_STATUS_KEY, store);
   }
 
   private getChallengeStatusLabel(status: ChallengeStatus): string {
@@ -3094,15 +3096,30 @@ export class ArenaScene extends Phaser.Scene {
   private async confirmTurnWithServer(payload: unknown): Promise<boolean> {
     if (!this.isMultiplayerMatch) return true;
     const resolution = await this.multiplayerClient.submitTurn(payload);
-    if (resolution.accepted) return true;
-    this.writeCombatLog(`Server rejected the turn${resolution.message ? `: ${resolution.message}` : '.'}`);
-    AlertManager.toast(this, {
-      type: 'warning',
-      message: resolution.message ?? 'Multiplayer server did not accept the turn.'
-    });
-    this.startCombatButton.setInteractive({ useHandCursor: true });
-    this.startCombatButton.setFillStyle(0xe74c3c, 0.9);
-    return false;
+    if (!resolution.accepted) {
+      this.writeCombatLog(`Server rejected the turn${resolution.message ? `: ${resolution.message}` : '.'}`);
+      AlertManager.toast(this, {
+        type: 'warning',
+        message: resolution.message ?? 'Multiplayer server did not accept the turn.'
+      });
+      this.startCombatButton.setInteractive({ useHandCursor: true });
+      this.startCombatButton.setFillStyle(0xe74c3c, 0.9);
+      return false;
+    }
+    this.applyServerAuthoritativeState(resolution.state);
+    return true;
+  }
+
+  private applyServerAuthoritativeState(serverState: unknown) {
+    if (serverState === undefined || serverState === null) return;
+    const sanitized = sanitizeServerBattleState(serverState, this.gameState);
+    if (!sanitized) {
+      this.debug.warn('Discarded malformed multiplayer state from the server.');
+      return;
+    }
+    this.gameState = sanitized;
+    this.renderDice();
+    this.renderEnemyDice();
   }
 
   private async startCombat() {
@@ -8017,7 +8034,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private readStringArrayFromStorage(key: string): string[] {
     try {
-      const parsed = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown;
+      const parsed = readIntegrityChecked<unknown>(key) ?? [];
       const valid: BotDifficulty[] = Array.isArray(parsed)
         ? parsed.filter((entry): entry is BotDifficulty =>
           entry === 'Baby' || entry === 'Easy' || entry === 'Medium' || entry === 'Hard' || entry === 'Nightmare')
@@ -8045,14 +8062,14 @@ export class ArenaScene extends Phaser.Scene {
   private markBotFirstWinClaimed(difficulty: BotDifficulty) {
     const next = [...new Set([...this.getClaimedBotFirstWins(), difficulty])];
     this.registry.set(BOT_FIRST_WIN_KEY, next);
-    localStorage.setItem(BOT_FIRST_WIN_KEY, JSON.stringify(next));
+    writeIntegrityChecked(BOT_FIRST_WIN_KEY, next);
   }
 
   private getChallengeRewardClaims(): string[] {
     const stored = this.registry.get(CHALLENGE_REWARD_CLAIMS_KEY) as string[] | undefined;
     if (stored) return stored;
     try {
-      const parsed = JSON.parse(localStorage.getItem(CHALLENGE_REWARD_CLAIMS_KEY) ?? '[]') as unknown;
+      const parsed = readIntegrityChecked<unknown>(CHALLENGE_REWARD_CLAIMS_KEY) ?? [];
       const valid = Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
       this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, valid);
       return valid;
@@ -8068,7 +8085,7 @@ export class ArenaScene extends Phaser.Scene {
   private markChallengeRewardClaimed(claimKey: string) {
     const next = [...new Set([...this.getChallengeRewardClaims(), claimKey])];
     this.registry.set(CHALLENGE_REWARD_CLAIMS_KEY, next);
-    localStorage.setItem(CHALLENGE_REWARD_CLAIMS_KEY, JSON.stringify(next));
+    writeIntegrityChecked(CHALLENGE_REWARD_CLAIMS_KEY, next);
   }
 
   private endGame(stage: MatchResultStage, message: string) {

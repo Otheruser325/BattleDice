@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { getDiamonds, setDiamonds } from '../data/dice';
+import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
 
 const PROFILE_KEY = 'player:profile';
 
@@ -38,7 +39,7 @@ export class ProfileStore {
     const merged = { ...current, ...next };
     if (!merged.createdAt) merged.createdAt = new Date().toISOString();
     scene.registry.set(PROFILE_KEY, merged);
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(merged));
+    writeIntegrityChecked(PROFILE_KEY, merged);
     return merged;
   }
 
@@ -61,9 +62,8 @@ export class ProfileStore {
 
   private static load(): PlayerProfile {
     try {
-      const raw = localStorage.getItem(PROFILE_KEY);
-      if (!raw) return { ...DEFAULT_PROFILE };
-      const parsed = JSON.parse(raw) as Partial<PlayerProfile>;
+      const parsed = readIntegrityChecked<Partial<PlayerProfile>>(PROFILE_KEY);
+      if (!parsed) return { ...DEFAULT_PROFILE };
       return {
         username: typeof parsed.username === 'string' ? parsed.username : '',
         trophies: Math.max(0, Math.floor(Number(parsed.trophies ?? 0) || 0)),

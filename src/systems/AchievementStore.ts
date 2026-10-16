@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
 
 const ACHIEVEMENTS_KEY = 'player:achievements:v1';
 
@@ -53,7 +54,7 @@ export class AchievementStore {
   static mutate(scene: Phaser.Scene, mutator: (state: AchievementState) => AchievementState): AchievementState {
     const next = mutator(this.get(scene));
     scene.registry.set(ACHIEVEMENTS_KEY, next);
-    localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(next));
+    writeIntegrityChecked(ACHIEVEMENTS_KEY, next);
     return next;
   }
 
@@ -86,9 +87,8 @@ export class AchievementStore {
 
   private static load(): AchievementState {
     try {
-      const raw = localStorage.getItem(ACHIEVEMENTS_KEY);
-      if (!raw) return { ...DEFAULT_STATE };
-      const parsed = JSON.parse(raw) as Partial<AchievementState>;
+      const parsed = readIntegrityChecked<Partial<AchievementState>>(ACHIEVEMENTS_KEY);
+      if (!parsed) return { ...DEFAULT_STATE };
       return {
         wins: Math.max(0, Math.floor(Number(parsed.wins ?? 0) || 0)),
         playtimeMs: Math.max(0, Math.floor(Number(parsed.playtimeMs ?? 0) || 0)),
