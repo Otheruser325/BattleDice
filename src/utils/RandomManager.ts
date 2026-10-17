@@ -4,18 +4,64 @@ function getCrypto(): Crypto | undefined {
   return typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
 }
 
-function randomUint32(): number {
+export function hasSecureRandom(): boolean {
   const crypto = getCrypto();
-  if (crypto?.getRandomValues) {
-    const buffer = new Uint32Array(1);
-    crypto.getRandomValues(buffer);
-    return buffer[0];
+  if (typeof crypto?.getRandomValues !== 'function') return false;
+  try {
+    crypto.getRandomValues(new Uint8Array(1));
+    return true;
+  } catch {
+    return false;
   }
-  return randomUint32WithoutWebCrypto();
 }
 
+let insecureFallbackWarned = false;
+
+function warnInsecureFallback(): void {
+  if (insecureFallbackWarned) return;
+  insecureFallbackWarned = true;
+  console.warn(
+    '[RandomManager] Web Crypto (crypto.getRandomValues) is unavailable. Reward and combat rolls are ' +
+    'falling back to a non-cryptographic generator, so outcomes may be predictable in this environment.'
+  );
+}
+
+function avalanche(value: number): number {
+  let mixed = value >>> 0;
+  mixed ^= mixed >>> 16;
+  mixed = Math.imul(mixed, 0x7feb352d) >>> 0;
+  mixed ^= mixed >>> 15;
+  mixed = Math.imul(mixed, 0x846ca68b) >>> 0;
+  mixed ^= mixed >>> 16;
+  return mixed >>> 0;
+}
+
+// Without Web Crypto there is no secure entropy source in the browser, so the best we can do
+// is mix every cheap source available and avalanche the result. This keeps the output from
+// being a single directly-observable Math.random() draw, but it is still not cryptographic.
 function randomUint32WithoutWebCrypto(): number {
-  return Math.floor(Math.random() * UINT32_RANGE);
+  let entropy = avalanche(Math.floor(Math.random() * UINT32_RANGE));
+  entropy = avalanche(entropy ^ (Date.now() >>> 0));
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    entropy = avalanche(entropy ^ (Math.floor(performance.now() * 1000) >>> 0));
+  }
+  return entropy;
+}
+
+function randomUint32(): number {
+  const crypto = getCrypto();
+  if (typeof crypto?.getRandomValues === 'function') {
+    try {
+      const buffer = new Uint32Array(1);
+      crypto.getRandomValues(buffer);
+      return buffer[0];
+    } catch {
+      warnInsecureFallback();
+      return randomUint32WithoutWebCrypto();
+    }
+  }
+  warnInsecureFallback();
+  return randomUint32WithoutWebCrypto();
 }
 
 export function secureRandom(): number {

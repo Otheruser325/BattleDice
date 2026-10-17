@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "v0.7.3-beta",
+      "date": "2026-10-16",
+      "notes": [
+        "Security: --hardened the random generator's fallback path so reward, shop, and combat rolls are mixed and no longer directly predictable when a browser does not expose Web Crypto, and a warning is logged when this degraded mode is active"
+      ]
+    },
+    {
       "version": "v0.7.2-beta",
       "date": "2026-10-16",
       "notes": [
