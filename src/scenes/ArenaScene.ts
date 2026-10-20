@@ -4315,11 +4315,19 @@ export class ArenaScene extends Phaser.Scene {
     return this.selectTargetCandidate(candidates, mode);
   }
 
-  private getActiveTargetForSlot(attacker: DiceInstanceState, meta: ReturnType<typeof getRuntimeSkillMeta>): DiceInstanceState | undefined {
+  private getActiveTargetForSlot(attacker: DiceInstanceState, meta: ReturnType<typeof getRuntimeSkillMeta>, forcedTarget?: DiceInstanceState): DiceInstanceState | undefined {
     const mode = meta.activeSkillTargeting ?? meta.skillTargeting ?? meta.targetingMode ?? 'Nearest';
     if (meta.activeHeal !== undefined) return this.findActiveHealTargetForArena(attacker, mode);
     if (meta.activeOnlyTargetsAllies) return this.findSkillTargetForArena(attacker, mode, true);
-    return this.findSkillTargetForArena(attacker, mode, false);
+    const selected = this.findSkillTargetForArena(attacker, mode, false);
+    return forcedTarget && this.isWithinActiveSkillReach(attacker, forcedTarget) ? forcedTarget : selected;
+  }
+
+  private isWithinActiveSkillReach(attacker: DiceInstanceState, target: DiceInstanceState): boolean {
+    const attackerDef = this.getDefinitionForInstance(attacker);
+    if (!attackerDef) return false;
+    const effectiveRange = this.getEffectiveAttackRange(attacker, attackerDef);
+    return this.getAttackDistance(attacker, target) <= Math.max(1, effectiveRange);
   }
 
   private activeSkillRequiresTarget(meta: ReturnType<typeof getRuntimeSkillMeta>): boolean {
@@ -4588,12 +4596,13 @@ export class ArenaScene extends Phaser.Scene {
           const regularActiveFires = Boolean(primarySlot && !meteorFires && !instakillFires);
           return meteorFires ? meteorSlot : instakillFires ? instakillSlot : regularActiveFires ? primarySlot : undefined;
         };
+        const forcedTarget = this.resolveTauntForcedTarget(attacker);
         let activeSlot = getChargedActiveSlot();
         let activeTarget: DiceInstanceState | undefined;
         let unavailableActiveTitle: string | undefined;
         if (activeSlot) {
           const meta = this.getActiveSkillMetaForSlot(attacker, activeSlot);
-          activeTarget = this.getActiveTargetForSlot(attacker, meta);
+          activeTarget = this.getActiveTargetForSlot(attacker, meta, forcedTarget);
           if (!activeTarget && meta && this.activeSkillRequiresTarget(meta)) {
             unavailableActiveTitle = activeSlot.title;
             activeSlot = undefined;
@@ -4635,7 +4644,6 @@ export class ArenaScene extends Phaser.Scene {
           }
           continue;
         }
-        const forcedTarget = this.resolveTauntForcedTarget(attacker);
         const beamLine = this.findTranscendenceBeamTarget(attacker, forcedTarget);
         const beamTarget = beamLine?.target;
         let target = forcedTarget ?? beamTarget ?? (attackerMeta?.healOnAttack
