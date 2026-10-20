@@ -5,6 +5,7 @@ import { PALETTE, drawPanel } from '../ui/theme';
 import { AlertManager } from '../utils/AlertManager';
 import { SCENE_KEYS } from './sceneKeys';
 import { formatCompact } from '../utils/FormatManager';
+import { DEV_MENU_AVAILABLE } from '../utils/BuildFlags';
 
 export class DevScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Dev;
@@ -35,6 +36,11 @@ export class DevScene extends Phaser.Scene {
   }
 
   create() {
+    if (!DEV_MENU_AVAILABLE) {
+      this.scene.stop(DevScene.KEY);
+      return;
+    }
+
     const panel = drawPanel(this, 'DEV BUILD MENU', 'PLAYTEST GRANTS — SHIPS ENABLED');
 
     this.add.text(panel.x + 30, panel.y + 92, 'Use these controls to seed local playtest progress without affecting game balance tuning.', {
