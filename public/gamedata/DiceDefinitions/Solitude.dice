@@ -9,9 +9,9 @@
     {
       "type": "Passive",
       "title": "Lonely Dominion",
-      "description": "When no ally is adjacent to this dice, basic attacks deal bonus damage equal to 8% of the target's max HP.",
+      "description": "When no ally is adjacent to this dice, basic attacks deal bonus damage equal to 7% of the target's max HP.",
       "modifiers": {
-        "targetMaxHpBonusRate": 0.08,
+        "targetMaxHpBonusRate": 0.07,
         "checkForAdjacentAllies": true,
         "skillSfx": "dice_solitude_skill",
         "attackSfx": "dice_solitude_attack"
