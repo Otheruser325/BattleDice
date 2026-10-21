@@ -1,8 +1,9 @@
 import type Phaser from 'phaser';
-import type { DiceDefinition, DiceTypeId, DiceFlags } from '../types/game';
+import type { DiceDefinition, DiceRarity, DiceTalentDefinition, DiceTypeId, DiceFlags } from '../types/game';
+import type { ChestType } from '../systems/CasinoComboTypes';
 import { AchievementStore } from '../systems/AchievementStore';
-import { TALENT_SHOP_OFFER_CHANCE, getAcquirableTalentIndices, getTalentCost } from '../systems/DiceTalentStore';
 import { withBasePath } from '../utils/BuildEnv';
+import { formatPercent } from '../utils/FormatManager';
 import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
 
 export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'] as const;
@@ -22,12 +23,44 @@ const LOADOUT_KEY = 'dice:loadout';
 const LOADOUT_SLOTS_KEY = 'dice:loadoutSlots';
 const ACTIVE_LOADOUT_SLOT_KEY = 'dice:activeLoadoutSlot';
 const DICE_PROGRESS_KEY = 'dice:progress';
+const TALENT_STATE_KEY = 'dice:talentState';
 const DICE_TOKENS_KEY = 'dice:tokens';
 const DIAMONDS_KEY = 'shop:diamonds';
 const SHOP_STATE_KEY = 'shop:state';
 
 
 const MAX_CLASS_LEVEL = 15;
+const TALENT_BASE_COST = 10_000;
+export const DEFAULT_TALENT_CLASS_NEEDED = 9;
+export const TALENT_SHOP_OFFER_CHANCE = 0.05;
+export const RARITY_ORDER: DiceRarity[] = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'];
+
+const TALENT_COST_MULTIPLIER: Record<DiceRarity, number> = {
+  Common: 1,
+  Uncommon: 1.5,
+  Rare: 2,
+  Epic: 5,
+  Legendary: 10,
+  Mythic: 20
+};
+
+const TALENT_DIAMOND_DROP_RATE: Record<DiceRarity, number> = {
+  Common: 0.1,
+  Uncommon: 0.075,
+  Rare: 0.05,
+  Epic: 0.025,
+  Legendary: 0.0125,
+  Mythic: 0.005
+};
+
+const TALENT_MASTER_DROP_RATE: Record<DiceRarity, number> = {
+  Common: 0.5,
+  Uncommon: 0.3,
+  Rare: 0.25,
+  Epic: 0.125,
+  Legendary: 0.0625,
+  Mythic: 0.025
+};
 const CLASS_COPY_COSTS_BY_RARITY: Record<number, Record<string, number>> = {
   2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1, Mythic: 1 },
   3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1, Mythic: 1 },
@@ -78,6 +111,7 @@ const INTEGRITY_CRITICAL_KEYS = new Set<string>([
   DICE_TOKENS_KEY,
   DIAMONDS_KEY,
   DICE_PROGRESS_KEY,
+  TALENT_STATE_KEY,
   SHOP_STATE_KEY
 ]);
 
@@ -320,6 +354,194 @@ function sanitizeDiceProgressStore(scene: Phaser.Scene, store: Record<string, Di
   });
   if (changed) writeStored(DICE_PROGRESS_KEY, sanitized);
   return sanitized;
+}
+
+// Talents are addressed by array index so dice data can add, reorder, or retitle
+// entries without invalidating saved progress.
+export interface DiceTalentState {
+  owned: Record<DiceTypeId, number[]>;
+  equipped: Record<DiceTypeId, number>;
+}
+
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function isSafeKey(key: string): boolean {
+  return key.length > 0 && !UNSAFE_KEYS.has(key);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeTalentIndex(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function normalizeTalentState(value: unknown): DiceTalentState {
+  if (!isPlainRecord(value)) return { owned: {}, equipped: {} };
+  const owned: Record<DiceTypeId, number[]> = {};
+  if (isPlainRecord(value.owned)) {
+    Object.entries(value.owned).forEach(([typeId, indices]) => {
+      if (!isSafeKey(typeId) || !Array.isArray(indices)) return;
+      const unique = [...new Set(indices.map(normalizeTalentIndex).filter((index): index is number => index !== null))]
+        .sort((a, b) => a - b);
+      if (unique.length > 0) owned[typeId] = unique;
+    });
+  }
+  const equipped: Record<DiceTypeId, number> = {};
+  if (isPlainRecord(value.equipped)) {
+    Object.entries(value.equipped).forEach(([typeId, raw]) => {
+      if (!isSafeKey(typeId)) return;
+      // A tampered multi-index value collapses to the first owned index so a die
+      // can never hold two equipped talents.
+      const candidates = Array.isArray(raw) ? raw : [raw];
+      const selected = candidates
+        .map(normalizeTalentIndex)
+        .find((index): index is number => index !== null && owned[typeId]?.includes(index) === true);
+      if (selected !== undefined) equipped[typeId] = selected;
+    });
+  }
+  return { owned, equipped };
+}
+
+export function getTalentState(scene: Phaser.Scene): DiceTalentState {
+  const stored = scene.registry.get(TALENT_STATE_KEY) as DiceTalentState | undefined;
+  if (stored) return stored;
+  const loaded = normalizeTalentState(readStored<unknown>(TALENT_STATE_KEY));
+  scene.registry.set(TALENT_STATE_KEY, loaded);
+  return loaded;
+}
+
+function writeTalentState(scene: Phaser.Scene, state: DiceTalentState) {
+  const normalized = normalizeTalentState(state);
+  scene.registry.set(TALENT_STATE_KEY, normalized);
+  writeStored(TALENT_STATE_KEY, normalized);
+}
+
+export function getTalents(definition: DiceDefinition | undefined): DiceTalentDefinition[] {
+  return Array.isArray(definition?.talents) ? definition.talents : [];
+}
+
+export function getTalentByIndex(definition: DiceDefinition, talentIndex: number | null | undefined): DiceTalentDefinition | undefined {
+  if (talentIndex === null || talentIndex === undefined || !Number.isInteger(talentIndex) || talentIndex < 0) return undefined;
+  const talent = getTalents(definition)[talentIndex];
+  return talent && typeof talent === 'object' && !Array.isArray(talent) ? talent : undefined;
+}
+
+export function getTalentClassNeeded(talent: DiceTalentDefinition): number {
+  const value = talent.classNeeded;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_CLASS_LEVEL
+    ? value
+    : DEFAULT_TALENT_CLASS_NEEDED;
+}
+
+export function isTalentObtainable(talent: DiceTalentDefinition): boolean {
+  return talent.isObtainable !== false;
+}
+
+export function isSafeTalentTypeId(typeId: string | undefined): typeId is DiceTypeId {
+  return typeof typeId === 'string' && isSafeKey(typeId);
+}
+
+export function getTalentCost(rarity: DiceRarity | string): number {
+  return Math.round(TALENT_BASE_COST * (TALENT_COST_MULTIPLIER[rarity as DiceRarity] ?? 1));
+}
+
+export function getTalentDropRate(chestType: ChestType, rarity: DiceRarity | string): number {
+  if (chestType === 'Diamond') return TALENT_DIAMOND_DROP_RATE[rarity as DiceRarity] ?? 0;
+  if (chestType === 'Master') return TALENT_MASTER_DROP_RATE[rarity as DiceRarity] ?? 0;
+  return 0;
+}
+
+export function isTalentChest(chestType: ChestType): boolean {
+  return chestType === 'Diamond' || chestType === 'Master';
+}
+
+export function getTalentDropRateText(chestType: ChestType): string {
+  if (!isTalentChest(chestType)) return '';
+  return RARITY_ORDER
+    .map((rarity) => `${rarity}: ${formatPercent(getTalentDropRate(chestType, rarity), 2)}`)
+    .join('  •  ');
+}
+
+export function isTalentOwned(scene: Phaser.Scene, typeId: DiceTypeId, talentIndex: number): boolean {
+  if (!isSafeTalentTypeId(typeId)) return false;
+  const state = getTalentState(scene);
+  if (!Object.prototype.hasOwnProperty.call(state.owned, typeId)) return false;
+  return state.owned[typeId]?.includes(talentIndex) === true;
+}
+
+// The single gate for acquiring a talent, shared by shop offers, chest drops, and
+// token purchases so no path can grant one the player is not entitled to.
+export function getUnobtainableTalentReason(
+  scene: Phaser.Scene,
+  definition: DiceDefinition,
+  talentIndex: number
+): 'invalid' | 'coming-soon' | 'locked' | 'class' | 'owned' | null {
+  if (definition.talentsComingSoon || !isSafeTalentTypeId(definition.typeId)) return 'coming-soon';
+  const talent = getTalentByIndex(definition, talentIndex);
+  if (!talent || !isTalentObtainable(talent)) return 'invalid';
+  if (!getDiceProgress(scene, definition.typeId).unlocked) return 'locked';
+  if (isTalentOwned(scene, definition.typeId, talentIndex)) return 'owned';
+  const classLevel = getDiceProgress(scene, definition.typeId).classLevel;
+  if (classLevel < getTalentClassNeeded(talent)) return 'class';
+  return null;
+}
+
+export function getAcquirableTalentIndices(scene: Phaser.Scene, definition: DiceDefinition, classLevel?: number): number[] {
+  if (definition.talentsComingSoon || !isSafeTalentTypeId(definition.typeId)) return [];
+  const progress = getDiceProgress(scene, definition.typeId);
+  const level = typeof classLevel === 'number' ? classLevel : progress.classLevel;
+  if (!progress.unlocked) return [];
+  return getTalents(definition)
+    .map((talent, index) => ({ talent, index }))
+    .filter(({ talent, index }) =>
+      Boolean(talent)
+      && typeof talent === 'object'
+      && isTalentObtainable(talent)
+      && level >= getTalentClassNeeded(talent)
+      && !isTalentOwned(scene, definition.typeId, index)
+    )
+    .map(({ index }) => index);
+}
+
+export function grantTalent(scene: Phaser.Scene, definition: DiceDefinition, talentIndex: number): boolean {
+  const reason = getUnobtainableTalentReason(scene, definition, talentIndex);
+  if (reason !== null && reason !== 'owned') return false;
+  const state = getTalentState(scene);
+  const existing = state.owned[definition.typeId] ?? [];
+  if (existing.includes(talentIndex)) return false;
+  writeTalentState(scene, {
+    ...state,
+    owned: {
+      ...state.owned,
+      [definition.typeId]: [...existing, talentIndex].sort((a, b) => a - b)
+    }
+  });
+  return true;
+}
+
+export function getEquippedTalentIndex(scene: Phaser.Scene, definition: DiceDefinition): number | null {
+  if (!isSafeTalentTypeId(definition.typeId)) return null;
+  const talentIndex = getTalentState(scene).equipped[definition.typeId];
+  if (talentIndex === undefined) return null;
+  if (definition.talentsComingSoon || !getTalentByIndex(definition, talentIndex)) return null;
+  return isTalentOwned(scene, definition.typeId, talentIndex) ? talentIndex : null;
+}
+
+export function setEquippedTalentIndex(scene: Phaser.Scene, definition: DiceDefinition, talentIndex: number | null) {
+  if (!isSafeTalentTypeId(definition.typeId)) return;
+  const state = getTalentState(scene);
+  if (talentIndex === null) {
+    const equipped = { ...state.equipped };
+    delete equipped[definition.typeId];
+    writeTalentState(scene, { ...state, equipped });
+    return;
+  }
+  const talent = getTalentByIndex(definition, talentIndex);
+  if (!talent || definition.talentsComingSoon) return;
+  if (!isTalentOwned(scene, definition.typeId, talentIndex)) return;
+  writeTalentState(scene, { ...state, equipped: { ...state.equipped, [definition.typeId]: talentIndex } });
 }
 
 export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: DiceProgressState) {
@@ -645,9 +867,8 @@ export function generateOrGetShopOffers(scene: Phaser.Scene, forceRegenerate = f
     else break;
   }
 
-  // A dice slot can instead surface a talent offer. Talents only enter the pool
-  // for dice the player has already obtained and classed high enough to unlock
-  // them, and the offer is priced in Dice Tokens so it is bought directly.
+  // A dice slot can instead surface a talent offer, drawn only from dice the player
+  // owns and has classed high enough, priced in Dice Tokens.
   const talentPool: Array<{ def: DiceDefinition; talentIndex: number }> = [];
   allDefs.forEach((def) => {
     const classLevel = getDiceProgress(scene, def.typeId).classLevel;

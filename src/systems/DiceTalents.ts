@@ -1,23 +1,22 @@
 import type Phaser from 'phaser';
-import type { DiceDefinition, DiceRarity, DiceTalentModifier, DiceTypeId } from '../types/game';
+import type { DiceDefinition, DiceRarity, DiceSkillModifier, DiceTalentModifier, DiceTypeId } from '../types/game';
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
-import { getDiceProgress } from '../data/dice';
+import { mergeSkillsByIndex } from './SkillOverlay';
 import {
   DEFAULT_TALENT_CLASS_NEEDED,
   RARITY_ORDER,
   getAcquirableTalentIndices,
+  getTalents,
   getTalentByIndex,
   getTalentClassNeeded,
   getTalentCost,
   getTalentDropRate,
-  getTalents,
+  getUnobtainableTalentReason,
   grantTalent,
   isSafeTalentTypeId,
-  isTalentChest,
-  isTalentObtainable,
-  isTalentOwned
-} from './DiceTalentStore';
+  isTalentChest
+} from '../data/dice';
 
 export {
   DEFAULT_TALENT_CLASS_NEEDED,
@@ -31,31 +30,47 @@ export {
   getTalentDropRate,
   getTalentDropRateText,
   getTalentState,
+  getUnobtainableTalentReason,
   grantTalent,
   isSafeTalentTypeId,
   isTalentChest,
   isTalentObtainable,
-  isTalentOwned
-} from './DiceTalentStore';
-export type { DiceTalentState } from './DiceTalentStore';
+  isTalentOwned,
+  setEquippedTalentIndex,
+  getEquippedTalentIndex
+} from '../data/dice';
+export type { DiceTalentState } from '../data/dice';
 
-function deepClone<T>(value: T): T {
-  if (Array.isArray(value)) return value.map((entry) => deepClone(entry)) as unknown as T;
-  if (value && typeof value === 'object') {
-    const clone: Record<string, unknown> = {};
-    Object.entries(value as Record<string, unknown>).forEach(([key, entry]) => {
-      clone[key] = deepClone(entry);
-    });
-    return clone as T;
-  }
-  return value;
+const ROOT_ONLY_MODIFIER_KEYS = new Set([
+  'attackDelta',
+  'healthDelta',
+  'attackMultiplier',
+  'healthMultiplier',
+  'rangeDelta',
+  'targetingMode',
+  'skillModifiers'
+]);
+
+function toSkillModifierArray(value: DiceSkillModifier | DiceSkillModifier[] | undefined): DiceSkillModifier[] {
+  if (Array.isArray(value)) return value.map((entry) => (entry && typeof entry === 'object' ? entry : {}));
+  return value && typeof value === 'object' ? [value] : [];
 }
 
-function mergeTalentSkillModifiers(modifiers: DiceTalentModifier): DiceTalentModifier {
-  const { attackDelta: _attackDelta, healthDelta: _healthDelta, attackMultiplier: _attackMultiplier,
-    healthMultiplier: _healthMultiplier, rangeDelta: _rangeDelta, targetingMode: _targetingMode,
-    skillIndex: _skillIndex, skillModifiers, ...skillModifierFields } = modifiers;
-  return { ...skillModifierFields, ...(skillModifiers ?? {}) };
+function getRootSkillModifiers(modifiers: DiceTalentModifier): DiceSkillModifier {
+  const root: Record<string, unknown> = {};
+  Object.entries(modifiers).forEach(([key, value]) => {
+    if (!ROOT_ONLY_MODIFIER_KEYS.has(key)) root[key] = value;
+  });
+  return root as DiceSkillModifier;
+}
+
+function applySkillModifierArray(skills: DiceDefinition['skills'], entries: DiceSkillModifier[]) {
+  if (entries.every((entry) => Object.keys(entry).length === 0)) return skills;
+  return skills.map((skill, index) => {
+    const entry = entries[index];
+    if (!entry || Object.keys(entry).length === 0) return skill;
+    return { ...skill, modifiers: { ...(skill.modifiers ?? {}), ...entry } };
+  });
 }
 
 export function applyDiceTalent(definition: DiceDefinition, talentIndex: number | null | undefined): DiceDefinition {
@@ -64,35 +79,22 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
   if (!talent) return definition;
   const modifiers = talent.modifiers ?? {};
 
-  // A talent may swap the whole skill list: an absent skills field keeps the
-  // die's skills, while an explicit list (including an empty one) replaces them,
-  // which is how a talent adds or removes skills. Every field is deep-cloned so
-  // talent output never aliases the cached definition.
-  const baseSkills = Array.isArray(talent.skills)
-    ? deepClone(talent.skills)
-    : deepClone(Array.isArray(definition.skills) ? definition.skills : []);
-  const skillModifiers = mergeTalentSkillModifiers(modifiers);
-  const hasSkillChanges = Object.keys(skillModifiers).length > 0;
-  const skills = hasSkillChanges
-    ? baseSkills.map((skill, index) => {
-      if (modifiers.skillIndex !== undefined && modifiers.skillIndex !== index) return skill;
-      return {
-        ...skill,
-        modifiers: { ...(skill.modifiers ?? {}), ...skillModifiers }
-      };
-    })
-    : baseSkills;
+  const skills = applySkillModifierArray(
+    mergeSkillsByIndex(definition.skills, talent.skills),
+    toSkillModifierArray(modifiers.skillModifiers)
+  );
+  const rootSkillModifiers = getRootSkillModifiers(modifiers);
+  const finalSkills = Object.keys(rootSkillModifiers).length > 0
+    ? skills.map((skill) => ({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...rootSkillModifiers } }))
+    : skills;
 
-  const cloned = deepClone(definition);
   return {
-    ...cloned,
-    typeId: definition.typeId,
-    title: definition.title,
+    ...definition,
     attack: Math.max(1, Math.round((definition.attack + (modifiers.attackDelta ?? 0)) * (modifiers.attackMultiplier ?? 1))),
     health: Math.max(1, Math.round((definition.health + (modifiers.healthDelta ?? 0)) * (modifiers.healthMultiplier ?? 1))),
     range: Math.max(0, definition.range + (modifiers.rangeDelta ?? 0)),
     targetingMode: modifiers.targetingMode ?? definition.targetingMode,
-    skills
+    skills: finalSkills
   };
 }
 
@@ -102,14 +104,13 @@ export function canObtainTalent(
   talentIndex: number,
   classLevel: number,
   tokensAvailable: number
-): { ok: boolean; reason?: 'owned' | 'class' | 'tokens' | 'invalid'; cost: number; classNeeded: number } {
+): { ok: boolean; reason?: 'invalid' | 'coming-soon' | 'locked' | 'class' | 'owned' | 'tokens'; cost: number; classNeeded: number } {
   const talent = getTalentByIndex(definition, talentIndex);
   const cost = getTalentCost(definition.rarity);
   const classNeeded = talent ? getTalentClassNeeded(talent) : DEFAULT_TALENT_CLASS_NEEDED;
-  if (!talent || definition.talentsComingSoon || !isTalentObtainable(talent) || !isSafeTalentTypeId(definition.typeId)) {
-    return { ok: false, reason: 'invalid', cost, classNeeded };
-  }
-  if (isTalentOwned(scene, definition.typeId, talentIndex)) return { ok: false, reason: 'owned', cost, classNeeded };
+  const reason = getUnobtainableTalentReason(scene, definition, talentIndex);
+  if (reason !== null && reason !== 'owned') return { ok: false, reason, cost, classNeeded };
+  if (reason === 'owned') return { ok: false, reason: 'owned', cost, classNeeded };
   if (classLevel < classNeeded) return { ok: false, reason: 'class', cost, classNeeded };
   if (tokensAvailable < cost) return { ok: false, reason: 'tokens', cost, classNeeded };
   return { ok: true, cost, classNeeded };
@@ -136,17 +137,16 @@ export function rollTalentDrop(
 
   const eligibleByRarity = new Map<DiceRarity, DiceDefinition[]>();
   candidates.forEach((definition) => {
-    const classLevel = getDiceProgress(scene, definition.typeId).classLevel;
-    if (getAcquirableTalentIndices(scene, definition, classLevel).length === 0) return;
+    if (getAcquirableTalentIndices(scene, definition).length === 0) return;
     const pool = eligibleByRarity.get(definition.rarity) ?? [];
     pool.push(definition);
     eligibleByRarity.set(definition.rarity, pool);
   });
   if (eligibleByRarity.size === 0) return undefined;
 
-  // One roll per rarity keeps the published rate tied to the die's rarity instead
-  // of compounding as more talent dice of the same rarity are added. The rarest
-  // successful roll wins so a chest can never grant more than one talent.
+  // One roll per rarity keeps the published rate tied to the die's rarity instead of
+  // compounding with more talent dice; the rarest success wins, so one chest grants
+  // at most one talent.
   const rarity = [...RARITY_ORDER].reverse().find((entry) =>
     eligibleByRarity.has(entry) && secureChance(getTalentDropRate(chestType, entry))
   );
@@ -154,8 +154,7 @@ export function rollTalentDrop(
 
   const rarityPool = eligibleByRarity.get(rarity) ?? [];
   const definition = rarityPool[secureRandomInt(rarityPool.length)];
-  const classLevel = getDiceProgress(scene, definition.typeId).classLevel;
-  const talentIndex = getAcquirableTalentIndices(scene, definition, classLevel)[0];
+  const talentIndex = getAcquirableTalentIndices(scene, definition)[0];
   const talent = getTalentByIndex(definition, talentIndex);
   if (!talent) return undefined;
   if (!grantTalent(scene, definition, talentIndex)) return undefined;

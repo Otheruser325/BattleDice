@@ -1,4 +1,5 @@
 import type { DiceDefinition, DiceSkillDefinition, DiceSkillModifier, DiceTransformStats } from '../types/game';
+import { mergeSkillsByIndex } from './SkillOverlay';
 import { formatCompact, formatPercent as formatPercentValue } from '../utils/FormatManager';
 
 export function getTransformStats(definition: DiceDefinition, transformIndex = 0): DiceTransformStats | undefined {
@@ -14,8 +15,7 @@ export function applyTransformStats(definition: DiceDefinition, transformIndex =
   const stats = getTransformStats(definition, transformIndex);
   if (!stats) return definition;
   if (stats.title && definition.title === stats.title) return definition;
-  const transformedSkills = stats.skills ?? definition.skills;
-  const skills = transformedSkills.map((skill) => ({ ...skill }));
+  const skills = mergeSkillsByIndex(definition.skills, stats.skills);
 
   return {
     ...definition,

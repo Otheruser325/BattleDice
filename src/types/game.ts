@@ -165,8 +165,7 @@ export interface DiceTalentModifier extends DiceSkillModifier {
   healthMultiplier?: number;
   rangeDelta?: number;
   targetingMode?: DiceTargetingMode;
-  skillIndex?: number;
-  skillModifiers?: DiceSkillModifier;
+  skillModifiers?: DiceSkillModifier | DiceSkillModifier[];
 }
 
 export interface DiceTalentDefinition {
@@ -180,6 +179,7 @@ export interface DiceTalentDefinition {
 
 export interface DiceTransformStats {
   title?: string;
+  skillsComingSoon?: boolean;
   attack?: number;
   health?: number;
   range?: number;

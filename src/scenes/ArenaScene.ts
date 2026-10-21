@@ -33,7 +33,8 @@ import { AchievementStore } from '../systems/AchievementStore';
 import { ArenaMultiplayerClient, type ArenaMultiplayerStatus } from '../systems/ArenaMultiplayerClient';
 import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition, getNextDiceFormIndex } from './DiceScene';
 import { applyDiceTalent } from '../systems/DiceTalents';
-import { getEquippedTalentIndex } from '../systems/DiceTalentStore';
+import { getEquippedTalentIndex } from '../data/dice';
+import { isSkillListComingSoon, mergeSkillsByIndex } from '../systems/SkillOverlay';
 import { formatCompact, formatPercent } from '../utils/FormatManager';
 import { secureChance, secureLobbyCode, securePick, secureRandom, secureRandomBetween } from '../utils/RandomManager';
 
@@ -7853,9 +7854,15 @@ export class ArenaScene extends Phaser.Scene {
         return lockClass === undefined || classLevel >= lockClass;
       });
     const descriptorDefinition = isAlternateTransformed ? combatBaseDefinition : undefined;
-    const descriptorSkills = activeTransformIndex !== undefined ? descriptorDefinition?.transformStats?.[activeTransformIndex]?.skills ?? [] : [];
+    const descriptorSkills = activeTransformIndex !== undefined && descriptorDefinition
+      ? mergeSkillsByIndex(descriptorDefinition.skills, descriptorDefinition.transformStats?.[activeTransformIndex]?.skills)
+      : [];
+    const transformStats = activeTransformIndex !== undefined ? baseDefinition.transformStats?.[activeTransformIndex] : undefined;
+    const formSkillsComingSoon = isSkillListComingSoon(baseDefinition.skills, transformStats?.skills, transformStats?.skillsComingSoon);
     const skillSubheader = [soulNote ? soulNote.replace(/^\s*•\s*/, 'SOULS ') : '', shieldNote ? shieldNote.replace(/^\s*•\s*/, 'SHIELD ') : ''].filter(Boolean).join(' • ');
-    const skillDescription = visibleSkills.length === 0
+    const skillDescription = formSkillsComingSoon
+      ? 'Coming soon...'
+      : visibleSkills.length === 0
       ? 'This dice does not have any special skills.'
       : visibleSkills.map((skill, skillIndex) => {
         const sourceSkill = descriptorSkills.find((candidate) => candidate.title === skill.title && candidate.type === skill.type)

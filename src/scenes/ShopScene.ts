@@ -24,7 +24,7 @@ import {
   type ShopState
 } from '../data/dice';
 import { formatCompact } from '../utils/FormatManager';
-import { grantTalent, getTalentByIndex, isTalentObtainable } from '../systems/DiceTalents';
+import { getTalentClassNeeded, getTalentByIndex, getUnobtainableTalentReason, grantTalent } from '../systems/DiceTalents';
 
 const CARD_W = 316;
 const CARD_H = 190;
@@ -155,13 +155,30 @@ export class ShopScene extends Phaser.Scene {
           const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
           if (offer.isTalentOffer) {
             const def = allDefs.find((candidate) => candidate.typeId === offer.typeId);
-            const talent = def && offer.talentIndex !== undefined ? getTalentByIndex(def, offer.talentIndex) : undefined;
-            if (!def || !talent || offer.talentIndex === undefined || !isTalentObtainable(talent)) {
+            if (!def || offer.talentIndex === undefined) {
               AlertManager.toast(this, { type: 'warning', message: 'This talent offer is no longer available.' });
               return;
             }
-            if (!grantTalent(this, def, offer.talentIndex)) {
+            const talent = getTalentByIndex(def, offer.talentIndex);
+            const reason = getUnobtainableTalentReason(this, def, offer.talentIndex);
+            if (!talent || reason === 'invalid' || reason === 'coming-soon') {
+              AlertManager.toast(this, { type: 'warning', message: 'This talent offer is no longer available.' });
+              return;
+            }
+            if (reason === 'owned') {
               AlertManager.toast(this, { type: 'warning', message: 'You already own this talent.' });
+              return;
+            }
+            if (reason === 'locked') {
+              AlertManager.toast(this, { type: 'warning', message: `Obtain ${def.title} before unlocking ${talent.title}.` });
+              return;
+            }
+            if (reason === 'class') {
+              AlertManager.toast(this, { type: 'warning', message: `Reach class ${getTalentClassNeeded(talent)} to unlock ${talent.title}.` });
+              return;
+            }
+            if (!grantTalent(this, def, offer.talentIndex)) {
+              AlertManager.toast(this, { type: 'warning', message: 'This talent offer is no longer available.' });
               return;
             }
           } else if (offer.isCasinoChipOffer) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount * (firstChipPurchase ? 2 : 1) }));

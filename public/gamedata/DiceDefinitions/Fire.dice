@@ -26,10 +26,11 @@
       "classNeeded": 9,
       "modifiers": {
         "attackDelta": -6,
-        "skillIndex": 0,
-        "skillModifiers": {
-          "splashDamage": 20
-        }
+        "skillModifiers": [
+          {
+            "splashDamage": 20
+          }
+        ]
       }
     }
   ]

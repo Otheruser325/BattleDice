@@ -23,8 +23,9 @@ import { AchievementStore } from '../systems/AchievementStore';
 import { AlertManager } from '../utils/AlertManager';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
 import { SettingsStore } from '../systems/SettingsStore';
-import { applyDiceTalent, canObtainTalent, getTalentClassNeeded, getTalentCost, grantTalent, isTalentObtainable } from '../systems/DiceTalents';
-import { getEquippedTalentIndex, getTalentByIndex, isTalentOwned, setEquippedTalentIndex } from '../systems/DiceTalentStore';
+import { applyDiceTalent, canObtainTalent, getTalentClassNeeded, getTalentCost, grantTalent } from '../systems/DiceTalents';
+import { getEquippedTalentIndex, getTalentByIndex, isTalentOwned, setEquippedTalentIndex } from '../data/dice';
+import { isSkillListComingSoon, mergeSkillsByIndex } from '../systems/SkillOverlay';
 import { formatCompact } from '../utils/FormatManager';
 
 function formatSkillType(type: string | undefined): string {
@@ -39,20 +40,27 @@ function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: numb
   return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${description}`;
 }
 
+function resolveTransformIndex(definition: DiceDefinition, transformIndex?: number): number | undefined {
+  if (transformIndex !== undefined) return transformIndex;
+  const activeIndex = definition.transformStats?.findIndex((stats) => stats.title && stats.title === definition.title) ?? -1;
+  return activeIndex >= 0 ? activeIndex : undefined;
+}
+
 function getFormSkills(definition: DiceDefinition, transformIndex?: number): DiceSkillDefinition[] {
-  if (transformIndex !== undefined) {
-    const skills = definition.transformStats?.[transformIndex]?.skills;
-    return skills?.length ? skills : definition.skills;
-  }
-  const activeTransformIndex = definition.transformStats?.findIndex((stats) => stats.title && stats.title === definition.title) ?? -1;
-  if (activeTransformIndex >= 0) {
-    const skills = definition.transformStats?.[activeTransformIndex]?.skills;
-    return skills?.length ? skills : definition.skills;
-  }
-  return definition.skills;
+  const resolvedIndex = resolveTransformIndex(definition, transformIndex);
+  if (resolvedIndex === undefined) return definition.skills;
+  return mergeSkillsByIndex(definition.skills, definition.transformStats?.[resolvedIndex]?.skills);
+}
+
+function isFormComingSoon(definition: DiceDefinition, transformIndex?: number): boolean {
+  const resolvedIndex = resolveTransformIndex(definition, transformIndex);
+  if (resolvedIndex === undefined) return false;
+  const stats = definition.transformStats?.[resolvedIndex];
+  return isSkillListComingSoon(definition.skills, stats?.skills, stats?.skillsComingSoon);
 }
 
 function formatSkillTypeLine(definition: DiceDefinition): string {
+  if (isFormComingSoon(definition)) return 'SKILLS • COMING SOON...';
   const visibleSkills = getFormSkills(definition);
   if (visibleSkills.length === 0) return 'NO SKILLS';
   if (visibleSkills.length === 1) {
@@ -63,6 +71,7 @@ function formatSkillTypeLine(definition: DiceDefinition): string {
 
 export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1, transformIndex?: number, descriptorDefinition?: DiceDefinition): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
+  if (isFormComingSoon(definition, transformIndex)) return 'Coming soon...';
   const visibleSkills = getFormSkills(definition, transformIndex).map((skill, index) => ({ skill, index }));
   if (visibleSkills.length === 0) return 'This dice does not have any special skills.';
   const sourceSkills = descriptorDefinition ? getFormSkills(descriptorDefinition, transformIndex) : [];
@@ -709,11 +718,11 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       const currentTalentIndex = getEquippedTalentIndex(this, definition);
       const owned = isTalentOwned(this, typeId, index);
       const active = owned && index === currentTalentIndex;
-      const obtainable = isTalentObtainable(talent);
       const classLevel = getDiceProgress(this, typeId).classLevel;
       const cost = getTalentCost(definition.rarity);
       const classNeeded = getTalentClassNeeded(talent);
-      const canBuy = canObtainTalent(this, definition, index, classLevel, getDiceTokens(this)).ok;
+      const obtain = canObtainTalent(this, definition, index, classLevel, getDiceTokens(this));
+      const canBuy = obtain.ok;
       const row = this.add.rectangle(width / 2, y, 490, 62, active ? 0x315e7a : 0x173247, 0.98)
         .setStrokeStyle(1, active ? 0xf4b860 : 0x406987);
       const name = this.add.text(width / 2 - 224, y - 20, `${active ? '● ' : ''}${talent.title}`, {
@@ -722,19 +731,30 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       const description = this.add.text(width / 2 - 224, y + 2, talent.description, {
         fontFamily: 'Orbitron', fontSize: '9px', color: PALETTE.textMuted, wordWrap: { width: 330 }
       }).setOrigin(0, 0.5);
-      const gateText = !obtainable
+      const gateText = obtain.reason === 'invalid'
         ? 'NOT OBTAINABLE'
         : owned
           ? 'OWNED'
-          : classLevel < classNeeded
-            ? `REQUIRES CLASS ${classNeeded}`
-            : `${formatCompact(cost)} DICE TOKENS`;
+          : obtain.reason === 'coming-soon'
+            ? 'COMING SOON'
+            : obtain.reason === 'locked'
+              ? 'OBTAIN THE DIE FIRST'
+              : obtain.reason === 'class'
+                ? `REQUIRES CLASS ${classNeeded}`
+                : `${formatCompact(cost)} DICE TOKENS`;
+      const gateColor = owned
+        ? PALETTE.success
+        : (obtain.reason === 'invalid' || obtain.reason === 'coming-soon')
+          ? PALETTE.textMuted
+          : obtain.reason === 'tokens'
+            ? PALETTE.accentSoft
+            : PALETTE.danger;
       const gate = this.add.text(width / 2 - 224, y + 22, gateText, {
-        fontFamily: 'Orbitron', fontSize: '9px',
-        color: !obtainable ? PALETTE.textMuted : (owned ? PALETTE.success : (classLevel < classNeeded ? PALETTE.danger : PALETTE.accentSoft))
+        fontFamily: 'Orbitron', fontSize: '9px', color: gateColor
       }).setOrigin(0, 0.5);
 
-      const actionLabel = !obtainable && !owned ? 'LOCKED' : (active ? 'UNEQUIP' : owned ? 'EQUIP' : 'UNLOCK');
+      const blocked = !owned && (obtain.reason === 'invalid' || obtain.reason === 'coming-soon');
+      const actionLabel = blocked ? 'LOCKED' : (active ? 'UNEQUIP' : owned ? 'EQUIP' : 'UNLOCK');
       const actionEnabled = active || owned || canBuy;
       const action = this.add.text(width / 2 + 190, y, actionLabel, {
         fontFamily: 'Orbitron', fontSize: '9px',
@@ -760,6 +780,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
           const result = canObtainTalent(this, definition, index, classLevel, tokens);
           if (!result.ok) {
             if (result.reason === 'class') AlertManager.toast(this, { type: 'warning', message: `Reach class ${result.classNeeded} to unlock ${talent.title}.` });
+            else if (result.reason === 'locked') AlertManager.toast(this, { type: 'warning', message: `Obtain ${definition.title} before unlocking ${talent.title}.` });
             else if (result.reason === 'tokens') AlertManager.toast(this, { type: 'warning', message: `You need ${formatCompact(result.cost)} Dice Tokens to unlock ${talent.title}.` });
             return;
           }
