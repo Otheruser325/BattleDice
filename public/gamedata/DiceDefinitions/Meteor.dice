@@ -43,5 +43,6 @@
     }
   ],
   "accent": "#ff7a35",
-  "targetingMode": "Nearest"
+  "targetingMode": "Nearest",
+  "talentsComingSoon": true
 }
