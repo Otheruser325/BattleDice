@@ -22,5 +22,19 @@
   "accent": "#78e6a8",
   "rarity": "Common",
   "targetingMode": "Nearest",
-  "talentsComingSoon": true
+  "talents": [
+    {
+      "title": "Mighty Wind",
+      "description": "Amount of attacks while passive is up is increased to 3 times, with the mana charge rate taking 50% more hits to charge up.",
+      "classNeeded": 9,
+      "modifiers": {
+        "skillModifiers": [
+          {
+            "manaNeeded": 15,
+            "attackCountIncrease": 2
+          }
+        ]
+      }
+    }
+  ]
 }
