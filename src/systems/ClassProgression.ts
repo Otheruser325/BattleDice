@@ -137,6 +137,17 @@ function replaceTurnCount(text: string, sourceValue: number | undefined, display
   return text.replace(new RegExp(`(for\\s+)(?:${fromPattern})(\\s+turns?)`, 'gi'), `$1${to}$2`);
 }
 
+const PLURAL_UNIT_FORMS: Record<string, string> = {
+  tiles: 'tile',
+  spaces: 'space',
+  squares: 'square',
+  hexes: 'hex'
+};
+
+function normalizeSingularUnits(text: string): string {
+  return text.replace(/\b1 (tiles|spaces|squares|hexes)\b/g, (_, unit: string) => `1 ${PLURAL_UNIT_FORMS[unit]}`);
+}
+
 function scaleDisplayDamage(value: number | undefined, multiplier: number): number | undefined {
   return value === undefined ? undefined : Math.max(1, Math.round(value * Math.max(1, multiplier)));
 }
@@ -177,6 +188,7 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
   text = replaceLiteralNumber(text, source.foeManaGain, display.foeManaGain);
   text = replaceLiteralNumber(text, source.manaSteal, display.manaSteal);
   text = replaceLiteralNumber(text, source.pierceBehindRange, display.pierceBehindRange);
+  text = replaceLiteralNumber(text, source.chainRange, display.chainRange);
   text = replaceLiteralNumber(text, source.allyExtraAttacks, display.allyExtraAttacks);
   text = replaceLiteralNumber(text, source.allyExtraAttacks, display.allyExtraAttacks);
   text = replaceLiteralNumber(text, source.attackCountIncrease, display.attackCountIncrease);
@@ -384,6 +396,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   if (modifiers.ricochetCount !== undefined) {
     dynamicDescription = formatDruidRicochetDescriptor(dynamicDescription, modifiers.ricochetCount);
   }
+  dynamicDescription = normalizeSingularUnits(dynamicDescription);
   if (dynamicDescription.trim() && dynamicDescription !== description) return dynamicDescription;
   if (definition.typeId === 'Solitude' && modifiers.targetMaxHpBonusRate !== undefined) {
     return `When no ally is adjacent to this dice, deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
@@ -408,7 +421,8 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Attacks cause ${formatValue(scaleDisplayDamage(modifiers.splashDamage, skillDamageMultiplier) ?? 0)} splash damage to adjacent foes on the target's board.`;
   }
   if (modifiers.chainDamage !== undefined) {
-    return `Attacks chain onto another foe on the target's board within 2 tiles for ${formatValue(scaleDisplayDamage(modifiers.chainDamage, skillDamageMultiplier) ?? 0)} bonus damage.`;
+    const chainRange = modifiers.chainRange ?? 2;
+    return `Attacks chain onto another foe on the target's board within ${formatValue(chainRange)} tiles for ${formatValue(scaleDisplayDamage(modifiers.chainDamage, skillDamageMultiplier) ?? 0)} bonus damage.`;
   }
   if (modifiers.activeHeal !== undefined) {
     return `Heals the weakest ally for ${formatValue(scaleDisplayDamage(modifiers.activeHeal, skillDamageMultiplier) ?? 0)} HP.`;

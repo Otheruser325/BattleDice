@@ -20,9 +20,11 @@ import { applyClassProgression, applyTransformStats, getClassProgressionPreview,
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AchievementStore } from '../systems/AchievementStore';
+import { AlertManager } from '../utils/AlertManager';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
 import { SettingsStore } from '../systems/SettingsStore';
-import { applyDiceTalent, getEquippedTalentId, setEquippedTalentId } from '../systems/DiceTalents';
+import { applyDiceTalent, canObtainTalent, getTalentClassNeeded, getTalentCost, grantTalent, isTalentObtainable } from '../systems/DiceTalents';
+import { getEquippedTalentIndex, getTalentByIndex, isTalentOwned, setEquippedTalentIndex } from '../systems/DiceTalentStore';
 import { formatCompact } from '../utils/FormatManager';
 
 function formatSkillType(type: string | undefined): string {
@@ -299,7 +301,7 @@ export class DiceScene extends Phaser.Scene {
       const y = cardsTopY + row * cardPitch;
       const accent = Phaser.Display.Color.HexStringToColor(die.accent).color;
       const cls = getDiceProgress(this, die.typeId).classLevel;
-       const displayedDie = applyDiceTalent(applyClassProgression(die, cls), getEquippedTalentId(this, die.typeId));
+      const displayedDie = applyClassProgression(applyDiceTalent(die, getEquippedTalentIndex(this, die)), cls);
       const locked = this.isDiceLocked(die.typeId);
 
       const cardFill = locked ? 0x111e28 : 0x173247;
@@ -352,7 +354,7 @@ export class DiceScene extends Phaser.Scene {
 
       const refreshCardStatLine = () => {
         const nextCls = getDiceProgress(this, die.typeId).classLevel;
-        const nextDisplayedDie = applyDiceTalent(applyClassProgression(die, nextCls), getEquippedTalentId(this, die.typeId));
+        const nextDisplayedDie = applyClassProgression(applyDiceTalent(die, getEquippedTalentIndex(this, die)), nextCls);
         classTag.setText(this.isDiceLocked(die.typeId) ? 'LOCKED' : `C${nextCls}`);
         statLine.setText(`ATK ${formatCompact(nextDisplayedDie.attack)}  |  HP ${formatCompact(nextDisplayedDie.health)}
 RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
@@ -484,9 +486,10 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const die = getAllDiceDefinitions(this).find((definition) => definition.typeId === typeId);
     if (!die) return;
     const progress = getDiceProgress(this, typeId);
-    const displayDie = applyDiceTalent(
-      this.getModalDisplayDie(die, progress.classLevel, formIndex),
-      getEquippedTalentId(this, typeId)
+    const displayDie = this.getModalDisplayDie(
+      applyDiceTalent(die, getEquippedTalentIndex(this, die)),
+      progress.classLevel,
+      formIndex
     );
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive();
@@ -505,8 +508,13 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;
     const skillTextContent = formatSkillInfo(displayDie, false, 1, formIndex > 0 ? formIndex - 1 : undefined, die);
+    const currentTalentIndex = getEquippedTalentIndex(this, die);
+    const equippedTalent = getTalentByIndex(die, currentTalentIndex);
+    const skillTextWithTalent = equippedTalent
+      ? `${skillTextContent}\n\nTalent — ${equippedTalent.title}\n${equippedTalent.description}`
+      : skillTextContent;
     const skillContainer = this.add.container(width / 2, skillViewportTop);
-    const skill = this.add.text(0, 0, skillTextContent, {
+    const skill = this.add.text(0, 0, skillTextWithTalent, {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted,
@@ -546,13 +554,12 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} (+10% multiplicative stats/skills) | Cost: ${formatCompact(tokenCost)} tokens + ${formatCompact(copyCost)} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
     }
 
-    const currentTalentId = getEquippedTalentId(this, typeId);
-    const talentsAvailable = Boolean(die.talents?.length);
-    const talentsComingSoon = !talentsAvailable && Boolean(die.talentsComingSoon);
+    const talentsAvailable = Boolean(die.talents?.length) && !die.talentsComingSoon;
+    const talentsComingSoon = Boolean(die.talentsComingSoon);
     let talentBtn: Phaser.GameObjects.Text | null = null;
     if (talentsAvailable || talentsComingSoon) {
       const talentButtonLabel = talentsAvailable
-        ? `DICE TALENTS${currentTalentId ? ' • EQUIPPED' : ''}`
+        ? `DICE TALENTS${currentTalentIndex !== null ? ' • EQUIPPED' : ''}`
         : 'DICE TALENTS • COMING SOON...';
       talentBtn = this.add.text(width / 2, height / 2 + 78, talentButtonLabel, {
         fontFamily: 'Orbitron',
@@ -661,20 +668,19 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       this.modalWheelHandler = null;
     }
     const definition = getAllDiceDefinitions(this).find((die) => die.typeId === typeId);
-    if (!definition?.talents?.length) return;
+    if (!definition?.talents?.length || definition.talentsComingSoon) return;
 
     const { width, height } = this.scale;
     const centerY = height / 2;
     const overlay = this.add.rectangle(width / 2, centerY, width, height, 0x000000, 0.68).setInteractive();
-    const panel = this.add.rectangle(width / 2, centerY, 540, 390, 0x163246, 0.98).setStrokeStyle(2, 0x4f7ea1);
-    const title = this.add.text(width / 2, centerY - 160, `${definition.title} • DICE TALENTS`, {
+    const panel = this.add.rectangle(width / 2, centerY, 560, 400, 0x163246, 0.98).setStrokeStyle(2, 0x4f7ea1);
+    const title = this.add.text(width / 2, centerY - 164, `${definition.title} • DICE TALENTS`, {
       fontFamily: 'Orbitron', fontSize: '18px', color: definition.accent
     }).setOrigin(0.5);
-    const hint = this.add.text(width / 2, centerY - 132, 'Equip one talent per die. Equipping another replaces the current talent.', {
-      fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted, align: 'center'
+    const hint = this.add.text(width / 2, centerY - 138, 'Unlock a talent with Dice Tokens, then equip it. Equipping another replaces the current talent.', {
+      fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 500 }
     }).setOrigin(0.5);
     const elements: Phaser.GameObjects.GameObject[] = [overlay, panel, title, hint];
-    const currentTalentId = getEquippedTalentId(this, typeId);
 
     const close = () => {
       elements.forEach((element) => element.destroy());
@@ -688,35 +694,87 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         this.modalWheelHandler = null;
       }
     };
-    const choose = (talentId: string | null) => {
-      setEquippedTalentId(this, definition, talentId);
+    const reopen = () => {
       close();
       onUpdate();
       this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
     };
 
+    const syncTokens = () => {
+      tokenText.setText(`DICE TOKENS: ${formatCompact(getDiceTokens(this))}  •  Click a die, then EQUIP to assign it to a slot`);
+    };
+
     definition.talents.forEach((talent, index) => {
-      const y = centerY - 72 + index * 62;
-      const active = talent.id === currentTalentId;
-      const row = this.add.rectangle(width / 2, y, 470, 50, active ? 0x315e7a : 0x173247, 0.98)
-        .setStrokeStyle(1, active ? 0xf4b860 : 0x406987)
-        .setInteractive({ useHandCursor: true });
-      const name = this.add.text(width / 2 - 210, y - 11, `${active ? '● ' : ''}${talent.title}`, {
+      const y = centerY - 78 + index * 74;
+      const currentTalentIndex = getEquippedTalentIndex(this, definition);
+      const owned = isTalentOwned(this, typeId, index);
+      const active = owned && index === currentTalentIndex;
+      const obtainable = isTalentObtainable(talent);
+      const classLevel = getDiceProgress(this, typeId).classLevel;
+      const cost = getTalentCost(definition.rarity);
+      const classNeeded = getTalentClassNeeded(talent);
+      const canBuy = canObtainTalent(this, definition, index, classLevel, getDiceTokens(this)).ok;
+      const row = this.add.rectangle(width / 2, y, 490, 62, active ? 0x315e7a : 0x173247, 0.98)
+        .setStrokeStyle(1, active ? 0xf4b860 : 0x406987);
+      const name = this.add.text(width / 2 - 224, y - 20, `${active ? '● ' : ''}${talent.title}`, {
         fontFamily: 'Orbitron', fontSize: '11px', color: active ? '#fff1c2' : PALETTE.text
       }).setOrigin(0, 0.5);
-      const description = this.add.text(width / 2 - 210, y + 11, talent.description, {
-        fontFamily: 'Orbitron', fontSize: '9px', color: PALETTE.textMuted, wordWrap: { width: 340 }
+      const description = this.add.text(width / 2 - 224, y + 2, talent.description, {
+        fontFamily: 'Orbitron', fontSize: '9px', color: PALETTE.textMuted, wordWrap: { width: 330 }
       }).setOrigin(0, 0.5);
-      const action = this.add.text(width / 2 + 180, y, active ? 'UNEQUIP' : 'EQUIP', {
-        fontFamily: 'Orbitron', fontSize: '9px', color: active ? '#ffb5b5' : '#b8ffd1',
-        backgroundColor: active ? '#702f3d' : '#246044',
-        padding: { left: 5, right: 5, top: 4, bottom: 4 }
+      const gateText = !obtainable
+        ? 'NOT OBTAINABLE'
+        : owned
+          ? 'OWNED'
+          : classLevel < classNeeded
+            ? `REQUIRES CLASS ${classNeeded}`
+            : `${formatCompact(cost)} DICE TOKENS`;
+      const gate = this.add.text(width / 2 - 224, y + 22, gateText, {
+        fontFamily: 'Orbitron', fontSize: '9px',
+        color: !obtainable ? PALETTE.textMuted : (owned ? PALETTE.success : (classLevel < classNeeded ? PALETTE.danger : PALETTE.accentSoft))
+      }).setOrigin(0, 0.5);
+
+      const actionLabel = !obtainable && !owned ? 'LOCKED' : (active ? 'UNEQUIP' : owned ? 'EQUIP' : 'UNLOCK');
+      const actionEnabled = active || owned || canBuy;
+      const action = this.add.text(width / 2 + 190, y, actionLabel, {
+        fontFamily: 'Orbitron', fontSize: '9px',
+        color: !actionEnabled ? PALETTE.textMuted : (active ? '#ffb5b5' : owned ? '#b8ffd1' : '#fff1c2'),
+        backgroundColor: !actionEnabled ? '#3e4f5c' : (active ? '#702f3d' : owned ? '#246044' : '#7a5a1e'),
+        padding: { left: 6, right: 6, top: 5, bottom: 5 }
       }).setOrigin(0.5);
-      row.on('pointerdown', () => choose(active ? null : talent.id));
-      elements.push(row, name, description, action);
+
+      if (actionEnabled) {
+        row.setInteractive({ useHandCursor: true });
+        row.on('pointerdown', () => {
+          if (active) {
+            setEquippedTalentIndex(this, definition, null);
+            reopen();
+            return;
+          }
+          if (owned) {
+            setEquippedTalentIndex(this, definition, index);
+            reopen();
+            return;
+          }
+          const tokens = getDiceTokens(this);
+          const result = canObtainTalent(this, definition, index, classLevel, tokens);
+          if (!result.ok) {
+            if (result.reason === 'class') AlertManager.toast(this, { type: 'warning', message: `Reach class ${result.classNeeded} to unlock ${talent.title}.` });
+            else if (result.reason === 'tokens') AlertManager.toast(this, { type: 'warning', message: `You need ${formatCompact(result.cost)} Dice Tokens to unlock ${talent.title}.` });
+            return;
+          }
+          if (!grantTalent(this, definition, index)) return;
+          setDiceTokens(this, tokens - result.cost);
+          setEquippedTalentIndex(this, definition, index);
+          AudioManager.playSfx(this, 'class-up');
+          syncTokens();
+          reopen();
+        });
+      }
+      elements.push(row, name, description, gate, action);
     });
 
-    const closeButton = this.add.text(width / 2, centerY + 148, 'CLOSE', {
+    const closeButton = this.add.text(width / 2, centerY + 158, 'CLOSE', {
       fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted,
       backgroundColor: '#173247', padding: { left: 10, right: 10, top: 5, bottom: 5 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });

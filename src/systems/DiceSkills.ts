@@ -23,6 +23,7 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   chainDamageRate?: number;
   chainDamageRatesByPip?: Record<string, number>;
   chainRange?: number;
+  chainTargets?: number;
   reviveChance?: number;
   reviveChanceRate?: number;
   maxRevives?: number;
@@ -339,6 +340,19 @@ export function getSkillLockClass(skill: DiceSkillDefinition | undefined | null)
 }
 
 
+export const CHAIN_NO_TARGET_CAP = -1;
+export const DEFAULT_CHAIN_TARGETS = 1;
+
+// -1 means "no jump cap": keep chaining until no fresh target remains. Any other
+// value (or an absent one) is the number of extra targets the chain may reach.
+export function getChainTargetLimit(meta: Pick<DiceSkillRuntimeMeta, 'chainTargets'>): number {
+  const raw = meta.chainTargets;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return DEFAULT_CHAIN_TARGETS;
+  const floored = Math.floor(raw);
+  if (floored === CHAIN_NO_TARGET_CAP) return CHAIN_NO_TARGET_CAP;
+  return Math.max(0, floored);
+}
+
 export function getRuntimeSkillMetaForTrigger(definition: DiceDefinition | undefined, trigger: DiceSkillType, skillIndex?: number): DiceSkillRuntimeMeta {
   const validDefinition = getValidDefinition(definition);
   if (skillIndex !== undefined) {
@@ -591,6 +605,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
       || (modifiers as { canFireWithNoTargets?: boolean } | undefined)?.canFireWithNoTargets === true
     ),
     chainRange: (activeModifiers as { chainRange?: number } | undefined)?.chainRange ?? (modifiers as { chainRange?: number } | undefined)?.chainRange,
+    chainTargets: (activeModifiers as { chainTargets?: number } | undefined)?.chainTargets ?? (modifiers as { chainTargets?: number } | undefined)?.chainTargets,
     meteorDamage: (activeModifiers as { meteorDamage?: number } | undefined)?.meteorDamage ?? (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
     meteorCount: (activeModifiers as { meteorCount?: number } | undefined)?.meteorCount ?? (modifiers as { meteorCount?: number } | undefined)?.meteorCount,
     meteorRandomOrientation: Boolean((activeModifiers as { meteorRandomOrientation?: boolean } | undefined)?.meteorRandomOrientation ?? (modifiers as { meteorRandomOrientation?: boolean } | undefined)?.meteorRandomOrientation),

@@ -21,5 +21,6 @@
   ],
   "accent": "#86d68f",
   "rarity": "Common",
-  "targetingMode": "Nearest"
+  "targetingMode": "Nearest",
+  "talentsComingSoon": true
 }

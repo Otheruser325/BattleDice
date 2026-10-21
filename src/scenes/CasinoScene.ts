@@ -11,6 +11,7 @@ import { AnimationManager } from '../utils/AnimationManager';
 import { AchievementStore } from '../systems/AchievementStore';
 import { formatCompact, formatPercent } from '../utils/FormatManager';
 import { secureChance, secureRandom, secureRandomBetween } from '../utils/RandomManager';
+import { getTalentDropRateText, isTalentChest, rollTalentDrop, type TalentDropResult } from '../systems/DiceTalents';
 
 interface ChestRewardEntry {
   typeId: string;
@@ -22,6 +23,7 @@ interface ChestRewardEntry {
 
 interface ChestOpenRewards {
   entries: ChestRewardEntry[];
+  talents: TalentDropResult[];
   diceTokens: number;
   diamonds: number;
 }
@@ -560,7 +562,8 @@ export class CasinoScene extends Phaser.Scene {
     const cardRates = CHEST_DROP_RATES[type]
       .map((entry) => `${entry.rarity}: ${formatPercent(entry.rate / 100, 2)} • ${formatCompact(entry.copies[0])}-${formatCompact(entry.copies[1])} cards`)
       .join('\n');
-    return `${cardRates}\nDice Tokens: +${formatCompact(minTokens)}-${formatCompact(maxTokens)}\nDiamonds: ${formatPercent(diamondReward.chance, 2)} • ${formatCompact(diamondReward.copies[0])}-${formatCompact(diamondReward.copies[1])}`;
+    const talentRates = isTalentChest(type) ? `\nTalents — ${getTalentDropRateText(type)}` : '';
+    return `${cardRates}${talentRates}\nDice Tokens: +${formatCompact(minTokens)}-${formatCompact(maxTokens)}\nDiamonds: ${formatPercent(diamondReward.chance, 2)} • ${formatCompact(diamondReward.copies[0])}-${formatCompact(diamondReward.copies[1])}`;
   }
 
   private openChestModal(type: ChestType) {
@@ -668,7 +671,7 @@ export class CasinoScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xffffff)
       .setDepth(9999);
     this.tweens.add({ targets: burst, scale: isAll ? 4 : 2, alpha: 0, duration: isAll ? 520 : 320, onComplete: () => burst.destroy() });
-    this.showRewardsModal(type, entries, rewards.diceTokens, rewards.diamonds);
+    this.showRewardsModal(type, entries, rewards.diceTokens, rewards.diamonds, rewards.talents);
     this.render();
   }
 
@@ -676,6 +679,7 @@ export class CasinoScene extends Phaser.Scene {
     const merged = new Map<string, ChestRewardEntry>();
     const tokenRange = CHEST_TOKEN_REWARDS[type];
     const diamondReward = CHEST_DIAMOND_REWARDS[type];
+    const talentDrops: TalentDropResult[] = [];
     let diceTokens = 0;
     let diamonds = 0;
     let emptyRewardRolls = 0;
@@ -684,6 +688,10 @@ export class CasinoScene extends Phaser.Scene {
       diceTokens += secureRandomBetween(tokenRange[0], tokenRange[1]);
       if (secureChance(diamondReward.chance)) {
         diamonds += secureRandomBetween(diamondReward.copies[0], diamondReward.copies[1]);
+      }
+      if (isTalentChest(type)) {
+        const talent = rollTalentDrop(this, type, getAllDiceDefinitions(this));
+        if (talent) talentDrops.push(talent);
       }
       const reward = this.rollChestReward(type);
       if (!reward) {
@@ -706,7 +714,7 @@ export class CasinoScene extends Phaser.Scene {
     setDiceTokens(this, getDiceTokens(this) + diceTokens);
     if (diamonds > 0) setDiamonds(this, getDiamonds(this) + diamonds);
 
-    return { entries: [...merged.values()], diceTokens, diamonds };
+    return { entries: [...merged.values()], talents: talentDrops, diceTokens, diamonds };
   }
 
   private getRemainingChestCopyCapacity(typeId: string): number {
@@ -788,7 +796,7 @@ export class CasinoScene extends Phaser.Scene {
     return null;
   }
 
-  private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number, diamonds: number) {
+  private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number, diamonds: number, talents: TalentDropResult[] = []) {
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.58).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 930, 560, 0x153449, 0.98).setStrokeStyle(2, 0x4f7ea1);
@@ -802,7 +810,16 @@ export class CasinoScene extends Phaser.Scene {
       fontSize: '16px',
       color: PALETTE.accentSoft
     }).setOrigin(0.5);
-    const diamondSummary = this.add.text(width / 2, height / 2 - 188, `Diamonds: +${formatCompact(diamonds)} (now ${formatCompact(getDiamonds(this))})`, {
+    const talentSummary = this.add.text(width / 2, height / 2 - 188, talents.length > 0
+      ? `TALENTS UNLOCKED: ${talents.map((talent) => `${talent.title} — ${talent.talentTitle}`).join('  •  ')}`
+      : '', {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: '#fff1c2',
+      align: 'center',
+      wordWrap: { width: 820 }
+    }).setOrigin(0.5);
+    const diamondSummary = this.add.text(width / 2, height / 2 - 168, `Diamonds: +${formatCompact(diamonds)} (now ${formatCompact(getDiamonds(this))})`, {
       fontFamily: 'Orbitron',
       fontSize: '14px',
       color: '#7ddcff'
@@ -815,8 +832,8 @@ export class CasinoScene extends Phaser.Scene {
       padding: { left: 10, right: 10, top: 5, bottom: 5 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    const rewardsTop = height / 2 - 160;
-    const rewardsHeight = 408;
+    const rewardsTop = height / 2 - 146;
+    const rewardsHeight = 394;
     const container = this.add.container(width / 2 - 430, rewardsTop);
     const mask = this.add.rectangle(width / 2 - 430, rewardsTop, 860, rewardsHeight, 0xffffff, 0).setOrigin(0, 0).setVisible(false);
     container.setMask(mask.createGeometryMask());
@@ -865,7 +882,32 @@ export class CasinoScene extends Phaser.Scene {
       if (newBadge) container.add(newBadge);
     });
 
-    const maxScroll = Math.max(0, Math.ceil(entries.length / 3) * 92 - rewardsHeight);
+    const diceCardRows = Math.ceil(entries.length / 3);
+    talents.forEach((talent, index) => {
+      const y = diceCardRows * 92 + index * 92;
+      const card = this.add.rectangle(132, y + 38, 264, 76, 0x3a2c4f, 0.95)
+        .setStrokeStyle(2, 0xf4b860)
+        .setInteractive({ useHandCursor: true });
+      const header = this.add.rectangle(132, y + 18, 264, 28, 0xf4b860, 0.18);
+      const titleText = this.add.text(16, y + 10, `${talent.title.toUpperCase()} — ${talent.talentTitle.toUpperCase()}`, {
+        fontFamily: 'Orbitron',
+        fontSize: '11px',
+        color: '#fff1c2',
+        wordWrap: { width: 232 }
+      });
+      const kindText = this.add.text(16, y + 50, 'TALENT UNLOCKED', {
+        fontFamily: 'Orbitron',
+        fontSize: '12px',
+        color: PALETTE.accentSoft
+      });
+      card.on('pointerover', () => card.setFillStyle(0x4a3a63, 0.95));
+      card.on('pointerout', () => card.setFillStyle(0x3a2c4f, 0.95));
+      card.on('pointerdown', () => this.showRewardDiceDetails(talent.typeId));
+      container.add([card, header, titleText, kindText]);
+    });
+
+    const totalRewardRows = diceCardRows + talents.length;
+    const maxScroll = Math.max(0, totalRewardRows * 92 - rewardsHeight);
     let offset = 0;
     const scrollBounds = new Phaser.Geom.Rectangle(width / 2 - 430, rewardsTop, 860, rewardsHeight);
     const wheelHandler = (pointer: Phaser.Input.Pointer, _go: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
@@ -887,7 +929,7 @@ export class CasinoScene extends Phaser.Scene {
     close = () => {
       this.input.off('wheel', wheelHandler);
       this.input.keyboard?.off('keydown-ESC', escHandler);
-      [overlay, panel, title, tokenSummary, diamondSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
+      [overlay, panel, title, tokenSummary, talentSummary, diamondSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
     };
     closeBtn.on('pointerdown', close);
     overlay.on('pointerdown', () => undefined);

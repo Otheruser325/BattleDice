@@ -12,11 +12,26 @@
       "modifiers": {
         "chainDamage": 16,
         "chainRange": 2,
+        "chainTargets": 1,
         "skillSfx": "dice_electric_skill"
       }
     }
   ],
   "accent": "#ffd76d",
   "rarity": "Common",
-  "targetingMode": "Nearest"
+  "targetingMode": "Nearest",
+  "talents": [
+    {
+      "title": "Modified Electric",
+      "description": "Electric arcs have no jump cap, but the distance of finding a target is reduced to 1 tile.",
+      "classNeeded": 9,
+      "modifiers": {
+        "skillIndex": 0,
+        "skillModifiers": {
+          "chainRange": 1,
+          "chainTargets": -1
+        }
+      }
+    }
+  ]
 }

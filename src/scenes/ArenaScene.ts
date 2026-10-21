@@ -20,7 +20,7 @@ import { AlertManager } from '../utils/AlertManager';
 import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition, DiceTargetingMode } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
-import { getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getStatusEffectDurationFromModifiers, getSkillLockClass, getInitialTransformIndex, getAvailableTransformIndices, getPipTriggeredTransformIndex, getPipMappedRate, resolvePipScaledDamage } from '../systems/DiceSkills';
+import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getStatusEffectDurationFromModifiers, getSkillLockClass, getInitialTransformIndex, getAvailableTransformIndices, getPipTriggeredTransformIndex, getPipMappedRate, resolvePipScaledDamage } from '../systems/DiceSkills';
 import { CombatSkillOrchestrator, executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeOnTransformedSkillEffects, executeCombatStartSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeRevengeSkillEffects, applySkillDamageModifiers, getCombatStartManaEffect, getCombatStartTauntEffect, chooseInfiltratorPlacement, canSkillStrikeFirst, collectCombatStartAuras, computeCombatStartBonus, type CombatFlowContext, type CombatFlowPhase, type StatusEffectApplication } from '../systems/CombatSkills';
 import { getClassMultiplier, applyClassProgression, applyTransformStats, getTransformRecoveryRate, getClassScaledSkillDescription } from '../systems/ClassProgression';
 import { SCENE_KEYS } from './sceneKeys';
@@ -32,7 +32,8 @@ import { ProfileStore } from '../systems/ProfileStore';
 import { AchievementStore } from '../systems/AchievementStore';
 import { ArenaMultiplayerClient, type ArenaMultiplayerStatus } from '../systems/ArenaMultiplayerClient';
 import { formatSkillInfo, getDiceAlternateFormLabel, getDiceModalDisplayDefinition, getNextDiceFormIndex } from './DiceScene';
-import { applyDiceTalent, getEquippedTalentId } from '../systems/DiceTalents';
+import { applyDiceTalent } from '../systems/DiceTalents';
+import { getEquippedTalentIndex } from '../systems/DiceTalentStore';
 import { formatCompact, formatPercent } from '../utils/FormatManager';
 import { secureChance, secureLobbyCode, securePick, secureRandom, secureRandomBetween } from '../utils/RandomManager';
 
@@ -556,7 +557,8 @@ export class ArenaScene extends Phaser.Scene {
     const definition = getAllDiceDefinitions(this).find((die) => die.typeId === typeId);
     if (!definition) return;
     const progress = getDiceProgress(this, typeId);
-    const scaled = getDiceModalDisplayDefinition(definition, progress.classLevel, formIndex);
+    const talentDefinition = applyDiceTalent(definition, getEquippedTalentIndex(this, definition));
+    const scaled = getDiceModalDisplayDefinition(talentDefinition, progress.classLevel, formIndex);
     const { width, height } = this.scale;
     const cx = width / 2;
     const cy = height / 2;
@@ -1947,7 +1949,7 @@ export class ArenaScene extends Phaser.Scene {
         playerClassLevels.set(definition.typeId, classLevel);
         playerClassLevelsBySlot[index] = classLevel;
         return this.applyClassProgress(
-          applyDiceTalent(definition, getEquippedTalentId(this, definition.typeId)),
+          applyDiceTalent(definition, getEquippedTalentIndex(this, definition)),
           classLevel
         );
       });
@@ -2088,7 +2090,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!base) return undefined;
     const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
     const withTalent = die.ownerId === 'player'
-      ? applyDiceTalent(base, getEquippedTalentId(this, die.typeId))
+      ? applyDiceTalent(base, getEquippedTalentIndex(this, base))
       : base;
     return this.applyClassProgress(withTalent, classLevel);
   }
@@ -3579,13 +3581,16 @@ export class ArenaScene extends Phaser.Scene {
         }
       }
       if (result.chainTarget) {
-        const damage = Math.max(1, Math.floor((result.chainDamageAmount ?? definition.attack)
-          * this.getCombanityDamageMultiplier(attacker, result.chainTarget)
-          * this.getDiceCardSkillDamageMultiplier(attacker)));
-        const hit = this.applyDamageWithRevive(result.chainTarget.instanceId, damage, { source: attacker });
-        this.gameState = hit.state;
-        this.showDamageText(result.chainTarget, hit.dealt, '#fff176');
-        await this.applyDamageDefeatHooks(attacker, result.chainTarget, hit.defeated || hit.killed);
+        for (const chainVictim of this.getChainJumpTargetsForArena(attacker, result.chainTarget, startMeta)) {
+          if (chainVictim.isDestroyed) continue;
+          const damage = Math.max(1, Math.floor((result.chainDamageAmount ?? definition.attack)
+            * this.getCombanityDamageMultiplier(attacker, chainVictim)
+            * this.getDiceCardSkillDamageMultiplier(attacker)));
+          const hit = this.applyDamageWithRevive(chainVictim.instanceId, damage, { source: attacker });
+          this.gameState = hit.state;
+          this.showDamageText(chainVictim, hit.dealt, '#fff176');
+          await this.applyDamageDefeatHooks(attacker, chainVictim, hit.defeated || hit.killed);
+        }
       }
     }
   }
@@ -4356,7 +4361,8 @@ export class ArenaScene extends Phaser.Scene {
   private findChainJumpTargetForArena(
     attacker: DiceInstanceState,
     primaryTarget: DiceInstanceState,
-    meta: ReturnType<typeof getRuntimeSkillMeta>
+    meta: ReturnType<typeof getRuntimeSkillMeta>,
+    excludeInstanceIds?: Set<string>
   ): DiceInstanceState | undefined {
     const definition = this.getDefinitionForInstance(attacker);
     if (!definition || !primaryTarget.gridPosition) return undefined;
@@ -4369,6 +4375,7 @@ export class ArenaScene extends Phaser.Scene {
     const candidates = this.gameState.dice
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
         die.instanceId !== primaryTarget.instanceId
+        && !excludeInstanceIds?.has(die.instanceId)
         && die.ownerId === primaryTarget.ownerId
         && die.zone === 'board'
         && !die.isDestroyed
@@ -4387,6 +4394,30 @@ export class ArenaScene extends Phaser.Scene {
       .filter(({ distance }) => distance <= chainRange);
     const mode = meta.activeSkillTargeting ?? meta.skillTargeting ?? meta.targetingMode ?? definition.targetingMode ?? 'Nearest';
     return this.selectTargetCandidate(candidates, mode);
+  }
+
+  private getChainJumpTargetsForArena(
+    attacker: DiceInstanceState,
+    firstTarget: DiceInstanceState | undefined,
+    meta: ReturnType<typeof getRuntimeSkillMeta>
+  ): DiceInstanceState[] {
+    if (!firstTarget?.gridPosition) return [];
+    const sequence: DiceInstanceState[] = [firstTarget];
+    const limit = getChainTargetLimit(meta);
+    if (limit === 0) return sequence;
+    const visited = new Set<string>([firstTarget.instanceId, attacker.instanceId]);
+    let current = firstTarget;
+    // -1 chains until no fresh foe remains; any other value caps the extra jumps.
+    // The visited set guarantees termination even for the uncapped case.
+    const maxJumps = limit === CHAIN_NO_TARGET_CAP ? this.gameState.dice.length : limit;
+    while (sequence.length <= maxJumps) {
+      const next = this.findChainJumpTargetForArena(attacker, current, meta, visited);
+      if (!next) break;
+      sequence.push(next);
+      visited.add(next.instanceId);
+      current = next;
+    }
+    return sequence;
   }
 
   private findNearestFoeIgnoringRange(attacker: DiceInstanceState): DiceInstanceState | undefined {
@@ -5704,17 +5735,23 @@ export class ArenaScene extends Phaser.Scene {
 
     if (result.chainTarget && target) {
       this.playPassiveSkillSfxForDie(attacker, meta);
-      const firstTargetCenter = this.getTileCenter(target);
-      const chainTargetCenter = this.getTileCenter(result.chainTarget);
-      if (firstTargetCenter && chainTargetCenter) {
-        AnimationManager.animateElectricChain(this, firstTargetCenter.x, firstTargetCenter.y, chainTargetCenter.x, chainTargetCenter.y);
+      const chainTargets = this.getChainJumpTargetsForArena(attacker, result.chainTarget, meta);
+      let chainSource = target;
+      for (const chainVictim of chainTargets) {
+        if (chainVictim.isDestroyed) continue;
+        const sourceCenter = this.getTileCenter(chainSource);
+        const chainTargetCenter = this.getTileCenter(chainVictim);
+        if (sourceCenter && chainTargetCenter) {
+          AnimationManager.animateElectricChain(this, sourceCenter.x, sourceCenter.y, chainTargetCenter.x, chainTargetCenter.y);
+        }
+        const dealt = Math.max(1, Math.ceil((result.chainDamageAmount ?? meta.chainDamage ?? definition.attack) * this.getCombanityDamageMultiplier(attacker, chainVictim) * this.getDiceCardSkillDamageMultiplier(attacker)));
+        const chainHit = this.applyDamageWithRevive(chainVictim.instanceId, dealt, { source: attacker });
+        this.gameState = chainHit.state;
+        this.showDamageText(chainVictim, chainHit.dealt, '#fff176');
+        await this.applyDamageDefeatHooks(attacker, chainVictim, chainHit.defeated || chainHit.killed);
+        this.addCombatActionDetail(`Electric chain hit ${this.getCombatDieName(chainVictim)} for ${formatCompact(chainHit.dealt)}${chainHit.defeated ? ' (defeated)' : ''}`);
+        chainSource = chainVictim;
       }
-      const dealt = Math.max(1, Math.ceil((result.chainDamageAmount ?? meta.chainDamage ?? definition.attack) * this.getCombanityDamageMultiplier(attacker, result.chainTarget) * this.getDiceCardSkillDamageMultiplier(attacker)));
-      const chainHit = this.applyDamageWithRevive(result.chainTarget.instanceId, dealt, { source: attacker });
-      this.gameState = chainHit.state;
-      this.showDamageText(result.chainTarget, chainHit.dealt, '#fff176');
-      await this.applyDamageDefeatHooks(attacker, result.chainTarget, chainHit.defeated || chainHit.killed);
-      this.addCombatActionDetail(`Electric chain hit ${this.getCombatDieName(result.chainTarget)} for ${formatCompact(chainHit.dealt)}${chainHit.defeated ? ' (defeated)' : ''}`);
     }
 
     if (result.heatwaveDamageAmount !== undefined && attacker.gridPosition) {
@@ -5944,12 +5981,13 @@ export class ArenaScene extends Phaser.Scene {
 
     if (result.chainTarget) {
       const chainBoardSide = target ? this.getBoardSideForDie(target) : undefined;
-      const chainVictim = result.chainTarget.instanceId !== target?.instanceId
+      const firstChainTarget = result.chainTarget.instanceId !== target?.instanceId
         ? result.chainTarget
         : target && chainBoardSide
           ? this.findChainJumpTargetForArena(attacker, target, meta)
           : undefined;
-      if (chainVictim) {
+      for (const chainVictim of this.getChainJumpTargetsForArena(attacker, firstChainTarget, meta)) {
+        if (chainVictim.isDestroyed) continue;
         const hit = applyDirectDamage(chainVictim, result.chainDamageAmount ?? definition.attack);
         this.showDamageText(chainVictim, hit.dealt, '#fff176');
         this.animateSkillEffect('electric', attacker, chainVictim);

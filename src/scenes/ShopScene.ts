@@ -24,6 +24,7 @@ import {
   type ShopState
 } from '../data/dice';
 import { formatCompact } from '../utils/FormatManager';
+import { grantTalent, getTalentByIndex, isTalentObtainable } from '../systems/DiceTalents';
 
 const CARD_W = 316;
 const CARD_H = 190;
@@ -152,7 +153,18 @@ export class ShopScene extends Phaser.Scene {
 
           const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
           const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
-          if (offer.isCasinoChipOffer) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount * (firstChipPurchase ? 2 : 1) }));
+          if (offer.isTalentOffer) {
+            const def = allDefs.find((candidate) => candidate.typeId === offer.typeId);
+            const talent = def && offer.talentIndex !== undefined ? getTalentByIndex(def, offer.talentIndex) : undefined;
+            if (!def || !talent || offer.talentIndex === undefined || !isTalentObtainable(talent)) {
+              AlertManager.toast(this, { type: 'warning', message: 'This talent offer is no longer available.' });
+              return;
+            }
+            if (!grantTalent(this, def, offer.talentIndex)) {
+              AlertManager.toast(this, { type: 'warning', message: 'You already own this talent.' });
+              return;
+            }
+          } else if (offer.isCasinoChipOffer) CasinoProgressStore.mutate(this, (progress) => ({ ...progress, chips: progress.chips + offer.coinAmount * (firstChipPurchase ? 2 : 1) }));
           else if (offer.isDiamondFreebie) setDiamonds(this, getDiamonds(this) + offer.coinAmount);
           else if (offer.isCoinOffer) setDiceTokens(this, getDiceTokens(this) + offer.coinAmount * (firstTokenPurchase ? 2 : 1));
           else {
@@ -182,7 +194,7 @@ export class ShopScene extends Phaser.Scene {
 
           // A purchase can finish a die's final useful copy requirement. Replace
           // the now-sterile offer immediately instead of waiting for tomorrow.
-          const nextState = offer.typeId && !canReceiveUsefulCopies(this, offer.typeId)
+          const nextState = !offer.isTalentOffer && offer.typeId && !canReceiveUsefulCopies(this, offer.typeId)
             ? generateOrGetShopOffers(this)
             : updatedState;
           state.offers = nextState.offers;
@@ -277,6 +289,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   private getOfferHeaderLabel(offer: ShopOffer): string {
+    if (offer.isTalentOffer) return 'DICE TALENT';
     if (offer.isDiceTokenOffer) return 'DICE TOKEN VAULT';
     if (offer.isCasinoChipOffer) return offer.isFreebie ? '★ DAILY FREEBIE — CASINO CHIPS' : 'CASINO CHIP STACK';
     if (offer.isFreebie) {
@@ -346,14 +359,19 @@ export class ShopScene extends Phaser.Scene {
       objs.push(headerTag);
     }
 
+    const offerDefinition = offer.typeId
+      ? getAllDiceDefinitions(this).find((def) => def.typeId === offer.typeId)
+      : undefined;
+    const offerTalent = offerDefinition && offer.talentIndex !== undefined
+      ? getTalentByIndex(offerDefinition, offer.talentIndex)
+      : undefined;
     const nameLine = offer.isCasinoChipOffer
       ? 'Casino Chips'
       : (offer.isCoinOffer
         ? (offer.isDiamondFreebie ? 'Diamonds' : (offer.isCasinoChipOffer ? 'Casino Chips' : 'Dice Tokens'))
-        : (offer.typeId ? (() => {
-          const def = getAllDiceDefinitions(this).find(d => d.typeId === offer.typeId);
-          return (def?.title ?? offer.typeId);
-        })() : '—'));
+        : (offer.isTalentOffer
+          ? (offerTalent?.title ?? 'Talent')
+          : (offer.typeId ? (offerDefinition?.title ?? offer.typeId) : '—')));
     const nameText = this.add.text(x + 8, y + 48, nameLine.toUpperCase(), {
       fontFamily: 'Orbitron', fontSize: '17px', color: effectivelyClaimed ? PALETTE.textMuted : (offer.isFreebie ? '#8ae0a1' : accentHex)
     });
@@ -363,11 +381,13 @@ export class ShopScene extends Phaser.Scene {
     const firstChipPurchase = this.isFirstCasinoChipPurchase(shopState, offer);
     const tokenAmount = offer.coinAmount * (firstTokenPurchase ? 2 : 1);
     const chipAmount = offer.coinAmount * (firstChipPurchase ? 2 : 1);
-    const descLine = offer.isCasinoChipOffer
+    const descLine = offer.isTalentOffer
+      ? `${offerDefinition?.title ?? offer.typeId} — talent unlock`
+      : (offer.isCasinoChipOffer
       ? `+${formatCompact(chipAmount)} Casino Chips${firstChipPurchase ? ' (2× first buy)' : ''}`
       : (offer.isCoinOffer
         ? `+${formatCompact(offer.isCasinoChipOffer ? chipAmount : tokenAmount)} ${offer.isDiamondFreebie ? 'Diamonds' : (offer.isCasinoChipOffer ? 'Casino Chips' : 'Dice Tokens')}${firstTokenPurchase && !offer.isDiamondFreebie && !offer.isCasinoChipOffer ? ' (2× first buy)' : ''}`
-        : `×${formatCompact(offer.copies)} ${offer.copies === 1 ? 'copy' : 'copies'}`);
+        : `×${formatCompact(offer.copies)} ${offer.copies === 1 ? 'copy' : 'copies'}`));
     const descText = this.add.text(x + 8, y + 80, descLine, {
       fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text
     });
@@ -375,9 +395,11 @@ export class ShopScene extends Phaser.Scene {
 
     if (!offer.isCoinOffer && offer.typeId) {
       const progress = getDiceProgress(this, offer.typeId);
-      const progressLine = canReceiveUsefulCopies(this, offer.typeId)
-        ? `Current: C${progress.classLevel}/15  •  ${formatCompact(progress.copies)} copies`
-        : 'MAXED OUT';
+      const progressLine = offer.isTalentOffer
+        ? `Unlocks for ${offerDefinition?.title ?? offer.typeId}  •  C${progress.classLevel}/15`
+        : canReceiveUsefulCopies(this, offer.typeId)
+          ? `Current: C${progress.classLevel}/15  •  ${formatCompact(progress.copies)} copies`
+          : 'MAXED OUT';
       const progressText = this.add.text(x + 8, y + 108, progressLine, {
         fontFamily: 'Orbitron', fontSize: '11px', color: progressLine === 'MAXED OUT' ? PALETTE.success : PALETTE.textMuted
       });

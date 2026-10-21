@@ -30,6 +30,7 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   chainDamageRate?: number;
   chainDamageRatesByPip?: Record<string, number>;
   chainRange?: number;
+  chainTargets?: number;
   poisonDamage?: number;
   poisonDamageRate?: number;
   poisonDamageRatesByPip?: Record<string, number>;
@@ -169,10 +170,12 @@ export interface DiceTalentModifier extends DiceSkillModifier {
 }
 
 export interface DiceTalentDefinition {
-  id: string;
   title: string;
   description: string;
+  classNeeded?: number;
+  isObtainable?: boolean;
   modifiers?: DiceTalentModifier;
+  skills?: DiceSkillDefinition[];
 }
 
 export interface DiceTransformStats {

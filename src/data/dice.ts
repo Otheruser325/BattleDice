@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import type { DiceDefinition, DiceTypeId, DiceFlags } from '../types/game';
 import { AchievementStore } from '../systems/AchievementStore';
+import { TALENT_SHOP_OFFER_CHANCE, getAcquirableTalentIndices, getTalentCost } from '../systems/DiceTalentStore';
 import { withBasePath } from '../utils/BuildEnv';
 import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
 
@@ -413,6 +414,8 @@ export interface ShopOffer {
   isCasinoChipOffer?: boolean;
   isDiamondFreebie?: boolean;
   isRefreshOffer?: boolean;
+  isTalentOffer?: boolean;
+  talentIndex?: number;
   purchased: boolean;
 }
 
@@ -561,13 +564,21 @@ export function generateOrGetShopOffers(scene: Phaser.Scene, forceRegenerate = f
     !offer.typeId &&
     offer.coinAmount === diamondFreebieAmount
   );
+  const isSterileTalentOffer = (offer: ShopOffer) => {
+    if (!offer.isTalentOffer) return false;
+    const def = allDefs.find((candidate) => candidate.typeId === offer.typeId);
+    if (!def || offer.talentIndex === undefined) return true;
+    return getAcquirableTalentIndices(scene, def, getDiceProgress(scene, def.typeId).classLevel).length === 0;
+  };
   const hadSterileDiceCopyOffer = existing.offers.some((offer) =>
-    !offer.isRefreshOffer && !offer.isCoinOffer && Boolean(offer.typeId) && !canReceiveUsefulCopies(scene, offer.typeId)
+    (!offer.isRefreshOffer && !offer.isCoinOffer && Boolean(offer.typeId) && !canReceiveUsefulCopies(scene, offer.typeId))
+    || isSterileTalentOffer(offer)
   );
   const sanitizedExistingOffers = existing.offers.filter((offer) => {
     if (offer.isRefreshOffer) return true;
     if (offer.isFreebie) return isCurrentTokenFreebie(offer) || isCurrentChipFreebie(offer) || isCurrentDiamondFreebie(offer) || isCurrentDiceFreebie(offer);
     if (offer.isDiceTokenOffer || offer.isCasinoChipOffer) return true;
+    if (offer.isTalentOffer) return !isSterileTalentOffer(offer);
     if (!offer.typeId || !isTypeIdFetchable(scene, offer.typeId)) return false;
     return offer.purchased || canReceiveUsefulCopies(scene, offer.typeId);
   });
@@ -634,7 +645,44 @@ export function generateOrGetShopOffers(scene: Phaser.Scene, forceRegenerate = f
     else break;
   }
 
+  // A dice slot can instead surface a talent offer. Talents only enter the pool
+  // for dice the player has already obtained and classed high enough to unlock
+  // them, and the offer is priced in Dice Tokens so it is bought directly.
+  const talentPool: Array<{ def: DiceDefinition; talentIndex: number }> = [];
+  allDefs.forEach((def) => {
+    const classLevel = getDiceProgress(scene, def.typeId).classLevel;
+    getAcquirableTalentIndices(scene, def, classLevel).forEach((talentIndex) => talentPool.push({ def, talentIndex }));
+  });
+  const offeredTalentKeys = new Set<string>();
+  const takeTalentOffer = (i: number): ShopOffer | null => {
+    const available = talentPool.filter((entry) => !offeredTalentKeys.has(`${entry.def.typeId}:${entry.talentIndex}`));
+    if (available.length === 0) return null;
+    const pick = available[Math.floor(seededRandom() * available.length)];
+    offeredTalentKeys.add(`${pick.def.typeId}:${pick.talentIndex}`);
+    return {
+      id: `slot-${i}`,
+      typeId: pick.def.typeId,
+      isCoinOffer: false,
+      copies: 0,
+      coinAmount: 0,
+      diamondCost: 0,
+      diceTokenCost: getTalentCost(pick.def.rarity),
+      rarity: pick.def.rarity,
+      isFreebie: false,
+      isTalentOffer: true,
+      talentIndex: pick.talentIndex,
+      purchased: false
+    };
+  };
+
   slotDefs.slice(0, 5).forEach((def, i) => {
+    if (seededRandom() < TALENT_SHOP_OFFER_CHANCE) {
+      const talentOffer = takeTalentOffer(i);
+      if (talentOffer) {
+        offers.push(talentOffer);
+        return;
+      }
+    }
     const copyMultiplier = 1 + Math.floor(seededRandom() * 10);
     const baseCopies = COPIES_BY_RARITY[def.rarity] ?? 1;
     const copies = baseCopies * copyMultiplier;

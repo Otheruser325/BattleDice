@@ -1,5 +1,5 @@
 import type { DiceDefinition, DiceInstanceState, DiceSkillType, DiceStatusEffect, DiceTargetingMode } from '../types/game';
-import { getPipMappedRate, resolvePipScaledDamage, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getSkillLockClass, type DiceSkillRuntimeMeta } from './DiceSkills';
+import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getPipMappedRate, resolvePipScaledDamage, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getSkillLockClass, type DiceSkillRuntimeMeta } from './DiceSkills';
 import { getBoardSideCombatDistance } from './CombatRange';
 import { formatCompact } from '../utils/FormatManager';
 import { secureChance, securePick } from '../utils/RandomManager';
@@ -637,9 +637,24 @@ export function executeCombatStartSkillEffects(
 
   const chainRate = getPipMappedRate(meta.chainDamageRatesByPip, pips, meta.chainDamageRate);
   if (meta.chainDamage !== undefined || meta.chainDamageRatesByPip !== undefined || chainRate !== undefined) {
-    const chainTarget = boardSideTargets.find((candidate) => candidate.instanceId !== target.instanceId && candidate.gridPosition
-      && Math.abs(candidate.gridPosition.row - target.gridPosition.row) <= 2
-      && Math.abs(candidate.gridPosition.col - target.gridPosition.col) <= 2);
+    const chainRange = Math.max(1, Math.floor(
+      typeof meta.chainRange === 'number' && Number.isFinite(meta.chainRange)
+        ? meta.chainRange
+        : (typeof definition.range === 'number' && Number.isFinite(definition.range) ? definition.range : 1)
+    ));
+    const chainCandidates = boardSideTargets
+      .filter((candidate) => candidate.instanceId !== target.instanceId && Boolean(candidate.gridPosition))
+      .map((candidate) => ({
+        die: candidate,
+        distance: candidate.gridPosition && target.gridPosition
+          ? Math.max(
+            Math.abs(target.gridPosition.row - candidate.gridPosition.row),
+            Math.abs(target.gridPosition.col - candidate.gridPosition.col)
+          )
+          : Number.POSITIVE_INFINITY
+      }))
+      .filter(({ distance }) => distance <= chainRange);
+    const chainTarget = selectChainTarget(chainCandidates, meta.skillTargeting ?? meta.targetingMode ?? 'Nearest');
     if (chainTarget) {
       result.chainTarget = chainTarget;
       result.chainDamageAmount = resolvePipScaledDamage(meta.chainDamage, definition.attack, meta.chainDamageRate, meta.chainDamageRatesByPip, pips);

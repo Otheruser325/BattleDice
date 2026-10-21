@@ -11,11 +11,26 @@
       "description": "Attacks cause 13 splash damage to adjacent foes on the target's board.",
       "modifiers": {
         "splashDamage": 13,
-		"skillSfx": "dice_fire_skill"
+        "skillSfx": "dice_fire_skill"
       }
     }
   ],
   "accent": "#ff8d6d",
   "rarity": "Common",
-  "targetingMode": "Nearest"
+  "targetingMode": "Nearest",
+  "talentsComingSoon": true,
+  "talents": [
+    {
+      "title": "Scorcher",
+      "description": "Splash damage is amplified to 20, but base attack is reduced to 20.",
+      "classNeeded": 9,
+      "modifiers": {
+        "attackDelta": -6,
+        "skillIndex": 0,
+        "skillModifiers": {
+          "splashDamage": 20
+        }
+      }
+    }
+  ]
 }
