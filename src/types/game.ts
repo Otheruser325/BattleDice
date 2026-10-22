@@ -31,6 +31,7 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   chainDamageRatesByPip?: Record<string, number>;
   chainRange?: number;
   chainTargets?: number;
+  manaNeeded?: number;
   poisonDamage?: number;
   poisonDamageRate?: number;
   poisonDamageRatesByPip?: Record<string, number>;

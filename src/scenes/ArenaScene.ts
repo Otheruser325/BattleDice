@@ -179,6 +179,9 @@ export class ArenaScene extends Phaser.Scene {
   private sessionStartedAtMs = 0;
   private infiltratedBoardSideByInstance: Map<string, 'player' | 'enemy'> = new Map();
   private chainedByInstance: Map<string, string> = new Map();
+  // Dice already damaged during the current attack action. A chain arc may not
+  // jump onto any of them, so a target can never be hit twice by one action.
+  private hitDuringAttackAction: Set<string> = new Set();
   private persistentLockSourceIds: Set<string> = new Set();
   private rangeHighlightObjects: Phaser.GameObjects.GameObject[] = [];
   private highlightedRangeInstanceId: string | null = null;
@@ -366,6 +369,7 @@ export class ArenaScene extends Phaser.Scene {
     this.combatOrchestrator.clear();
     this.infiltratedBoardSideByInstance.clear();
     this.chainedByInstance.clear();
+    this.hitDuringAttackAction.clear();
     this.persistentLockSourceIds.clear();
     this.diceCardPicksUsed = 0;
     this.multiplayerStatus = this.multiplayerClient.getStatus();
@@ -3161,6 +3165,7 @@ export class ArenaScene extends Phaser.Scene {
     this.enemyDicePips.clear();
     this.attackCapacityByInstance.clear();
     this.chainedByInstance.clear();
+    this.hitDuringAttackAction.clear();
     this.persistentLockSourceIds.clear();
     this.healingWaitByInstance.clear();
     this.healingRetryReadyByInstance.clear();
@@ -3512,6 +3517,7 @@ export class ArenaScene extends Phaser.Scene {
         && die.gridPosition
       );
       if (!attacker) continue;
+      this.hitDuringAttackAction.clear();
       const definition = this.getDefinitionForInstance(attacker);
       if (!getValidSkillDefinitions(definition).some((skill) => skill.type === 'CombatStart')) continue;
       const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
@@ -4377,6 +4383,7 @@ export class ArenaScene extends Phaser.Scene {
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } =>
         die.instanceId !== primaryTarget.instanceId
         && !excludeInstanceIds?.has(die.instanceId)
+        && !this.hitDuringAttackAction.has(die.instanceId)
         && die.ownerId === primaryTarget.ownerId
         && die.zone === 'board'
         && !die.isDestroyed
@@ -4403,20 +4410,25 @@ export class ArenaScene extends Phaser.Scene {
     meta: ReturnType<typeof getRuntimeSkillMeta>
   ): DiceInstanceState[] {
     if (!firstTarget?.gridPosition) return [];
-    const sequence: DiceInstanceState[] = [firstTarget];
     const limit = getChainTargetLimit(meta);
-    if (limit === 0) return sequence;
-    const visited = new Set<string>([firstTarget.instanceId, attacker.instanceId]);
-    let current = firstTarget;
-    // -1 chains until no fresh foe remains; any other value caps the extra jumps.
-    // The visited set guarantees termination even for the uncapped case.
-    const maxJumps = limit === CHAIN_NO_TARGET_CAP ? this.gameState.dice.length : limit;
-    while (sequence.length <= maxJumps) {
-      const next = this.findChainJumpTargetForArena(attacker, current, meta, visited);
-      if (!next) break;
-      sequence.push(next);
-      visited.add(next.instanceId);
-      current = next;
+    if (limit === 0) return this.hitDuringAttackAction.has(firstTarget.instanceId) ? [] : [firstTarget];
+    // The primary target does not spend the jump budget; only extra jumps do. A
+    // primary already damaged this action is skipped, so the arc still gets at most
+    // `limit` fresh foes instead of re-hitting it.
+    const maxExtraJumps = limit === CHAIN_NO_TARGET_CAP ? Number.POSITIVE_INFINITY : limit;
+    const visited = new Set<string>([attacker.instanceId, ...this.hitDuringAttackAction]);
+    const sequence: DiceInstanceState[] = [];
+    let extraJumps = 0;
+    let current: DiceInstanceState | undefined = firstTarget;
+    while (current) {
+      const isPrimary = current.instanceId === firstTarget.instanceId;
+      if (!isPrimary && extraJumps >= maxExtraJumps) break;
+      if (!visited.has(current.instanceId)) {
+        sequence.push(current);
+        visited.add(current.instanceId);
+        if (!isPrimary) extraJumps += 1;
+      }
+      current = this.findChainJumpTargetForArena(attacker, current, meta, visited);
     }
     return sequence;
   }
@@ -4604,6 +4616,7 @@ export class ArenaScene extends Phaser.Scene {
 
         const attacker = this.getNextCombatAttacker(owners);
         if (!attacker) break;
+        this.hitDuringAttackAction.clear();
         const ownerName = attacker.ownerId === 'player' ? 'Your' : 'Enemy';
 
         const attackerDef = this.getDefinitionForInstance(attacker);
@@ -5189,6 +5202,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private applyDamageWithRevive(instanceId: string, damage: number, options: { ignoreDamageReduction?: boolean; ignoreShield?: boolean; allowGlobalCrit?: boolean; proportionalDamage?: number; source?: DiceInstanceState } = {}): { state: MatchBattleState; dealt: number; defeated: boolean; killed: boolean; critical: boolean } {
+    this.hitDuringAttackAction.add(instanceId);
     const proportionalDamage = Phaser.Math.Clamp(options.proportionalDamage ?? 0, 0, damage);
     const criticalDamage = this.applyCriticalDamage(damage - proportionalDamage, { allowGlobalCrit: options.allowGlobalCrit });
     damage = criticalDamage.damage + proportionalDamage;

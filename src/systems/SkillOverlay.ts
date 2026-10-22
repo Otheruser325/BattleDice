@@ -7,6 +7,14 @@ export function cloneSkill(skill: DiceSkillDefinition): DiceSkillDefinition {
   };
 }
 
+// A skill's mana cost lives on the skill itself, so an overlay that only carries
+// modifiers has to lift manaNeeded up or the cost would never change.
+export function withLiftedManaCost(skill: DiceSkillDefinition): DiceSkillDefinition {
+  const manaNeeded = skill.modifiers?.manaNeeded;
+  if (typeof manaNeeded !== 'number' || !Number.isFinite(manaNeeded)) return skill;
+  return { ...skill, manaNeeded: Math.max(1, Math.floor(manaNeeded)) };
+}
+
 // Overlay entries are positional: entry i replaces skill i, an empty entry leaves
 // that skill untouched, and an entry past the end of the base list is appended.
 // A replacement is wholesale so a form or talent never inherits modifiers from the
@@ -22,7 +30,7 @@ export function mergeSkillsByIndex(
     if (index > merged.length) return;
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
     if (Object.keys(entry).length === 0) return;
-    merged[index] = cloneSkill(entry);
+    merged[index] = withLiftedManaCost(cloneSkill(entry));
   });
   return merged;
 }
