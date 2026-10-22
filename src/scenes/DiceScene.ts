@@ -56,7 +56,7 @@ function isFormComingSoon(definition: DiceDefinition, transformIndex?: number): 
   const resolvedIndex = resolveTransformIndex(definition, transformIndex);
   if (resolvedIndex === undefined) return false;
   const stats = definition.transformStats?.[resolvedIndex];
-  return isSkillListComingSoon(definition.skills, stats?.skills, stats?.skillsComingSoon);
+  return isSkillListComingSoon(stats?.skillsComingSoon);
 }
 
 function formatSkillTypeLine(definition: DiceDefinition): string {

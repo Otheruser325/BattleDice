@@ -27,13 +27,8 @@ export function mergeSkillsByIndex(
   return merged;
 }
 
-export function isSkillListComingSoon(
-  baseSkills: DiceSkillDefinition[] | undefined,
-  overlay: Array<DiceSkillDefinition | null | undefined> | undefined,
-  comingSoon?: boolean
-): boolean {
-  if (comingSoon === true) return true;
-  const base = Array.isArray(baseSkills) ? baseSkills : [];
-  if (!Array.isArray(overlay)) return false;
-  return overlay.some((entry, index) => Boolean(entry) && index >= base.length);
+// Only an explicit flag marks a skill list as unfinished. Adding skills past the
+// end of the base list is a normal overlay, not a sign of missing data.
+export function isSkillListComingSoon(comingSoon?: boolean): boolean {
+  return comingSoon === true;
 }

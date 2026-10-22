@@ -7858,7 +7858,7 @@ export class ArenaScene extends Phaser.Scene {
       ? mergeSkillsByIndex(descriptorDefinition.skills, descriptorDefinition.transformStats?.[activeTransformIndex]?.skills)
       : [];
     const transformStats = activeTransformIndex !== undefined ? baseDefinition.transformStats?.[activeTransformIndex] : undefined;
-    const formSkillsComingSoon = isSkillListComingSoon(baseDefinition.skills, transformStats?.skills, transformStats?.skillsComingSoon);
+    const formSkillsComingSoon = isSkillListComingSoon(transformStats?.skillsComingSoon);
     const skillSubheader = [soulNote ? soulNote.replace(/^\s*•\s*/, 'SOULS ') : '', shieldNote ? shieldNote.replace(/^\s*•\s*/, 'SHIELD ') : ''].filter(Boolean).join(' • ');
     const skillDescription = formSkillsComingSoon
       ? 'Coming soon...'
