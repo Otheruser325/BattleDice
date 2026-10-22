@@ -397,6 +397,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     dynamicDescription = formatDruidRicochetDescriptor(dynamicDescription, modifiers.ricochetCount);
   }
   dynamicDescription = normalizeSingularUnits(dynamicDescription);
+  if (skill?.descriptorLocked === true && description.trim()) return description;
   if (dynamicDescription.trim() && dynamicDescription !== description) return dynamicDescription;
   if (definition.typeId === 'Solitude' && modifiers.targetMaxHpBonusRate !== undefined) {
     return `When no ally is adjacent to this dice, deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;

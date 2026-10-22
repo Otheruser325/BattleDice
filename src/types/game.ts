@@ -157,6 +157,7 @@ export interface DiceSkillDefinition {
   description: string;
   manaNeeded?: number;
   modifiers?: DiceSkillModifier;
+  descriptorLocked?: boolean;
 }
 
 export interface DiceTalentModifier extends DiceSkillModifier {
@@ -176,6 +177,8 @@ export interface DiceTalentDefinition {
   isObtainable?: boolean;
   modifiers?: DiceTalentModifier;
   skills?: DiceSkillDefinition[];
+  descriptor?: string | Array<string | null | undefined>;
+  disableSkill?: boolean | number | number[];
 }
 
 export interface DiceTransformStats {

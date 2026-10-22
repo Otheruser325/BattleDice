@@ -179,8 +179,6 @@ export class ArenaScene extends Phaser.Scene {
   private sessionStartedAtMs = 0;
   private infiltratedBoardSideByInstance: Map<string, 'player' | 'enemy'> = new Map();
   private chainedByInstance: Map<string, string> = new Map();
-  // Dice already damaged during the current attack action. A chain arc may not
-  // jump onto any of them, so a target can never be hit twice by one action.
   private hitDuringAttackAction: Set<string> = new Set();
   private persistentLockSourceIds: Set<string> = new Set();
   private rangeHighlightObjects: Phaser.GameObjects.GameObject[] = [];
@@ -4412,9 +4410,6 @@ export class ArenaScene extends Phaser.Scene {
     if (!firstTarget?.gridPosition) return [];
     const limit = getChainTargetLimit(meta);
     if (limit === 0) return this.hitDuringAttackAction.has(firstTarget.instanceId) ? [] : [firstTarget];
-    // The primary target does not spend the jump budget; only extra jumps do. A
-    // primary already damaged this action is skipped, so the arc still gets at most
-    // `limit` fresh foes instead of re-hitting it.
     const maxExtraJumps = limit === CHAIN_NO_TARGET_CAP ? Number.POSITIVE_INFINITY : limit;
     const visited = new Set<string>([attacker.instanceId, ...this.hitDuringAttackAction]);
     const sequence: DiceInstanceState[] = [];

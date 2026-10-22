@@ -343,8 +343,6 @@ export function getSkillLockClass(skill: DiceSkillDefinition | undefined | null)
 export const CHAIN_NO_TARGET_CAP = -1;
 export const DEFAULT_CHAIN_TARGETS = 1;
 
-// -1 means "no jump cap": keep chaining until no fresh target remains. Any other
-// value (or an absent one) is the number of extra targets the chain may reach.
 export function getChainTargetLimit(meta: Pick<DiceSkillRuntimeMeta, 'chainTargets'>): number {
   const raw = meta.chainTargets;
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return DEFAULT_CHAIN_TARGETS;

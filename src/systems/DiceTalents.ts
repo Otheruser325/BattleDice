@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import type { DiceDefinition, DiceRarity, DiceSkillModifier, DiceTalentModifier, DiceTypeId } from '../types/game';
+import type { DiceDefinition, DiceRarity, DiceSkillModifier, DiceTalentDefinition, DiceTalentModifier, DiceTypeId } from '../types/game';
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
 import { mergeSkillsByIndex, withLiftedManaCost } from './SkillOverlay';
@@ -73,6 +73,34 @@ function applySkillModifierArray(skills: DiceDefinition['skills'], entries: Dice
   });
 }
 
+function applySkillDescriptors(
+  skills: DiceDefinition['skills'],
+  descriptor: DiceTalentDefinition['descriptor']
+) {
+  if (descriptor === undefined || descriptor === null) return skills;
+  const entries = Array.isArray(descriptor) ? descriptor : [descriptor];
+  return skills.map((skill, index) => {
+    const text = entries[index];
+    return typeof text === 'string' && text.trim().length > 0 ? { ...skill, description: text, descriptorLocked: true } : skill;
+  });
+}
+
+function getDisabledSkillIndices(disableSkill: DiceTalentDefinition['disableSkill'], skillCount: number): Set<number> {
+  const disabled = new Set<number>();
+  const addIndex = (value: unknown) => {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value >= skillCount) return;
+    disabled.add(value);
+  };
+  if (disableSkill === true) {
+    for (let index = 0; index < skillCount; index += 1) disabled.add(index);
+  } else if (Array.isArray(disableSkill)) {
+    disableSkill.forEach(addIndex);
+  } else {
+    addIndex(disableSkill);
+  }
+  return disabled;
+}
+
 export function applyDiceTalent(definition: DiceDefinition, talentIndex: number | null | undefined): DiceDefinition {
   if (definition.talentsComingSoon) return definition;
   const talent = getTalentByIndex(definition, talentIndex);
@@ -84,9 +112,14 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
     toSkillModifierArray(modifiers.skillModifiers)
   );
   const rootSkillModifiers = getRootSkillModifiers(modifiers);
-  const finalSkills = Object.keys(rootSkillModifiers).length > 0
+  const withRootModifiers = Object.keys(rootSkillModifiers).length > 0
     ? skills.map((skill) => ({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...rootSkillModifiers } }))
     : skills;
+  const describedSkills = applySkillDescriptors(withRootModifiers, talent.descriptor);
+  const disabledIndices = getDisabledSkillIndices(talent.disableSkill, describedSkills.length);
+  const finalSkills = disabledIndices.size === 0
+    ? describedSkills
+    : describedSkills.filter((_, index) => !disabledIndices.has(index));
 
   return {
     ...definition,
@@ -144,9 +177,6 @@ export function rollTalentDrop(
   });
   if (eligibleByRarity.size === 0) return undefined;
 
-  // One roll per rarity keeps the published rate tied to the die's rarity instead of
-  // compounding with more talent dice; the rarest success wins, so one chest grants
-  // at most one talent.
   const rarity = [...RARITY_ORDER].reverse().find((entry) =>
     eligibleByRarity.has(entry) && secureChance(getTalentDropRate(chestType, entry))
   );

@@ -579,7 +579,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         align: 'center',
         padding: { left: 10, right: 10, top: 7, bottom: 7 }
       }).setOrigin(0.5);
-      if (talentsAvailable) {
+      if (talentsAvailable || talentsComingSoon) {
         talentBtn.setInteractive({ useHandCursor: true });
         talentBtn.on('pointerdown', () => this.openTalentSelectionModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex));
       }
@@ -677,7 +677,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       this.modalWheelHandler = null;
     }
     const definition = getAllDiceDefinitions(this).find((die) => die.typeId === typeId);
-    if (!definition?.talents?.length || definition.talentsComingSoon) return;
+    if (!definition?.talents?.length && !definition?.talentsComingSoon) return;
 
     const { width, height } = this.scale;
     const centerY = height / 2;
@@ -690,6 +690,33 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 500 }
     }).setOrigin(0.5);
     const elements: Phaser.GameObjects.GameObject[] = [overlay, panel, title, hint];
+
+    if (definition.talentsComingSoon) {
+      const message = this.add.text(width / 2, centerY, 'Coming soon...', {
+        fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.textMuted
+      }).setOrigin(0.5);
+      elements.push(message);
+      const closeSoon = this.add.text(width / 2, centerY + 158, 'CLOSE', {
+        fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted,
+        backgroundColor: '#173247', padding: { left: 10, right: 10, top: 5, bottom: 5 }
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      const closeSoonModal = () => {
+        elements.forEach((element) => element.destroy());
+        this.modalElements = [];
+        if (this.modalEscHandler) {
+          this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
+          this.modalEscHandler = null;
+        }
+      };
+      closeSoon.on('pointerdown', closeSoonModal);
+      overlay.on('pointerdown', closeSoonModal);
+      elements.push(closeSoon);
+      this.modalElements = elements;
+      elements.forEach((element) => (element as any).setDepth?.(450));
+      this.modalEscHandler = closeSoonModal;
+      this.input.keyboard?.on('keydown-ESC', closeSoonModal);
+      return;
+    }
 
     const close = () => {
       elements.forEach((element) => element.destroy());

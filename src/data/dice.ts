@@ -356,8 +356,6 @@ function sanitizeDiceProgressStore(scene: Phaser.Scene, store: Record<string, Di
   return sanitized;
 }
 
-// Talents are addressed by array index so dice data can add, reorder, or retitle
-// entries without invalidating saved progress.
 export interface DiceTalentState {
   owned: Record<DiceTypeId, number[]>;
   equipped: Record<DiceTypeId, number>;
@@ -392,8 +390,6 @@ function normalizeTalentState(value: unknown): DiceTalentState {
   if (isPlainRecord(value.equipped)) {
     Object.entries(value.equipped).forEach(([typeId, raw]) => {
       if (!isSafeKey(typeId)) return;
-      // A tampered multi-index value collapses to the first owned index so a die
-      // can never hold two equipped talents.
       const candidates = Array.isArray(raw) ? raw : [raw];
       const selected = candidates
         .map(normalizeTalentIndex)
@@ -471,8 +467,6 @@ export function isTalentOwned(scene: Phaser.Scene, typeId: DiceTypeId, talentInd
   return state.owned[typeId]?.includes(talentIndex) === true;
 }
 
-// The single gate for acquiring a talent, shared by shop offers, chest drops, and
-// token purchases so no path can grant one the player is not entitled to.
 export function getUnobtainableTalentReason(
   scene: Phaser.Scene,
   definition: DiceDefinition,
@@ -867,8 +861,6 @@ export function generateOrGetShopOffers(scene: Phaser.Scene, forceRegenerate = f
     else break;
   }
 
-  // A dice slot can instead surface a talent offer, drawn only from dice the player
-  // owns and has classed high enough, priced in Dice Tokens.
   const talentPool: Array<{ def: DiceDefinition; talentIndex: number }> = [];
   allDefs.forEach((def) => {
     const classLevel = getDiceProgress(scene, def.typeId).classLevel;
