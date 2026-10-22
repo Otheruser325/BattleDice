@@ -26,5 +26,22 @@
     }
   ],
   "accent": "#aeb7c2",
-  "targetingMode": "Nearest"
+  "targetingMode": "Nearest",
+  "talents": [
+    {
+      "title": "Temporal Delusion",
+      "description": "Instead of affecting ally dice with bonus attack counts of the matching pip, enemy dice match this die's rolled pip count loses 2 attacks instead of the usual 1 until the next turn.",
+      "classNeeded": 9,
+      "modifiers": {
+        "skillModifiers": [
+          {
+            "pipMatchAllyAttackDelta": 0
+          },
+          {
+            "pipMatchFoeAttackDelta": -2
+          }
+        ]
+      }
+    }
+  ]
 }
