@@ -3983,6 +3983,7 @@ export class ArenaScene extends Phaser.Scene {
     const candidates = this.gameState.dice
       .filter((die): die is DiceInstanceState & { gridPosition: { row: number; col: number } } => {
         if (die.instanceId === source.instanceId || die.zone !== 'board' || die.isDestroyed || !die.gridPosition) return false;
+        if (this.isBossDie(die)) return false;
         const isFoe = die.ownerId !== source.ownerId;
         const allowedOwner = (isFoe && meta.canLockFoes === true) || (!isFoe && meta.canLockAllies === true);
         if (!allowedOwner || this.chainedByInstance.has(die.instanceId)) return false;
