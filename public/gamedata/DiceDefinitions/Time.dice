@@ -32,20 +32,22 @@
       "title": "Temporal Delusion",
       "description": "The matching pip no longer grants allies bonus attack counts. Enemy dice matching this die's rolled pip count lose 2 attack counts instead of the usual 1 until the next turn.",
       "classNeeded": 9,
-      "skills": [
-        {
-          "description": "This die no longer grants matching-pip allies bonus attack counts.",
-          "modifiers": {
-            "pipMatchAllyAttackDelta": 0
+      "modifiers": {
+        "skills": [
+          {
+            "description": "This die no longer grants matching-pip allies bonus attack counts.",
+            "modifiers": {
+              "pipMatchAllyAttackDelta": 0
+            }
+          },
+          {
+            "description": "Enemy dice matching this die's rolled pip count lose 2 attack counts instead of the usual 1 until the next turn.",
+            "modifiers": {
+              "pipMatchFoeAttackDelta": -2
+            }
           }
-        },
-        {
-          "description": "Enemy dice matching this die's rolled pip count lose 2 attack counts instead of the usual 1 until the next turn.",
-          "modifiers": {
-            "pipMatchFoeAttackDelta": -2
-          }
-        }
-      ]
+        ]
+      }
     }
   ]
 }

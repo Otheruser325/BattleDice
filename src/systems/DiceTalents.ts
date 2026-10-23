@@ -2,7 +2,7 @@ import type Phaser from 'phaser';
 import type { DiceDefinition, DiceRarity, DiceSkillDefinition, DiceSkillModifier, DiceTalentDefinition, DiceTalentModifier, DiceTypeId } from '../types/game';
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
-import { mergeSkillOverlayByIndex, withLiftedManaCost } from './SkillOverlay';
+import { mergeSkillOverlayByIndex } from './SkillOverlay';
 import { applyStatModifiers, getClassScaledSkillDescription } from './ClassProgression';
 import {
   DEFAULT_TALENT_CLASS_NEEDED,
@@ -50,13 +50,8 @@ const ROOT_ONLY_MODIFIER_KEYS = new Set([
   'healthMultiplier',
   'rangeDelta',
   'targetingMode',
-  'skillModifiers'
+  'skills'
 ]);
-
-function toSkillModifierArray(value: DiceSkillModifier | DiceSkillModifier[] | undefined): DiceSkillModifier[] {
-  if (Array.isArray(value)) return value.map((entry) => (entry && typeof entry === 'object' ? entry : {}));
-  return value && typeof value === 'object' ? [value] : [];
-}
 
 function getRootSkillModifiers(modifiers: DiceTalentModifier): DiceSkillModifier {
   const root: Record<string, unknown> = {};
@@ -64,15 +59,6 @@ function getRootSkillModifiers(modifiers: DiceTalentModifier): DiceSkillModifier
     if (!ROOT_ONLY_MODIFIER_KEYS.has(key)) root[key] = value;
   });
   return root as DiceSkillModifier;
-}
-
-function applySkillModifierArray(skills: DiceDefinition['skills'], entries: DiceSkillModifier[]) {
-  if (entries.every((entry) => Object.keys(entry).length === 0)) return skills;
-  return skills.map((skill, index) => {
-    const entry = entries[index];
-    if (!entry || Object.keys(entry).length === 0) return skill;
-    return withLiftedManaCost({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...entry } });
-  });
 }
 
 function applySkillDescriptions(
@@ -107,17 +93,15 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
   const talent = getTalentByIndex(definition, talentIndex);
   if (!talent || talent.comingSoon === true) return definition;
   const modifiers = talent.modifiers ?? {};
+  const skillOverlay = modifiers.skills;
 
   const baseSkills = definition.skills;
-  const skills = applySkillModifierArray(
-    mergeSkillOverlayByIndex(baseSkills, talent.skills),
-    toSkillModifierArray(modifiers.skillModifiers)
-  );
+  const mergedSkills = mergeSkillOverlayByIndex(baseSkills, skillOverlay);
   const rootSkillModifiers = getRootSkillModifiers(modifiers);
   const withRootModifiers = Object.keys(rootSkillModifiers).length > 0
-    ? skills.map((skill) => ({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...rootSkillModifiers } }))
-    : skills;
-  const describedSkills = applySkillDescriptions(withRootModifiers, talent.skills);
+    ? mergedSkills.map((skill) => ({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...rootSkillModifiers } }))
+    : mergedSkills;
+  const describedSkills = applySkillDescriptions(withRootModifiers, skillOverlay);
   const resolvedSkills = describedSkills.map((skill, index) => {
     if (skill.descriptionLocked) return skill;
     const sourceModifiers = baseSkills[index]?.modifiers;

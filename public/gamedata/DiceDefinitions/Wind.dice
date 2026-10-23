@@ -27,15 +27,17 @@
       "title": "Mighty Wind",
       "description": "Amount of attacks while passive is up is increased to 3 times, with the mana charge rate taking 50% more hits to charge up.",
       "classNeeded": 9,
-      "skills": [
-        {
-          "description": "Shoots three times as many attacks for 2 turns without spending an attack, then cannot gain mana again until the effect ends.",
-          "modifiers": {
-            "manaNeeded": 15,
-            "attackCountIncrease": 2
+      "modifiers": {
+        "skills": [
+          {
+            "description": "Shoots three times as many attacks for 2 turns without spending an attack, then cannot gain mana again until the effect ends.",
+            "modifiers": {
+              "manaNeeded": 15,
+              "attackCountIncrease": 2
+            }
           }
-        }
-      ]
+        ]
+      }
     }
   ]
 }

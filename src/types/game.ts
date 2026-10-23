@@ -167,7 +167,7 @@ export interface DiceTalentModifier extends DiceSkillModifier {
   healthMultiplier?: number;
   rangeDelta?: number;
   targetingMode?: DiceTargetingMode;
-  skillModifiers?: DiceSkillModifier | DiceSkillModifier[];
+  skills?: DiceSkillDefinition[];
 }
 
 export interface DiceTalentDefinition {
@@ -177,7 +177,6 @@ export interface DiceTalentDefinition {
   isObtainable?: boolean;
   comingSoon?: boolean;
   modifiers?: DiceTalentModifier;
-  skills?: DiceSkillDefinition[];
   disableSkill?: boolean | number | number[];
 }
 

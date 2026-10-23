@@ -26,9 +26,11 @@
       "comingSoon": true,
       "modifiers": {
         "attackDelta": -6,
-        "skillModifiers": [
+        "skills": [
           {
-            "splashDamage": 20
+            "modifiers": {
+              "splashDamage": 20
+            }
           }
         ]
       }

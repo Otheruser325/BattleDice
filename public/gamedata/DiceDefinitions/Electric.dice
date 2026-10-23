@@ -25,16 +25,14 @@
       "title": "Modified Electric",
       "description": "Electric arcs have no jump cap, but the distance of finding a target is reduced to 1 tile.",
       "classNeeded": 9,
-      "skills": [
-        {
-          "description": "Electric arcs have no jump cap, but the distance of finding a target is reduced to 1 tile."
-        }
-      ],
       "modifiers": {
-        "skillModifiers": [
+        "skills": [
           {
-            "chainRange": 1,
-            "chainTargets": -1
+            "description": "Electric arcs have no jump cap, but the distance of finding a target is reduced to 1 tile.",
+            "modifiers": {
+              "chainRange": 1,
+              "chainTargets": -1
+            }
           }
         ]
       }
