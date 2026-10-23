@@ -24,7 +24,7 @@ import { AlertManager } from '../utils/AlertManager';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
 import { SettingsStore } from '../systems/SettingsStore';
 import { applyDiceTalent, canObtainTalent, getTalentClassNeeded, getTalentCost, grantTalent } from '../systems/DiceTalents';
-import { getEquippedTalentIndex, getTalentByIndex, isTalentOwned, setEquippedTalentIndex } from '../data/dice';
+import { getEquippedTalentIndex, getTalentByIndex, isTalentComingSoon, isTalentOwned, setEquippedTalentIndex } from '../data/dice';
 import { isSkillListComingSoon, mergeSkillsByIndex } from '../systems/SkillOverlay';
 import { formatCompact } from '../utils/FormatManager';
 
@@ -563,8 +563,10 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       costText = this.add.text(width / 2, height / 2 + 40, `Class UP -> C${nextClass} (+10% multiplicative stats/skills) | Cost: ${formatCompact(tokenCost)} tokens + ${formatCompact(copyCost)} copies`, { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.accentSoft }).setOrigin(0.5);
     }
 
-    const talentsAvailable = Boolean(die.talents?.length) && !die.talentsComingSoon;
-    const talentsComingSoon = Boolean(die.talentsComingSoon);
+    const talents = die.talents ?? [];
+    const hasObtainableTalents = talents.some((talent) => !isTalentComingSoon(talent));
+    const talentsAvailable = hasObtainableTalents && !die.talentsComingSoon;
+    const talentsComingSoon = Boolean(die.talentsComingSoon) || (talents.length > 0 && !hasObtainableTalents);
     let talentBtn: Phaser.GameObjects.Text | null = null;
     if (talentsAvailable || talentsComingSoon) {
       const talentButtonLabel = talentsAvailable
@@ -781,8 +783,10 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       }).setOrigin(0, 0.5);
 
       const blocked = !owned && (obtain.reason === 'invalid' || obtain.reason === 'coming-soon');
-      const actionLabel = blocked ? 'LOCKED' : (active ? 'UNEQUIP' : owned ? 'EQUIP' : 'UNLOCK');
-      const actionEnabled = active || owned || canBuy;
+      const actionLabel = blocked
+        ? (obtain.reason === 'coming-soon' ? 'WIP' : 'LOCKED')
+        : (active ? 'UNEQUIP' : owned ? 'EQUIP' : 'UNLOCK');
+      const actionEnabled = (active || owned || canBuy) && !isTalentComingSoon(talent);
       const action = this.add.text(width / 2 + 190, y, actionLabel, {
         fontFamily: 'Orbitron', fontSize: '9px',
         color: !actionEnabled ? PALETTE.textMuted : (active ? '#ffb5b5' : owned ? '#b8ffd1' : '#fff1c2'),

@@ -11,6 +11,24 @@ export function getTransformRecoveryRate(definition: DiceDefinition, transformIn
   return rate === undefined ? undefined : Math.max(0, Math.min(1, rate));
 }
 
+export function resolveStatMultiplier(multiplier: number | undefined): number {
+  return typeof multiplier === 'number' && Number.isFinite(multiplier) ? multiplier : 1;
+}
+
+export function resolveStatValue(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+export function scaleStatValue(base: number | undefined, fallback: number, multiplier: number | undefined): number {
+  return Math.max(1, Math.round(resolveStatValue(base, fallback) * resolveStatMultiplier(multiplier)));
+}
+
+export function applyStatModifiers(base: number | undefined, fallback: number, delta: number | undefined, multiplier: number | undefined): number {
+  const resolvedBase = resolveStatValue(base, fallback);
+  const resolvedDelta = typeof delta === 'number' && Number.isFinite(delta) ? delta : 0;
+  return Math.max(1, Math.round((resolvedBase + resolvedDelta) * resolveStatMultiplier(multiplier)));
+}
+
 export function applyTransformStats(definition: DiceDefinition, transformIndex = 0): DiceDefinition {
   const stats = getTransformStats(definition, transformIndex);
   if (!stats) return definition;
@@ -20,8 +38,8 @@ export function applyTransformStats(definition: DiceDefinition, transformIndex =
   return {
     ...definition,
     title: stats.title ?? definition.title,
-    attack: Math.max(1, Math.round((stats.attack ?? definition.attack) * (stats.attackMultiplier ?? 1))),
-    health: Math.max(1, Math.round((stats.health ?? definition.health) * (stats.healthMultiplier ?? 1))),
+    attack: scaleStatValue(stats.attack, definition.attack, stats.attackMultiplier),
+    health: scaleStatValue(stats.health, definition.health, stats.healthMultiplier),
     range: stats.range ?? definition.range,
     footprint: stats.footprint ?? definition.footprint,
     targetingMode: stats.targetingMode ?? definition.targetingMode,
@@ -229,8 +247,8 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
   const scaledDefinitionForDescription: DiceDefinition = {
     ...definition,
-    attack: Math.max(1, Math.round(definition.attack * multiplier)),
-    health: Math.max(1, Math.round(definition.health * multiplier))
+    attack: scaleStatValue(definition.attack, 1, multiplier),
+    health: scaleStatValue(definition.health, 1, multiplier)
   };
   const skills = definition.skills.map((skill) => {
     const source = skill.modifiers as DiceSkillModifier | undefined;
@@ -338,12 +356,12 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
 
   const scaled = {
     ...definition,
-    attack: Math.max(1, Math.round(definition.attack * multiplier)),
-    health: Math.max(1, Math.round(definition.health * multiplier)),
+    attack: scaleStatValue(definition.attack, 1, multiplier),
+    health: scaleStatValue(definition.health, 1, multiplier),
     transformStats: definition.transformStats?.map((stats) => ({
       ...stats,
-      attack: stats.attack === undefined ? undefined : Math.max(1, Math.round(stats.attack * multiplier)),
-      health: stats.health === undefined ? undefined : Math.max(1, Math.round(stats.health * multiplier)),
+      attack: stats.attack === undefined ? undefined : scaleStatValue(stats.attack, 1, multiplier),
+      health: stats.health === undefined ? undefined : scaleStatValue(stats.health, 1, multiplier),
       skills: stats.skills?.map((skill) => {
         const source = skill.modifiers;
         if (!source) return skill;
@@ -367,8 +385,8 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
         const scaledSkill = { ...skill, modifiers };
         const descriptionDefinition: DiceDefinition = {
           ...definition,
-          attack: Math.max(1, Math.round(definition.attack * multiplier)),
-          health: Math.max(1, Math.round(definition.health * multiplier))
+          attack: scaleStatValue(definition.attack, 1, multiplier),
+          health: scaleStatValue(definition.health, 1, multiplier)
         };
         return { ...scaledSkill, description: getClassScaledSkillDescription(descriptionDefinition, scaledSkill, 1, source) };
       })
@@ -397,7 +415,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     dynamicDescription = formatDruidRicochetDescriptor(dynamicDescription, modifiers.ricochetCount);
   }
   dynamicDescription = normalizeSingularUnits(dynamicDescription);
-  if (skill?.descriptorLocked === true && description.trim()) return description;
+  if (skill?.descriptionLocked === true && description.trim()) return description;
   if (dynamicDescription.trim() && dynamicDescription !== description) return dynamicDescription;
   if (definition.typeId === 'Solitude' && modifiers.targetMaxHpBonusRate !== undefined) {
     return `When no ally is adjacent to this dice, deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;

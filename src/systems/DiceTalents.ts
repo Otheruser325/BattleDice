@@ -1,8 +1,9 @@
 import type Phaser from 'phaser';
-import type { DiceDefinition, DiceRarity, DiceSkillModifier, DiceTalentDefinition, DiceTalentModifier, DiceTypeId } from '../types/game';
+import type { DiceDefinition, DiceRarity, DiceSkillDefinition, DiceSkillModifier, DiceTalentDefinition, DiceTalentModifier, DiceTypeId } from '../types/game';
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
 import { mergeSkillOverlayByIndex, withLiftedManaCost } from './SkillOverlay';
+import { applyStatModifiers, getClassScaledSkillDescription } from './ClassProgression';
 import {
   DEFAULT_TALENT_CLASS_NEEDED,
   RARITY_ORDER,
@@ -35,6 +36,7 @@ export {
   isSafeTalentTypeId,
   isTalentChest,
   isTalentObtainable,
+  isTalentComingSoon,
   isTalentOwned,
   setEquippedTalentIndex,
   getEquippedTalentIndex
@@ -73,15 +75,14 @@ function applySkillModifierArray(skills: DiceDefinition['skills'], entries: Dice
   });
 }
 
-function applySkillDescriptors(
+function applySkillDescriptions(
   skills: DiceDefinition['skills'],
-  descriptor: DiceTalentDefinition['descriptor']
-) {
-  if (descriptor === undefined || descriptor === null) return skills;
-  const entries = Array.isArray(descriptor) ? descriptor : [descriptor];
+  overlay: Array<DiceSkillDefinition | null | undefined> | undefined
+): DiceDefinition['skills'] {
+  if (!Array.isArray(overlay)) return skills;
   return skills.map((skill, index) => {
-    const text = entries[index];
-    return typeof text === 'string' && text.trim().length > 0 ? { ...skill, description: text, descriptorLocked: true } : skill;
+    const text = overlay[index]?.description;
+    return typeof text === 'string' && text.trim().length > 0 ? { ...skill, descriptionLocked: true } : skill;
   });
 }
 
@@ -104,27 +105,40 @@ function getDisabledSkillIndices(disableSkill: DiceTalentDefinition['disableSkil
 export function applyDiceTalent(definition: DiceDefinition, talentIndex: number | null | undefined): DiceDefinition {
   if (definition.talentsComingSoon) return definition;
   const talent = getTalentByIndex(definition, talentIndex);
-  if (!talent) return definition;
+  if (!talent || talent.comingSoon === true) return definition;
   const modifiers = talent.modifiers ?? {};
 
+  const baseSkills = definition.skills;
   const skills = applySkillModifierArray(
-    mergeSkillOverlayByIndex(definition.skills, talent.skills),
+    mergeSkillOverlayByIndex(baseSkills, talent.skills),
     toSkillModifierArray(modifiers.skillModifiers)
   );
   const rootSkillModifiers = getRootSkillModifiers(modifiers);
   const withRootModifiers = Object.keys(rootSkillModifiers).length > 0
     ? skills.map((skill) => ({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...rootSkillModifiers } }))
     : skills;
-  const describedSkills = applySkillDescriptors(withRootModifiers, talent.descriptor);
-  const disabledIndices = getDisabledSkillIndices(talent.disableSkill, describedSkills.length);
+  const describedSkills = applySkillDescriptions(withRootModifiers, talent.skills);
+  const resolvedSkills = describedSkills.map((skill, index) => {
+    if (skill.descriptionLocked) return skill;
+    const sourceModifiers = baseSkills[index]?.modifiers;
+    if (!sourceModifiers && !skill.modifiers) return skill;
+    const description = getClassScaledSkillDescription(
+      { ...definition, skills: describedSkills },
+      skill,
+      1,
+      sourceModifiers
+    );
+    return description === skill.description ? skill : { ...skill, description };
+  });
+  const disabledIndices = getDisabledSkillIndices(talent.disableSkill, resolvedSkills.length);
   const finalSkills = disabledIndices.size === 0
-    ? describedSkills
-    : describedSkills.filter((_, index) => !disabledIndices.has(index));
+    ? resolvedSkills
+    : resolvedSkills.filter((_, index) => !disabledIndices.has(index));
 
   return {
     ...definition,
-    attack: Math.max(1, Math.round((definition.attack + (modifiers.attackDelta ?? 0)) * (modifiers.attackMultiplier ?? 1))),
-    health: Math.max(1, Math.round((definition.health + (modifiers.healthDelta ?? 0)) * (modifiers.healthMultiplier ?? 1))),
+    attack: applyStatModifiers(definition.attack, definition.attack, modifiers.attackDelta, modifiers.attackMultiplier),
+    health: applyStatModifiers(definition.health, definition.health, modifiers.healthDelta, modifiers.healthMultiplier),
     range: Math.max(0, definition.range + (modifiers.rangeDelta ?? 0)),
     targetingMode: modifiers.targetingMode ?? definition.targetingMode,
     skills: finalSkills

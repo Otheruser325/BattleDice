@@ -462,6 +462,10 @@ export function isTalentObtainable(talent: DiceTalentDefinition): boolean {
   return talent.isObtainable !== false;
 }
 
+export function isTalentComingSoon(talent: DiceTalentDefinition | undefined): boolean {
+  return talent?.comingSoon === true;
+}
+
 export function isSafeTalentTypeId(typeId: string | undefined): typeId is DiceTypeId {
   return typeof typeId === 'string' && isSafeKey(typeId);
 }
@@ -502,6 +506,7 @@ export function getUnobtainableTalentReason(
   if (definition.talentsComingSoon || !isSafeTalentTypeId(definition.typeId)) return 'coming-soon';
   const talent = getTalentByIndex(definition, talentIndex);
   if (!talent || !isTalentObtainable(talent)) return 'invalid';
+  if (isTalentComingSoon(talent)) return 'coming-soon';
   if (!getDiceProgress(scene, definition.typeId).unlocked) return 'locked';
   if (isTalentOwned(scene, definition.typeId, talentIndex)) return 'owned';
   const classLevel = getDiceProgress(scene, definition.typeId).classLevel;
@@ -520,6 +525,7 @@ export function getAcquirableTalentIndices(scene: Phaser.Scene, definition: Dice
       Boolean(talent)
       && typeof talent === 'object'
       && isTalentObtainable(talent)
+      && !isTalentComingSoon(talent)
       && level >= getTalentClassNeeded(talent)
       && !isTalentOwned(scene, definition.typeId, index)
     )
@@ -546,7 +552,8 @@ export function getEquippedTalentIndex(scene: Phaser.Scene, definition: DiceDefi
   if (!isSafeTalentTypeId(definition.typeId)) return null;
   const talentIndex = getTalentState(scene).equipped[definition.typeId];
   if (talentIndex === undefined) return null;
-  if (definition.talentsComingSoon || !getTalentByIndex(definition, talentIndex)) return null;
+  const talent = getTalentByIndex(definition, talentIndex);
+  if (definition.talentsComingSoon || !talent || isTalentComingSoon(talent)) return null;
   return isTalentOwned(scene, definition.typeId, talentIndex) ? talentIndex : null;
 }
 
@@ -560,7 +567,7 @@ export function setEquippedTalentIndex(scene: Phaser.Scene, definition: DiceDefi
     return;
   }
   const talent = getTalentByIndex(definition, talentIndex);
-  if (!talent || definition.talentsComingSoon) return;
+  if (!talent || definition.talentsComingSoon || isTalentComingSoon(talent)) return;
   if (!isTalentOwned(scene, definition.typeId, talentIndex)) return;
   writeTalentState(scene, { ...state, equipped: { ...state.equipped, [definition.typeId]: talentIndex } });
 }

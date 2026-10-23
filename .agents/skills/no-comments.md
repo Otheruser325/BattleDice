@@ -66,6 +66,9 @@ if (isAdmin(user) && isActive(user)) { }
 
 ## When Comments Are Acceptable
 
+### Major Changes Only
+Comments are for major code changes: a new system, a non-obvious invariant, a Phaser 3 workaround, or a deliberate trade-off. Minor changes — a simple bugfix, a small tweak, a rename, or a value/flag change — should not add comments. This is a standing instruction from the maintainer.
+
 ### Non-Obvious Workarounds
 ```typescript
 // Phaser 3 quirk: mask must be created from graphics, not shapes
