@@ -3472,9 +3472,8 @@ export class ArenaScene extends Phaser.Scene {
       .find((slot) => slot.meta?.meteorDamage !== undefined || slot.meta?.meteorCount !== undefined);
   }
 
-  private spendBasicAttack(attacker: DiceInstanceState): boolean {
+  private spendBasicAttack(attacker: DiceInstanceState): number {
     const chainedAttacks = Math.max(1, this.basicAttacksPerAttackByInstance.get(attacker.instanceId)?.count ?? 1);
-    const remaining = attacker.attacksRemaining ?? 0;
     this.gameState = {
       ...this.gameState,
       dice: this.gameState.dice.map((die) => {
@@ -3483,7 +3482,7 @@ export class ArenaScene extends Phaser.Scene {
         return { ...die, attacksRemaining, hasFinishedAttacking: attacksRemaining === 0 };
       })
     };
-    return chainedAttacks > 1 && remaining > 0;
+    return chainedAttacks;
   }
 
   private getCombatFlowContext(
@@ -4770,6 +4769,7 @@ export class ArenaScene extends Phaser.Scene {
         let targetDefeated = false;
         let didPerformBasicAction = false;
         let basicAttackVisualCount = 1;
+        let basicAttackHitCount = 1;
 
         if (!skipBasicAttack) {
           if (beamLine && (!forcedTarget || forcedTarget.instanceId === beamLine.target.instanceId)) {
@@ -4813,38 +4813,31 @@ export class ArenaScene extends Phaser.Scene {
              const proportionalDamage = ironBonus + solitudeBonus;
              const adjustedDamage = Math.max(1, Math.floor((scaledNonProportional + basicDamageBonus + giantHunter) * offenseMult * assassinBoost * deuciferEvenMult * lowHpExploitMult * bearCritMult) + proportionalDamage);
             if (adjustedDamage > 200) AchievementStore.unlock(this, 'lotta_damage');
-            const followUpBasicAttack = this.spendBasicAttack(attacker);
-            const hit = this.applyDamageWithRevive(target.instanceId, adjustedDamage, {
-              allowGlobalCrit: bearCrit ? false : undefined,
-               proportionalDamage,
-               source: attacker
-            });
-            this.gameState = hit.state;
-            damage = hit.dealt;
-            targetDefeated = hit.defeated;
-            didPerformBasicAction = true;
-            this.showDamageText(target, damage, bearCritMult > 1 || hit.critical ? '#ff3333' : this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
-            if (pips % 2 === 1 && (attackerMeta?.deuciferOddSiphonRate ?? 0) > 0) this.healDie(attacker.instanceId, Math.floor(damage * (attackerMeta?.deuciferOddSiphonRate ?? 0)));
-            await this.applyPassiveSkillEffects(attacker, target);
-            await this.applyDamageDefeatHooks(attacker, target, targetDefeated || hit.killed);
-            const rem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
-            if (rem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, rem - 1);
-            if (followUpBasicAttack && !targetDefeated) {
-              const followUp = this.applyDamageWithRevive(target.instanceId, adjustedDamage, {
+            const projectileCount = this.spendBasicAttack(attacker);
+            damage = 0;
+            basicAttackHitCount = 0;
+            for (let projectileIndex = 0; projectileIndex < projectileCount; projectileIndex++) {
+              const projectileTarget = this.gameState.dice.find((die) => die.instanceId === target.instanceId && !die.isDestroyed) ?? target;
+              const hit = this.applyDamageWithRevive(projectileTarget.instanceId, adjustedDamage, {
                 allowGlobalCrit: bearCrit ? false : undefined,
-                 proportionalDamage
+                proportionalDamage,
+                source: attacker
               });
-              this.gameState = followUp.state;
-              damage += followUp.dealt;
+              basicAttackHitCount += 1;
+              this.gameState = hit.state;
+              damage += hit.dealt;
               if (damage > 200) AchievementStore.unlock(this, 'lotta_damage');
-              targetDefeated = followUp.defeated;
-              this.showDamageText(target, followUp.dealt, bearCritMult > 1 || followUp.critical ? '#ff3333' : this.armorShredByInstance.has(target.instanceId) ? '#ff4fd8' : '#ffdf7a');
-                await this.applyPassiveSkillEffects(attacker, target);
-              await this.applyDamageDefeatHooks(attacker, target, targetDefeated || followUp.killed);
-              basicAttackVisualCount = Math.max(basicAttackVisualCount, 2);
-              const nextRem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
-              if (nextRem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, nextRem - 1);
+              targetDefeated = hit.defeated;
+              this.showDamageText(projectileTarget, hit.dealt, bearCritMult > 1 || hit.critical ? '#ff3333' : this.armorShredByInstance.has(projectileTarget.instanceId) ? '#ff4fd8' : '#ffdf7a');
+              if (pips % 2 === 1 && (attackerMeta?.deuciferOddSiphonRate ?? 0) > 0) this.healDie(attacker.instanceId, Math.floor(hit.dealt * (attackerMeta?.deuciferOddSiphonRate ?? 0)));
+              await this.applyPassiveSkillEffects(attacker, projectileTarget);
+              await this.applyDamageDefeatHooks(attacker, projectileTarget, targetDefeated || hit.killed);
+              const rem = this.assassinBoostAttacksByInstance.get(attacker.instanceId) ?? 0;
+              if (rem > 0) this.assassinBoostAttacksByInstance.set(attacker.instanceId, rem - 1);
+              if (targetDefeated) break;
             }
+            didPerformBasicAction = true;
+            basicAttackVisualCount = Math.max(basicAttackVisualCount, basicAttackHitCount);
             }
           }
         } else if ((activeSlotMeta?.consumeAttack ?? attackerMeta?.consumeAttack ?? true) !== false) {
@@ -4867,12 +4860,13 @@ export class ArenaScene extends Phaser.Scene {
           break;
         }
         const details = this.combatActionDetails.length > 0 ? ` (${this.combatActionDetails.join('; ')})` : '';
+        const projectileFeedback = basicAttackHitCount >= 2 ? ` ${basicAttackHitCount} times` : '';
         this.writeCombatLog(
           skipBasicAttack
             ? `${ownerName} ${this.getCombatDieName(attacker)} uses ${activeSlot?.title ?? 'active skill'}${details}!`
             : attackerMeta?.healOnAttack
               ? `${ownerName} ${this.getCombatDieName(attacker)} uses Druidic Essence to heal ${target.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(target)} for ${formatCompact(damage)} health${details}!`
-              : `${ownerName} ${this.getCombatDieName(attacker)} attacks ${this.getCombatDieName(target)} for ${formatCompact(damage)} damage!${targetDefeated ? ' DESTROYED!' : ''}${details}`
+              : `${ownerName} ${this.getCombatDieName(attacker)} attacks ${this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} damage!${targetDefeated ? ' DESTROYED!' : ''}${details}`
         );
 
         if (!beamTarget && !skipBasicAttack && !attackerMeta?.healOnAttack) this.animateBasicAttackSequence(attacker, target, basicAttackVisualCount);
