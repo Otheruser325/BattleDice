@@ -35,13 +35,12 @@
       "modifiers": {
         "skills": [
           {
-            "description": "This die no longer grants matching-pip allies bonus attack counts.",
+            "disableSkill": true,
             "modifiers": {
               "pipMatchAllyAttackDelta": 0
             }
           },
           {
-            "description": "Enemy dice matching this die's rolled pip count lose 2 attack counts instead of the usual 1 until the next turn.",
             "modifiers": {
               "pipMatchFoeAttackDelta": -2
             }
