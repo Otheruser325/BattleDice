@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { ChestType } from './CasinoComboTypes';
-import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
+import { getInstallRecord, readIntegrityChecked, updateInstallRecord, writeIntegrityChecked } from '../utils/SecureStorage';
 
 export interface FivesHandState {
   dice: number[];
@@ -18,7 +18,19 @@ export interface CasinoProgress {
 
 const STORAGE_KEY = 'battle-dice-autoroller:casino';
 const DEFAULT_CHESTS: Record<ChestType, number> = { Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Master: 0 };
-const DEFAULT_PROGRESS: CasinoProgress = { chips: 30, chests: DEFAULT_CHESTS, fivesHand: null, fivesGauge: 0 };
+const STARTER_CHIPS = 30;
+const DEFAULT_PROGRESS: CasinoProgress = { chips: STARTER_CHIPS, chests: DEFAULT_CHESTS, fivesHand: null, fivesGauge: 0 };
+
+function resolveStarterChips(parsed: Partial<CasinoProgress> | undefined): number {
+  const record = getInstallRecord();
+  if (typeof parsed?.chips === 'number') {
+    if (!record?.starterChips) updateInstallRecord({ starterChips: true });
+    return parsed.chips;
+  }
+  if (record?.starterChips) return 0;
+  updateInstallRecord({ starterChips: true });
+  return STARTER_CHIPS;
+}
 
 function normalizeFivesHand(value: unknown): FivesHandState | null {
   if (!value || typeof value !== 'object') return null;
@@ -39,7 +51,7 @@ function normalizeFivesHand(value: unknown): FivesHandState | null {
 
 function normalizeProgress(value: Partial<CasinoProgress> | null | undefined): CasinoProgress {
   return {
-    chips: Math.max(0, Math.floor(Number(value?.chips ?? DEFAULT_PROGRESS.chips) || 0)),
+    chips: Math.max(0, Math.floor(Number(value?.chips ?? 0) || 0)),
     chests: { ...DEFAULT_CHESTS, ...(value?.chests ?? {}) },
     fivesHand: normalizeFivesHand(value?.fivesHand),
     fivesGauge: Phaser.Math.Clamp(Math.floor(Number(value?.fivesGauge ?? DEFAULT_PROGRESS.fivesGauge) || 0), 0, 1000)
@@ -70,10 +82,9 @@ export class CasinoProgressStore {
   static load(): CasinoProgress {
     try {
       const parsed = readIntegrityChecked<Partial<CasinoProgress>>(STORAGE_KEY);
-      if (!parsed) return normalizeProgress(DEFAULT_PROGRESS);
-      return normalizeProgress(parsed);
+      return normalizeProgress({ ...DEFAULT_PROGRESS, chips: resolveStarterChips(parsed) });
     } catch {
-      return normalizeProgress(DEFAULT_PROGRESS);
+      return normalizeProgress({ ...DEFAULT_PROGRESS, chips: resolveStarterChips(undefined) });
     }
   }
 }

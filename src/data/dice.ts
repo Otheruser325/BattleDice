@@ -4,7 +4,7 @@ import type { ChestType } from '../systems/CasinoComboTypes';
 import { AchievementStore } from '../systems/AchievementStore';
 import { withBasePath } from '../utils/BuildEnv';
 import { formatPercent } from '../utils/FormatManager';
-import { readIntegrityChecked, writeIntegrityChecked } from '../utils/SecureStorage';
+import { getInstallRecord, readIntegrityChecked, updateInstallRecord, writeIntegrityChecked } from '../utils/SecureStorage';
 
 export const DEFAULT_LOADOUT = ['Fire', 'Ice', 'Poison', 'Electric', 'Wind'] as const;
 export const DEFAULT_LOADOUT_IDS = new Set<string>(['Fire', 'Ice', 'Poison', 'Electric', 'Wind']);
@@ -300,11 +300,38 @@ export interface DiceProgressState {
   unlocked?: boolean;
 }
 
+const STARTER_TOKENS = 5000;
+const STARTER_DIAMONDS = 100;
+
+// A stored balance means the starter grant already happened (or was earned past), so the record is
+// marked claimed on sight. That stops an existing player's first wipe after this update from
+// looking like a fresh install and handing the starter economy out a second time.
+function resolveStarterTokens(saved: number | undefined): number {
+  const record = getInstallRecord();
+  if (typeof saved === 'number') {
+    if (!record?.starterTokens) updateInstallRecord({ starterTokens: true });
+    return saved;
+  }
+  if (record?.starterTokens) return 0;
+  updateInstallRecord({ starterTokens: true });
+  return STARTER_TOKENS;
+}
+
+function resolveStarterDiamonds(saved: number | undefined): number {
+  const record = getInstallRecord();
+  if (typeof saved === 'number') {
+    if (!record?.starterDiamonds) updateInstallRecord({ starterDiamonds: true });
+    return saved;
+  }
+  if (record?.starterDiamonds) return 0;
+  updateInstallRecord({ starterDiamonds: true });
+  return STARTER_DIAMONDS;
+}
+
 export function getDiceTokens(scene: Phaser.Scene): number {
   const stored = scene.registry.get(DICE_TOKENS_KEY) as number | undefined;
   if (stored !== undefined) return stored;
-  const saved = readStored<number>(DICE_TOKENS_KEY);
-  const tokens = typeof saved === 'number' ? saved : 5000;
+  const tokens = resolveStarterTokens(readStored<number>(DICE_TOKENS_KEY));
   scene.registry.set(DICE_TOKENS_KEY, tokens);
   return tokens;
 }
@@ -604,8 +631,7 @@ export function getPrimarySkill(definition: DiceDefinition) {
 export function getDiamonds(scene: Phaser.Scene): number {
   const stored = scene.registry.get(DIAMONDS_KEY) as number | undefined;
   if (stored !== undefined) return stored;
-  const saved = readStored<number>(DIAMONDS_KEY);
-  const diamonds = typeof saved === 'number' ? saved : 100;
+  const diamonds = resolveStarterDiamonds(readStored<number>(DIAMONDS_KEY));
   scene.registry.set(DIAMONDS_KEY, diamonds);
   return diamonds;
 }

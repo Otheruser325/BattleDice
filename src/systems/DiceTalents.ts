@@ -2,7 +2,7 @@ import type Phaser from 'phaser';
 import type { DiceDefinition, DiceRarity, DiceSkillModifier, DiceTalentDefinition, DiceTalentModifier, DiceTypeId } from '../types/game';
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
-import { mergeSkillsByIndex, withLiftedManaCost } from './SkillOverlay';
+import { mergeSkillOverlayByIndex, withLiftedManaCost } from './SkillOverlay';
 import {
   DEFAULT_TALENT_CLASS_NEEDED,
   RARITY_ORDER,
@@ -108,7 +108,7 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
   const modifiers = talent.modifiers ?? {};
 
   const skills = applySkillModifierArray(
-    mergeSkillsByIndex(definition.skills, talent.skills),
+    mergeSkillOverlayByIndex(definition.skills, talent.skills),
     toSkillModifierArray(modifiers.skillModifiers)
   );
   const rootSkillModifiers = getRootSkillModifiers(modifiers);

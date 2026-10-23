@@ -1,5 +1,6 @@
 const ENVELOPE_VERSION = 'bd2';
 const INSTALL_SECRET_KEY = 'battle-dice-autoroller:install-secret';
+const INSTALL_RECORD_KEY = 'battle-dice-autoroller:install-record';
 
 type Envelope = {
   v: string;
@@ -7,12 +8,53 @@ type Envelope = {
   s: string;
 };
 
-function readStorage(key: string): string | null {
+const COOKIE_PREFIX = 'bda_';
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 3650;
+
+function toCookieName(key: string): string {
+  return `${COOKIE_PREFIX}${key.replace(/[^A-Za-z0-9]/g, '_')}`;
+}
+
+function readCookie(name: string): string | null {
   try {
-    return typeof localStorage === 'undefined' ? null : localStorage.getItem(key);
+    if (typeof document === 'undefined' || !document.cookie) return null;
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : null;
   } catch {
     return null;
   }
+}
+
+function writeCookie(name: string, value: string): void {
+  try {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${COOKIE_MAX_AGE_SECONDS}; path=/; SameSite=Lax`;
+  } catch {
+    // Best effort.
+  }
+}
+
+function clearCookie(name: string): void {
+  try {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${name}=; max-age=0; path=/; SameSite=Lax`;
+  } catch {
+    // Best effort.
+  }
+}
+
+// Only the install identity is mirrored to a cookie. Everything else stays in localStorage so
+// request headers stay small; a cleared gameplay key must not look like a brand new install.
+const COOKIE_MIRRORED_KEYS = new Set<string>([INSTALL_SECRET_KEY, INSTALL_RECORD_KEY]);
+
+function readStorage(key: string): string | null {
+  try {
+    const fromLocal = typeof localStorage === 'undefined' ? null : localStorage.getItem(key);
+    if (fromLocal) return fromLocal;
+  } catch {
+    // Fall through to the cookie mirror.
+  }
+  return COOKIE_MIRRORED_KEYS.has(key) ? readCookie(toCookieName(key)) : null;
 }
 
 function writeStorage(key: string, value: string): void {
@@ -21,6 +63,7 @@ function writeStorage(key: string, value: string): void {
   } catch {
     // Persistence is best effort; the in-memory registry keeps the session consistent.
   }
+  if (COOKIE_MIRRORED_KEYS.has(key)) writeCookie(toCookieName(key), value);
 }
 
 function removeStorage(key: string): void {
@@ -29,6 +72,7 @@ function removeStorage(key: string): void {
   } catch {
     // Best effort.
   }
+  if (COOKIE_MIRRORED_KEYS.has(key)) clearCookie(toCookieName(key));
 }
 
 const utf8 = new TextEncoder();
@@ -211,4 +255,54 @@ export function writeIntegrityChecked<T>(key: string, value: T): void {
   const payload = JSON.stringify(value);
   const envelope: Envelope = { v: ENVELOPE_VERSION, d: value, s: signPayload(payload) };
   writeStorage(key, JSON.stringify(envelope));
+}
+
+export interface InstallRecord {
+  installId: string;
+  createdAt: string;
+  starterTokens: boolean;
+  starterDiamonds: boolean;
+  starterChips: boolean;
+}
+
+function readInstallRecord(): InstallRecord | undefined {
+  const raw = readStorage(INSTALL_RECORD_KEY);
+  if (!raw) return undefined;
+  const value = readVerified<InstallRecord>(raw);
+  if (!value || typeof value !== 'object') return undefined;
+  if (typeof value.installId !== 'string' || value.installId.length === 0) return undefined;
+  return {
+    installId: value.installId,
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString(),
+    starterTokens: value.starterTokens === true,
+    starterDiamonds: value.starterDiamonds === true,
+    starterChips: value.starterChips === true
+  };
+}
+
+function writeInstallRecord(record: InstallRecord): void {
+  const payload = JSON.stringify(record);
+  const envelope: Envelope = { v: ENVELOPE_VERSION, d: record, s: signPayload(payload) };
+  writeStorage(INSTALL_RECORD_KEY, JSON.stringify(envelope));
+}
+
+// The starter economy grants live here rather than beside the gameplay state they describe, so
+// clearing a gameplay key cannot make the game believe the install is brand new and re-issue
+// them. The record is mirrored to a cookie, which survives a localStorage wipe, and the install
+// secret is mirrored alongside it so the copy still verifies.
+export function getInstallRecord(): InstallRecord | undefined {
+  return readInstallRecord();
+}
+
+export function updateInstallRecord(patch: Partial<InstallRecord>): InstallRecord {
+  const current = getInstallRecord();
+  const next: InstallRecord = {
+    installId: current?.installId ?? toHex(randomBytes(16)),
+    createdAt: current?.createdAt ?? new Date().toISOString(),
+    starterTokens: patch.starterTokens ?? current?.starterTokens ?? false,
+    starterDiamonds: patch.starterDiamonds ?? current?.starterDiamonds ?? false,
+    starterChips: patch.starterChips ?? current?.starterChips ?? false
+  };
+  writeInstallRecord(next);
+  return next;
 }
