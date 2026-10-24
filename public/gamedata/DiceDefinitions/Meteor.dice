@@ -44,5 +44,25 @@
   ],
   "accent": "#ff7a35",
   "targetingMode": "Nearest",
-  "talentsComingSoon": true
+  "talents": [
+    {
+      "title": "Triple Strike",
+      "description": "Can summon three meteors in random opponent's spaces on their board, at the cost of needing 3 additional mana to charge up.",
+      "classNeeded": 9,
+      "comingSoon": true,
+      "modifiers": {
+        "skills": [
+          {
+            "title": "Triple Strike",
+            "description": "Throws 3 striking meteors at random tiles on the opposing board, causing 120 damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern for 3 turns. Foes standing on a lava tile take 50 damage at the start of combat.",
+            "modifiers": {
+              "manaNeeded": 10,
+              "meteorCount": 3,
+              "meteorRandomOrientation": true
+            }
+          }
+        ]
+      }
+    }
+  ]
 }
