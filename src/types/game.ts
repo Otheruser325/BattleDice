@@ -158,6 +158,7 @@ export interface DiceSkillDefinition {
   manaNeeded?: number;
   modifiers?: DiceSkillModifier;
   descriptionLocked?: boolean;
+  disableSkill?: boolean;
 }
 
 export interface DiceTalentModifier extends DiceSkillModifier {

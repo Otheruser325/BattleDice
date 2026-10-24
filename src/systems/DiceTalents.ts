@@ -88,6 +88,19 @@ function getDisabledSkillIndices(disableSkill: DiceTalentDefinition['disableSkil
   return disabled;
 }
 
+function getSkillOverlayDisabledIndices(
+  overlay: Array<DiceSkillDefinition | null | undefined> | undefined,
+  skillCount: number
+): Set<number> {
+  const disabled = new Set<number>();
+  if (!Array.isArray(overlay)) return disabled;
+  overlay.forEach((entry, index) => {
+    if (!entry || index >= skillCount) return;
+    if (entry.disableSkill === true) disabled.add(index);
+  });
+  return disabled;
+}
+
 export function applyDiceTalent(definition: DiceDefinition, talentIndex: number | null | undefined): DiceDefinition {
   if (definition.talentsComingSoon) return definition;
   const talent = getTalentByIndex(definition, talentIndex);
@@ -114,7 +127,10 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
     );
     return description === skill.description ? skill : { ...skill, description };
   });
-  const disabledIndices = getDisabledSkillIndices(talent.disableSkill, resolvedSkills.length);
+  const disabledIndices = new Set([
+    ...getDisabledSkillIndices(talent.disableSkill, resolvedSkills.length),
+    ...getSkillOverlayDisabledIndices(skillOverlay, resolvedSkills.length)
+  ]);
   const finalSkills = disabledIndices.size === 0
     ? resolvedSkills
     : resolvedSkills.filter((_, index) => !disabledIndices.has(index));
