@@ -3200,9 +3200,6 @@ export class ArenaScene extends Phaser.Scene {
       () => this.applyInfiltratorCombatStart(),
       undefined
     );
-    // Shields carrying a duration survive combat start so Shield Dice's
-    // 2-turn Bulwark covers the current and the following turn. Untimed
-    // shields (Armor's on-damaged plating) still reset every combat.
     this.expireUntimedShields();
     this.combatOrchestrator.runSync(
       this.getCombatFlowContext('CombatStart'),
@@ -4410,9 +4407,7 @@ export class ArenaScene extends Phaser.Scene {
     const isRow = ({ rowOffset }: { rowOffset: number }) => rowOffset === 0;
     const isColumnOrDiagonal = ({ rowOffset, colOffset }: { rowOffset: number; colOffset: number }) =>
       rowOffset !== 0 && (colOffset === 0 || Math.abs(rowOffset) === Math.abs(colOffset));
-
-    // Prefer foes sharing the target's row; only widen to column/diagonal
-    // neighbours when the row has none, so a chain stays readable on the board.
+	  
     const rowCandidates = inRange.filter(isRow);
     const candidates = (rowCandidates.length > 0 ? rowCandidates : inRange.filter(isColumnOrDiagonal))
       .map(({ die }) => ({
@@ -4433,8 +4428,6 @@ export class ArenaScene extends Phaser.Scene {
     if (!firstTarget?.gridPosition) return [];
     const limit = getChainTargetLimit(meta);
     if (limit === 0) return this.hitDuringAttackAction.has(firstTarget.instanceId) ? [] : [firstTarget];
-    // chainTargets counts total chain victims. The firstTarget is one of them,
-    // so only (limit - 1) further jumps may follow it.
     const maxExtraJumps = limit === CHAIN_NO_TARGET_CAP ? Number.POSITIVE_INFINITY : Math.max(0, limit - 1);
     const visited = new Set<string>([attacker.instanceId, ...this.hitDuringAttackAction]);
     const sequence: DiceInstanceState[] = [];
