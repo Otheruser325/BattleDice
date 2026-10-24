@@ -124,7 +124,7 @@ export interface SkillEffectResult {
   grantAttacksToAlly?: number;
   specialAttackDamage?: number;
   specialAttackTarget?: DiceInstanceState;
-  revenge?: { hits: number; damage: number; range: number };
+  revenge?: { hits: number; damage: number; range: number; mode: DiceTargetingMode };
   splashTargets?: DiceInstanceState[];
   heatwaveDamageAmount?: number;
   chainTarget?: DiceInstanceState;
@@ -322,9 +322,6 @@ export function executeRevengeSkillEffects(
   const result: SkillEffectResult = {};
   const maxHealth = Math.max(1, die.maxHealth);
 
-  // Revenge is a generic threshold trigger, not an OnKill-only effect. Keep
-  // the skill type unrestricted so future Passive, Active, CombatStart, or
-  // other trigger definitions can opt into the same transition.
   const revengeSkill = getValidSkillDefinitions(definition).find((skill) => {
     const threshold = skill.modifiers?.revengeThresholdRate;
     const lockClass = getSkillLockClass(skill);
@@ -345,9 +342,8 @@ export function executeRevengeSkillEffects(
   result.revenge = {
     hits: Math.max(1, Math.floor(meta.revengeHits ?? 1)),
     damage: Math.max(1, Math.floor(meta.revengeDamage ?? definition.attack)),
-    // A transformed definition already carries its transformed range, so the
-    // ordinary attack range is the correct fallback when revengeRange is absent.
-    range: Math.max(1, meta.revengeRange ?? definition.range)
+    range: Math.max(1, meta.revengeRange ?? definition.range),
+    mode: meta.skillTargeting ?? meta.targetingMode ?? 'Nearest'
   };
   return result;
 }
@@ -941,8 +937,6 @@ export function executeActiveSkillEffects(
     && meta.pierceBehindDamage === undefined && meta.meteorDamage === undefined && !meta.instakill
     && (target !== undefined || meta.hitsAllFoes === true || meta.hitsAllAllies === true)) {
     result.directDamage = {
-      // Area actives may not have a primary target; ArenaScene uses the
-      // target flags and ignores this fallback target when fanning out.
       target: target ?? attacker,
       damage: resolvePipScaledDamage(meta.activeDamage, definition.attack, meta.activeDamageRate, meta.activeDamageRatesByPip, pips)
     };

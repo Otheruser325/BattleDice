@@ -158,6 +158,7 @@ export interface DiceSkillDefinition {
   manaNeeded?: number;
   modifiers?: DiceSkillModifier;
   descriptionLocked?: boolean;
+  disableSkill?: boolean;
 }
 
 export interface DiceTalentModifier extends DiceSkillModifier {
@@ -177,7 +178,6 @@ export interface DiceTalentDefinition {
   isObtainable?: boolean;
   comingSoon?: boolean;
   modifiers?: DiceTalentModifier;
-  disableSkill?: boolean | number | number[];
 }
 
 export interface DiceTransformStats {

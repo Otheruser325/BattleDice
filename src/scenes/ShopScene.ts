@@ -209,8 +209,6 @@ export class ShopScene extends Phaser.Scene {
           setShopState(this, updatedState);
           offer.purchased = !this.isInfiniteCurrencyOffer(offer);
 
-          // A purchase can finish a die's final useful copy requirement. Replace
-          // the now-sterile offer immediately instead of waiting for tomorrow.
           const nextState = !offer.isTalentOffer && offer.typeId && !canReceiveUsefulCopies(this, offer.typeId)
             ? generateOrGetShopOffers(this)
             : updatedState;

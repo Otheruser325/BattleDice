@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import type { DiceDefinition, DiceRarity, DiceSkillDefinition, DiceSkillModifier, DiceTalentDefinition, DiceTalentModifier, DiceTypeId } from '../types/game';
+import type { DiceDefinition, DiceRarity, DiceSkillDefinition, DiceSkillModifier, DiceTalentModifier, DiceTypeId } from '../types/game';
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
 import { mergeSkillOverlayByIndex } from './SkillOverlay';
@@ -72,19 +72,16 @@ function applySkillDescriptions(
   });
 }
 
-function getDisabledSkillIndices(disableSkill: DiceTalentDefinition['disableSkill'], skillCount: number): Set<number> {
+function getDisabledSkillIndices(
+  overlay: Array<DiceSkillDefinition | null | undefined> | undefined,
+  skillCount: number
+): Set<number> {
   const disabled = new Set<number>();
-  const addIndex = (value: unknown) => {
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value >= skillCount) return;
-    disabled.add(value);
-  };
-  if (disableSkill === true) {
-    for (let index = 0; index < skillCount; index += 1) disabled.add(index);
-  } else if (Array.isArray(disableSkill)) {
-    disableSkill.forEach(addIndex);
-  } else {
-    addIndex(disableSkill);
-  }
+  if (!Array.isArray(overlay)) return disabled;
+  overlay.forEach((entry, index) => {
+    if (!entry || index >= skillCount) return;
+    if (entry.disableSkill === true) disabled.add(index);
+  });
   return disabled;
 }
 
@@ -114,7 +111,7 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
     );
     return description === skill.description ? skill : { ...skill, description };
   });
-  const disabledIndices = getDisabledSkillIndices(talent.disableSkill, resolvedSkills.length);
+  const disabledIndices = getDisabledSkillIndices(skillOverlay, resolvedSkills.length);
   const finalSkills = disabledIndices.size === 0
     ? resolvedSkills
     : resolvedSkills.filter((_, index) => !disabledIndices.has(index));

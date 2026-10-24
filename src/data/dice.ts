@@ -498,6 +498,19 @@ export function isTalentOwned(scene: Phaser.Scene, typeId: DiceTypeId, talentInd
   return state.owned[typeId]?.includes(talentIndex) === true;
 }
 
+export function getOwnedTalentIndices(scene: Phaser.Scene, definition: DiceDefinition): number[] {
+  if (definition.talentsComingSoon || !isSafeTalentTypeId(definition.typeId)) return [];
+  return getTalents(definition)
+    .map((talent, index) => ({ talent, index }))
+    .filter(({ talent, index }) =>
+      Boolean(talent)
+      && typeof talent === 'object'
+      && !isTalentComingSoon(talent)
+      && isTalentOwned(scene, definition.typeId, index)
+    )
+    .map(({ index }) => index);
+}
+
 export function getUnobtainableTalentReason(
   scene: Phaser.Scene,
   definition: DiceDefinition,
@@ -998,11 +1011,8 @@ export function generateOrGetShopOffers(scene: Phaser.Scene, forceRegenerate = f
   const newState: ShopState = {
     offers,
     generatedDay: currentDay,
-    // Preserve freebie state across days if claimed within 24 hours
     freebieClaimedThisSession: (() => {
-      // If same day, keep the existing state
       if (existing.generatedDay === currentDay) return existing.freebieClaimedThisSession;
-      // New day - check if 24+ hours have passed since last claim
       if (existing.freebieClaimedAt) {
         const hoursSinceClaim = (Date.now() - existing.freebieClaimedAt) / (1000 * 60 * 60);
         if (hoursSinceClaim < 24) return true; // Still on cooldown

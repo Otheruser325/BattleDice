@@ -359,18 +359,12 @@ export function getRuntimeSkillMetaForTrigger(definition: DiceDefinition | undef
     return getRuntimeSkillMeta({ ...validDefinition, skills: [selected] }, trigger === 'Active' ? 0 : undefined);
   }
   const triggerSkills = validDefinition.skills.filter((skill) => skill.type === trigger);
-  // A missing trigger must produce neutral metadata. Falling back to the first
-  // skill made CombatStart-only modifiers (notably Lock) leak into basic,
-  // active, and other trigger paths.
   if (triggerSkills.length === 0) return getRuntimeSkillMeta({ ...validDefinition, skills: [] });
   return getRuntimeSkillMeta({ ...validDefinition, skills: triggerSkills }, undefined, true);
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, activeSkillIndex?: number, includePhaseHooks = false): DiceSkillRuntimeMeta {
   const validDefinition = getValidDefinition(definition);
-  // CombatStart and CombatEnd are phase hooks, not ordinary combat-skill
-  // metadata. Keeping them out of the default scope prevents opening/end
-  // effects from changing attacks, actives, targeting, or passive checks.
   const skills = includePhaseHooks
     ? validDefinition.skills
     : validDefinition.skills.filter((skill) => skill.type !== 'CombatStart' && skill.type !== 'CombatEnd');
@@ -516,6 +510,16 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
   const criticalModifiers = allModifiers.find((modifier) =>
     (modifier as { criticalChanceIncrease?: number }).criticalChanceIncrease !== undefined
     || (modifier as { criticalDamageIncrease?: number }).criticalDamageIncrease !== undefined
+  ) ?? modifiers;
+  const summonModifier = allModifiers.find((modifier) =>
+    (modifier as { summonType?: string }).summonType !== undefined
+    || (modifier as { allowSummonedDieToRoll?: boolean }).allowSummonedDieToRoll !== undefined
+  ) ?? modifiers;
+  const avoidModifier = allModifiers.find((modifier) =>
+    (modifier as { avoidAttackChance?: number }).avoidAttackChance !== undefined
+  ) ?? modifiers;
+  const missingHealModifier = allModifiers.find((modifier) =>
+    (modifier as { missingHealRate?: number }).missingHealRate !== undefined
   ) ?? modifiers;
 
   const transformFlags = Array.isArray(validDefinition.transformFlags)
@@ -680,10 +684,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     onTransformedDurationTurns: onTransformedModifiers?.statusDuration,
     deuciferOddSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
     deuciferEvenDamageRate: Number.isFinite(evenDamageRate) ? evenDamageRate : undefined,
-    summonType: (activeModifiers as { summonType?: string } | undefined)?.summonType ?? (modifiers as { summonType?: string } | undefined)?.summonType,
-    summonCount: (activeModifiers as { summonCount?: number } | undefined)?.summonCount ?? (modifiers as { summonCount?: number } | undefined)?.summonCount,
-    summonPattern: (activeModifiers as { summonPattern?: Array<[number, number]> } | undefined)?.summonPattern ?? (modifiers as { summonPattern?: Array<[number, number]> } | undefined)?.summonPattern,
-    allowSummonedDieToRoll: Boolean((activeModifiers as { allowSummonedDieToRoll?: boolean } | undefined)?.allowSummonedDieToRoll ?? (modifiers as { allowSummonedDieToRoll?: boolean } | undefined)?.allowSummonedDieToRoll),
+    summonType: (summonModifier as { summonType?: string } | undefined)?.summonType,
+    summonCount: (summonModifier as { summonCount?: number } | undefined)?.summonCount,
+    summonPattern: (summonModifier as { summonPattern?: Array<[number, number]> } | undefined)?.summonPattern,
+    allowSummonedDieToRoll: Boolean((summonModifier as { allowSummonedDieToRoll?: boolean } | undefined)?.allowSummonedDieToRoll),
     manaGain: (activeModifiers as { manaGain?: number } | undefined)?.manaGain ?? (modifiers as { manaGain?: number } | undefined)?.manaGain,
     allyManaGain: (activeModifiers as { allyManaGain?: number } | undefined)?.allyManaGain ?? (modifiers as { allyManaGain?: number } | undefined)?.allyManaGain,
     foeManaGain: (activeModifiers as { foeManaGain?: number } | undefined)?.foeManaGain ?? (modifiers as { foeManaGain?: number } | undefined)?.foeManaGain,
@@ -708,8 +712,8 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
      criticalChanceIncrease: (criticalModifiers as { criticalChanceIncrease?: number } | undefined)?.criticalChanceIncrease,
      criticalDamageIncrease: (criticalModifiers as { criticalDamageIncrease?: number } | undefined)?.criticalDamageIncrease,
     damageRatePerKill: (modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill,
-    avoidAttackChance: (modifiers as { avoidAttackChance?: number } | undefined)?.avoidAttackChance,
-    missingHealRate: (modifiers as { missingHealRate?: number } | undefined)?.missingHealRate,
+    avoidAttackChance: (avoidModifier as { avoidAttackChance?: number } | undefined)?.avoidAttackChance,
+    missingHealRate: (missingHealModifier as { missingHealRate?: number } | undefined)?.missingHealRate,
     revengeThresholdRate: (modifiers as { revengeThresholdRate?: number } | undefined)?.revengeThresholdRate,
     revengeHits: (modifiers as { revengeHits?: number } | undefined)?.revengeHits,
     revengeDamage: (modifiers as { revengeDamage?: number } | undefined)?.revengeDamage,
