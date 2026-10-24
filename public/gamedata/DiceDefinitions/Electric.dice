@@ -28,7 +28,7 @@
       "modifiers": {
         "skills": [
           {
-            "description": "Electric arcs have no jump cap, but the distance of finding a target is reduced to 1 tile.",
+            "description": "Attacks chain on many possible nearby foes on the target's board for 16 bonus damage.",
             "modifiers": {
               "chainRange": 1,
               "chainTargets": -1
