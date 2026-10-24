@@ -49,7 +49,6 @@
       "title": "Triple Strike",
       "description": "Can summon three meteors in random opponent's spaces on their board, at the cost of needing 3 additional mana to charge up.",
       "classNeeded": 9,
-      "comingSoon": true,
       "modifiers": {
         "skills": [
           {
