@@ -2278,7 +2278,7 @@ export class ArenaScene extends Phaser.Scene {
       { fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted, align: 'right' }
     ).setOrigin(1, 0.5);
     const contentTop = centerY - viewportHeight / 2 + 8;
-    const content = this.add.container(centerX - viewportWidth / 2, contentTop).setOrigin(0, 0);
+    const content = this.add.container(centerX - viewportWidth / 2, contentTop);
     const contentHeight = this.renderCombatLogHistoryLines(content, viewportWidth);
     const mask = this.add.rectangle(centerX - viewportWidth / 2, contentTop, viewportWidth, viewportHeight, 0xffffff, 0)
       .setOrigin(0, 0)
