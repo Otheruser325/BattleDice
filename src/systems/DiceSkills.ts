@@ -394,10 +394,6 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     ? skills.filter((skill, index) => skill.type !== 'Active' || index === activeSkillIndex)
     : skills;
   const allModifiers = runtimeSkills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
-  // attackCountIncrease is a die-wide attack multiplier, so read it from every
-  // skill that can drive an attack rather than only the selected Active or the
-  // first skill. A talent can move it onto a Passive, and Wind's Mighty Wind
-  // stacks its higher value on top of Gale Tempo's.
   const attackCountIncreases = allModifiers
     .map((modifier) => (modifier as { attackCountIncrease?: number }).attackCountIncrease)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
