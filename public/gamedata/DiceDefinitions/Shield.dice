@@ -24,7 +24,8 @@
       "manaNeeded": 8,
       "modifiers": {
         "shield": 300,
-        "statusDuration": 2
+        "statusDuration": 2,
+        "skillSfx": "dice_shield_skill"
       }
     }
   ],
