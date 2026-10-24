@@ -18,5 +18,27 @@
   ],
   "accent": "#f9e27d",
   "targetingMode": "Nearest",
-  "talentsComingSoon": true
+  "talents": [
+    {
+      "title": "Holy Blessings",
+      "description": "Reduces health by 20% and can additionally buff a random ally with 2 attack counts instead of 1 at the start of combat.",
+      "classNeeded": 9,
+      "modifiers": {
+        "healthDelta": -100,
+        "skills": [
+          {
+          },
+          {
+            "type": "CombatStart",
+            "title": "Heaven's Gift",
+            "description": "A random other ally gains +1 attack count (resets on combat end).",
+            "modifiers": {
+              "grantAttacksToAlly": 1,
+              "skillSfx": "dice_light_skill"
+            }
+          }
+        ]
+      }
+    }
+  ]
 }
