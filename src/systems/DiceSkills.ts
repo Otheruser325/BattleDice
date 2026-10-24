@@ -359,18 +359,12 @@ export function getRuntimeSkillMetaForTrigger(definition: DiceDefinition | undef
     return getRuntimeSkillMeta({ ...validDefinition, skills: [selected] }, trigger === 'Active' ? 0 : undefined);
   }
   const triggerSkills = validDefinition.skills.filter((skill) => skill.type === trigger);
-  // A missing trigger must produce neutral metadata. Falling back to the first
-  // skill made CombatStart-only modifiers (notably Lock) leak into basic,
-  // active, and other trigger paths.
   if (triggerSkills.length === 0) return getRuntimeSkillMeta({ ...validDefinition, skills: [] });
   return getRuntimeSkillMeta({ ...validDefinition, skills: triggerSkills }, undefined, true);
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, activeSkillIndex?: number, includePhaseHooks = false): DiceSkillRuntimeMeta {
   const validDefinition = getValidDefinition(definition);
-  // CombatStart and CombatEnd are phase hooks, not ordinary combat-skill
-  // metadata. Keeping them out of the default scope prevents opening/end
-  // effects from changing attacks, actives, targeting, or passive checks.
   const skills = includePhaseHooks
     ? validDefinition.skills
     : validDefinition.skills.filter((skill) => skill.type !== 'CombatStart' && skill.type !== 'CombatEnd');
@@ -517,9 +511,6 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     (modifier as { criticalChanceIncrease?: number }).criticalChanceIncrease !== undefined
     || (modifier as { criticalDamageIncrease?: number }).criticalDamageIncrease !== undefined
   ) ?? modifiers;
-  // A trigger-scoped lookup can hand us several skills of the same type (for
-  // example two OnDeath skills), so summon fields must come from whichever
-  // entry actually declares them instead of only the primary/active skill.
   const summonModifier = allModifiers.find((modifier) =>
     (modifier as { summonType?: string }).summonType !== undefined
     || (modifier as { allowSummonedDieToRoll?: boolean }).allowSummonedDieToRoll !== undefined

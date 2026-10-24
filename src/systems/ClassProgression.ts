@@ -404,9 +404,6 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   const source = sourceModifiers ?? modifiers;
   let dynamicDescription = getDynamicSkillDescription(description, source, modifiers, skillDamageMultiplier);
   if (skill?.descriptionLocked === true && description.trim()) return dynamicDescription.trim() ? dynamicDescription : description;
-  // Some transformed forms intentionally reuse the base description. If the
-  // transformed descriptor has no beamDamage of its own, use its current attack
-  // as the displayed beam value instead of leaking the base form's C1 value.
   if (source.beamDamage === undefined && modifiers.beamDamage === undefined && (modifiers.hasBeam === true || /beam attacks?/i.test(description))) {
     const displayAttack = definition.attack;
     if (Number.isFinite(displayAttack)) {

@@ -20,11 +20,10 @@ import { applyClassProgression, applyTransformStats, getClassProgressionPreview,
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AchievementStore } from '../systems/AchievementStore';
-import { AlertManager } from '../utils/AlertManager';
 import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
 import { SettingsStore } from '../systems/SettingsStore';
-import { applyDiceTalent, canObtainTalent, getTalentClassNeeded, getTalentCost, grantTalent } from '../systems/DiceTalents';
-import { getEquippedTalentIndex, getTalentByIndex, isTalentComingSoon, isTalentOwned, setEquippedTalentIndex } from '../data/dice';
+import { applyDiceTalent, getTalentClassNeeded } from '../systems/DiceTalents';
+import { getEquippedTalentIndex, getTalentByIndex, getUnobtainableTalentReason, isTalentComingSoon, isTalentOwned, setEquippedTalentIndex } from '../data/dice';
 import { isSkillListComingSoon, mergeSkillsByIndex } from '../systems/SkillOverlay';
 import { formatCompact } from '../utils/FormatManager';
 
@@ -688,7 +687,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const title = this.add.text(width / 2, centerY - 164, `${definition.title} • DICE TALENTS`, {
       fontFamily: 'Orbitron', fontSize: '18px', color: definition.accent
     }).setOrigin(0.5);
-    const hint = this.add.text(width / 2, centerY - 138, 'Unlock a talent with Dice Tokens, then equip it. Equipping another replaces the current talent.', {
+    const hint = this.add.text(width / 2, centerY - 138, 'Equip an owned talent. New talents are found in Shop offers or Diamond and Master chests.', {
       fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted, align: 'center', wordWrap: { width: 500 }
     }).setOrigin(0.5);
     const elements: Phaser.GameObjects.GameObject[] = [overlay, panel, title, hint];
@@ -738,20 +737,14 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
     };
 
-    const syncTokens = () => {
-      tokenText.setText(`DICE TOKENS: ${formatCompact(getDiceTokens(this))}  •  Click a die, then EQUIP to assign it to a slot`);
-    };
-
     definition.talents.forEach((talent, index) => {
       const y = centerY - 78 + index * 74;
       const currentTalentIndex = getEquippedTalentIndex(this, definition);
       const owned = isTalentOwned(this, typeId, index);
       const active = owned && index === currentTalentIndex;
-      const classLevel = getDiceProgress(this, typeId).classLevel;
-      const cost = getTalentCost(definition.rarity);
       const classNeeded = getTalentClassNeeded(talent);
-      const obtain = canObtainTalent(this, definition, index, classLevel, getDiceTokens(this));
-      const canBuy = obtain.ok;
+      const obtain = getUnobtainableTalentReason(this, definition, index);
+      const comingSoon = obtain === 'coming-soon';
       const row = this.add.rectangle(width / 2, y, 490, 62, active ? 0x315e7a : 0x173247, 0.98)
         .setStrokeStyle(1, active ? 0xf4b860 : 0x406987);
       const name = this.add.text(width / 2 - 224, y - 20, `${active ? '● ' : ''}${talent.title}`, {
@@ -760,66 +753,41 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       const description = this.add.text(width / 2 - 224, y + 2, talent.description, {
         fontFamily: 'Orbitron', fontSize: '9px', color: PALETTE.textMuted, wordWrap: { width: 330 }
       }).setOrigin(0, 0.5);
-      const gateText = obtain.reason === 'invalid'
+      const gateText = obtain === 'invalid'
         ? 'NOT OBTAINABLE'
         : owned
           ? 'OWNED'
-          : obtain.reason === 'coming-soon'
+          : comingSoon
             ? 'COMING SOON'
-            : obtain.reason === 'locked'
+            : obtain === 'locked'
               ? 'OBTAIN THE DIE FIRST'
-              : obtain.reason === 'class'
+              : obtain === 'class'
                 ? `REQUIRES CLASS ${classNeeded}`
-                : `${formatCompact(cost)} DICE TOKENS`;
+                : 'UNOWNED';
       const gateColor = owned
         ? PALETTE.success
-        : (obtain.reason === 'invalid' || obtain.reason === 'coming-soon')
+        : (obtain === 'invalid' || comingSoon)
           ? PALETTE.textMuted
-          : obtain.reason === 'tokens'
-            ? PALETTE.accentSoft
-            : PALETTE.danger;
+          : obtain === 'locked' || obtain === 'class'
+            ? PALETTE.danger
+            : PALETTE.accentSoft;
       const gate = this.add.text(width / 2 - 224, y + 22, gateText, {
         fontFamily: 'Orbitron', fontSize: '9px', color: gateColor
       }).setOrigin(0, 0.5);
 
-      const blocked = !owned && (obtain.reason === 'invalid' || obtain.reason === 'coming-soon');
-      const actionLabel = blocked
-        ? (obtain.reason === 'coming-soon' ? 'WIP' : 'LOCKED')
-        : (active ? 'UNEQUIP' : owned ? 'EQUIP' : 'UNLOCK');
-      const actionEnabled = (active || owned || canBuy) && !isTalentComingSoon(talent);
+      const actionLabel = active ? 'UNEQUIP' : owned ? 'EQUIP' : comingSoon ? 'WIP' : 'UNOWNED';
+      const actionEnabled = active || owned;
       const action = this.add.text(width / 2 + 190, y, actionLabel, {
         fontFamily: 'Orbitron', fontSize: '9px',
-        color: !actionEnabled ? PALETTE.textMuted : (active ? '#ffb5b5' : owned ? '#b8ffd1' : '#fff1c2'),
-        backgroundColor: !actionEnabled ? '#3e4f5c' : (active ? '#702f3d' : owned ? '#246044' : '#7a5a1e'),
+        color: !actionEnabled ? PALETTE.textMuted : (active ? '#ffb5b5' : '#b8ffd1'),
+        backgroundColor: !actionEnabled ? '#3e4f5c' : (active ? '#702f3d' : '#246044'),
         padding: { left: 6, right: 6, top: 5, bottom: 5 }
       }).setOrigin(0.5);
 
       if (actionEnabled) {
         row.setInteractive({ useHandCursor: true });
         row.on('pointerdown', () => {
-          if (active) {
-            setEquippedTalentIndex(this, definition, null);
-            reopen();
-            return;
-          }
-          if (owned) {
-            setEquippedTalentIndex(this, definition, index);
-            reopen();
-            return;
-          }
-          const tokens = getDiceTokens(this);
-          const result = canObtainTalent(this, definition, index, classLevel, tokens);
-          if (!result.ok) {
-            if (result.reason === 'class') AlertManager.toast(this, { type: 'warning', message: `Reach class ${result.classNeeded} to unlock ${talent.title}.` });
-            else if (result.reason === 'locked') AlertManager.toast(this, { type: 'warning', message: `Obtain ${definition.title} before unlocking ${talent.title}.` });
-            else if (result.reason === 'tokens') AlertManager.toast(this, { type: 'warning', message: `You need ${formatCompact(result.cost)} Dice Tokens to unlock ${talent.title}.` });
-            return;
-          }
-          if (!grantTalent(this, definition, index)) return;
-          setDiceTokens(this, tokens - result.cost);
-          setEquippedTalentIndex(this, definition, index);
-          AudioManager.playSfx(this, 'class-up');
-          syncTokens();
+          setEquippedTalentIndex(this, definition, active ? null : index);
           reopen();
         });
       }

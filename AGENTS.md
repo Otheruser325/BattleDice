@@ -16,6 +16,15 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 - A talent removes a base skill only through the per-skill overlay form (`talents[].modifiers.skills[i].disableSkill`). The former talent-root `talents[].disableSkill` (boolean / index / index array) was removed so a talent cannot disable arbitrary skills it does not explicitly overlay. The overlay form is what Time's Temporal Delusion uses to retire Temporal Acceleration.
 - `talents[].comingSoon` marks a single talent as a work-in-progress. Coming-soon talents are excluded from `getAcquirableTalentIndices` (so shops and chests never offer them), cannot be equipped, and report the `coming-soon` reason in `getUnobtainableTalentReason`.
 
+## Talent acquisition and loadout randomisation
+
+- Talents are obtained only through shop offers and Diamond/Master chests. The talents popup in DiceScene equips owned talents and reports unowned ones as `UNOWNED`; it never grants a talent. Do not reintroduce a popup purchase path with `grantTalent`/`setDiceTokens`.
+- `getOwnedTalentIndices` lists the owned, non-coming-soon talents for a die. Randomise loadout/class-up uses it so a random loadout equips a random owned talent regardless of the die's stored equipped talent. The chosen index is stamped into `instanceTalentIndices` so `getCombatBaseDefinition` and the in-battle info panel resolve the same talent for that instance instead of re-reading the profile's equipped index.
+
+## Combat log defeat entries
+
+- A die's destruction is reported by one dedicated `writeDefeatLog` entry (`"<owner>'s <die> was defeated!"`), emitted from `applyDamageDefeatHooks` only after the die is confirmed still destroyed (so a revive does not log a defeat). Individual damage entries must not append `DESTROYED`/`(defeated)` labels.
+
 ## Multi-projectile attacks
 
 - `spendBasicAttack` returns the projectile count for the attack (from `basicAttacksPerAttackByInstance`, i.e. `1 + attackCountIncrease`). The basic-attack branch in `runCombatLoop` loops that many times so each projectile re-applies damage with `source: attacker`. On-damaged effects (Armor Dice's Heavy Plating), passive hooks, and defeat hooks therefore resolve once per projectile, not once per attack action.
