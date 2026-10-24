@@ -178,7 +178,6 @@ export interface DiceTalentDefinition {
   isObtainable?: boolean;
   comingSoon?: boolean;
   modifiers?: DiceTalentModifier;
-  disableSkill?: boolean | number | number[];
 }
 
 export interface DiceTransformStats {

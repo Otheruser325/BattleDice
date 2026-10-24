@@ -124,7 +124,7 @@ export interface SkillEffectResult {
   grantAttacksToAlly?: number;
   specialAttackDamage?: number;
   specialAttackTarget?: DiceInstanceState;
-  revenge?: { hits: number; damage: number; range: number };
+  revenge?: { hits: number; damage: number; range: number; mode: DiceTargetingMode };
   splashTargets?: DiceInstanceState[];
   heatwaveDamageAmount?: number;
   chainTarget?: DiceInstanceState;
@@ -347,7 +347,8 @@ export function executeRevengeSkillEffects(
     damage: Math.max(1, Math.floor(meta.revengeDamage ?? definition.attack)),
     // A transformed definition already carries its transformed range, so the
     // ordinary attack range is the correct fallback when revengeRange is absent.
-    range: Math.max(1, meta.revengeRange ?? definition.range)
+    range: Math.max(1, meta.revengeRange ?? definition.range),
+    mode: meta.skillTargeting ?? meta.targetingMode ?? 'Nearest'
   };
   return result;
 }

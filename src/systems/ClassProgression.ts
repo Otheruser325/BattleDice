@@ -63,6 +63,7 @@ export const IRON_CURRENT_HP_RATE_PER_CLASS = 0.004;
 export const BERSERK_THRESHOLD_RATE_PER_CLASS = 0.01;
 export const SOLITUDE_MAX_HP_RATE_PER_CLASS = 0.002;
 export const CRACK_ARMOR_SHRED_RATE_PER_CLASS = 0.01;
+export const AVOID_ATTACK_CHANCE_PER_CLASS = 0.03;
 export const BATTERY_MANA_GAIN_PER_5_CLASS = 1;
 export const SOUL_BOOST_RATIO_PER_CLASS = 0.005;
 export const LOW_HP_DAMAGE_RATE_PER_CLASS = 0.02;
@@ -329,8 +330,8 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.statusDuration = source.statusDuration + Math.floor(classUps / 4);
     }
 
-    if (definition.typeId === 'Basilisk' && source.avoidAttackChance !== undefined) {
-      modifiers.avoidAttackChance = Math.min(0.95, source.avoidAttackChance + 0.03 * classUps);
+    if (source.avoidAttackChance !== undefined) {
+      modifiers.avoidAttackChance = Math.min(0.95, source.avoidAttackChance + AVOID_ATTACK_CHANCE_PER_CLASS * classUps);
     }
     if (source.missingHealRate !== undefined) {
       modifiers.missingHealRate = Math.min(1, source.missingHealRate + 0.015 * classUps);
@@ -402,6 +403,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
   const description = skill?.description ?? '';
   const source = sourceModifiers ?? modifiers;
   let dynamicDescription = getDynamicSkillDescription(description, source, modifiers, skillDamageMultiplier);
+  if (skill?.descriptionLocked === true && description.trim()) return dynamicDescription.trim() ? dynamicDescription : description;
   // Some transformed forms intentionally reuse the base description. If the
   // transformed descriptor has no beamDamage of its own, use its current attack
   // as the displayed beam value instead of leaking the base form's C1 value.
@@ -415,7 +417,6 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     dynamicDescription = formatDruidRicochetDescriptor(dynamicDescription, modifiers.ricochetCount);
   }
   dynamicDescription = normalizeSingularUnits(dynamicDescription);
-  if (skill?.descriptionLocked === true && description.trim()) return description;
   if (dynamicDescription.trim() && dynamicDescription !== description) return dynamicDescription;
   if (definition.typeId === 'Solitude' && modifiers.targetMaxHpBonusRate !== undefined) {
     return `When no ally is adjacent to this dice, deals bonus damage equal to ${formatPercent(modifiers.targetMaxHpBonusRate)} of the target's max HP.`;
