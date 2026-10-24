@@ -394,6 +394,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     ? skills.filter((skill, index) => skill.type !== 'Active' || index === activeSkillIndex)
     : skills;
   const allModifiers = runtimeSkills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
+  const attackCountIncreases = allModifiers
+    .map((modifier) => (modifier as { attackCountIncrease?: number }).attackCountIncrease)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  const maxAttackCountIncrease = attackCountIncreases.length > 0 ? Math.max(...attackCountIncreases) : 0;
   const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
     const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
     return sum === 0 ? undefined : sum;
@@ -558,9 +562,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     maxStacks: (modifiers as { maxStacks?: number } | undefined)?.maxStacks,
     activeManaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
     activeAllyExtraAttacks: activeSkill ? (activeModifiers?.allyExtraAttacks ?? 0) : 0,
-    attackCountIncrease: activeSkill
-      ? (activeModifiers?.attackCountIncrease ?? 0)
-      : (modifiers?.attackCountIncrease ?? 0),
+    attackCountIncrease: maxAttackCountIncrease,
     unlockAtClass,
     numAttacksBoosted: (modifiers as { numAttacksBoosted?: number } | undefined)?.numAttacksBoosted,
     numAttacksDamageMult: (modifiers as { numAttacksDamageMult?: number } | undefined)?.numAttacksDamageMult,
