@@ -150,6 +150,7 @@ export class ArenaScene extends Phaser.Scene {
   private combatAttackCountDeltaByInstance: Map<string, number> = new Map();
   private combatAttackCountPositiveDeltaByInstance: Map<string, number> = new Map();
   private combatAttackCountNegativeDeltaByInstance: Map<string, number> = new Map();
+  private grantedAttackCountByInstance: Map<string, number> = new Map();
   private attackCountEffectSeenByInstance: Map<string, { positive: boolean; negative: boolean }> = new Map();
   private manaPausedTurnsByInstance: Map<string, number> = new Map();
   private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
@@ -295,6 +296,7 @@ export class ArenaScene extends Phaser.Scene {
     this.combatAttackCountDeltaByInstance.clear();
     this.combatAttackCountPositiveDeltaByInstance.clear();
     this.combatAttackCountNegativeDeltaByInstance.clear();
+    this.grantedAttackCountByInstance.clear();
     this.attackCountEffectSeenByInstance.clear();
     this.manaPausedTurnsByInstance.clear();
     this.combanityAttackMultiplierByInstance.clear();
@@ -3326,6 +3328,12 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
+  private recordGrantedAttackCount(instanceId: string, delta: number) {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    this.grantedAttackCountByInstance.set(instanceId, (this.grantedAttackCountByInstance.get(instanceId) ?? 0) + delta);
+    this.recordAttackCountEffect(instanceId, delta);
+  }
+
   private getAttackCountBuffLines(die: DiceInstanceState): Array<{ text: string; color: string }> {
     const seen = this.attackCountEffectSeenByInstance.get(die.instanceId);
     if (!seen) return [];
@@ -3341,6 +3349,7 @@ export class ArenaScene extends Phaser.Scene {
     const additiveDelta = (combatDelta ?? 0)
       + (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0)
       + (this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0)
+      + (this.grantedAttackCountByInstance.get(die.instanceId) ?? 0)
       + (this.growthDeltaByInstance.get(die.instanceId) ?? 0)
       + fireSupportBonus;
     const multiplier = this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1;
@@ -3350,6 +3359,7 @@ export class ArenaScene extends Phaser.Scene {
     const positiveDelta = [
       combatPositiveDelta ?? (combatDelta === undefined ? 0 : Math.max(0, combatDelta)),
       this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0,
+      Math.max(0, this.grantedAttackCountByInstance.get(die.instanceId) ?? 0),
       Math.max(0, this.growthDeltaByInstance.get(die.instanceId) ?? 0),
       fireSupportBonus,
       Math.max(0, multiplierDelta),
@@ -3358,6 +3368,7 @@ export class ArenaScene extends Phaser.Scene {
     const negativeDelta = [
       combatNegativeDelta ?? (combatDelta === undefined ? 0 : Math.min(0, combatDelta)),
       this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0,
+      Math.min(0, this.grantedAttackCountByInstance.get(die.instanceId) ?? 0),
       Math.min(0, this.growthDeltaByInstance.get(die.instanceId) ?? 0),
       Math.min(0, multiplierDelta)
     ].reduce((sum, delta) => sum + Math.min(0, delta), 0);
@@ -3588,7 +3599,7 @@ export class ArenaScene extends Phaser.Scene {
       if (result.grantAttacksToAlly && result.grantAttacksToAlly > 0) {
         const recipient = this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly);
         if (recipient) {
-          this.recordAttackCountEffect(recipient.instanceId, result.grantAttacksToAlly);
+          this.recordGrantedAttackCount(recipient.instanceId, result.grantAttacksToAlly);
           this.gameState = {
             ...this.gameState,
             dice: this.gameState.dice.map((die) => die.instanceId === recipient.instanceId
@@ -4993,6 +5004,7 @@ export class ArenaScene extends Phaser.Scene {
     this.combatAttackCountDeltaByInstance.clear();
     this.combatAttackCountPositiveDeltaByInstance.clear();
     this.combatAttackCountNegativeDeltaByInstance.clear();
+    this.grantedAttackCountByInstance.clear();
     await this.applyTurnBasedEffects();
     this.renderDice();
     this.renderEnemyDice();
@@ -5374,7 +5386,7 @@ export class ArenaScene extends Phaser.Scene {
             : after;
           const recipientId = recipient?.instanceId ?? instanceId;
           if (!this.chainedByInstance.has(recipientId)) {
-            this.recordAttackCountEffect(recipientId, onDamagedResult.bonusAttacks);
+            this.recordGrantedAttackCount(recipientId, onDamagedResult.bonusAttacks);
             resolvedState = {
               ...resolvedState,
               dice: resolvedState.dice.map((die) => {
@@ -5820,7 +5832,7 @@ export class ArenaScene extends Phaser.Scene {
         ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly)
         : attacker;
       if (recipient) {
-        this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
+        this.recordGrantedAttackCount(recipient.instanceId, result.bonusAttacks);
         this.gameState = {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => die.instanceId === recipient.instanceId
@@ -6150,7 +6162,7 @@ export class ArenaScene extends Phaser.Scene {
             ? { ...die, attacksRemaining: die.attacksRemaining + result.bonusAttacks!, hasFinishedAttacking: false }
             : die)
         };
-        this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
+        this.recordGrantedAttackCount(recipient.instanceId, result.bonusAttacks);
         this.addCombatActionDetail(`${activeSlot.title} grants +${result.bonusAttacks} attack${result.bonusAttacks === 1 ? '' : 's'} to ${recipient.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(recipient)}`);
       }
     }
@@ -6423,7 +6435,7 @@ export class ArenaScene extends Phaser.Scene {
           ? this.selectAllyAttackRecipient(die, this.gameState, result.grantAttacksToAlly)
           : die;
         if (recipient) {
-          this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
+          this.recordGrantedAttackCount(recipient.instanceId, result.bonusAttacks);
           this.gameState = {
             ...this.gameState,
             dice: this.gameState.dice.map((candidate) => candidate.instanceId === recipient.instanceId
@@ -7370,7 +7382,7 @@ export class ArenaScene extends Phaser.Scene {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => {
             if (die.instanceId !== recipient.instanceId) return die;
-            this.recordAttackCountEffect(die.instanceId, result.bonusAttacks!);
+            this.recordGrantedAttackCount(die.instanceId, result.bonusAttacks!);
             return { ...die, attacksRemaining: die.attacksRemaining + result.bonusAttacks!, hasFinishedAttacking: false };
           })
         };
@@ -7460,7 +7472,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!Number.isFinite(amount) || amount <= 0) return state;
     const recipient = this.selectFoeAttackRecipient(source, state, skillTargeting);
     if (!recipient) return state;
-    this.recordAttackCountEffect(recipient.instanceId, amount);
+    this.recordGrantedAttackCount(recipient.instanceId, amount);
     return {
       ...state,
       dice: state.dice.map((die) => die.instanceId === recipient.instanceId
@@ -7497,7 +7509,7 @@ export class ArenaScene extends Phaser.Scene {
           ...this.gameState,
           dice: this.gameState.dice.map((die) => {
             if (die.instanceId !== ally.instanceId) return die;
-            this.recordAttackCountEffect(die.instanceId, result.bonusAttacks!);
+            this.recordGrantedAttackCount(die.instanceId, result.bonusAttacks!);
             return { ...die, attacksRemaining: die.attacksRemaining + result.bonusAttacks!, hasFinishedAttacking: false };
           })
         };
