@@ -15,7 +15,9 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   healthDelta?: number;
   attackMultiplier?: number;
   allyExtraAttacks?: number;
+  foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
+  grantAttacksToRandomFoe?: number;
   attackCountIncrease?: number;
   unlockAtClass?: number;
   statusDuration?: number;
@@ -31,7 +33,6 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   chainDamageRatesByPip?: Record<string, number>;
   chainRange?: number;
   chainTargets?: number;
-  manaNeeded?: number;
   poisonDamage?: number;
   poisonDamageRate?: number;
   poisonDamageRatesByPip?: Record<string, number>;

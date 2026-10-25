@@ -30,6 +30,27 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 - `spendBasicAttack` returns the projectile count for the attack (from `basicAttacksPerAttackByInstance`, i.e. `1 + attackCountIncrease`). The basic-attack branch in `runCombatLoop` loops that many times so each projectile re-applies damage with `source: attacker`. On-damaged effects (Armor Dice's Heavy Plating), passive hooks, and defeat hooks therefore resolve once per projectile, not once per attack action.
 - Keep `source: attacker` on every projectile's `applyDamageWithRevive` call. Omitting it makes on-damaged effects fall back to treating the victim as its own attacker.
 - The Druidic Essence heal branch (`healOnAttack`) must mirror the damage branch: call `spendBasicAttack` once, loop `applyBasicHeal` per projectile, and accumulate `basicAttackHitCount` so the combat log appends "N times" for multi-projectile heals. Do not replace this with a single `applyBasicHeal` plus `spendAttack`.
+- `applyBasicHeal` must accumulate the actual amount `healDie` reports (crit-doubled, capped at missing health) rather than recomputing `baseAmount * targetCount`; the latter drops the critical double from both the returned total and the log line. `healDie` owns the critical roll, so callers report `healResult.healed` and `healResult.critical`.
+- The basic-attack heal log is generic (`"<owner> <die> heals <target> for N health!"`), matching the damage line's shape. Do not hardcode a skill name (the old `uses Druidic Essence` text assumed Druid and misreported every other `healOnAttack` source).
+
+## Skill mana metadata
+
+- A skill's mana cost is authored on the skill root (`skills[].manaNeeded`), alongside `type`/`title`/`description`, not inside `modifiers`. `modifiers` carries only behaviour flags and stats, so keeping `manaNeeded` there made the mana cost look like a modifier and hid it from the skill-shaped view. `DiceSkillModifier` no longer declares `manaNeeded`; the overlay/transform merge no longer has to lift it out of `modifiers`.
+- `DiceSkillRuntimeMeta.manaNeeded` reports the selected Active skill's cost (0 when no Active skill is selected). The old `activeManaNeeded`/`activeAllyExtraAttacks` names were removed; `allyExtraAttacks` is die-wide and `grantAttacksToAlly` is the single-ally grant.
+
+## Skill overlay and transform rows
+
+- Talent overlays (`talents[].modifiers.skills`) and transform rows (`transformStats[].skills`) share one convention: an empty object `{}` at an index means "leave this base skill unmodified", an entry that declares `type` is a full replacement, and an entry without `type` overlays onto the base skill (root fields shallow-merged, `modifiers` deep-merged). This is what lets Light's talent and Transcendence's transform target one skill without restating the rest. `mergeSkillsByIndex` and `mergeSkillOverlayByIndex` both skip empty entries.
+
+## Attack grants
+
+- `allyExtraAttacks` is a die-wide CombatStart aura: `collectCombatStartAuras` folds it into the pip/attack-count bonus for every other friendly die. `grantAttacksToAlly` is a one-ally grant: it must not also feed the aura collection, or the recipient receives the bonus twice. `executeCombatStartSkillEffects` sets `result.grantAttacksToAlly` and the ArenaScene CombatStart branch resolves one recipient.
+- `selectAllyAttackRecipient` targets a random other ally by default and is distance-independent; it only uses a specific mode when the granting skill sets `skillTargeting`. Resolution order is the explicit caller mode, then the granting skill's `skillTargeting`, then `Random`. Never default to the die's `targetingMode` — that made "random ally" buffs follow the caster's own attack targeting.
+- `foeExtraAttacks` / `grantAttacksToRandomFoe` mirror the ally fields for future foe-facing skills; they are resolved into the runtime meta but not yet consumed.
+
+## Healing criticals
+
+- `healDie` owns the critical roll (`applyCriticalHealing`) and returns the actual healed amount (crit-doubled, clamped to missing health). Every heal path should route through it so a critical doubles the heal; a caller that recomputes the base amount silently loses the double. The Fountain of Love combat-end heal applies `applyCriticalHealing` directly because it writes health in a bulk map, and must keep using `critHeal.amount`.
 
 ## attackCountIncrease resolution
 

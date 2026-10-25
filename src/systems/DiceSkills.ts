@@ -29,13 +29,15 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   maxRevives?: number;
   dontReviveWhenLastOneStanding?: boolean;
   allyExtraAttacks?: number;
+  foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
+  grantAttacksToRandomFoe?: number;
+  grantAttacksTargeting?: DiceTargetingMode;
   targetingMode?: 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
   statusEffect?: DiceStatusEffect;
   statusDuration?: number;
   maxStacks?: number;
-  activeManaNeeded?: number;
-  activeAllyExtraAttacks?: number;
+  manaNeeded?: number;
   onTransformedExtraAttacks?: number;
   attackDelta?: number;
   activeAttackDelta?: number;
@@ -170,6 +172,27 @@ const VALID_SKILL_TYPES: readonly DiceSkillType[] = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function resolveGrantAttackValue(
+  modifiers: DiceSkillModifier[],
+  key: 'grantAttacksToAlly' | 'grantAttacksToRandomFoe'
+): number | undefined {
+  const value = modifiers
+    .map((modifier) => (modifier as Record<string, unknown>)[key])
+    .find((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate));
+  return value === undefined ? undefined : Math.max(0, value);
+}
+
+function resolveGrantAttackTargeting(
+  modifiers: DiceSkillModifier[],
+  key: 'grantAttacksToAlly' | 'grantAttacksToRandomFoe'
+): DiceTargetingMode | undefined {
+  const source = modifiers.find((modifier) => {
+    const value = (modifier as Record<string, unknown>)[key];
+    return typeof value === 'number' && Number.isFinite(value);
+  });
+  return (source as { skillTargeting?: DiceTargetingMode } | undefined)?.skillTargeting;
 }
 
 function getValidSkillModifier(value: unknown): DiceSkillModifier | undefined {
@@ -555,17 +578,16 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     maxRevives,
     dontReviveWhenLastOneStanding,
     allyExtraAttacks: modifiers?.allyExtraAttacks ?? 0,
-    grantAttacksToAlly: (() => {
-      const value = (modifiers as { grantAttacksToAlly?: unknown } | undefined)?.grantAttacksToAlly;
-      return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : undefined;
-    })(),
+    foeExtraAttacks: modifiers?.foeExtraAttacks ?? 0,
+    grantAttacksToAlly: resolveGrantAttackValue(allModifiers, 'grantAttacksToAlly'),
+    grantAttacksToRandomFoe: resolveGrantAttackValue(allModifiers, 'grantAttacksToRandomFoe'),
+    grantAttacksTargeting: resolveGrantAttackTargeting(allModifiers, 'grantAttacksToAlly'),
     targetingMode: validDefinition.targetingMode,
     statusEffect: parseStatusEffect((modifiers as { statusEffect?: string } | undefined)?.statusEffect),
     statusDuration: (selectedStatusModifiers as { statusDuration?: number } | undefined)?.statusDuration,
     ...statusDurationProperties,
     maxStacks: (modifiers as { maxStacks?: number } | undefined)?.maxStacks,
-    activeManaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
-    activeAllyExtraAttacks: activeSkill ? (activeModifiers?.allyExtraAttacks ?? 0) : 0,
+    manaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
     attackCountIncrease: maxAttackCountIncrease,
     unlockAtClass,
     numAttacksBoosted: (modifiers as { numAttacksBoosted?: number } | undefined)?.numAttacksBoosted,

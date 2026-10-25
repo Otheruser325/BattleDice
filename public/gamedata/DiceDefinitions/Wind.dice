@@ -31,8 +31,8 @@
         "skills": [
           {
             "description": "Shoots three times as many attacks for 2 turns without spending an attack, then cannot gain mana again until the effect ends.",
+            "manaNeeded": 15,
             "modifiers": {
-              "manaNeeded": 15,
               "attackCountIncrease": 2
             }
           }

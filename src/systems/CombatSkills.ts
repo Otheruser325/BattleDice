@@ -612,8 +612,10 @@ export function executeCombatStartSkillEffects(
     result.specialAttackTarget = target;
   }
 
-  const bonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (bonus > 0) applyBonusAttacks(result, bonus);
+  const aura = meta.allyExtraAttacks ?? 0;
+  if (aura > 0) applyBonusAttacks(result, aura);
+  const grant = meta.grantAttacksToAlly ?? 0;
+  if (grant > 0) result.grantAttacksToAlly = grant;
   if (!target?.gridPosition) return result;
 
   const splashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
@@ -667,7 +669,7 @@ export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition
       if (!definition) return null;
       if (!getValidSkillDefinitions(definition).some((skill) => skill.type === 'CombatStart')) return null;
       const startMeta = getRuntimeSkillMetaForTrigger(definition, 'CombatStart');
-      const extraAttacks = startMeta.allyExtraAttacks ?? startMeta.grantAttacksToAlly ?? 0;
+      const extraAttacks = startMeta.allyExtraAttacks ?? 0;
       return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
     })
     .filter((aura): aura is { sourceId: string; extraAttacks: number } => aura !== null);
@@ -818,7 +820,7 @@ export function executeActiveSkillEffects(
   const meta = getUnlockedSkillMeta(definition, classLevel, 'Active', activeSlot?.skillIndex);
   if (!meta) return result;
 
-  const manaNeeded = activeSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 0);
+  const manaNeeded = activeSlot?.manaNeeded ?? (meta.manaNeeded ?? 0);
   const canCastActive = manaNeeded > 0 && currentMana >= manaNeeded;
   if (!canCastActive) {
     result.needsMana = manaNeeded > 0;
@@ -852,7 +854,7 @@ export function executeActiveSkillEffects(
   }
 
   if (meta.meteorDamage !== undefined || meta.meteorCount !== undefined) {
-    const meteorManaNeeded = activeSlot?.manaNeeded ?? (meta.activeManaNeeded ?? 7);
+    const meteorManaNeeded = activeSlot?.manaNeeded ?? (meta.manaNeeded ?? 7);
     if (currentMana >= meteorManaNeeded) {
       result.meteorStrike = {
         damage: meta.meteorDamage ?? 60,
@@ -949,7 +951,7 @@ export function executeActiveSkillEffects(
     result.extraAttacksTurns = meta.activeDurationTurns;
   }
 
-  const allyBonus = meta.activeAllyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
+  const allyBonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
   if (allyBonus > 0) {
     result.extraAttacksTurns = meta.activeDurationTurns;
     applyBonusAttacks(result, allyBonus);

@@ -3567,6 +3567,7 @@ export class ArenaScene extends Phaser.Scene {
           || result.summonType
           || result.specialAttackDamage !== undefined
           || result.bonusAttacks !== undefined
+          || result.grantAttacksToAlly !== undefined
           || result.statusApplications?.length
           || result.splashTargets?.length
           || result.heatwaveDamageAmount !== undefined
@@ -3582,6 +3583,19 @@ export class ArenaScene extends Phaser.Scene {
         await this.applySpecialSkillAttack(attacker, result.specialAttackDamage, result.specialAttackTarget, startMeta, 'Combat-start attack');
       }
       if (startMeta.activeStatusEffect !== 'taunt') this.applyStatusApplications(result.statusApplications);
+      if (result.grantAttacksToAlly && result.grantAttacksToAlly > 0) {
+        const recipient = this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly);
+        if (recipient) {
+          this.recordAttackCountEffect(recipient.instanceId, result.grantAttacksToAlly);
+          this.gameState = {
+            ...this.gameState,
+            dice: this.gameState.dice.map((die) => die.instanceId === recipient.instanceId
+              ? { ...die, attacksRemaining: die.attacksRemaining + result.grantAttacksToAlly!, hasFinishedAttacking: false }
+              : die)
+          };
+          this.addCombatActionDetail(`${startSkill?.title ?? 'Combat-start skill'} grants +${result.grantAttacksToAlly} attack${result.grantAttacksToAlly === 1 ? '' : 's'} to ${this.getCombatDieName(recipient)}`);
+        }
+      }
       if (result.splashTargets?.length) {
         this.playSplashSfxForDie(attacker, startMeta);
         for (const victim of result.splashTargets) {
@@ -4929,7 +4943,7 @@ export class ArenaScene extends Phaser.Scene {
           skipBasicAttack
             ? `${ownerName} ${this.getCombatDieName(attacker)} uses ${activeSlot?.title ?? 'active skill'}${details}!`
             : attackerMeta?.healOnAttack
-              ? `${ownerName} ${this.getCombatDieName(attacker)} uses Druidic Essence to heal ${target.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} health${basicHealCritical ? ' (CRITICAL)' : ''}${details}!`
+              ? `${ownerName} ${this.getCombatDieName(attacker)} heals ${target.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} health${basicHealCritical ? ' (CRITICAL)' : ''}${details}!`
               : `${ownerName} ${this.getCombatDieName(attacker)} attacks ${this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} damage${basicAttackCritical ? ' (CRITICAL)' : ''}!${details}`
         );
 
@@ -5567,14 +5581,16 @@ export class ArenaScene extends Phaser.Scene {
         * this.getDiceCardSkillDamageMultiplier(attacker)
     ));
     const healedIds = new Set<string>();
+    let healedTotal = 0;
     let critical = false;
     const healOne = (die: DiceInstanceState) => {
       if (healedIds.has(die.instanceId)) return;
       healedIds.add(die.instanceId);
       const healResult = this.healDie(die.instanceId, healAmount);
+      healedTotal += healResult.healed;
       if (healResult.critical) critical = true;
       this.animateSkillEffect('heal', attacker, die);
-      this.addCombatActionDetail(`Druidic Essence heals ${die.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(die)} for ${formatCompact(healAmount)} health${healResult.critical ? ' (CRITICAL)' : ''}`);
+      this.addCombatActionDetail(`heals ${die.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(die)} for ${formatCompact(healResult.healed)} health${healResult.critical ? ' (CRITICAL)' : ''}`);
     };
     healOne(primary);
     const ricochetCount = Math.max(0, Math.floor(meta.ricochetCount ?? 1));
@@ -5586,7 +5602,7 @@ export class ArenaScene extends Phaser.Scene {
       .sort((a, b) => (a.die.currentHealth / a.die.maxHealth) - (b.die.currentHealth / b.die.maxHealth) || a.distance - b.distance || a.die.instanceId.localeCompare(b.die.instanceId))
       .slice(0, ricochetCount)
       .forEach(({ die }) => healOne(die));
-    return { healed: healAmount * healedIds.size, critical };
+    return { healed: healedTotal, critical };
   }
 
   private transformToAlternateForm(attacker: DiceInstanceState) {
@@ -5783,7 +5799,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (result.bonusAttacks && result.bonusAttacks > 0) {
       const recipient = result.grantAttacksToAlly !== undefined
-        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly, meta.targetingMode)
+        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly)
         : attacker;
       if (recipient) {
         this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
@@ -6021,7 +6037,7 @@ export class ArenaScene extends Phaser.Scene {
       this.playSkillSfxForDie(attacker, meta);
       const healResult = this.healDie(healTarget.instanceId, healAmount);
       this.animateSkillEffect('heal', attacker, healTarget);
-      this.addCombatActionDetail(`${activeSlot.title} heals ${healTarget.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(healTarget)} for ${formatCompact(healAmount)} health${this.criticalSuffix(healResult.critical)}`);
+      this.addCombatActionDetail(`${activeSlot.title} heals ${healTarget.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(healTarget)} for ${formatCompact(healResult.healed)} health${this.criticalSuffix(healResult.critical)}`);
     }
 
     if (result.shieldGain !== undefined) {
@@ -6104,7 +6120,7 @@ export class ArenaScene extends Phaser.Scene {
 
     if (result.bonusAttacks && result.bonusAttacks > 0) {
       const recipient = result.grantAttacksToAlly !== undefined
-        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly, meta.activeSkillTargeting ?? meta.targetingMode)
+        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly, meta.activeSkillTargeting)
         : attacker;
       if (recipient) {
         this.gameState = {
@@ -6312,7 +6328,7 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition);
     if (!result.bonusAttacks || result.bonusAttacks <= 0) return;
     const recipient = result.grantAttacksToAlly !== undefined
-      ? this.selectAllyAttackRecipient(transformed, this.gameState, result.grantAttacksToAlly, meta.targetingMode)
+      ? this.selectAllyAttackRecipient(transformed, this.gameState, result.grantAttacksToAlly)
       : transformed;
     if (!recipient) return;
     this.playSkillSfxForDie(transformed, meta);
@@ -6374,7 +6390,7 @@ export class ArenaScene extends Phaser.Scene {
 
       if (result.bonusAttacks && result.bonusAttacks > 0) {
         const recipient = result.grantAttacksToAlly !== undefined
-          ? this.selectAllyAttackRecipient(die, this.gameState, result.grantAttacksToAlly, definition.targetingMode)
+          ? this.selectAllyAttackRecipient(die, this.gameState, result.grantAttacksToAlly)
           : die;
         if (recipient) {
           this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
@@ -7383,13 +7399,14 @@ export class ArenaScene extends Phaser.Scene {
     this.writeCombatLog(`⚖️ ${this.getCombatDieName(attacker)} Judgment Hammer marks ${hammerMarkedName}${struckLabel}!`);
   }
 
-  private selectAllyAttackRecipient(source: DiceInstanceState, state: MatchBattleState, _bonus: number, mode?: DiceTargetingMode): DiceInstanceState | undefined {
+  private selectAllyAttackRecipient(source: DiceInstanceState, state: MatchBattleState, _bonus: number, skillTargeting?: DiceTargetingMode): DiceInstanceState | undefined {
     const definition = this.getDefinitionForInstance(source);
-    const targetMode = mode ?? (definition ? (getRuntimeSkillMeta(definition).targetingMode ?? 'Nearest') : 'Nearest');
+    const meta = definition ? getRuntimeSkillMeta(definition) : undefined;
+    const mode = skillTargeting ?? meta?.grantAttacksTargeting ?? meta?.skillTargeting ?? 'Random';
     const candidates = state.dice
       .filter((die) => die.ownerId === source.ownerId && die.instanceId !== source.instanceId && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition))
       .map((die) => ({ die: die as DiceInstanceState & { gridPosition: { row: number; col: number } }, distance: this.getAllyHealingDistance(source, die) }));
-    return this.selectTargetCandidate(candidates, targetMode);
+    return this.selectTargetCandidate(candidates, mode);
   }
 
   private async applyOnDeathSkillEffects(defeated: DiceInstanceState, _attacker: DiceInstanceState) {
