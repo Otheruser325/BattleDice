@@ -31,8 +31,9 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   allyExtraAttacks?: number;
   foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
-  grantAttacksToRandomFoe?: number;
+  grantAttacksToFoe?: number;
   grantAttacksTargeting?: DiceTargetingMode;
+  grantAttacksToFoeTargeting?: DiceTargetingMode;
   targetingMode?: 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
   statusEffect?: DiceStatusEffect;
   statusDuration?: number;
@@ -174,9 +175,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+type GrantAttackKey = 'grantAttacksToAlly' | 'grantAttacksToFoe';
+
 function resolveGrantAttackValue(
   modifiers: DiceSkillModifier[],
-  key: 'grantAttacksToAlly' | 'grantAttacksToRandomFoe'
+  key: GrantAttackKey
 ): number | undefined {
   const value = modifiers
     .map((modifier) => (modifier as Record<string, unknown>)[key])
@@ -186,7 +189,7 @@ function resolveGrantAttackValue(
 
 function resolveGrantAttackTargeting(
   modifiers: DiceSkillModifier[],
-  key: 'grantAttacksToAlly' | 'grantAttacksToRandomFoe'
+  key: GrantAttackKey
 ): DiceTargetingMode | undefined {
   const source = modifiers.find((modifier) => {
     const value = (modifier as Record<string, unknown>)[key];
@@ -386,6 +389,48 @@ export function getRuntimeSkillMetaForTrigger(definition: DiceDefinition | undef
   return getRuntimeSkillMeta({ ...validDefinition, skills: triggerSkills }, undefined, true);
 }
 
+// A skill that declares a skillRangeThreshold gates every modifier it carries behind that proximity.
+// The gate is evaluated per triggering skill so a whole-die meta lookup cannot leak an in-range bonus
+// (Leon's critical chance) outside the range the skill's own text promises.
+const RANGE_THRESHOLD_KEYS: Array<keyof DiceSkillRuntimeMeta> = [
+  'attackCountIncrease',
+  'criticalChanceIncrease',
+  'criticalDamageIncrease',
+  'allyExtraAttacks',
+  'foeExtraAttacks',
+  'grantAttacksToAlly',
+  'grantAttacksToFoe'
+];
+
+export function getRangeThresholdForMeta(meta: DiceSkillRuntimeMeta): number | undefined {
+  const threshold = meta.skillRangeThreshold;
+  return typeof threshold === 'number' && Number.isFinite(threshold) ? Math.max(0, threshold) : undefined;
+}
+
+export function isRangeThresholdSatisfied(meta: DiceSkillRuntimeMeta, distance: number, effectiveRange: number): boolean {
+  const threshold = getRangeThresholdForMeta(meta);
+  if (threshold === undefined) return true;
+  if (!Number.isFinite(distance)) return false;
+  return distance <= Math.max(1, effectiveRange - threshold);
+}
+
+export function gateMetaByRangeThreshold(meta: DiceSkillRuntimeMeta, inRange: boolean): DiceSkillRuntimeMeta {
+  if (inRange || getRangeThresholdForMeta(meta) === undefined) return meta;
+  const gated: DiceSkillRuntimeMeta = { ...meta };
+  RANGE_THRESHOLD_KEYS.forEach((key) => {
+    delete (gated as Record<string, unknown>)[key];
+  });
+  return gated;
+}
+
+export function resolveSkillExtraAttacks(meta: DiceSkillRuntimeMeta): { allyBonus: number; foeBonus: number; grantsToAlly: number; grantsToFoe: number } {
+  const allyBonus = Math.max(0, meta.allyExtraAttacks ?? 0);
+  const foeBonus = Math.max(0, meta.foeExtraAttacks ?? 0);
+  const grantsToAlly = Math.max(0, meta.grantAttacksToAlly ?? 0);
+  const grantsToFoe = Math.max(0, meta.grantAttacksToFoe ?? 0);
+  return { allyBonus, foeBonus, grantsToAlly, grantsToFoe };
+}
+
 export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, activeSkillIndex?: number, includePhaseHooks = false): DiceSkillRuntimeMeta {
   const validDefinition = getValidDefinition(definition);
   const skills = includePhaseHooks
@@ -580,8 +625,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     allyExtraAttacks: modifiers?.allyExtraAttacks ?? 0,
     foeExtraAttacks: modifiers?.foeExtraAttacks ?? 0,
     grantAttacksToAlly: resolveGrantAttackValue(allModifiers, 'grantAttacksToAlly'),
-    grantAttacksToRandomFoe: resolveGrantAttackValue(allModifiers, 'grantAttacksToRandomFoe'),
+    grantAttacksToFoe: resolveGrantAttackValue(allModifiers, 'grantAttacksToFoe'),
     grantAttacksTargeting: resolveGrantAttackTargeting(allModifiers, 'grantAttacksToAlly'),
+    grantAttacksToFoeTargeting: resolveGrantAttackTargeting(allModifiers, 'grantAttacksToFoe'),
     targetingMode: validDefinition.targetingMode,
     statusEffect: parseStatusEffect((modifiers as { statusEffect?: string } | undefined)?.statusEffect),
     statusDuration: (selectedStatusModifiers as { statusDuration?: number } | undefined)?.statusDuration,

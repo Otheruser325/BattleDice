@@ -17,7 +17,7 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   allyExtraAttacks?: number;
   foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
-  grantAttacksToRandomFoe?: number;
+  grantAttacksToFoe?: number;
   attackCountIncrease?: number;
   unlockAtClass?: number;
   statusDuration?: number;

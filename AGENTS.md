@@ -32,6 +32,7 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 - The Druidic Essence heal branch (`healOnAttack`) must mirror the damage branch: call `spendBasicAttack` once, loop `applyBasicHeal` per projectile, and accumulate `basicAttackHitCount` so the combat log appends "N times" for multi-projectile heals. Do not replace this with a single `applyBasicHeal` plus `spendAttack`.
 - `applyBasicHeal` must accumulate the actual amount `healDie` reports (crit-doubled, capped at missing health) rather than recomputing `baseAmount * targetCount`; the latter drops the critical double from both the returned total and the log line. `healDie` owns the critical roll, so callers report `healResult.healed` and `healResult.critical`.
 - The basic-attack heal log is generic (`"<owner> <die> heals <target> for N health!"`), matching the damage line's shape. Do not hardcode a skill name (the old `uses Druidic Essence` text assumed Druid and misreported every other `healOnAttack` source).
+- The info popup separates the two effects: `attackCountIncrease` (via `basicAttacksPerAttackByInstance`) is shown as its own `Projectile Count +/-` line and is excluded from the `Attack Count` total, because the stored `count` is `1 + attackCountIncrease` (Wind's Gale Tempo reads as "Projectile Count +1", not an attack count). Do not fold the projectile delta back into the attack-count sum.
 
 ## Skill mana metadata
 
@@ -46,7 +47,8 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 
 - `allyExtraAttacks` is a die-wide CombatStart aura: `collectCombatStartAuras` folds it into the pip/attack-count bonus for every other friendly die. `grantAttacksToAlly` is a one-ally grant: it must not also feed the aura collection, or the recipient receives the bonus twice. `executeCombatStartSkillEffects` sets `result.grantAttacksToAlly` and the ArenaScene CombatStart branch resolves one recipient.
 - `selectAllyAttackRecipient` targets a random other ally by default and is distance-independent; it only uses a specific mode when the granting skill sets `skillTargeting`. Resolution order is the explicit caller mode, then the granting skill's `skillTargeting`, then `Random`. Never default to the die's `targetingMode` — that made "random ally" buffs follow the caster's own attack targeting.
-- `foeExtraAttacks` / `grantAttacksToRandomFoe` mirror the ally fields for future foe-facing skills; they are resolved into the runtime meta but not yet consumed.
+- `foeExtraAttacks` (die-wide aura) and `grantAttacksToFoe` (one-foe grant) mirror the ally fields as a downside for the caster's own side. `foeExtraAttacks` folds into `computeCombatStartFoeBonus`, which adds the opposing side's CombatStart aura to this die's pip/attack count at combat start; `grantAttacksToFoe` resolves one opposing recipient through `grantFoeAttacks`/`selectFoeAttackRecipient` (same resolution order as the ally variant, but candidates are the opposing side).
+- `applyAllyExtraAttacks`/`applyFoeExtraAttacks` resolve both fields for every non-CombatStart trigger (OnDamaged, OnKill, OnDeath, OnTransformed, Passive, Active, CombatEnd) so any of them can hand out attacks. The ally helper still routes its total onto `bonusAttacks` + `grantAttacksToAlly`; the foe helper sets only `grantAttacksToFoe`, so a foe-only skill does not add attacks to the caster. CombatStart uses `applyCombatStartGrants` instead because its auras are collected die-wide rather than granted to one recipient.
 
 ## Healing criticals
 
@@ -56,6 +58,7 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 
 - `attackCountIncrease` is a die-wide attack multiplier. `getRuntimeSkillMeta` resolves it as the maximum positive value across every skill modifier that can drive an attack (Active, Passive, OnDamaged, ...), not just the selected Active skill or `skills[0]`. A talent may relocate the property onto a different skill, and Wind's Mighty Wind raises it above Gale Tempo's base value.
 - Non-finite or non-positive `attackCountIncrease` values are ignored, so a malformed value falls back to `0` (one projectile) instead of producing `NaN` projectile counts.
+- `skillRangeThreshold` gates **every** modifier the skill carries, not just `attackCountIncrease`. `isRangeThresholdSatisfied` treats it as "the target must be within `effectiveRange - threshold`", and `gateMetaByRangeThreshold` strips the gated fields (`attackCountIncrease`, `criticalChanceIncrease`, `criticalDamageIncrease`, and the four attack-grant fields) when out of range. Resolve the gate from the triggering skill's meta (`getRuntimeSkillMetaForTrigger`) so a whole-die lookup cannot leak an in-range bonus — Leon's Furious Claw only grants its 25% crit within 2 tiles of the target.
 
 ## Chain targeting
 

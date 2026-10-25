@@ -1,5 +1,5 @@
 import type { DiceDefinition, DiceInstanceState, DiceSkillType, DiceStatusEffect, DiceTargetingMode } from '../types/game';
-import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getPipMappedRate, resolvePipScaledDamage, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getSkillLockClass, type DiceSkillRuntimeMeta } from './DiceSkills';
+import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getPipMappedRate, resolvePipScaledDamage, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getSkillLockClass, resolveSkillExtraAttacks, type DiceSkillRuntimeMeta } from './DiceSkills';
 import { getBoardSideCombatDistance } from './CombatRange';
 import { formatCompact } from '../utils/FormatManager';
 import { secureChance, securePick } from '../utils/RandomManager';
@@ -122,6 +122,7 @@ export interface SkillEffectResult {
   growthDelta?: number;
   missingHealRate?: number;
   grantAttacksToAlly?: number;
+  grantAttacksToFoe?: number;
   specialAttackDamage?: number;
   specialAttackTarget?: DiceInstanceState;
   revenge?: { hits: number; damage: number; range: number; mode: DiceTargetingMode };
@@ -134,7 +135,7 @@ export interface SkillEffectResult {
 }
 
 export interface CombatStartResult extends SkillEffectResult {
-  combatStartAuras: { sourceId: string; extraAttacks: number }[];
+  combatStartAuras: { sourceId: string; extraAttacks: number; foeExtraAttacks: number }[];
   splashTargets?: DiceInstanceState[];
   splashDamageAmount?: number;
   chainTarget?: DiceInstanceState;
@@ -219,6 +220,38 @@ function createBaseResult(): SkillEffectResult {
 
 function applyBonusAttacks(result: SkillEffectResult, bonus: number): void {
   result.bonusAttacks = (result.bonusAttacks ?? 0) + bonus;
+}
+
+// A skill can grant extra attacks to the caster's allies (a buff) and to the opposing side (a
+// downside). Both resolve through every trigger type so an on-damaged/on-kill effect can hand out
+// attacks the same way a combat-start aura does. Outside CombatStart there is no aura collection,
+// so allyExtraAttacks/foeExtraAttacks collapse into the single-target grants alongside their
+// grantAttacksToAlly/grantAttacksToFoe counterparts.
+function applyAllyExtraAttacks(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): number {
+  const { allyBonus, grantsToAlly } = resolveSkillExtraAttacks(meta);
+  const total = allyBonus + grantsToAlly;
+  if (total <= 0) return 0;
+  applyBonusAttacks(result, total);
+  result.grantAttacksToAlly = total;
+  return total;
+}
+
+function applyFoeExtraAttacks(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): number {
+  const { foeBonus, grantsToFoe } = resolveSkillExtraAttacks(meta);
+  const total = foeBonus + grantsToFoe;
+  if (total <= 0) return 0;
+  result.grantAttacksToFoe = total;
+  return total;
+}
+
+// CombatStart keeps allyExtraAttacks/foeExtraAttacks as die-wide auras (collected by
+// collectCombatStartAuras and applied once per side); only the explicit grants become single-target
+// handouts here. The aura total is still reported on bonusAttacks so the phase can tell the skill fired.
+function applyCombatStartGrants(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): void {
+  const { allyBonus, foeBonus, grantsToAlly, grantsToFoe } = resolveSkillExtraAttacks(meta);
+  if (allyBonus + foeBonus > 0) applyBonusAttacks(result, allyBonus + foeBonus);
+  if (grantsToAlly > 0) result.grantAttacksToAlly = grantsToAlly;
+  if (grantsToFoe > 0) result.grantAttacksToFoe = grantsToFoe;
 }
 
 function applyGrowth(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): void {
@@ -485,13 +518,10 @@ export function executeOnDamagedSkillEffects(
     result.specialAttackTarget = attacker;
   }
 
-  const bonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (bonus > 0) {
-    applyBonusAttacks(result, bonus);
-    result.extraEffects = [`OnDamaged grants +${bonus} attacks to ally`];
-  }
-
-  if (bonus > 0) result.grantAttacksToAlly = bonus;
+  const allyBonus = applyAllyExtraAttacks(result, meta);
+  if (allyBonus > 0) result.extraEffects = [`OnDamaged grants +${allyBonus} attacks to ally`];
+  const foeBonus = applyFoeExtraAttacks(result, meta);
+  if (foeBonus > 0) result.extraEffects = [...(result.extraEffects ?? []), `OnDamaged grants +${foeBonus} attacks to the opposing side`];
 
   if ((meta.shield ?? 0) > 0) {
     result.shieldGain = Math.max(1, Math.ceil(meta.shield ?? 0));
@@ -517,14 +547,10 @@ export function executeOnDeathSkillEffects(
     result.specialAttackTarget = attacker;
   }
 
-  const bonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (bonus > 0) {
-    applyBonusAttacks(result, bonus);
-    result.grantAttacksToAlly = bonus;
-    result.extraEffects = [`OnDeath grants +${bonus} attacks to ally`];
-  }
-
-  if (bonus > 0) result.grantAttacksToAlly = bonus;
+  const allyBonus = applyAllyExtraAttacks(result, meta);
+  if (allyBonus > 0) result.extraEffects = [`OnDeath grants +${allyBonus} attacks to ally`];
+  const foeBonus = applyFoeExtraAttacks(result, meta);
+  if (foeBonus > 0) result.extraEffects = [...(result.extraEffects ?? []), `OnDeath grants +${foeBonus} attacks to the opposing side`];
 
   return result;
 }
@@ -542,12 +568,14 @@ export function executeOnTransformedSkillEffects(
   applySummon(result, meta);
   if (meta.transformAttackDamage !== undefined) result.specialAttackDamage = Math.max(1, meta.transformAttackDamage);
 
-  const bonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (bonus > 0) {
-    applyBonusAttacks(result, bonus);
-    result.grantAttacksToAlly = bonus;
+  const allyBonus = applyAllyExtraAttacks(result, meta);
+  const foeBonus = applyFoeExtraAttacks(result, meta);
+  if (allyBonus > 0 || foeBonus > 0) {
     result.extraAttacksTurns = meta.onTransformedDurationTurns ?? 1;
-    result.extraEffects = [`OnTransformed grants +${bonus} attacks`];
+    const effects: string[] = [];
+    if (allyBonus > 0) effects.push(`OnTransformed grants +${allyBonus} attacks`);
+    if (foeBonus > 0) effects.push(`OnTransformed grants +${foeBonus} attacks to the opposing side`);
+    result.extraEffects = effects;
   }
 
   void transformed;
@@ -567,12 +595,10 @@ export function executeOnKillSkillEffects(
   applySummon(result, meta);
   if (meta.onKillDamage !== undefined) result.specialAttackDamage = Math.max(1, meta.onKillDamage);
 
-  const bonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (bonus > 0) {
-    applyBonusAttacks(result, bonus);
-    result.grantAttacksToAlly = bonus;
-    result.extraEffects = [`OnKill grants +${bonus} attacks to ally`];
-  }
+  const allyBonus = applyAllyExtraAttacks(result, meta);
+  if (allyBonus > 0) result.extraEffects = [`OnKill grants +${allyBonus} attacks to ally`];
+  const foeBonus = applyFoeExtraAttacks(result, meta);
+  if (foeBonus > 0) result.extraEffects = [...(result.extraEffects ?? []), `OnKill grants +${foeBonus} attacks to the opposing side`];
 
   if (meta.hasHammer === true) {
     result.hammerTarget = defeated;
@@ -612,10 +638,7 @@ export function executeCombatStartSkillEffects(
     result.specialAttackTarget = target;
   }
 
-  const aura = meta.allyExtraAttacks ?? 0;
-  if (aura > 0) applyBonusAttacks(result, aura);
-  const grant = meta.grantAttacksToAlly ?? 0;
-  if (grant > 0) result.grantAttacksToAlly = grant;
+  applyCombatStartGrants(result, meta);
   if (!target?.gridPosition) return result;
 
   const splashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
@@ -662,7 +685,7 @@ export function executeCombatStartSkillEffects(
   return result;
 }
 
-export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): { sourceId: string; extraAttacks: number }[] {
+export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): { sourceId: string; extraAttacks: number; foeExtraAttacks: number }[] {
   return dice
     .map((die) => {
       const definition = getDefinition(die);
@@ -670,9 +693,10 @@ export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition
       if (!getValidSkillDefinitions(definition).some((skill) => skill.type === 'CombatStart')) return null;
       const startMeta = getRuntimeSkillMetaForTrigger(definition, 'CombatStart');
       const extraAttacks = startMeta.allyExtraAttacks ?? 0;
-      return extraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks } : null;
+      const foeExtraAttacks = startMeta.foeExtraAttacks ?? 0;
+      return extraAttacks > 0 || foeExtraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks, foeExtraAttacks } : null;
     })
-    .filter((aura): aura is { sourceId: string; extraAttacks: number } => aura !== null);
+    .filter((aura): aura is { sourceId: string; extraAttacks: number; foeExtraAttacks: number } => aura !== null);
 }
 
 export function computeCombatStartBonus(
@@ -682,6 +706,17 @@ export function computeCombatStartBonus(
 ): number {
   const auras = die.ownerId === 'player' ? playerAuras : enemyAuras;
   return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
+}
+
+// A foeExtraAttacks combat-start aura buffs the caster's opponents: it lands on this die when the
+// aura came from the opposing side, mirroring the ally aura on the same die.
+export function computeCombatStartFoeBonus(
+  die: DiceInstanceState,
+  playerAuras: { sourceId: string; foeExtraAttacks: number }[],
+  enemyAuras: { sourceId: string; foeExtraAttacks: number }[]
+): number {
+  const opposingAuras = die.ownerId === 'player' ? enemyAuras : playerAuras;
+  return opposingAuras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.foeExtraAttacks), 0);
 }
 
 export function executeCombatEndSkillEffects(
@@ -696,11 +731,8 @@ export function executeCombatEndSkillEffects(
   applySummon(result, meta);
   if (meta.combatEndDamage !== undefined) result.specialAttackDamage = Math.max(1, meta.combatEndDamage);
 
-  const bonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (bonus > 0) {
-    applyBonusAttacks(result, bonus);
-    result.grantAttacksToAlly = bonus;
-  }
+  applyAllyExtraAttacks(result, meta);
+  applyFoeExtraAttacks(result, meta);
 
   return result;
 }
@@ -721,11 +753,8 @@ export function executePassiveSkillEffects(
   applySummon(result, meta);
   if (!target?.gridPosition && !meta.canFireWithNoTargets) return result;
   applyGrowth(result, meta);
-  const bonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (bonus > 0) {
-    applyBonusAttacks(result, bonus);
-    result.grantAttacksToAlly = bonus;
-  }
+  applyAllyExtraAttacks(result, meta);
+  applyFoeExtraAttacks(result, meta);
 
   if (!target?.gridPosition) return result;
   addStatusApplication(result, meta, definition, attacker, target, pips);
@@ -951,12 +980,10 @@ export function executeActiveSkillEffects(
     result.extraAttacksTurns = meta.activeDurationTurns;
   }
 
-  const allyBonus = meta.allyExtraAttacks ?? meta.grantAttacksToAlly ?? 0;
-  if (allyBonus > 0) {
-    result.extraAttacksTurns = meta.activeDurationTurns;
-    applyBonusAttacks(result, allyBonus);
-    result.grantAttacksToAlly = allyBonus;
-  }
+  const allyBonus = applyAllyExtraAttacks(result, meta);
+  if (allyBonus > 0) result.extraAttacksTurns = meta.activeDurationTurns;
+  const foeBonus = applyFoeExtraAttacks(result, meta);
+  if (foeBonus > 0) result.extraAttacksTurns = meta.activeDurationTurns;
 
   if ((meta.armorShredRate ?? 0) > 0 && meta.activeDurationTurns !== undefined && target && (meta.activeStatusEffect === 'fracture' || meta.activeStatusEffect === undefined)) {
     if (target) result.armorShredTarget = target;
