@@ -20,8 +20,8 @@ import { AlertManager } from '../utils/AlertManager';
 import { PALETTE, getLayout } from '../ui/theme';
 import type { DiceTypeId, DiceInstanceState, DiceDefinition, DiceTargetingMode } from '../types/game';
 import { buildSkillIndex } from '../data/SkillLoader';
-import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getStatusEffectDurationFromModifiers, getSkillLockClass, getInitialTransformIndex, getAvailableTransformIndices, getPipTriggeredTransformIndex, getPipMappedRate, resolvePipScaledDamage } from '../systems/DiceSkills';
-import { CombatSkillOrchestrator, executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeOnTransformedSkillEffects, executeCombatStartSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeRevengeSkillEffects, applySkillDamageModifiers, getCombatStartManaEffect, getCombatStartTauntEffect, chooseInfiltratorPlacement, canSkillStrikeFirst, collectCombatStartAuras, computeCombatStartBonus, type CombatFlowContext, type CombatFlowPhase, type StatusEffectApplication } from '../systems/CombatSkills';
+import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getStatusEffectDurationFromModifiers, getSkillLockClass, getInitialTransformIndex, getAvailableTransformIndices, getPipTriggeredTransformIndex, getPipMappedRate, resolvePipScaledDamage, gateMetaByRangeThreshold, isRangeThresholdSatisfied } from '../systems/DiceSkills';
+import { CombatSkillOrchestrator, executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeOnTransformedSkillEffects, executeCombatStartSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeRevengeSkillEffects, applySkillDamageModifiers, getCombatStartManaEffect, getCombatStartTauntEffect, chooseInfiltratorPlacement, canSkillStrikeFirst, collectCombatStartAuras, computeCombatStartBonus, computeCombatStartFoeBonus, type CombatFlowContext, type CombatFlowPhase, type StatusEffectApplication } from '../systems/CombatSkills';
 import { getClassMultiplier, applyClassProgression, applyTransformStats, getTransformRecoveryRate, getClassScaledSkillDescription } from '../systems/ClassProgression';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
@@ -3337,12 +3337,12 @@ export class ArenaScene extends Phaser.Scene {
     const combatPositiveDelta = this.combatAttackCountPositiveDeltaByInstance.get(die.instanceId);
     const combatNegativeDelta = this.combatAttackCountNegativeDeltaByInstance.get(die.instanceId);
     const fireSupportBonus = this.getFireSupportBonus(die);
+    const projectileDelta = Math.max(0, (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) - 1);
     const additiveDelta = (combatDelta ?? 0)
       + (this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0)
       + (this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0)
       + (this.growthDeltaByInstance.get(die.instanceId) ?? 0)
-      + fireSupportBonus
-      + Math.max(0, (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) - 1);
+      + fireSupportBonus;
     const multiplier = this.attackMultiplierTurnsByInstance.get(die.instanceId)?.multiplier ?? 1;
     const multiplierDelta = multiplier === 1 ? 0 : Math.floor(Math.max(0, basePips + additiveDelta) * multiplier) - Math.max(0, basePips + additiveDelta);
     const attackCountDelta = additiveDelta + multiplierDelta;
@@ -3352,7 +3352,6 @@ export class ArenaScene extends Phaser.Scene {
       this.extraAttackTurnsByInstance.get(die.instanceId)?.extra ?? 0,
       Math.max(0, this.growthDeltaByInstance.get(die.instanceId) ?? 0),
       fireSupportBonus,
-      Math.max(0, (this.basicAttacksPerAttackByInstance.get(die.instanceId)?.count ?? 1) - 1),
       Math.max(0, multiplierDelta),
       Math.max(0, this.attackDeltaByInstance.get(die.instanceId)?.delta ?? 0)
     ].reduce((sum, delta) => sum + Math.max(0, delta), 0);
@@ -3365,10 +3364,12 @@ export class ArenaScene extends Phaser.Scene {
     const lines: Array<{ text: string; color: string }> = [];
     if (seen.positive && positiveDelta > 0) lines.push({ text: `Attack Count +${positiveDelta}`, color: '#6dff8f' });
     if (seen.negative && negativeDelta < 0) lines.push({ text: `Attack Count ${negativeDelta}`, color: '#ff6b6b' });
-    if (lines.length > 0) return lines;
-    if (attackCountDelta > 0 && seen.positive) return [{ text: `Attack Count +${attackCountDelta}`, color: '#6dff8f' }];
-    if (attackCountDelta < 0 && seen.negative) return [{ text: `Attack Count ${attackCountDelta}`, color: '#ff6b6b' }];
-    return [];
+    if (lines.length === 0) {
+      if (attackCountDelta > 0 && seen.positive) lines.push({ text: `Attack Count +${attackCountDelta}`, color: '#6dff8f' });
+      else if (attackCountDelta < 0 && seen.negative) lines.push({ text: `Attack Count ${attackCountDelta}`, color: '#ff6b6b' });
+    }
+    if (seen.positive && projectileDelta > 0) lines.push({ text: `Projectile Count +${projectileDelta}`, color: '#6dff8f' });
+    return lines;
   }
 
   private getFireSupportBonus(die: DiceInstanceState): number {
@@ -3567,6 +3568,8 @@ export class ArenaScene extends Phaser.Scene {
           || result.summonType
           || result.specialAttackDamage !== undefined
           || result.bonusAttacks !== undefined
+          || result.grantAttacksToAlly !== undefined
+          || result.grantAttacksToFoe !== undefined
           || result.statusApplications?.length
           || result.splashTargets?.length
           || result.heatwaveDamageAmount !== undefined
@@ -3582,6 +3585,23 @@ export class ArenaScene extends Phaser.Scene {
         await this.applySpecialSkillAttack(attacker, result.specialAttackDamage, result.specialAttackTarget, startMeta, 'Combat-start attack');
       }
       if (startMeta.activeStatusEffect !== 'taunt') this.applyStatusApplications(result.statusApplications);
+      if (result.grantAttacksToAlly && result.grantAttacksToAlly > 0) {
+        const recipient = this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly);
+        if (recipient) {
+          this.recordAttackCountEffect(recipient.instanceId, result.grantAttacksToAlly);
+          this.gameState = {
+            ...this.gameState,
+            dice: this.gameState.dice.map((die) => die.instanceId === recipient.instanceId
+              ? { ...die, attacksRemaining: die.attacksRemaining + result.grantAttacksToAlly!, hasFinishedAttacking: false }
+              : die)
+          };
+          this.addCombatActionDetail(`${startSkill?.title ?? 'Combat-start skill'} grants +${result.grantAttacksToAlly} attack${result.grantAttacksToAlly === 1 ? '' : 's'} to ${this.getCombatDieName(recipient)}`);
+        }
+      }
+      if (result.grantAttacksToFoe && result.grantAttacksToFoe > 0) {
+        this.gameState = this.grantFoeAttacks(attacker, result.grantAttacksToFoe, this.gameState);
+        this.addCombatActionDetail(`${startSkill?.title ?? 'Combat-start skill'} grants +${result.grantAttacksToFoe} attack${result.grantAttacksToFoe === 1 ? '' : 's'} to the opposing side`);
+      }
       if (result.splashTargets?.length) {
         this.playSplashSfxForDie(attacker, startMeta);
         for (const victim of result.splashTargets) {
@@ -3633,6 +3653,7 @@ export class ArenaScene extends Phaser.Scene {
     const playerCombatStartAuras = collectCombatStartAuras(playerBoardDice, (die) => this.getDefinitionForInstance(die));
     const enemyCombatStartAuras = collectCombatStartAuras(enemyBoardDice, (die) => this.getDefinitionForInstance(die));
     const combatStartBonusFor = (die: DiceInstanceState) => computeCombatStartBonus(die, playerCombatStartAuras, enemyCombatStartAuras);
+    const combatStartFoeBonusFor = (die: DiceInstanceState) => computeCombatStartFoeBonus(die, playerCombatStartAuras, enemyCombatStartAuras);
     const rolledPipsFor = (die: DiceInstanceState) => die.ownerId === 'player'
       ? (this.dicePips.get(die.instanceId) ?? this.getPipCount(die.typeId))
       : (this.enemyDicePips.get(die.instanceId) ?? this.getPipCount(die.typeId));
@@ -3682,14 +3703,15 @@ export class ArenaScene extends Phaser.Scene {
         }
         const transformedDie = this.gameState.dice.find((candidate) => candidate.instanceId === die.instanceId) ?? die;
         const combatStartBonus = combatStartBonusFor(transformedDie);
-        const pips = basePips + combatStartBonus;
+        const combatStartFoeBonus = combatStartFoeBonusFor(transformedDie);
+        const pips = basePips + combatStartBonus + combatStartFoeBonus;
         const allyPipAttackAuras = transformedDie.ownerId === 'player' ? playerPipAttackAuras : enemyPipAttackAuras;
         const foePipAttackAuras = transformedDie.ownerId === 'player' ? enemyPipAttackAuras : playerPipAttackAuras;
         const pipAuraDelta = sumMatchingDelta(allyPipAttackAuras, transformedDie, 'ally') + sumMatchingDelta(foePipAttackAuras, transformedDie, 'foe');
         if (pipAuraDelta !== 0) this.animateTimeMark(transformedDie, pipAuraDelta > 0 ? 0x8fd5ff : 0xff6b6b);
-        const combatAttackCountDelta = combatStartBonus + pipAuraDelta;
-        const combatPositiveDelta = [combatStartBonus, pipAuraDelta].reduce((sum, delta) => sum + Math.max(0, delta), 0);
-        const combatNegativeDelta = [combatStartBonus, pipAuraDelta].reduce((sum, delta) => sum + Math.min(0, delta), 0);
+        const combatAttackCountDelta = combatStartBonus + combatStartFoeBonus + pipAuraDelta;
+        const combatPositiveDelta = [combatStartBonus, combatStartFoeBonus, pipAuraDelta].reduce((sum, delta) => sum + Math.max(0, delta), 0);
+        const combatNegativeDelta = [combatStartBonus, combatStartFoeBonus, pipAuraDelta].reduce((sum, delta) => sum + Math.min(0, delta), 0);
         this.combatAttackCountDeltaByInstance.set(die.instanceId, combatAttackCountDelta);
         this.combatAttackCountPositiveDeltaByInstance.set(die.instanceId, combatPositiveDelta);
         this.combatAttackCountNegativeDeltaByInstance.set(die.instanceId, combatNegativeDelta);
@@ -4869,8 +4891,14 @@ export class ArenaScene extends Phaser.Scene {
             const lowHpExploitMult = target.currentHealth < target.maxHealth * (attackerMeta?.lowHpThresholdRate ?? 0)
               ? 1 + (attackerMeta?.lowHpDamageBonusRate ?? 0)
               : 1;
-            const criticalChance = attackerMeta?.criticalChanceIncrease ?? 0;
-            const criticalDamageMultiplier = 2 + (attackerMeta?.criticalDamageIncrease ?? 0);
+            const gatedAttackerMeta = attackerMeta
+              ? gateMetaByRangeThreshold(
+                attackerMeta,
+                isRangeThresholdSatisfied(attackerMeta, this.getAttackDistance(attacker, target), this.getEffectiveAttackRange(attacker, attackerDef))
+              )
+              : undefined;
+            const criticalChance = gatedAttackerMeta?.criticalChanceIncrease ?? 0;
+            const criticalDamageMultiplier = 2 + (gatedAttackerMeta?.criticalDamageIncrease ?? 0);
             const bearCrit = secureChance(this.getCriticalChance(criticalChance, criticalChance > 0));
             const bearCritMult = bearCrit ? criticalDamageMultiplier : 1;
              const proportionalDamage = ironBonus + solitudeBonus;
@@ -4929,7 +4957,7 @@ export class ArenaScene extends Phaser.Scene {
           skipBasicAttack
             ? `${ownerName} ${this.getCombatDieName(attacker)} uses ${activeSlot?.title ?? 'active skill'}${details}!`
             : attackerMeta?.healOnAttack
-              ? `${ownerName} ${this.getCombatDieName(attacker)} uses Druidic Essence to heal ${target.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} health${basicHealCritical ? ' (CRITICAL)' : ''}${details}!`
+              ? `${ownerName} ${this.getCombatDieName(attacker)} heals ${target.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} health${basicHealCritical ? ' (CRITICAL)' : ''}${details}!`
               : `${ownerName} ${this.getCombatDieName(attacker)} attacks ${this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} damage${basicAttackCritical ? ' (CRITICAL)' : ''}!${details}`
         );
 
@@ -5357,6 +5385,10 @@ export class ArenaScene extends Phaser.Scene {
             this.gameState = resolvedState;
           }
         }
+        if (!after.isDestroyed && onDamagedResult.grantAttacksToFoe && onDamagedResult.grantAttacksToFoe > 0) {
+          resolvedState = this.grantFoeAttacks(before, onDamagedResult.grantAttacksToFoe, resolvedState);
+          this.gameState = resolvedState;
+        }
         if (!after.isDestroyed && onDamagedResult.shieldGain && onDamagedResult.shieldGain > 0) {
           this.shieldHpByInstance.set(instanceId, (this.shieldHpByInstance.get(instanceId) ?? 0) + onDamagedResult.shieldGain);
           this.showHealText(after, onDamagedResult.shieldGain);
@@ -5567,14 +5599,16 @@ export class ArenaScene extends Phaser.Scene {
         * this.getDiceCardSkillDamageMultiplier(attacker)
     ));
     const healedIds = new Set<string>();
+    let healedTotal = 0;
     let critical = false;
     const healOne = (die: DiceInstanceState) => {
       if (healedIds.has(die.instanceId)) return;
       healedIds.add(die.instanceId);
       const healResult = this.healDie(die.instanceId, healAmount);
+      healedTotal += healResult.healed;
       if (healResult.critical) critical = true;
       this.animateSkillEffect('heal', attacker, die);
-      this.addCombatActionDetail(`Druidic Essence heals ${die.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(die)} for ${formatCompact(healAmount)} health${healResult.critical ? ' (CRITICAL)' : ''}`);
+      this.addCombatActionDetail(`heals ${die.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(die)} for ${formatCompact(healResult.healed)} health${healResult.critical ? ' (CRITICAL)' : ''}`);
     };
     healOne(primary);
     const ricochetCount = Math.max(0, Math.floor(meta.ricochetCount ?? 1));
@@ -5586,7 +5620,7 @@ export class ArenaScene extends Phaser.Scene {
       .sort((a, b) => (a.die.currentHealth / a.die.maxHealth) - (b.die.currentHealth / b.die.maxHealth) || a.distance - b.distance || a.die.instanceId.localeCompare(b.die.instanceId))
       .slice(0, ricochetCount)
       .forEach(({ die }) => healOne(die));
-    return { healed: healAmount * healedIds.size, critical };
+    return { healed: healedTotal, critical };
   }
 
   private transformToAlternateForm(attacker: DiceInstanceState) {
@@ -5783,7 +5817,7 @@ export class ArenaScene extends Phaser.Scene {
     }
     if (result.bonusAttacks && result.bonusAttacks > 0) {
       const recipient = result.grantAttacksToAlly !== undefined
-        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly, meta.targetingMode)
+        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly)
         : attacker;
       if (recipient) {
         this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
@@ -5794,6 +5828,9 @@ export class ArenaScene extends Phaser.Scene {
             : die)
         };
       }
+    }
+    if (result.grantAttacksToFoe && result.grantAttacksToFoe > 0) {
+      this.gameState = this.grantFoeAttacks(attacker, result.grantAttacksToFoe, this.gameState);
     }
 
     if (result.splashTargets?.length) {
@@ -6021,7 +6058,7 @@ export class ArenaScene extends Phaser.Scene {
       this.playSkillSfxForDie(attacker, meta);
       const healResult = this.healDie(healTarget.instanceId, healAmount);
       this.animateSkillEffect('heal', attacker, healTarget);
-      this.addCombatActionDetail(`${activeSlot.title} heals ${healTarget.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(healTarget)} for ${formatCompact(healAmount)} health${this.criticalSuffix(healResult.critical)}`);
+      this.addCombatActionDetail(`${activeSlot.title} heals ${healTarget.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(healTarget)} for ${formatCompact(healResult.healed)} health${this.criticalSuffix(healResult.critical)}`);
     }
 
     if (result.shieldGain !== undefined) {
@@ -6104,7 +6141,7 @@ export class ArenaScene extends Phaser.Scene {
 
     if (result.bonusAttacks && result.bonusAttacks > 0) {
       const recipient = result.grantAttacksToAlly !== undefined
-        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly, meta.activeSkillTargeting ?? meta.targetingMode)
+        ? this.selectAllyAttackRecipient(attacker, this.gameState, result.grantAttacksToAlly, meta.activeSkillTargeting)
         : attacker;
       if (recipient) {
         this.gameState = {
@@ -6116,6 +6153,10 @@ export class ArenaScene extends Phaser.Scene {
         this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
         this.addCombatActionDetail(`${activeSlot.title} grants +${result.bonusAttacks} attack${result.bonusAttacks === 1 ? '' : 's'} to ${recipient.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(recipient)}`);
       }
+    }
+    if (result.grantAttacksToFoe && result.grantAttacksToFoe > 0) {
+      this.gameState = this.grantFoeAttacks(attacker, result.grantAttacksToFoe, this.gameState, meta.activeSkillTargeting);
+      this.addCombatActionDetail(`${activeSlot.title} grants +${result.grantAttacksToFoe} attack${result.grantAttacksToFoe === 1 ? '' : 's'} to the opposing side`);
     }
 
     if (result.attackCountIncrease !== undefined && result.extraAttacksTurns !== undefined) {
@@ -6310,26 +6351,31 @@ export class ArenaScene extends Phaser.Scene {
       }
     }
     const meta = getRuntimeSkillMeta(definition);
-    if (!result.bonusAttacks || result.bonusAttacks <= 0) return;
-    const recipient = result.grantAttacksToAlly !== undefined
-      ? this.selectAllyAttackRecipient(transformed, this.gameState, result.grantAttacksToAlly, meta.targetingMode)
-      : transformed;
-    if (!recipient) return;
-    this.playSkillSfxForDie(transformed, meta);
-    const turns = Number.isFinite(result.extraAttacksTurns) ? Math.max(1, result.extraAttacksTurns) : 1;
-    const bonusAttacks = Number.isFinite(result.bonusAttacks) ? Math.max(0, result.bonusAttacks) : 0;
-    this.recordAttackCountEffect(recipient.instanceId, bonusAttacks);
-    const current = this.extraAttackTurnsByInstance.get(recipient.instanceId);
-    this.extraAttackTurnsByInstance.set(recipient.instanceId, {
-      extra: (current?.extra ?? 0) + bonusAttacks,
-      turns: Math.max(current?.turns ?? 0, turns)
-    });
-    this.gameState = {
-      ...this.gameState,
-      dice: this.gameState.dice.map((die) => die.instanceId === recipient.instanceId
-        ? { ...die, attacksRemaining: die.attacksRemaining + bonusAttacks, hasFinishedAttacking: false }
-        : die)
-    };
+    const bonusAttacks = Number.isFinite(result.bonusAttacks) ? Math.max(0, result.bonusAttacks ?? 0) : 0;
+    if (bonusAttacks > 0) {
+      const recipient = result.grantAttacksToAlly !== undefined
+        ? this.selectAllyAttackRecipient(transformed, this.gameState, result.grantAttacksToAlly)
+        : transformed;
+      if (recipient) {
+        this.playSkillSfxForDie(transformed, meta);
+        const turns = Number.isFinite(result.extraAttacksTurns) ? Math.max(1, result.extraAttacksTurns) : 1;
+        this.recordAttackCountEffect(recipient.instanceId, bonusAttacks);
+        const current = this.extraAttackTurnsByInstance.get(recipient.instanceId);
+        this.extraAttackTurnsByInstance.set(recipient.instanceId, {
+          extra: (current?.extra ?? 0) + bonusAttacks,
+          turns: Math.max(current?.turns ?? 0, turns)
+        });
+        this.gameState = {
+          ...this.gameState,
+          dice: this.gameState.dice.map((die) => die.instanceId === recipient.instanceId
+            ? { ...die, attacksRemaining: die.attacksRemaining + bonusAttacks, hasFinishedAttacking: false }
+            : die)
+        };
+      }
+    }
+    if (result.grantAttacksToFoe && result.grantAttacksToFoe > 0) {
+      this.gameState = this.grantFoeAttacks(transformed, result.grantAttacksToFoe, this.gameState);
+    }
     if (result.extraEffects?.length) result.extraEffects.forEach((effect) => this.addCombatActionDetail(effect));
   }
 
@@ -6374,7 +6420,7 @@ export class ArenaScene extends Phaser.Scene {
 
       if (result.bonusAttacks && result.bonusAttacks > 0) {
         const recipient = result.grantAttacksToAlly !== undefined
-          ? this.selectAllyAttackRecipient(die, this.gameState, result.grantAttacksToAlly, definition.targetingMode)
+          ? this.selectAllyAttackRecipient(die, this.gameState, result.grantAttacksToAlly)
           : die;
         if (recipient) {
           this.recordAttackCountEffect(recipient.instanceId, result.bonusAttacks);
@@ -6385,6 +6431,9 @@ export class ArenaScene extends Phaser.Scene {
               : candidate)
           };
         }
+      }
+      if (result.grantAttacksToFoe && result.grantAttacksToFoe > 0) {
+        this.gameState = this.grantFoeAttacks(die, result.grantAttacksToFoe, this.gameState);
       }
     }
   }
@@ -7327,6 +7376,9 @@ export class ArenaScene extends Phaser.Scene {
         };
       }
     }
+    if (result.grantAttacksToFoe && result.grantAttacksToFoe > 0) {
+      this.gameState = this.grantFoeAttacks(attacker, result.grantAttacksToFoe, this.gameState);
+    }
     if (result.bonusDamage && result.bonusDamage > 0) {
       const current = this.basicAttackDamageBonusByInstance.get(attacker.instanceId) ?? 0;
       this.basicAttackDamageBonusByInstance.set(attacker.instanceId, current + result.bonusDamage);
@@ -7383,13 +7435,38 @@ export class ArenaScene extends Phaser.Scene {
     this.writeCombatLog(`⚖️ ${this.getCombatDieName(attacker)} Judgment Hammer marks ${hammerMarkedName}${struckLabel}!`);
   }
 
-  private selectAllyAttackRecipient(source: DiceInstanceState, state: MatchBattleState, _bonus: number, mode?: DiceTargetingMode): DiceInstanceState | undefined {
+  private selectAllyAttackRecipient(source: DiceInstanceState, state: MatchBattleState, _bonus: number, skillTargeting?: DiceTargetingMode): DiceInstanceState | undefined {
     const definition = this.getDefinitionForInstance(source);
-    const targetMode = mode ?? (definition ? (getRuntimeSkillMeta(definition).targetingMode ?? 'Nearest') : 'Nearest');
+    const meta = definition ? getRuntimeSkillMeta(definition) : undefined;
+    const mode = skillTargeting ?? meta?.grantAttacksTargeting ?? meta?.skillTargeting ?? 'Random';
     const candidates = state.dice
       .filter((die) => die.ownerId === source.ownerId && die.instanceId !== source.instanceId && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition))
       .map((die) => ({ die: die as DiceInstanceState & { gridPosition: { row: number; col: number } }, distance: this.getAllyHealingDistance(source, die) }));
-    return this.selectTargetCandidate(candidates, targetMode);
+    return this.selectTargetCandidate(candidates, mode);
+  }
+
+  private selectFoeAttackRecipient(source: DiceInstanceState, state: MatchBattleState, skillTargeting?: DiceTargetingMode): DiceInstanceState | undefined {
+    const definition = this.getDefinitionForInstance(source);
+    const meta = definition ? getRuntimeSkillMeta(definition) : undefined;
+    const mode = skillTargeting ?? meta?.grantAttacksToFoeTargeting ?? meta?.skillTargeting ?? 'Random';
+    const targetOwner = source.ownerId === 'player' ? 'enemy' : 'player';
+    const candidates = state.dice
+      .filter((die) => die.ownerId === targetOwner && die.zone === 'board' && !die.isDestroyed && Boolean(die.gridPosition))
+      .map((die) => ({ die: die as DiceInstanceState & { gridPosition: { row: number; col: number } }, distance: this.getAttackDistance(source, die) }));
+    return this.selectTargetCandidate(candidates, mode);
+  }
+
+  private grantFoeAttacks(source: DiceInstanceState, amount: number, state: MatchBattleState, skillTargeting?: DiceTargetingMode): MatchBattleState {
+    if (!Number.isFinite(amount) || amount <= 0) return state;
+    const recipient = this.selectFoeAttackRecipient(source, state, skillTargeting);
+    if (!recipient) return state;
+    this.recordAttackCountEffect(recipient.instanceId, amount);
+    return {
+      ...state,
+      dice: state.dice.map((die) => die.instanceId === recipient.instanceId
+        ? { ...die, attacksRemaining: die.attacksRemaining + amount, hasFinishedAttacking: false }
+        : die)
+    };
   }
 
   private async applyOnDeathSkillEffects(defeated: DiceInstanceState, _attacker: DiceInstanceState) {
@@ -7426,6 +7503,9 @@ export class ArenaScene extends Phaser.Scene {
         };
       }
       result.extraEffects.forEach((effect) => this.addCombatActionDetail(effect));
+    }
+    if (result.grantAttacksToFoe && result.grantAttacksToFoe > 0) {
+      this.gameState = this.grantFoeAttacks(defeated, result.grantAttacksToFoe, this.gameState);
     }
   }
 

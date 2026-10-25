@@ -29,13 +29,16 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   maxRevives?: number;
   dontReviveWhenLastOneStanding?: boolean;
   allyExtraAttacks?: number;
+  foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
+  grantAttacksToFoe?: number;
+  grantAttacksTargeting?: DiceTargetingMode;
+  grantAttacksToFoeTargeting?: DiceTargetingMode;
   targetingMode?: 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
   statusEffect?: DiceStatusEffect;
   statusDuration?: number;
   maxStacks?: number;
-  activeManaNeeded?: number;
-  activeAllyExtraAttacks?: number;
+  manaNeeded?: number;
   onTransformedExtraAttacks?: number;
   attackDelta?: number;
   activeAttackDelta?: number;
@@ -170,6 +173,29 @@ const VALID_SKILL_TYPES: readonly DiceSkillType[] = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+type GrantAttackKey = 'grantAttacksToAlly' | 'grantAttacksToFoe';
+
+function resolveGrantAttackValue(
+  modifiers: DiceSkillModifier[],
+  key: GrantAttackKey
+): number | undefined {
+  const value = modifiers
+    .map((modifier) => (modifier as Record<string, unknown>)[key])
+    .find((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate));
+  return value === undefined ? undefined : Math.max(0, value);
+}
+
+function resolveGrantAttackTargeting(
+  modifiers: DiceSkillModifier[],
+  key: GrantAttackKey
+): DiceTargetingMode | undefined {
+  const source = modifiers.find((modifier) => {
+    const value = (modifier as Record<string, unknown>)[key];
+    return typeof value === 'number' && Number.isFinite(value);
+  });
+  return (source as { skillTargeting?: DiceTargetingMode } | undefined)?.skillTargeting;
 }
 
 function getValidSkillModifier(value: unknown): DiceSkillModifier | undefined {
@@ -361,6 +387,48 @@ export function getRuntimeSkillMetaForTrigger(definition: DiceDefinition | undef
   const triggerSkills = validDefinition.skills.filter((skill) => skill.type === trigger);
   if (triggerSkills.length === 0) return getRuntimeSkillMeta({ ...validDefinition, skills: [] });
   return getRuntimeSkillMeta({ ...validDefinition, skills: triggerSkills }, undefined, true);
+}
+
+// A skill that declares a skillRangeThreshold gates every modifier it carries behind that proximity.
+// The gate is evaluated per triggering skill so a whole-die meta lookup cannot leak an in-range bonus
+// (Leon's critical chance) outside the range the skill's own text promises.
+const RANGE_THRESHOLD_KEYS: Array<keyof DiceSkillRuntimeMeta> = [
+  'attackCountIncrease',
+  'criticalChanceIncrease',
+  'criticalDamageIncrease',
+  'allyExtraAttacks',
+  'foeExtraAttacks',
+  'grantAttacksToAlly',
+  'grantAttacksToFoe'
+];
+
+export function getRangeThresholdForMeta(meta: DiceSkillRuntimeMeta): number | undefined {
+  const threshold = meta.skillRangeThreshold;
+  return typeof threshold === 'number' && Number.isFinite(threshold) ? Math.max(0, threshold) : undefined;
+}
+
+export function isRangeThresholdSatisfied(meta: DiceSkillRuntimeMeta, distance: number, effectiveRange: number): boolean {
+  const threshold = getRangeThresholdForMeta(meta);
+  if (threshold === undefined) return true;
+  if (!Number.isFinite(distance)) return false;
+  return distance <= Math.max(1, effectiveRange - threshold);
+}
+
+export function gateMetaByRangeThreshold(meta: DiceSkillRuntimeMeta, inRange: boolean): DiceSkillRuntimeMeta {
+  if (inRange || getRangeThresholdForMeta(meta) === undefined) return meta;
+  const gated: DiceSkillRuntimeMeta = { ...meta };
+  RANGE_THRESHOLD_KEYS.forEach((key) => {
+    delete (gated as Record<string, unknown>)[key];
+  });
+  return gated;
+}
+
+export function resolveSkillExtraAttacks(meta: DiceSkillRuntimeMeta): { allyBonus: number; foeBonus: number; grantsToAlly: number; grantsToFoe: number } {
+  const allyBonus = Math.max(0, meta.allyExtraAttacks ?? 0);
+  const foeBonus = Math.max(0, meta.foeExtraAttacks ?? 0);
+  const grantsToAlly = Math.max(0, meta.grantAttacksToAlly ?? 0);
+  const grantsToFoe = Math.max(0, meta.grantAttacksToFoe ?? 0);
+  return { allyBonus, foeBonus, grantsToAlly, grantsToFoe };
 }
 
 export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, activeSkillIndex?: number, includePhaseHooks = false): DiceSkillRuntimeMeta {
@@ -555,17 +623,17 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     maxRevives,
     dontReviveWhenLastOneStanding,
     allyExtraAttacks: modifiers?.allyExtraAttacks ?? 0,
-    grantAttacksToAlly: (() => {
-      const value = (modifiers as { grantAttacksToAlly?: unknown } | undefined)?.grantAttacksToAlly;
-      return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : undefined;
-    })(),
+    foeExtraAttacks: modifiers?.foeExtraAttacks ?? 0,
+    grantAttacksToAlly: resolveGrantAttackValue(allModifiers, 'grantAttacksToAlly'),
+    grantAttacksToFoe: resolveGrantAttackValue(allModifiers, 'grantAttacksToFoe'),
+    grantAttacksTargeting: resolveGrantAttackTargeting(allModifiers, 'grantAttacksToAlly'),
+    grantAttacksToFoeTargeting: resolveGrantAttackTargeting(allModifiers, 'grantAttacksToFoe'),
     targetingMode: validDefinition.targetingMode,
     statusEffect: parseStatusEffect((modifiers as { statusEffect?: string } | undefined)?.statusEffect),
     statusDuration: (selectedStatusModifiers as { statusDuration?: number } | undefined)?.statusDuration,
     ...statusDurationProperties,
     maxStacks: (modifiers as { maxStacks?: number } | undefined)?.maxStacks,
-    activeManaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
-    activeAllyExtraAttacks: activeSkill ? (activeModifiers?.allyExtraAttacks ?? 0) : 0,
+    manaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
     attackCountIncrease: maxAttackCountIncrease,
     unlockAtClass,
     numAttacksBoosted: (modifiers as { numAttacksBoosted?: number } | undefined)?.numAttacksBoosted,

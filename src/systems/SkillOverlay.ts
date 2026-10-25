@@ -7,12 +7,14 @@ export function cloneSkill(skill: DiceSkillDefinition): DiceSkillDefinition {
   };
 }
 
-export function withLiftedManaCost(skill: DiceSkillDefinition): DiceSkillDefinition {
-  const manaNeeded = skill.modifiers?.manaNeeded;
-  if (typeof manaNeeded !== 'number' || !Number.isFinite(manaNeeded)) return skill;
-  return { ...skill, manaNeeded: Math.max(1, Math.floor(manaNeeded)) };
+function isSkillEntry(entry: unknown): entry is DiceSkillDefinition {
+  return Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry);
 }
 
+// A transform row leaves an index untouched by leaving an empty object there, matching the talent
+// overlay convention. A row that declares its own type is a full replacement; a row that only names
+// properties (typically modifiers) overlays onto the base skill, so a form that changes one flag does
+// not have to restate the skill's type, title, and description.
 export function mergeSkillsByIndex(
   baseSkills: DiceSkillDefinition[] | undefined,
   overlay: Array<DiceSkillDefinition | null | undefined> | undefined
@@ -22,9 +24,18 @@ export function mergeSkillsByIndex(
   const merged = [...base];
   overlay.forEach((entry, index) => {
     if (index > merged.length) return;
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
+    if (!isSkillEntry(entry)) return;
     if (Object.keys(entry).length === 0) return;
-    merged[index] = withLiftedManaCost(cloneSkill(entry));
+    const current = merged[index];
+    if (!current || typeof entry.type === 'string') {
+      merged[index] = cloneSkill(entry);
+      return;
+    }
+    merged[index] = {
+      ...current,
+      ...entry,
+      modifiers: { ...(current.modifiers ?? {}), ...(entry.modifiers ?? {}) }
+    };
   });
   return merged;
 }
@@ -48,13 +59,13 @@ export function mergeSkillOverlayByIndex(
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
     if (Object.keys(entry).length === 0) return;
     const current = merged[index];
-    merged[index] = withLiftedManaCost(current
+    merged[index] = current
       ? {
         ...current,
         ...entry,
         modifiers: { ...(current.modifiers ?? {}), ...(entry.modifiers ?? {}) }
       }
-      : cloneSkill(entry));
+      : cloneSkill(entry);
   });
   return merged;
 }
