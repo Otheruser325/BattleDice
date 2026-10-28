@@ -1,11 +1,13 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { loadViteEnv, summarizeBooleanEnv } from './env-utils.mjs';
+import { assertNoDevOnlyFlags, loadViteEnv, summarizeBooleanEnv } from './env-utils.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const mode = process.env.BATTLE_DICE_BUILD_MODE ?? 'launcher';
-const includeSourcemap = process.env.BATTLE_DICE_SOURCEMAP === '1';
+const devRequested = process.argv.includes('--dev');
+const mode = process.env.BATTLE_DICE_BUILD_MODE ?? (devRequested ? 'development' : 'launcher');
+const isDevBuild = mode === 'development';
+const includeSourcemap = process.env.BATTLE_DICE_SOURCEMAP === '1' || devRequested;
 const env = loadViteEnv({
   mode,
   cwd: repoRoot,
@@ -13,6 +15,8 @@ const env = loadViteEnv({
     BASE_URL: '/'
   }
 });
+
+assertNoDevOnlyFlags(env, { isDevBuild, buildLabel: 'launcher bundle' });
 
 await build({
   entryPoints: [path.join(repoRoot, 'src/main.ts')],
@@ -22,19 +26,13 @@ await build({
   target: 'es2022',
   outfile: path.join(repoRoot, 'main.js'),
   sourcemap: includeSourcemap,
-  minify: true,
+  minify: !isDevBuild,
   legalComments: 'none',
   define: {
     'import.meta.env': JSON.stringify(env)
   },
   logLevel: 'info'
 });
-
-const shippedDevFlags = ['VITE_ENABLE_DEV_MENU', 'VITE_DEBUG_LOGS']
-  .filter((key) => summarizeBooleanEnv(env, key).endsWith('=true'));
-if (shippedDevFlags.length > 0) {
-  throw new Error(`Refusing to ship launcher bundle with dev-only flags enabled: ${shippedDevFlags.join(', ')}`);
-}
 
 console.log([
   `Built Phaser Launcher bundle with MODE=${env.MODE}`,
