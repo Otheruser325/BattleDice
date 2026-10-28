@@ -74,3 +74,11 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 ## Stat multiplier hardening
 
 - Use `resolveStatMultiplier`, `resolveStatValue`, `scaleStatValue`, and `applyStatModifiers` from `src/systems/ClassProgression.ts` for any attack/health math driven by definition or talent metadata. They coerce `NaN`/`Infinity` to safe defaults so malformed special stats (especially on transformed dice) cannot drop through.
+
+## Dev build, playtest bundle, and environment flags
+
+- The dev playtest is `npm run dev:launcher`, which builds the launcher `main.js` bundle in development mode (`bundle:playtest:dev`) and serves `/playtest.html`. `npm run dev` serves the source app instead. Production packaging uses `npm run build` (`bundle:playtest`, mode `launcher`).
+- `VITE_ENABLE_DEV_MENU` and `VITE_DEBUG_LOGS` are the only dev-only flags. Both default to on for a `development` mode build and off otherwise. They must never ship: `scripts/env-utils.mjs` owns `DEV_ONLY_FLAGS` and `assertNoDevOnlyFlags`, and both the esbuild bundle script and the `vite.config.ts` build plugin call it. A Vite build always bakes `PROD=true`/`DEV=false`, so the config plugin refuses dev-only flags for every build (including `--mode development`); the runtime `DEV_MENU_AVAILABLE` check in `src/utils/BuildFlags.ts` is the second line of defence.
+- Boolean env parsing accepts `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`, in `scripts/env-utils.mjs` (build scripts) and `src/utils/BuildEnv.ts` (runtime).
+- The accepted variables are documented in the README "Environment flags" table and `.env.example`. `VITE_BASE_PATH` is resolved through Vite's loaded env, so it works from `.env*` as well as the shell; `REPO_FIX` still takes precedence. Do not add env declarations that nothing reads.
+

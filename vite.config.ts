@@ -1,11 +1,9 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { assertNoDevOnlyFlags } from "./scripts/env-utils.mjs";
 
-const DEV_ONLY_FLAGS = ['VITE_ENABLE_DEV_MENU', 'VITE_DEBUG_LOGS'];
-const TRUTHY_VALUES = ['1', 'true', 'yes', 'on'];
-
-function resolveBasePath(): string {
-  const explicit = process.env.REPO_FIX?.trim() || process.env.VITE_BASE_PATH?.trim();
+function resolveBasePath(env: Record<string, string>): string {
+  const explicit = process.env.REPO_FIX?.trim() || env.VITE_BASE_PATH?.trim();
   if (explicit) {
     const normalized = explicit.replace(/^\/+|\/+$/g, '');
     return normalized ? `/${normalized}/` : '/';
@@ -16,16 +14,13 @@ function resolveBasePath(): string {
   return '/';
 }
 
-function guardDevOnlyFlags(env: Record<string, string>, mode: string): Plugin {
+function guardDevOnlyFlags(env: Record<string, string>): Plugin {
   return {
     name: 'battle-dice-guard-dev-flags',
     apply: 'build',
     configResolved() {
-      if (mode === 'development') return;
-      const enabled = DEV_ONLY_FLAGS.filter((key) => TRUTHY_VALUES.includes(env[key]?.trim().toLowerCase()));
-      if (enabled.length > 0) {
-        throw new Error(`Refusing to ship a non-development build with dev-only flags enabled: ${enabled.join(', ')}`);
-      }
+      // A Vite build always bakes PROD=true/DEV=false, so dev-only flags must never ship here.
+      assertNoDevOnlyFlags(env, { isDevBuild: false, buildLabel: 'a non-development build' });
     }
   };
 }
@@ -33,11 +28,11 @@ function guardDevOnlyFlags(env: Record<string, string>, mode: string): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   return {
-    plugins: [react(), guardDevOnlyFlags(env, mode)],
+    plugins: [react(), guardDevOnlyFlags(env)],
     optimizeDeps: {
       exclude: ["lucide-react"],
     },
-    base: resolveBasePath(),
+    base: resolveBasePath(env),
     build: {
       outDir: "dist",
     },
