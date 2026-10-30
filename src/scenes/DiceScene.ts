@@ -274,10 +274,7 @@ export class DiceScene extends Phaser.Scene {
       if (selected.length !== 5) return;
       selected.forEach((die) => {
         const classLevel = getDiceProgress(this, die.typeId).classLevel;
-        const availableTalents = getOwnedTalentIndices(this, die).filter((index) => {
-          const talent = getTalentByIndex(die, index);
-          return talent ? classLevel >= getTalentClassNeeded(talent) : false;
-        });
+        const availableTalents = getOwnedTalentIndices(this, die, classLevel);
         const options: Array<number | null> = [null, ...availableTalents];
         setEquippedTalentIndex(this, die, options[Phaser.Math.Between(0, options.length - 1)] ?? null);
       });
@@ -318,7 +315,7 @@ export class DiceScene extends Phaser.Scene {
       const y = cardsTopY + row * cardPitch;
       const accent = Phaser.Display.Color.HexStringToColor(die.accent).color;
       const cls = getDiceProgress(this, die.typeId).classLevel;
-      const displayedDie = applyClassProgression(applyDiceTalent(die, getEquippedTalentIndex(this, die)), cls);
+      const displayedDie = applyClassProgression(applyDiceTalent(die, getEquippedTalentIndex(this, die, cls), cls), cls);
       const locked = this.isDiceLocked(die.typeId);
 
       const cardFill = locked ? 0x111e28 : 0x173247;
@@ -371,7 +368,7 @@ export class DiceScene extends Phaser.Scene {
 
       const refreshCardStatLine = () => {
         const nextCls = getDiceProgress(this, die.typeId).classLevel;
-        const nextDisplayedDie = applyClassProgression(applyDiceTalent(die, getEquippedTalentIndex(this, die)), nextCls);
+        const nextDisplayedDie = applyClassProgression(applyDiceTalent(die, getEquippedTalentIndex(this, die, nextCls), nextCls), nextCls);
         classTag.setText(this.isDiceLocked(die.typeId) ? 'LOCKED' : `C${nextCls}`);
         statLine.setText(`ATK ${formatCompact(nextDisplayedDie.attack)}  |  HP ${formatCompact(nextDisplayedDie.health)}
 RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
@@ -504,7 +501,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     if (!die) return;
     const progress = getDiceProgress(this, typeId);
     const displayDie = this.getModalDisplayDie(
-      applyDiceTalent(die, getEquippedTalentIndex(this, die)),
+      applyDiceTalent(die, getEquippedTalentIndex(this, die, progress.classLevel), progress.classLevel),
       progress.classLevel,
       formIndex
     );
@@ -688,6 +685,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     }
     const definition = getAllDiceDefinitions(this).find((die) => die.typeId === typeId);
     if (!definition?.talents?.length && !definition?.talentsComingSoon) return;
+    const classLevel = getDiceProgress(this, typeId).classLevel;
 
     const { width, height } = this.scale;
     const centerY = height / 2;
@@ -748,10 +746,11 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
 
     definition.talents.forEach((talent, index) => {
       const y = centerY - 78 + index * 74;
-      const currentTalentIndex = getEquippedTalentIndex(this, definition);
+      const currentTalentIndex = getEquippedTalentIndex(this, definition, classLevel);
       const owned = isTalentOwned(this, typeId, index);
-      const active = owned && index === currentTalentIndex;
       const classNeeded = getTalentClassNeeded(talent);
+      const classMet = classLevel >= classNeeded;
+      const active = owned && classMet && index === currentTalentIndex;
       const obtain = getUnobtainableTalentReason(this, definition, index);
       const comingSoon = obtain === 'coming-soon';
       const row = this.add.rectangle(width / 2, y, 490, 62, active ? 0x315e7a : 0x173247, 0.98)
@@ -765,7 +764,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       const gateText = obtain === 'invalid'
         ? 'NOT OBTAINABLE'
         : owned
-          ? 'OWNED'
+          ? classMet ? 'OWNED' : `REQUIRES CLASS ${classNeeded}`
           : comingSoon
             ? 'COMING SOON'
             : obtain === 'locked'
@@ -773,19 +772,19 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
               : obtain === 'class'
                 ? `REQUIRES CLASS ${classNeeded}`
                 : 'UNOWNED';
-      const gateColor = owned
+      const gateColor = owned && classMet
         ? PALETTE.success
         : (obtain === 'invalid' || comingSoon)
           ? PALETTE.textMuted
-          : obtain === 'locked' || obtain === 'class'
+          : obtain === 'locked' || obtain === 'class' || (owned && !classMet)
             ? PALETTE.danger
             : PALETTE.accentSoft;
       const gate = this.add.text(width / 2 - 224, y + 22, gateText, {
         fontFamily: 'Orbitron', fontSize: '9px', color: gateColor
       }).setOrigin(0, 0.5);
 
-      const actionLabel = active ? 'UNEQUIP' : owned ? 'EQUIP' : comingSoon ? 'WIP' : 'UNOWNED';
-      const actionEnabled = active || owned;
+      const actionLabel = active ? 'UNEQUIP' : owned ? (classMet ? 'EQUIP' : `C${classNeeded}`) : comingSoon ? 'WIP' : 'UNOWNED';
+      const actionEnabled = active || (owned && classMet);
       const action = this.add.text(width / 2 + 190, y, actionLabel, {
         fontFamily: 'Orbitron', fontSize: '9px',
         color: !actionEnabled ? PALETTE.textMuted : (active ? '#ffb5b5' : '#b8ffd1'),

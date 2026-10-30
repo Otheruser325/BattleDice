@@ -12,14 +12,14 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 
 - A talent records all of its metadata on the single `talents[].modifiers` object. There is no separate `talents[].skills` array and no `modifiers.skillModifiers`: the per-skill overlay lives at `talents[].modifiers.skills` (an array of `DiceSkillDefinition`-shaped entries, matched to base skills by index). Keeping stats on one object avoids ambiguous metadata updates.
 - `DiceSkillDefinition.descriptionLocked` marks a skill whose authored description must be shown verbatim; class scaling and dynamic recomputation skip it.
-- `applyDiceTalent` bakes recomputed descriptions onto the skills so both the DiceScene card and the info-panel/modal paths show the same text.
+- `applyDiceTalent` bakes recomputed descriptions onto the skills so both the DiceScene card and the info-panel/modal paths show the same text. It only applies the talent at or above `classNeeded`; callers pass the effective class level.
 - A talent removes a base skill only through the per-skill overlay form (`talents[].modifiers.skills[i].disableSkill`). The former talent-root `talents[].disableSkill` (boolean / index / index array) was removed so a talent cannot disable arbitrary skills it does not explicitly overlay. The overlay form is what Time's Temporal Delusion uses to retire Temporal Acceleration.
 - `talents[].comingSoon` marks a single talent as a work-in-progress. Coming-soon talents are excluded from `getAcquirableTalentIndices` (so shops and chests never offer them), cannot be equipped, and report the `coming-soon` reason in `getUnobtainableTalentReason`.
 
 ## Talent acquisition and loadout randomisation
 
 - Talents are obtained only through shop offers and Diamond/Master chests. The talents popup in DiceScene equips owned talents and reports unowned ones as `UNOWNED`; it never grants a talent. Do not reintroduce a popup purchase path with `grantTalent`/`setDiceTokens`.
-- `getOwnedTalentIndices` lists the owned, non-coming-soon talents for a die. Randomise loadout/class-up uses it so a random loadout equips a random owned talent regardless of the die's stored equipped talent. The chosen index is stamped into `instanceTalentIndices` so `getCombatBaseDefinition` and the in-battle info panel resolve the same talent for that instance instead of re-reading the profile's equipped index.
+- `getOwnedTalentIndices` lists the owned, non-coming-soon talents for a die, optionally limited to the effective class level. Randomise loadout/class-up uses it so a random loadout chooses between an eligible owned talent and the nontalented variant, regardless of the die's stored equipped talent. The chosen index, including `null`, is stamped into `instanceTalentIndices` so `getCombatBaseDefinition` and the in-battle info panel resolve that same choice for the instance instead of falling back to the profile's equipped index.
 
 ## Combat log defeat entries
 

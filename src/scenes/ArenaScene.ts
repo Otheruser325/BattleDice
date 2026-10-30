@@ -180,7 +180,7 @@ export class ArenaScene extends Phaser.Scene {
   private basicAttackDamageBonusByInstance: Map<string, number> = new Map();
   private instanceDefinitionOverrides: Map<string, DiceDefinition> = new Map();
   private instanceClassLevels: Map<string, number> = new Map();
-  private instanceTalentIndices: Map<string, number> = new Map();
+  private instanceTalentIndices: Map<string, number | null> = new Map();
   private enemyLoadoutRevealed = false;
   private sessionStartedAtMs = 0;
   private infiltratedBoardSideByInstance: Map<string, 'player' | 'enemy'> = new Map();
@@ -569,7 +569,7 @@ export class ArenaScene extends Phaser.Scene {
     const definition = getAllDiceDefinitions(this).find((die) => die.typeId === typeId);
     if (!definition) return;
     const progress = getDiceProgress(this, typeId);
-    const talentDefinition = applyDiceTalent(definition, getEquippedTalentIndex(this, definition));
+    const talentDefinition = applyDiceTalent(definition, getEquippedTalentIndex(this, definition, progress.classLevel), progress.classLevel);
     const scaled = getDiceModalDisplayDefinition(talentDefinition, progress.classLevel, formIndex);
     const { width, height } = this.scale;
     const cx = width / 2;
@@ -1958,12 +1958,12 @@ export class ArenaScene extends Phaser.Scene {
           : shouldRandomizeLoadoutAndClassUps && this.configUseLevelling
           ? Phaser.Math.Between(1, 15)
           : effectiveLevel(getDiceProgress(this, definition.typeId).classLevel);
-        const talentIndex = this.resolveLoadoutTalentIndex(definition);
+        const talentIndex = this.resolveLoadoutTalentIndex(definition, classLevel);
         playerClassLevels.set(definition.typeId, classLevel);
         playerClassLevelsBySlot[index] = classLevel;
         playerTalentBySlot[index] = talentIndex;
         return this.applyClassProgress(
-          applyDiceTalent(definition, talentIndex),
+          applyDiceTalent(definition, talentIndex, classLevel),
           classLevel
         );
       });
@@ -2054,7 +2054,7 @@ export class ArenaScene extends Phaser.Scene {
         this.instanceClassLevels.set(die.instanceId, classLevel);
         if (die.ownerId === 'player') {
           const talentIndex = playerTalentBySlot[sourceIndex];
-          if (talentIndex !== null && talentIndex !== undefined) this.instanceTalentIndices.set(die.instanceId, talentIndex);
+          this.instanceTalentIndices.set(die.instanceId, talentIndex ?? null);
         }
       }
     });
@@ -2107,7 +2107,7 @@ export class ArenaScene extends Phaser.Scene {
     const stored = this.instanceTalentIndices.get(die.instanceId);
     if (stored !== undefined) return stored;
     const base = this.getBaseDefinitionForInstance(die);
-    return base ? getEquippedTalentIndex(this, base) : null;
+    return base ? getEquippedTalentIndex(this, base, this.instanceClassLevels.get(die.instanceId) ?? 1) : null;
   }
 
   private getCombatBaseDefinition(die: DiceInstanceState): DiceDefinition | undefined {
@@ -2115,7 +2115,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!base) return undefined;
     const classLevel = this.instanceClassLevels.get(die.instanceId) ?? 1;
     const withTalent = die.ownerId === 'player'
-      ? applyDiceTalent(base, this.getInstanceTalentIndex(die))
+      ? applyDiceTalent(base, this.getInstanceTalentIndex(die), classLevel)
       : base;
     return this.applyClassProgress(withTalent, classLevel);
   }
@@ -7471,12 +7471,12 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  private resolveLoadoutTalentIndex(definition: DiceDefinition): number | null {
-    const equipped = getEquippedTalentIndex(this, definition);
+  private resolveLoadoutTalentIndex(definition: DiceDefinition, classLevel: number): number | null {
+    const equipped = getEquippedTalentIndex(this, definition, classLevel);
     if (!this.configRandomMode || !this.configRandomizeLoadoutAndClassUps) return equipped;
-    const owned = getOwnedTalentIndices(this, definition);
+    const owned = getOwnedTalentIndices(this, definition, classLevel);
     if (owned.length === 0) return null;
-    return securePick(owned) ?? null;
+    return securePick([null, ...owned]) ?? null;
   }
 
   private pickRandomLoadout(pool: DiceDefinition[], useDifficultyRarityRules: boolean): DiceDefinition[] {

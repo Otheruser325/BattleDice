@@ -1,5 +1,5 @@
 import type { DiceDefinition, DiceSkillDefinition, DiceSkillModifier, DiceTransformStats } from '../types/game';
-import { mergeSkillsByIndex } from './SkillOverlay';
+import { mergeSkillsByIndex, SKILL_SOURCE_SKILLS } from './SkillOverlay';
 import { formatCompact, formatPercent as formatPercentValue } from '../utils/FormatManager';
 
 export function getTransformStats(definition: DiceDefinition, transformIndex = 0): DiceTransformStats | undefined {
@@ -29,6 +29,22 @@ export function applyStatModifiers(base: number | undefined, fallback: number, d
   return Math.max(1, Math.round((resolvedBase + resolvedDelta) * resolveStatMultiplier(multiplier)));
 }
 
+export function applyOverlaySkillDescriptions(
+  definition: DiceDefinition,
+  baseSkills: DiceSkillDefinition[] | undefined,
+  skills: DiceSkillDefinition[],
+  overlay: Array<DiceSkillDefinition | null | undefined> | undefined
+): DiceSkillDefinition[] {
+  return skills.map((skill, index) => {
+    if (skill.descriptionLocked) return skill;
+    const overlaySkill = overlay?.[index];
+    const sourceModifiers = typeof overlaySkill?.type === 'string' ? undefined : baseSkills?.[index]?.modifiers;
+    if (!sourceModifiers && !skill.modifiers) return skill;
+    const description = getClassScaledSkillDescription(definition, skill, 1, sourceModifiers);
+    return description === skill.description ? skill : { ...skill, description };
+  });
+}
+
 export function applyTransformStats(definition: DiceDefinition, transformIndex = 0): DiceDefinition {
   const stats = getTransformStats(definition, transformIndex);
   if (!stats) return definition;
@@ -51,19 +67,13 @@ export function applyTransformStats(definition: DiceDefinition, transformIndex =
     alternateButton: definition.alternateButton,
     baseButton: definition.baseButton
   };
-  const skills = mergedSkills.map((skill, index) => {
-    if (skill.descriptionLocked) return skill;
-    const baseSkill = definition.skills[index];
-    const overlaySkill = stats.skills?.[index];
-    const sourceModifiers = baseSkill && typeof overlaySkill?.type !== 'string'
-      ? baseSkill.modifiers
-      : undefined;
-    if (!sourceModifiers && !skill.modifiers) return skill;
-    const description = getClassScaledSkillDescription(transformedDefinition, skill, 1, sourceModifiers);
-    return description === skill.description ? skill : { ...skill, description };
-  });
+  const skills = applyOverlaySkillDescriptions(transformedDefinition, definition.skills, mergedSkills, stats.skills);
   return { ...transformedDefinition, skills };
 }
+
+type DefinitionWithSkillSources = DiceDefinition & {
+  [SKILL_SOURCE_SKILLS]?: Array<DiceSkillDefinition | undefined>;
+};
 
 export const MAX_CLASS_LEVEL = 15;
 export const CLASS_UP_STAT_MULTIPLIER = 1.1;
@@ -108,9 +118,11 @@ function scaleFlatDamage(value: number | null | undefined, multiplier: number): 
 
 function scaleDamageRange(range: [number, number] | null | undefined, multiplier: number): [number, number] | undefined {
   if (!Array.isArray(range)) return undefined;
+  const [min, max] = range;
+  if (typeof min !== 'number' || !Number.isFinite(min) || typeof max !== 'number' || !Number.isFinite(max)) return undefined;
   return [
-    Math.max(1, Math.round(resolveStatValue(range[0], 1) * multiplier)),
-    Math.max(1, Math.round(resolveStatValue(range[1], 1) * multiplier))
+    Math.max(1, Math.round(min * multiplier)),
+    Math.max(1, Math.round(max * multiplier))
   ];
 }
 
@@ -266,113 +278,120 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     ? getBossClassMultiplier(boundedClassLevel)
     : getClassMultiplier(boundedClassLevel);
   const classUps = boundedClassLevel - 1;
+  const skillSourceSkills = (definition as DefinitionWithSkillSources)[SKILL_SOURCE_SKILLS];
 
   const scaledDefinitionForDescription: DiceDefinition = {
     ...definition,
     attack: scaleStatValue(definition.attack, 1, multiplier),
     health: scaleStatValue(definition.health, 1, multiplier)
   };
-  const skills = definition.skills.map((skill) => {
-    const source = skill.modifiers ? omitNullishModifiers(skill.modifiers) : undefined;
-    if (!source) return skill;
+  const skills = definition.skills.map((skill, index) => {
+    const displayModifiers = skill.modifiers ? omitNullishModifiers(skill.modifiers) : undefined;
+    const sourceSkill = skillSourceSkills?.[index];
+    const sourceModifiers = sourceSkill?.modifiers ?? displayModifiers;
+    const source = sourceModifiers ? omitNullishModifiers(sourceModifiers) : undefined;
+    if (!displayModifiers) return skill;
 
-    const modifiers: DiceSkillModifier = { ...source };
-    modifiers.splashDamage = scaleFlatDamage(source.splashDamage, multiplier);
-    modifiers.heatwaveDamage = scaleFlatDamage(source.heatwaveDamage, multiplier);
-    modifiers.chainDamage = scaleFlatDamage(source.chainDamage, multiplier);
-    modifiers.poisonDamage = scaleFlatDamage(source.poisonDamage, multiplier);
-    modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
-    modifiers.activeHeal = scaleFlatDamage(source.activeHeal, multiplier);
-    modifiers.meteorDamage = scaleFlatDamage(source.meteorDamage, multiplier);
-    modifiers.lavaDamage = scaleFlatDamage(source.lavaDamage, multiplier);
-    modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
-    modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
-    modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
-    modifiers.bossDamage = scaleFlatDamage(source.bossDamage, multiplier);
-    modifiers.shield = scaleFlatDamage(source.shield, multiplier);
-    modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
-    modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
+    const modifiers: DiceSkillModifier = { ...displayModifiers };
+    modifiers.splashDamage = scaleFlatDamage(displayModifiers.splashDamage, multiplier);
+    modifiers.heatwaveDamage = scaleFlatDamage(displayModifiers.heatwaveDamage, multiplier);
+    modifiers.chainDamage = scaleFlatDamage(displayModifiers.chainDamage, multiplier);
+    modifiers.poisonDamage = scaleFlatDamage(displayModifiers.poisonDamage, multiplier);
+    modifiers.activeDamage = scaleFlatDamage(displayModifiers.activeDamage, multiplier);
+    modifiers.activeHeal = scaleFlatDamage(displayModifiers.activeHeal, multiplier);
+    modifiers.meteorDamage = scaleFlatDamage(displayModifiers.meteorDamage, multiplier);
+    modifiers.lavaDamage = scaleFlatDamage(displayModifiers.lavaDamage, multiplier);
+    modifiers.beamDamage = scaleFlatDamage(displayModifiers.beamDamage, multiplier);
+    modifiers.pierceBehindDamage = scaleFlatDamage(displayModifiers.pierceBehindDamage, multiplier);
+    modifiers.hammerDamage = scaleFlatDamage(displayModifiers.hammerDamage, multiplier);
+    modifiers.bossDamage = scaleFlatDamage(displayModifiers.bossDamage, multiplier);
+    modifiers.shield = scaleFlatDamage(displayModifiers.shield, multiplier);
+    modifiers.transformAttackDamage = scaleFlatDamage(displayModifiers.transformAttackDamage, multiplier);
+    modifiers.damageRange = scaleDamageRange(displayModifiers.damageRange, multiplier);
 
-    if (definition.typeId === 'Skull' && source.reviveChance !== undefined) {
-      modifiers.reviveChance = Math.min(1, source.reviveChance + SKULL_REVIVE_CHANCE_PER_CLASS * classUps);
+    if (definition.typeId === 'Skull' && displayModifiers.reviveChance !== undefined) {
+      modifiers.reviveChance = Math.min(1, displayModifiers.reviveChance + SKULL_REVIVE_CHANCE_PER_CLASS * classUps);
     }
 
-    if (definition.typeId === 'Sniper' && source.distanceDamageBonusRatePerTile !== undefined) {
-      modifiers.distanceDamageBonusRatePerTile = source.distanceDamageBonusRatePerTile + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
+    if (definition.typeId === 'Sniper' && displayModifiers.distanceDamageBonusRatePerTile !== undefined) {
+      modifiers.distanceDamageBonusRatePerTile = displayModifiers.distanceDamageBonusRatePerTile + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
     }
 
-    if (definition.typeId === 'Discharge' && source.bonusDamagePerStatus !== undefined) {
-      modifiers.bonusDamagePerStatus = source.bonusDamagePerStatus + DISCHARGE_STATUS_BONUS_PER_CLASS * classUps;
+    if (definition.typeId === 'Discharge' && displayModifiers.bonusDamagePerStatus !== undefined) {
+      modifiers.bonusDamagePerStatus = displayModifiers.bonusDamagePerStatus + DISCHARGE_STATUS_BONUS_PER_CLASS * classUps;
     }
 
-    if (definition.typeId === 'Iron' && source.targetCurrentHpBonusRate !== undefined) {
-      modifiers.targetCurrentHpBonusRate = source.targetCurrentHpBonusRate + IRON_CURRENT_HP_RATE_PER_CLASS * classUps;
+    if (definition.typeId === 'Iron' && displayModifiers.targetCurrentHpBonusRate !== undefined) {
+      modifiers.targetCurrentHpBonusRate = displayModifiers.targetCurrentHpBonusRate + IRON_CURRENT_HP_RATE_PER_CLASS * classUps;
     }
 
-    if (source.lowHpDamageBonusRate !== undefined) {
-      modifiers.lowHpDamageBonusRate = Math.min(0.78, source.lowHpDamageBonusRate + LOW_HP_DAMAGE_RATE_PER_CLASS * classUps);
+    if (displayModifiers.lowHpDamageBonusRate !== undefined) {
+      modifiers.lowHpDamageBonusRate = Math.min(0.78, displayModifiers.lowHpDamageBonusRate + LOW_HP_DAMAGE_RATE_PER_CLASS * classUps);
     }
 
-    if (definition.typeId === 'Berserk' && source.berserkThresholdRate !== undefined) {
-      modifiers.berserkThresholdRate = Math.min(0.95, source.berserkThresholdRate + BERSERK_THRESHOLD_RATE_PER_CLASS * classUps);
+    if (definition.typeId === 'Berserk' && displayModifiers.berserkThresholdRate !== undefined) {
+      modifiers.berserkThresholdRate = Math.min(0.95, displayModifiers.berserkThresholdRate + BERSERK_THRESHOLD_RATE_PER_CLASS * classUps);
     }
 
-    if (source.checkForAdjacentAllies && source.targetMaxHpBonusRate !== undefined) {
-      modifiers.targetMaxHpBonusRate = source.targetMaxHpBonusRate + SOLITUDE_MAX_HP_RATE_PER_CLASS * classUps;
+    if (displayModifiers.checkForAdjacentAllies && displayModifiers.targetMaxHpBonusRate !== undefined) {
+      modifiers.targetMaxHpBonusRate = displayModifiers.targetMaxHpBonusRate + SOLITUDE_MAX_HP_RATE_PER_CLASS * classUps;
     }
 
-    if (definition.typeId === 'Assassin' && source.numAttacksBoosted !== undefined) {
-      modifiers.numAttacksBoosted = source.numAttacksBoosted + Math.floor(classUps / 4);
+    if (definition.typeId === 'Assassin' && displayModifiers.numAttacksBoosted !== undefined) {
+      modifiers.numAttacksBoosted = displayModifiers.numAttacksBoosted + Math.floor(classUps / 4);
     }
 
-    const armorReduction = source.armorReduction ?? parseRuntimeRate(source.notes, 'runtime:armorShredRate=');
+    const armorReduction = displayModifiers.armorReduction ?? parseRuntimeRate(displayModifiers.notes, 'runtime:armorShredRate=');
     if (armorReduction !== undefined) {
       modifiers.armorReduction = Math.min(0.95, armorReduction + CRACK_ARMOR_SHRED_RATE_PER_CLASS * classUps);
-      modifiers.notes = (source.notes ?? []).filter((note) => !note.startsWith('runtime:armorShredRate='));
+      modifiers.notes = (displayModifiers.notes ?? []).filter((note) => !note.startsWith('runtime:armorShredRate='));
     }
 
-    if (definition.typeId === 'Battery' && source.allyManaGain !== undefined) {
-      modifiers.allyManaGain = source.allyManaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
+    if (definition.typeId === 'Battery' && displayModifiers.allyManaGain !== undefined) {
+      modifiers.allyManaGain = displayModifiers.allyManaGain + Math.floor(classUps / 5) * BATTERY_MANA_GAIN_PER_5_CLASS;
     }
 
-    if (source.soulBoostPercent !== undefined) {
-      modifiers.soulBoostPercent = source.soulBoostPercent + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
+    if (displayModifiers.soulBoostPercent !== undefined) {
+      modifiers.soulBoostPercent = displayModifiers.soulBoostPercent + SNIPER_DISTANCE_RATE_PER_CLASS * classUps;
     }
 
-    if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && source.allyManaGain !== undefined) {
-      modifiers.allyManaGain = source.allyManaGain + Math.floor(classUps / 4);
+    if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && displayModifiers.allyManaGain !== undefined) {
+      modifiers.allyManaGain = displayModifiers.allyManaGain + Math.floor(classUps / 4);
     }
 
-    if (definition.typeId === 'Magician' && source.manaSteal !== undefined) {
-      modifiers.manaSteal = source.manaSteal + Math.floor(classUps / 5);
+    if (definition.typeId === 'Magician' && displayModifiers.manaSteal !== undefined) {
+      modifiers.manaSteal = displayModifiers.manaSteal + Math.floor(classUps / 5);
     }
 
-    if (definition.typeId === 'Magician' && source.statusDuration !== undefined) {
-      modifiers.statusDuration = source.statusDuration + Math.floor(classUps / 4);
+    if (definition.typeId === 'Magician' && displayModifiers.statusDuration !== undefined) {
+      modifiers.statusDuration = displayModifiers.statusDuration + Math.floor(classUps / 4);
     }
 
-    if (source.avoidAttackChance !== undefined) {
-      modifiers.avoidAttackChance = Math.min(0.95, source.avoidAttackChance + AVOID_ATTACK_CHANCE_PER_CLASS * classUps);
+    if (displayModifiers.avoidAttackChance !== undefined) {
+      modifiers.avoidAttackChance = Math.min(0.95, displayModifiers.avoidAttackChance + AVOID_ATTACK_CHANCE_PER_CLASS * classUps);
     }
-    if (source.missingHealRate !== undefined) {
-      modifiers.missingHealRate = Math.min(1, source.missingHealRate + 0.015 * classUps);
+    if (displayModifiers.missingHealRate !== undefined) {
+      modifiers.missingHealRate = Math.min(1, displayModifiers.missingHealRate + 0.015 * classUps);
     }
-    if (source.revengeThresholdRate !== undefined) {
-      modifiers.revengeThresholdRate = Math.min(0.95, source.revengeThresholdRate + 0.01 * classUps);
+    if (displayModifiers.revengeThresholdRate !== undefined) {
+      modifiers.revengeThresholdRate = Math.min(0.95, displayModifiers.revengeThresholdRate + 0.01 * classUps);
     }
-    if (source.revengeHits !== undefined) {
-      modifiers.revengeHits = source.revengeHits + Math.floor(classUps / 6);
+    if (displayModifiers.revengeHits !== undefined) {
+      modifiers.revengeHits = displayModifiers.revengeHits + Math.floor(classUps / 6);
     }
-    modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
+    modifiers.revengeDamage = scaleFlatDamage(displayModifiers.revengeDamage, multiplier);
 
-    if (source.ricochetCount !== undefined && definition.typeId === 'Druid' && boundedClassLevel >= 10) {
-      modifiers.ricochetCount = source.ricochetCount + 1;
+    if (displayModifiers.ricochetCount !== undefined && definition.typeId === 'Druid' && boundedClassLevel >= 10) {
+      modifiers.ricochetCount = displayModifiers.ricochetCount + 1;
     }
 
     const scaledSkill = { ...skill, modifiers: omitNullishModifiers(modifiers) };
+    const descriptionSource = skill.descriptionLocked
+      ? scaledSkill
+      : { ...scaledSkill, description: sourceSkill?.description ?? skill.description };
     return {
       ...scaledSkill,
-      description: getClassScaledSkillDescription(scaledDefinitionForDescription, scaledSkill, 1, source)
+      description: getClassScaledSkillDescription(scaledDefinitionForDescription, descriptionSource, 1, source)
     };
   });
 

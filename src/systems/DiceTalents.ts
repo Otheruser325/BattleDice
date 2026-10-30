@@ -2,8 +2,8 @@ import type Phaser from 'phaser';
 import type { DiceDefinition, DiceRarity, DiceSkillDefinition, DiceSkillModifier, DiceTalentModifier, DiceTypeId } from '../types/game';
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
-import { mergeSkillOverlayByIndex } from './SkillOverlay';
-import { applyStatModifiers, getClassScaledSkillDescription } from './ClassProgression';
+import { mergeSkillOverlayByIndex, SKILL_SOURCE_SKILLS } from './SkillOverlay';
+import { applyStatModifiers, applyOverlaySkillDescriptions } from './ClassProgression';
 import {
   DEFAULT_TALENT_CLASS_NEEDED,
   RARITY_ORDER,
@@ -56,7 +56,7 @@ const ROOT_ONLY_MODIFIER_KEYS = new Set([
 function getRootSkillModifiers(modifiers: DiceTalentModifier): DiceSkillModifier {
   const root: Record<string, unknown> = {};
   Object.entries(modifiers).forEach(([key, value]) => {
-    if (!ROOT_ONLY_MODIFIER_KEYS.has(key)) root[key] = value;
+    if (!ROOT_ONLY_MODIFIER_KEYS.has(key) && value !== undefined && value !== null) root[key] = value;
   });
   return root as DiceSkillModifier;
 }
@@ -85,11 +85,13 @@ function getDisabledSkillIndices(
   return disabled;
 }
 
-export function applyDiceTalent(definition: DiceDefinition, talentIndex: number | null | undefined): DiceDefinition {
+export function applyDiceTalent(definition: DiceDefinition, talentIndex: number | null | undefined, classLevel?: number): DiceDefinition {
   if (definition.talentsComingSoon) return definition;
   const talent = getTalentByIndex(definition, talentIndex);
   if (!talent || talent.comingSoon === true) return definition;
-  const modifiers = talent.modifiers ?? {};
+  if (typeof classLevel === 'number' && !Number.isFinite(classLevel)) return definition;
+  if (classLevel !== undefined && classLevel < getTalentClassNeeded(talent)) return definition;
+  const modifiers = talent.modifiers && typeof talent.modifiers === 'object' && !Array.isArray(talent.modifiers) ? talent.modifiers : {};
   const skillOverlay = modifiers.skills;
 
   const baseSkills = definition.skills;
@@ -99,31 +101,34 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
     ? mergedSkills.map((skill) => ({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...rootSkillModifiers } }))
     : mergedSkills;
   const describedSkills = applySkillDescriptions(withRootModifiers, skillOverlay);
-  const resolvedSkills = describedSkills.map((skill, index) => {
-    if (skill.descriptionLocked) return skill;
-    const sourceModifiers = baseSkills[index]?.modifiers;
-    if (!sourceModifiers && !skill.modifiers) return skill;
-    const description = getClassScaledSkillDescription(
-      { ...definition, skills: describedSkills },
-      skill,
-      1,
-      sourceModifiers
-    );
-    return description === skill.description ? skill : { ...skill, description };
-  });
+  const resolvedSkills = applyOverlaySkillDescriptions(
+    { ...definition, skills: describedSkills },
+    baseSkills,
+    describedSkills,
+    skillOverlay
+  );
   const disabledIndices = getDisabledSkillIndices(skillOverlay, resolvedSkills.length);
   const finalSkills = disabledIndices.size === 0
     ? resolvedSkills
     : resolvedSkills.filter((_, index) => !disabledIndices.has(index));
+  const rangeDelta = typeof modifiers.rangeDelta === 'number' && Number.isFinite(modifiers.rangeDelta) ? modifiers.rangeDelta : 0;
+  const sourceSkills = describedSkills.map((_, index) =>
+    typeof skillOverlay?.[index]?.type === 'string' ? undefined : baseSkills?.[index]
+  );
+  const finalSourceSkills = disabledIndices.size === 0
+    ? sourceSkills
+    : sourceSkills.filter((_, index) => !disabledIndices.has(index));
 
-  return {
+  const result: DiceDefinition = {
     ...definition,
     attack: applyStatModifiers(definition.attack, definition.attack, modifiers.attackDelta, modifiers.attackMultiplier),
     health: applyStatModifiers(definition.health, definition.health, modifiers.healthDelta, modifiers.healthMultiplier),
-    range: Math.max(0, definition.range + (modifiers.rangeDelta ?? 0)),
+    range: Math.max(0, definition.range + rangeDelta),
     targetingMode: modifiers.targetingMode ?? definition.targetingMode,
     skills: finalSkills
   };
+  Object.defineProperty(result, SKILL_SOURCE_SKILLS, { value: finalSourceSkills });
+  return result;
 }
 
 export function canObtainTalent(

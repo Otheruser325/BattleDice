@@ -1,5 +1,7 @@
 import type { DiceSkillDefinition } from '../types/game';
 
+export const SKILL_SOURCE_SKILLS = Symbol('skillSourceSkills');
+
 export function cloneSkill(skill: DiceSkillDefinition): DiceSkillDefinition {
   return {
     ...skill,
