@@ -6,6 +6,7 @@ import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { ProfileStore } from '../systems/ProfileStore';
 import { AchievementStore } from '../systems/AchievementStore';
+import { DEV_MENU_AVAILABLE } from '../utils/BuildFlags';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
@@ -23,6 +24,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
+    this.activeSceneKey = SCENE_KEYS.Shop;
     this.tabButtons = [];
     const { width, height, dockY } = getLayout(this);
     this.debug.log('Menu scene created.');
@@ -124,6 +126,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private openTab(tab: MenuTab) {
+    if (tab.sceneKey === SCENE_KEYS.Dev && !DEV_MENU_AVAILABLE) return;
     AudioManager.playSfx(this, 'ui-click');
     if (this.scene.isActive(this.activeSceneKey)) {
       this.scene.stop(this.activeSceneKey);

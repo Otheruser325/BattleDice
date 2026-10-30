@@ -11,11 +11,13 @@ function getDefinitionPath(typeId: string) {
   return withBasePath(`gamedata/DiceDefinitions/${typeId}.dice`);
 }
 
-function getSubfolderDefinitionPath(entryPath: string | undefined, typeId: string) {
+const SAFE_DICE_PATH = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\.dice$/;
+
+function getSubfolderDefinitionPath(entryPath: string | undefined, typeId: string): string | undefined {
   const path = entryPath?.trim();
   if (!path) return getDefinitionPath(typeId);
-  const normalized = path.replace(/^\/+/, '');
-  return withBasePath(`gamedata/DiceDefinitions/${normalized}`);
+  if (!SAFE_DICE_PATH.test(path)) return undefined;
+  return withBasePath(`gamedata/DiceDefinitions/${path}`);
 }
 
 function normalizeTypeId(typeId: unknown): string | undefined {
@@ -122,10 +124,15 @@ export class DiceCatalogLoader {
 
     debug.log('Loaded dice definitions.', { requested: fetchableTypeIds.length, loaded: loadedTypeIds.length });
 
-    const loadedExclusiveDefinitions = await loadDiceDefinitions(
-      exclusiveEntries.map((entry) => ({ typeId: entry.typeId, path: getSubfolderDefinitionPath(entry.path, entry.typeId), label: 'Exclusive' })),
-      debug
-    );
+    const exclusiveDefinitionEntries = exclusiveEntries.flatMap((entry) => {
+      const definitionPath = getSubfolderDefinitionPath(entry.path, entry.typeId);
+      if (!definitionPath) {
+        debug.warn('Skipped exclusive dice definition with an unsafe path.', { typeId: entry.typeId });
+        return [];
+      }
+      return [{ typeId: entry.typeId, path: definitionPath, label: 'Exclusive' }];
+    });
+    const loadedExclusiveDefinitions = await loadDiceDefinitions(exclusiveDefinitionEntries, debug);
     const loadedExclusiveTypeIds = loadedExclusiveDefinitions.map(({ typeId, definition }) => {
       scene.cache.json.add(`dice:${typeId}`, definition);
       return typeId;

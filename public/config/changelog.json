@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v0.7.6-beta",
+      "date": "2026-10-30",
+      "notes": [
+        "General changes: --added status effect feedback in history logs --also added proper shield feedbacks in history logs --added a shuffle button in the loadout menu so you can randomise your loadout (and associated talents) with whatever RNGesus gives you",
+        "Dice balance: --Discharge: status effect stacks (such as poison) now account for the passive damage boost ---This was intentionally stripped out when we designed Discharge Dice, but have some fun with the new stack-tactular Discharge!",
+        "Bug fixes: --resolved an issue in Deucifer's Challenge that caused Deucifer to refuse to haunt your party at Hallo'ween Night --resolved some issues with boss footprint targeting --shielded dice should correctly record the amount of damage dealt by an attack in history logs --resolved specific multiplayer issues regarding security exploits on the Rivalis framework --resolved an issue that prevented new players from having starter resources --resolved specific edge cases related to the development build"
+      ]
+    },
+    {
       "version": "v0.7.5-beta",
       "date": "2026-10-24",
       "notes": [

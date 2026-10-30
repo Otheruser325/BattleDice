@@ -1055,7 +1055,7 @@ export class ArenaScene extends Phaser.Scene {
       this.clearModeModal();
       this.startGame();
     });
-    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns — Deucifer joins at round 10 (+10 vs boss)\nReward: ${formatCompact(7500)} Tokens + ${formatCompact(50)} Chips`, () => {
+    const deuc = makeBtn(cx + 320, cy, `Deucifer's Challenge`, `Status: ${this.getChallengeStatusLabel(deuciferStatus)}\nNightmare Deucifer\nClassic • 10 Turns — clear minions to summon him early (else round 10)\nReward: ${formatCompact(7500)} Tokens + ${formatCompact(50)} Chips`, () => {
       this.activeChallenge = 'deucifer';
       this.activeDailyKey = '';
       if (this.getChallengeStatus('deucifer') !== 'completed') this.setChallengeStatus('deucifer', 'started');
@@ -2387,6 +2387,97 @@ export class ArenaScene extends Phaser.Scene {
     this.forEachFootprintCell(row, col, footprint, (cellRow, cellCol) => usedCells.add(`${cellRow},${cellCol}`));
   }
 
+  private getFootprintCells(
+    die: DiceInstanceState,
+    position: { row: number; col: number } | undefined = die.gridPosition,
+    footprint = this.getFootprintForDie(die)
+  ): Array<{ row: number; col: number }> {
+    if (!position) return [];
+    const cells: Array<{ row: number; col: number }> = [];
+    this.forEachFootprintCell(position.row, position.col, footprint, (row, col) => cells.push({ row, col }));
+    return cells;
+  }
+
+  private getFootprintCellKeys(die: DiceInstanceState): string[] {
+    const boardSide = this.getBoardSideForDie(die);
+    return this.getFootprintCells(die).map((cell) => `${boardSide}:${cell.row},${cell.col}`);
+  }
+
+  private getFootprintColumnDistance(first: DiceInstanceState, second: DiceInstanceState): number {
+    let best = Number.POSITIVE_INFINITY;
+    this.getFootprintCells(first).forEach((firstCell) => {
+      this.getFootprintCells(second).forEach((secondCell) => {
+        best = Math.min(best, Math.abs(firstCell.col - secondCell.col));
+      });
+    });
+    return best;
+  }
+
+  private getFootprintRowDistance(first: DiceInstanceState, second: DiceInstanceState): number {
+    let best = Number.POSITIVE_INFINITY;
+    this.getFootprintCells(first).forEach((firstCell) => {
+      this.getFootprintCells(second).forEach((secondCell) => {
+        best = Math.min(best, Math.abs(firstCell.row - secondCell.row));
+      });
+    });
+    return best;
+  }
+
+  private getFootprintManhattanDistance(first: DiceInstanceState, second: DiceInstanceState): number {
+    let best = Number.POSITIVE_INFINITY;
+    this.getFootprintCells(first).forEach((firstCell) => {
+      this.getFootprintCells(second).forEach((secondCell) => {
+        best = Math.min(best, Math.abs(firstCell.row - secondCell.row) + Math.abs(firstCell.col - secondCell.col));
+      });
+    });
+    return best;
+  }
+
+  private getFootprintChebyshevDistance(first: DiceInstanceState, second: DiceInstanceState): number {
+    let best = Number.POSITIVE_INFINITY;
+    this.getFootprintCells(first).forEach((firstCell) => {
+      this.getFootprintCells(second).forEach((secondCell) => {
+        best = Math.min(best, Math.max(Math.abs(firstCell.row - secondCell.row), Math.abs(firstCell.col - secondCell.col)));
+      });
+    });
+    return best;
+  }
+
+  private getClosestFootprintOffsets(first: DiceInstanceState, second: DiceInstanceState): { rowOffset: number; colOffset: number; distance: number } {
+    let best = { rowOffset: 0, colOffset: 0, distance: Number.POSITIVE_INFINITY };
+    this.getFootprintCells(first).forEach((firstCell) => {
+      this.getFootprintCells(second).forEach((secondCell) => {
+        const rowOffset = secondCell.row - firstCell.row;
+        const colOffset = secondCell.col - firstCell.col;
+        const distance = Math.max(Math.abs(rowOffset), Math.abs(colOffset));
+        const betterTieBreak = distance === best.distance
+          && Math.abs(rowOffset) + Math.abs(colOffset) < Math.abs(best.rowOffset) + Math.abs(best.colOffset);
+        if (distance < best.distance || betterTieBreak) {
+          best = { rowOffset, colOffset, distance };
+        }
+      });
+    });
+    return best;
+  }
+
+  private getFootprintTargetsWithin(
+    source: DiceInstanceState,
+    candidates: DiceInstanceState[],
+    radius: number,
+    includeSource = false
+  ): DiceInstanceState[] {
+    const boardSide = this.getBoardSideForDie(source);
+    const seen = new Set<string>();
+    return candidates.filter((candidate) => {
+      if ((!includeSource && candidate.instanceId === source.instanceId) || seen.has(candidate.instanceId)) return false;
+      if (candidate.zone !== 'board' || candidate.isDestroyed || !candidate.gridPosition) return false;
+      if (this.getBoardSideForDie(candidate) !== boardSide) return false;
+      if (this.getFootprintChebyshevDistance(source, candidate) > radius) return false;
+      seen.add(candidate.instanceId);
+      return true;
+    });
+  }
+
   private collectOccupiedCells(ownerId: 'player' | 'enemy', excludedInstanceId?: string): Set<string> {
     return this.collectOccupiedCellsOnBoardSide(ownerId, excludedInstanceId);
   }
@@ -3283,7 +3374,7 @@ export class ArenaScene extends Phaser.Scene {
     const die = this.gameState.dice.find((candidate) => candidate.instanceId === instanceId);
     if (die) {
       this.animateGrowthEffect(die, delta > 0);
-      this.writeCombatLog(`${this.getCombatDieName(die)}: ${delta > 0 ? '+' : ''}${delta} attack count (total: ${next > 0 ? '+' : ''}${next})`);
+      this.writeAttackCountGainFeedback(die, delta);
     }
   }
 
@@ -3313,7 +3404,7 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState = hit.state;
       this.showDamageText(target, hit.dealt, '#ffbf80');
       await this.applyDamageDefeatHooks(attackSource, target, hit.defeated || hit.killed);
-      this.addCombatActionDetail(`${label} hit ${this.getCombatDieName(target)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+      this.addCombatActionDetail(`${label} hit ${this.getCombatDieName(target)} for ${this.formatDamageFeedback(hit)}`);
     } finally {
       this.specialSkillAttackDepth -= 1;
     }
@@ -3332,6 +3423,13 @@ export class ArenaScene extends Phaser.Scene {
     if (!Number.isFinite(delta) || delta === 0) return;
     this.grantedAttackCountByInstance.set(instanceId, (this.grantedAttackCountByInstance.get(instanceId) ?? 0) + delta);
     this.recordAttackCountEffect(instanceId, delta);
+    const die = this.gameState.dice.find((candidate) => candidate.instanceId === instanceId);
+    if (die) this.writeAttackCountGainFeedback(die, delta);
+  }
+
+  private writeAttackCountGainFeedback(die: DiceInstanceState, delta: number) {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    this.writeCombatLog(`${this.getCombatDieName(die)} ${delta > 0 ? 'gains' : 'loses'} ${formatCompact(Math.abs(delta))} attack count!`);
   }
 
   private getAttackCountBuffLines(die: DiceInstanceState): Array<{ text: string; color: string }> {
@@ -3564,13 +3662,15 @@ export class ArenaScene extends Phaser.Scene {
         () => getRuntimeSkillMetaForTrigger(definition, 'CombatStart'),
         { transformFlags: [], targetingMode: definition.targetingMode }
       );
-      const targets = this.gameState.dice.filter((die) => die.ownerId === targetOwner && die.zone === 'board' && !die.isDestroyed && die.gridPosition);
       const target = this.findSkillTargetForArena(attacker, startMeta.targetingMode ?? 'Nearest', false);
+      const targetBoardSide = target ? this.getBoardSideForDie(target) : undefined;
+      const targets = this.gameState.dice.filter((die) => die.ownerId === targetOwner && die.zone === 'board' && !die.isDestroyed && die.gridPosition
+        && (!targetBoardSide || this.getBoardSideForDie(die) === targetBoardSide));
       const pips = attacker.ownerId === 'player' ? (this.dicePips.get(attacker.instanceId) ?? 1) : (this.enemyDicePips.get(attacker.instanceId) ?? 1);
       const startSkill = getValidSkillDefinitions(definition).find((skill) => skill.type === 'CombatStart');
       const result = await this.combatOrchestrator.run(
         this.getCombatFlowContext('CombatStart', attacker, target, 'CombatStart', startSkill?.title),
-        () => executeCombatStartSkillEffects(attacker, definition, classLevel, target, targets, pips),
+        () => executeCombatStartSkillEffects(attacker, definition, classLevel, target, targets, pips, (die) => this.getFootprintForDie(die)),
         { combatStartAuras: [] }
       );
       const startSkillFired = Boolean(
@@ -3613,9 +3713,10 @@ export class ArenaScene extends Phaser.Scene {
         this.gameState = this.grantFoeAttacks(attacker, result.grantAttacksToFoe, this.gameState);
         this.addCombatActionDetail(`${startSkill?.title ?? 'Combat-start skill'} grants +${result.grantAttacksToFoe} attack${result.grantAttacksToFoe === 1 ? '' : 's'} to the opposing side`);
       }
-      if (result.splashTargets?.length) {
-        this.playSplashSfxForDie(attacker, startMeta);
-        for (const victim of result.splashTargets) {
+      if (result.splashTargets?.length && target) {
+        const splashTargets = this.getFootprintTargetsWithin(target, targets, 1);
+        if (splashTargets.length > 0) this.playSplashSfxForDie(attacker, startMeta);
+        for (const victim of splashTargets) {
           const damage = Math.max(1, Math.floor((result.splashDamageAmount ?? definition.attack)
             * this.getCombanityDamageMultiplier(attacker, victim)
             * this.getDiceCardSkillDamageMultiplier(attacker)));
@@ -3624,15 +3725,12 @@ export class ArenaScene extends Phaser.Scene {
           this.showDamageText(victim, hit.dealt, '#ff9f58');
           this.animateSkillEffect('fire', attacker, victim);
           await this.applyDamageDefeatHooks(attacker, victim, hit.defeated || hit.killed);
-          this.addCombatActionDetail(`Combat-start splash hit ${this.getCombatDieName(victim)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+          this.addCombatActionDetail(`Combat-start splash hit ${this.getCombatDieName(victim)} for ${this.formatDamageFeedback(hit)}`);
         }
       }
       if (result.heatwaveDamageAmount !== undefined && target?.gridPosition) {
         if (!result.splashTargets?.length) this.playSplashSfxForDie(attacker, startMeta);
-        const heatwaveTargets = targets.filter((victim) => victim.instanceId !== target.instanceId
-          && victim.gridPosition
-          && Math.abs(victim.gridPosition.row - target.gridPosition!.row) <= 1
-          && Math.abs(victim.gridPosition.col - target.gridPosition!.col) <= 1);
+        const heatwaveTargets = this.getFootprintTargetsWithin(target, targets, 1);
         for (const victim of heatwaveTargets) {
           const damage = Math.max(1, Math.floor(result.heatwaveDamageAmount * this.getOffenseMultiplier(attacker) * this.getDiceCardSkillDamageMultiplier(attacker)));
           const hit = this.applyDamageWithRevive(victim.instanceId, damage, { source: attacker });
@@ -3640,7 +3738,7 @@ export class ArenaScene extends Phaser.Scene {
           this.showDamageText(victim, hit.dealt, '#ff7a35');
           this.animateSkillEffect('heatwave', attacker, victim);
           await this.applyDamageDefeatHooks(attacker, victim, hit.defeated || hit.killed);
-          this.addCombatActionDetail(`Combat-start heatwave hit ${this.getCombatDieName(victim)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+          this.addCombatActionDetail(`Combat-start heatwave hit ${this.getCombatDieName(victim)} for ${this.formatDamageFeedback(hit)}`);
         }
       }
       if (result.chainTarget) {
@@ -3728,6 +3826,7 @@ export class ArenaScene extends Phaser.Scene {
         this.combatAttackCountNegativeDeltaByInstance.set(die.instanceId, combatNegativeDelta);
         this.recordAttackCountEffect(die.instanceId, combatPositiveDelta);
         this.recordAttackCountEffect(die.instanceId, combatNegativeDelta);
+        if (combatAttackCountDelta > 0) this.writeAttackCountGainFeedback(transformedDie, combatAttackCountDelta);
         const withPermanent = this.computeAttackCount(transformedDie.instanceId, pips, pipAuraDelta, transformedDie);
         const stunned = this.stunnedByInstance.has(transformedDie.instanceId);
         const mightyRoar = shouldMightyRoar(transformedDie);
@@ -3750,13 +3849,26 @@ export class ArenaScene extends Phaser.Scene {
           ...matchingAllyAuras.map((aura) => ({ effect: 'acceleration' as const, turns: 1, sourceInstanceId: aura.sourceId })),
           ...matchingFoeAuras.map((aura) => ({ effect: 'dilation' as const, turns: 1, sourceInstanceId: aura.sourceId }))
         ];
-        if (stacks.length > 0) this.timeStatusByInstance.set(die.instanceId, stacks);
+        if (stacks.length > 0) {
+          this.timeStatusByInstance.set(die.instanceId, stacks);
+          stacks.forEach((stack) => {
+            const source = this.gameState.dice.find((candidate) => candidate.instanceId === stack.sourceInstanceId);
+            if (source) this.writeStatusApplicationFeedback(source, die, stack.effect);
+          });
+        }
       });
     if (this.configRandomMode && this.activeRandomModifier === 'Combanity') {
       nextState = this.applyCombanityBonuses(nextState);
     }
     nextState.dice.forEach((die) => {
       if (die.zone === 'board' && !die.isDestroyed) this.attackCapacityByInstance.set(die.instanceId, Math.max(0, die.attacksRemaining));
+    });
+    nextState.dice.forEach((die) => {
+      if (die.zone !== 'board' || die.isDestroyed) return;
+      const slow = this.getAttackDeltaSummary(die.instanceId);
+      if (!slow || slow.delta >= 0) return;
+      const lostAttackCounts = Math.abs(slow.delta);
+      this.writeCombatLog(`${this.getCombatDieName(die)} loses ${lostAttackCounts} attack count${lostAttackCounts === 1 ? '' : 's'}!`);
     });
     [...playerBoardDice, ...enemyBoardDice].forEach((die) => {
       const definition = this.getDefinitionForInstance(die);
@@ -4039,7 +4151,10 @@ export class ArenaScene extends Phaser.Scene {
       if (!taunt) return;
       boardDice.filter((foe) => foe.ownerId !== shield.ownerId).forEach((foe) => {
         const distance = this.getDistanceWithBoardSides(shield, foe);
-        if (distance <= taunt.range) this.tauntedByInstance.set(foe.instanceId, { sourceId: shield.instanceId, turns: taunt.duration });
+        if (distance <= taunt.range) {
+          this.tauntedByInstance.set(foe.instanceId, { sourceId: shield.instanceId, turns: taunt.duration });
+          this.writeStatusApplicationFeedback(shield, foe, 'taunt');
+        }
       });
     });
   }
@@ -4161,7 +4276,8 @@ export class ArenaScene extends Phaser.Scene {
     const meta = getRuntimeSkillMeta(definition);
     const statusBonusRate = Math.max(0, meta.bonusDamagePerStatus ?? 0);
     if (statusBonusRate <= 0) return storedBonus;
-    return storedBonus + Math.floor(definition.attack * statusBonusRate * this.getTotalStatusStackCount(attacker));
+    const statusStacks = this.getTotalStatusStackCount(attacker);
+    return storedBonus + Math.floor(definition.attack * statusBonusRate * statusStacks);
   }
 
   private getTotalStatusStackCount(die: DiceInstanceState): number {
@@ -4284,21 +4400,29 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private getDistanceWithBoardSides(attacker: DiceInstanceState, target: DiceInstanceState): number {
-    if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
+    const attackerCells = this.getFootprintCells(attacker);
+    const targetCells = this.getFootprintCells(target);
+    if (attackerCells.length === 0 || targetCells.length === 0) return Number.POSITIVE_INFINITY;
     const attackerSide = this.getBoardSideForDie(attacker);
     const targetSide = this.getBoardSideForDie(target);
 
     if (attackerSide === targetSide) {
-      return Math.abs(attacker.gridPosition.col - target.gridPosition.col);
+      return this.getFootprintColumnDistance(attacker, target);
     }
 
-    const attackerToFrontline = attackerSide === 'player'
-      ? GRID_SIZE - attacker.gridPosition.col
-      : attacker.gridPosition.col + 1;
-    const targetFromFrontline = targetSide === 'player'
-      ? GRID_SIZE - target.gridPosition.col
-      : target.gridPosition.col + 1;
-    return Math.max(0, attackerToFrontline + targetFromFrontline - 1);
+    let best = Number.POSITIVE_INFINITY;
+    attackerCells.forEach((attackerCell) => {
+      const attackerToFrontline = attackerSide === 'player'
+        ? GRID_SIZE - attackerCell.col
+        : attackerCell.col + 1;
+      targetCells.forEach((targetCell) => {
+        const targetFromFrontline = targetSide === 'player'
+          ? GRID_SIZE - targetCell.col
+          : targetCell.col + 1;
+        best = Math.min(best, Math.max(0, attackerToFrontline + targetFromFrontline - 1));
+      });
+    });
+    return best;
   }
 
   private isOnBlockedBackline(die: DiceInstanceState): boolean {
@@ -4313,7 +4437,7 @@ export class ArenaScene extends Phaser.Scene {
       const attackerSide = this.getBoardSideForDie(attacker);
       const targetSide = this.getBoardSideForDie(target);
       if (attackerSide !== targetSide) return Number.POSITIVE_INFINITY;
-      return Math.abs(attacker.gridPosition.col - target.gridPosition.col) + 1;
+      return this.getFootprintColumnDistance(attacker, target) + 1;
     }
     return this.getDistanceWithBoardSides(attacker, target);
   }
@@ -4462,10 +4586,9 @@ export class ArenaScene extends Phaser.Scene {
       )
       .map((die) => ({
         die,
-        rowOffset: die.gridPosition.row - primaryTarget.gridPosition!.row,
-        colOffset: die.gridPosition.col - primaryTarget.gridPosition!.col
+        ...this.getClosestFootprintOffsets(primaryTarget, die)
       }))
-      .filter(({ rowOffset, colOffset }) => Math.max(Math.abs(rowOffset), Math.abs(colOffset)) <= chainRange);
+      .filter(({ distance }) => distance <= chainRange);
 
     const isRow = ({ rowOffset }: { rowOffset: number }) => rowOffset === 0;
     const isColumnOrDiagonal = ({ rowOffset, colOffset }: { rowOffset: number; colOffset: number }) =>
@@ -4473,13 +4596,7 @@ export class ArenaScene extends Phaser.Scene {
 	  
     const rowCandidates = inRange.filter(isRow);
     const candidates = (rowCandidates.length > 0 ? rowCandidates : inRange.filter(isColumnOrDiagonal))
-      .map(({ die }) => ({
-        die,
-        distance: Math.max(
-          Math.abs(primaryTarget.gridPosition!.row - die.gridPosition.row),
-          Math.abs(primaryTarget.gridPosition!.col - die.gridPosition.col)
-        )
-      }));
+      .map(({ die, distance }) => ({ die, distance }));
     return this.selectTargetCandidate(candidates, mode);
   }
 
@@ -4555,10 +4672,10 @@ export class ArenaScene extends Phaser.Scene {
     if (this.lavaPoolsByTile.size === 0) return;
     const allBoardDice = this.gameState.dice.filter(d => d.zone === 'board' && !d.isDestroyed && d.gridPosition);
     for (const die of allBoardDice) {
-      const boardSide = this.getBoardSideForDie(die);
-      const tileKey = `${boardSide}:${die.gridPosition!.row},${die.gridPosition!.col}`;
-      const pool = this.lavaPoolsByTile.get(tileKey);
-      if (!pool || (pool.sourceOwnerId && die.ownerId === pool.sourceOwnerId)) continue;
+      const pool = this.getFootprintCellKeys(die)
+        .map((tileKey) => this.lavaPoolsByTile.get(tileKey))
+        .find((candidate) => candidate && (!candidate.sourceOwnerId || die.ownerId !== candidate.sourceOwnerId));
+      if (!pool) continue;
       const sourceProxy: DiceInstanceState = { ...die, ownerId: pool.sourceOwnerId ?? die.ownerId, typeId: pool.sourceTypeId ?? die.typeId };
       const lavaMultiplier = this.getCombanityDamageMultiplier(sourceProxy, die) * this.getDiceCardSkillDamageMultiplier(sourceProxy);
       const finalDamage = Math.max(1, Math.floor(pool.damage * lavaMultiplier));
@@ -4566,7 +4683,7 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState = lavaHit.state;
       this.showDamageText(die, lavaHit.dealt, '#ff9f58');
       await this.applyDamageDefeatHooks(sourceProxy, die, lavaHit.defeated || lavaHit.killed);
-      this.addCombatActionDetail(`Lava hit ${this.getCombatDieName(die)} for ${formatCompact(lavaHit.dealt)}${this.criticalSuffix(lavaHit.critical)}`);
+      this.addCombatActionDetail(`Lava hit ${this.getCombatDieName(die)} for ${this.formatDamageFeedback(lavaHit)}`);
       this.writeCombatLog(`${this.getCombatDieName(die)} takes ${formatCompact(lavaHit.dealt)} lava damage${this.criticalSuffix(lavaHit.critical)} from the pool!`);
     }
   }
@@ -4677,7 +4794,7 @@ export class ArenaScene extends Phaser.Scene {
         await this.applyDamageDefeatHooks(assassin, target, hit.defeated || hit.killed);
         const rem = this.assassinBoostAttacksByInstance.get(assassin.instanceId) ?? 0;
         if (rem > 0) this.assassinBoostAttacksByInstance.set(assassin.instanceId, rem - 1);
-        this.writeCombatLog(`${openingOwner === 'player' ? 'Your' : 'Enemy'} ${this.getCombatDieName(assassin)} strikes first for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}!`);
+        this.writeCombatLog(`${openingOwner === 'player' ? 'Your' : 'Enemy'} ${this.getCombatDieName(assassin)} strikes first for ${this.formatDamageFeedback(hit)}!`);
         this.renderDice();
         this.renderEnemyDice();
         if (!(await this.delayCombatPaced(350))) return;
@@ -4790,6 +4907,7 @@ export class ArenaScene extends Phaser.Scene {
               ) ?? teleportTriggerMeta.statusDuration;
               if (teleportTriggerMeta.statusEffect === 'stun' || stunDuration !== undefined) {
                 this.stunnedByInstance.set(roarTarget.instanceId, this.getSkillDurationTurns(stunDuration) ?? 1);
+                this.writeStatusApplicationFeedback(attacker, roarTarget, 'stun');
               }
               this.gameState = spendAttack(this.gameState, attacker.instanceId);
               this.writeCombatLog(`${ownerName} ${this.getCombatDieName(attacker)} teleports beside ${this.getCombatDieName(roarTarget)} and fires ${getValidSkillDefinitions(attackerDef!)[teleportSkillFireIndex]?.title ?? 'its teleport skill'}!`);
@@ -4850,6 +4968,7 @@ export class ArenaScene extends Phaser.Scene {
 
          this.combatActionDetails = [];
          let damage = 0;
+        let damageAbsorbed = 0;
         let targetDefeated = false;
         let didPerformBasicAction = false;
         let basicAttackVisualCount = 1;
@@ -4928,6 +5047,7 @@ export class ArenaScene extends Phaser.Scene {
               basicAttackHitCount += 1;
               this.gameState = hit.state;
               damage += hit.dealt;
+              damageAbsorbed += hit.absorbed;
               if (bearCritMult > 1 || hit.critical) basicAttackCritical = true;
               if (damage > 200) AchievementStore.unlock(this, 'lotta_damage');
               targetDefeated = hit.defeated;
@@ -4964,12 +5084,13 @@ export class ArenaScene extends Phaser.Scene {
         }
         const details = this.combatActionDetails.length > 0 ? ` (${this.combatActionDetails.join('; ')})` : '';
         const projectileFeedback = basicAttackHitCount >= 2 ? ` ${basicAttackHitCount} times` : '';
+        const shieldFeedback = damageAbsorbed > 0 ? ` (${formatCompact(damageAbsorbed)} absorbed by shield)` : '';
         this.writeCombatLog(
           skipBasicAttack
             ? `${ownerName} ${this.getCombatDieName(attacker)} uses ${activeSlot?.title ?? 'active skill'}${details}!`
             : attackerMeta?.healOnAttack
               ? `${ownerName} ${this.getCombatDieName(attacker)} heals ${target.instanceId === attacker.instanceId ? 'itself' : this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} health${basicHealCritical ? ' (CRITICAL)' : ''}${details}!`
-              : `${ownerName} ${this.getCombatDieName(attacker)} attacks ${this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} damage${basicAttackCritical ? ' (CRITICAL)' : ''}!${details}`
+              : `${ownerName} ${this.getCombatDieName(attacker)} attacks ${this.getCombatDieName(target)}${projectileFeedback} for ${formatCompact(damage)} damage${shieldFeedback}${basicAttackCritical ? ' (CRITICAL)' : ''}!${details}`
         );
 
         if (!beamTarget && !skipBasicAttack && !attackerMeta?.healOnAttack) this.animateBasicAttackSequence(attacker, target, basicAttackVisualCount);
@@ -5016,8 +5137,8 @@ export class ArenaScene extends Phaser.Scene {
 
     if (
       this.activeChallenge === 'deucifer' &&
-      this.gameState.turn === 10 &&
-      !this.deuciferBossSummoned
+      !this.deuciferBossSummoned &&
+      (this.gameState.turn >= 10 || getLivingDiceCount(this.gameState, 'enemy') === 0)
     ) {
       this.deuciferBossPending = true;
     }
@@ -5294,8 +5415,9 @@ export class ArenaScene extends Phaser.Scene {
     return { amount: critical ? amount * 2 : amount, critical };
   }
 
-  private applyDamageWithRevive(instanceId: string, damage: number, options: { ignoreDamageReduction?: boolean; ignoreShield?: boolean; allowGlobalCrit?: boolean; proportionalDamage?: number; source?: DiceInstanceState } = {}): { state: MatchBattleState; dealt: number; defeated: boolean; killed: boolean; critical: boolean } {
+  private applyDamageWithRevive(instanceId: string, damage: number, options: { ignoreDamageReduction?: boolean; ignoreShield?: boolean; allowGlobalCrit?: boolean; proportionalDamage?: number; source?: DiceInstanceState } = {}): { state: MatchBattleState; dealt: number; absorbed: number; defeated: boolean; killed: boolean; critical: boolean } {
     this.hitDuringAttackAction.add(instanceId);
+    let shieldAbsorbed = 0;
     const proportionalDamage = Phaser.Math.Clamp(options.proportionalDamage ?? 0, 0, damage);
     const criticalDamage = this.applyCriticalDamage(damage - proportionalDamage, { allowGlobalCrit: options.allowGlobalCrit });
     damage = criticalDamage.damage + proportionalDamage;
@@ -5338,7 +5460,7 @@ export class ArenaScene extends Phaser.Scene {
         void this.applySpecialSkillAttack(targetDie, onDamagedResult.specialAttackDamage, onDamagedResult.specialAttackTarget, onDamagedMeta, 'On-hit attack');
       }
       if (onDamagedResult.shieldGain && onDamagedResult.shieldGain > 0) {
-        this.shieldHpByInstance.set(instanceId, (this.shieldHpByInstance.get(instanceId) ?? 0) + onDamagedResult.shieldGain);
+        this.grantShield(targetDie, onDamagedResult.shieldGain);
         this.showHealText(targetDie, onDamagedResult.shieldGain);
         this.playSkillSfxForDie(targetDie, getRuntimeSkillMeta(definition));
       }
@@ -5351,10 +5473,15 @@ export class ArenaScene extends Phaser.Scene {
       if (absorbed > 0) this.shieldDamageTextByInstance.set(instanceId, (this.shieldDamageTextByInstance.get(instanceId) ?? 0) + absorbed);
       if (nextShield > 0) this.shieldHpByInstance.set(instanceId, nextShield);
       else this.shieldHpByInstance.delete(instanceId);
+      if (absorbed > 0) {
+        shieldAbsorbed = absorbed;
+        const shieldTarget = before ?? die;
+        if (shieldTarget) this.writeCombatLog(`${this.getCombatDieName(shieldTarget)} takes ${formatCompact(absorbed)} damage! (shield took ${formatCompact(absorbed)} damage!)`);
+      }
       if (remaining <= 0) {
         if (before && absorbed > 0) grantOnDamagedShield(before, absorbed);
         this.criticalDamageTextByInstance.delete(instanceId);
-        return { state: this.gameState, dealt: 0, defeated: false, killed: false, critical: criticalDamage.critical };
+        return { state: this.gameState, dealt: 0, absorbed: shieldAbsorbed, defeated: false, killed: false, critical: criticalDamage.critical };
       }
       damage = remaining;
     }
@@ -5402,7 +5529,7 @@ export class ArenaScene extends Phaser.Scene {
           this.gameState = resolvedState;
         }
         if (!after.isDestroyed && onDamagedResult.shieldGain && onDamagedResult.shieldGain > 0) {
-          this.shieldHpByInstance.set(instanceId, (this.shieldHpByInstance.get(instanceId) ?? 0) + onDamagedResult.shieldGain);
+          this.grantShield(after, onDamagedResult.shieldGain);
           this.showHealText(after, onDamagedResult.shieldGain);
           this.playSkillSfxForDie(after, getRuntimeSkillMeta(definition));
         }
@@ -5434,7 +5561,7 @@ export class ArenaScene extends Phaser.Scene {
         }
       }
     }
-    if (!before || !after?.isDestroyed) return { state: resolvedState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)), defeated: false, killed: false, critical: criticalDamage.critical };
+    if (!before || !after?.isDestroyed) return { state: resolvedState, dealt: Math.max(0, (before?.currentHealth ?? 0) - (after?.currentHealth ?? 0)), absorbed: shieldAbsorbed, defeated: false, killed: false, critical: criticalDamage.critical };
     AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
     const beforeDefinition = before ? this.getDefinitionForInstance(before) : undefined;
     const reviveMeta = beforeDefinition ? getRuntimeSkillMeta(beforeDefinition) : undefined;
@@ -5460,13 +5587,14 @@ export class ArenaScene extends Phaser.Scene {
     );
     if (!canRevive || !secureChance(reviveChance!)) {
       this.defeatEventIdByInstance.set(instanceId, ++this.nextDefeatEventId);
-      return { state: resolvedState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), defeated: true, killed: true, critical: criticalDamage.critical };
+      return { state: resolvedState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), absorbed: shieldAbsorbed, defeated: true, killed: true, critical: criticalDamage.critical };
     }
     this.reviveCountByInstance.set(instanceId, previousRevives + 1);
     this.defeatEventIdByInstance.delete(instanceId);
     this.animateSkullRevive(before);
     return {
       dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)),
+      absorbed: shieldAbsorbed,
       defeated: false,
       killed: true,
       critical: criticalDamage.critical,
@@ -5510,7 +5638,7 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState = hit.state;
       this.showDamageText(freshTarget, hit.dealt, '#6abf69');
       await this.applyDamageDefeatHooks(liveSource, freshTarget, hit.defeated || hit.killed);
-      this.addCombatActionDetail(`Revenge hit ${this.getCombatDieName(freshTarget)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+      this.addCombatActionDetail(`Revenge hit ${this.getCombatDieName(freshTarget)} for ${this.formatDamageFeedback(hit)}`);
       if (hit.defeated) break;
     }
     this.writeCombatLog(`${this.getCombatDieName(liveSource)} unleashes Revenge!`);
@@ -5522,13 +5650,19 @@ export class ArenaScene extends Phaser.Scene {
     const rowStep = Math.sign(target.gridPosition.row - attacker.gridPosition.row);
     const colStep = this.getBoardSideForDie(attacker) === 'player' ? 1 : -1;
     const targetBoardSide = this.getBoardSideForDie(target);
+    const targetFootprint = this.getFootprintForDie(target);
     const enemies = this.getBoardDiceOnSide(target.ownerId, targetBoardSide);
     const targets: DiceInstanceState[] = [];
-    for (let i = 1; i <= range; i++) {
+    const hitIds = new Set<string>();
+    for (let i = targetFootprint; i < targetFootprint + range; i++) {
       const row = target.gridPosition.row + rowStep * i;
       const col = target.gridPosition.col + colStep * i;
-      const hit = enemies.find((die) => die.gridPosition?.row === row && die.gridPosition?.col === col);
-      if (hit) targets.push(hit);
+      enemies.forEach((die) => {
+        if (die.instanceId === target.instanceId || hitIds.has(die.instanceId)) return;
+        if (!this.getFootprintCells(die).some((cell) => cell.row === row && cell.col === col)) return;
+        hitIds.add(die.instanceId);
+        targets.push(die);
+      });
     }
     return targets;
   }
@@ -5543,20 +5677,14 @@ export class ArenaScene extends Phaser.Scene {
       other.gridPosition &&
       this.areDiceOnSameBoardSide(other, die)
     );
-    return allies.some((other) => {
-      const dr = Math.abs(other.gridPosition!.row - die.gridPosition!.row);
-      const dc = Math.abs(other.gridPosition!.col - die.gridPosition!.col);
-      return dr <= 1 && dc <= 1;
-    });
+    return allies.some((other) => this.getFootprintChebyshevDistance(die, other) <= 1);
   }
 
   private hasAdjacentFoe(die: DiceInstanceState): boolean {
     if (!die.gridPosition) return false;
     return this.gameState.dice.some((other) => {
       if (other.zone !== 'board' || other.isDestroyed || other.ownerId === die.ownerId || other.instanceId === die.instanceId || !other.gridPosition || !this.areDiceOnSameBoardSide(other, die)) return false;
-      const dr = Math.abs(other.gridPosition.row - die.gridPosition.row);
-      const dc = Math.abs(other.gridPosition.col - die.gridPosition.col);
-      return dr <= 1 && dc <= 1;
+      return this.getFootprintChebyshevDistance(die, other) <= 1;
     });
   }
 
@@ -5575,7 +5703,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!healer.gridPosition || !ally.gridPosition || !this.areDiceOnSameBoardSide(healer, ally)) {
       return Number.POSITIVE_INFINITY;
     }
-    return Math.abs(healer.gridPosition.col - ally.gridPosition.col);
+    return this.getFootprintColumnDistance(healer, ally);
   }
 
   private getWeakestInjuredAlly(healer: DiceInstanceState): DiceInstanceState | undefined {
@@ -5597,8 +5725,7 @@ export class ArenaScene extends Phaser.Scene {
     if (!source.gridPosition || !target.gridPosition || !this.areDiceOnSameBoardSide(source, target)) {
       return Number.POSITIVE_INFINITY;
     }
-    return Math.abs(target.gridPosition.row - source.gridPosition.row)
-      + Math.abs(target.gridPosition.col - source.gridPosition.col);
+    return this.getFootprintManhattanDistance(source, target);
   }
 
   private applyBasicHeal(attacker: DiceInstanceState, meta: ReturnType<typeof getRuntimeSkillMeta>): { healed: number; critical: boolean } {
@@ -5695,10 +5822,10 @@ export class ArenaScene extends Phaser.Scene {
       this.showDamageText(freshTarget, hit.dealt, leonDamage.critical ? '#ff3333' : '#ffbf4a');
       if (hit.defeated || hit.killed) {
         await this.applyDamageDefeatHooks(attacker, freshTarget, true);
-        this.addCombatActionDetail(`Furious Claw hit ${this.getCombatDieName(freshTarget)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(leonDamage.critical)}${hit.defeated ? '' : ' (revived)'}`);
+        this.addCombatActionDetail(`Furious Claw hit ${this.getCombatDieName(freshTarget)} for ${this.formatDamageFeedback(hit, leonDamage.critical)}${hit.defeated ? '' : ' (revived)'}`);
         return;
       }
-      this.addCombatActionDetail(`Furious Claw hit ${this.getCombatDieName(freshTarget)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(leonDamage.critical)}`);
+      this.addCombatActionDetail(`Furious Claw hit ${this.getCombatDieName(freshTarget)} for ${this.formatDamageFeedback(hit, leonDamage.critical)}`);
     }
   }
 
@@ -5725,6 +5852,16 @@ export class ArenaScene extends Phaser.Scene {
     this.writeCombatLog(`${ownerName}'s ${this.getCombatDieName(defeated)} was defeated!`);
   }
 
+  private writeStatusApplicationFeedback(source: DiceInstanceState, target: DiceInstanceState, effect: StatusEffectApplication['effect']) {
+    this.writeCombatLog(`${this.getCombatDieName(source)} applies ${effect} to ${this.getCombatDieName(target)}!`);
+  }
+
+  private grantShield(target: DiceInstanceState, amount: number) {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    this.shieldHpByInstance.set(target.instanceId, (this.shieldHpByInstance.get(target.instanceId) ?? 0) + amount);
+    this.writeCombatLog(`${this.getCombatDieName(target)} gains ${formatCompact(amount)} shield!`);
+  }
+
   private applyStatusApplications(applications: StatusEffectApplication[] | undefined) {
     if (!applications?.length) return;
     applications.forEach((application) => {
@@ -5732,6 +5869,8 @@ export class ArenaScene extends Phaser.Scene {
       if (!target) return;
       const duration = this.getSkillDurationTurns(application.duration);
       if (duration === undefined) return;
+      let applied = false;
+      let lostAttackCounts = 0;
       if (application.effect === 'poison' && application.damage !== undefined) {
         const damage = Math.max(1, Math.floor(application.damage * this.getDiceCardSkillDamageMultiplier(application.source)));
         const existing = this.poisonByInstance.get(target.instanceId);
@@ -5745,6 +5884,7 @@ export class ArenaScene extends Phaser.Scene {
           }]
         });
         this.animateSkillEffect('poison', application.source, target);
+        applied = true;
       } else if (application.effect === 'slow' && application.delta !== undefined) {
         const current = this.attackDeltaByInstance.get(target.instanceId);
         const currentStacks = current?.stacks?.filter((stack) => stack.turns > 0) ?? [];
@@ -5755,6 +5895,7 @@ export class ArenaScene extends Phaser.Scene {
         const appliedDelta = nextDelta - previousDelta;
         this.attackDeltaByInstance.set(target.instanceId, { delta: nextDelta, turns: Math.max(...nextStacks.map((stack) => stack.turns)), stacks: nextStacks });
         this.recordAttackCountEffect(target.instanceId, appliedDelta);
+        if (appliedDelta < 0) lostAttackCounts = Math.abs(appliedDelta);
         if (appliedDelta !== 0) {
           this.gameState = {
             ...this.gameState,
@@ -5766,15 +5907,24 @@ export class ArenaScene extends Phaser.Scene {
           };
         }
         this.animateSkillEffect('ice', application.source, target);
+        applied = true;
       } else if (application.effect === 'fracture' && application.rate !== undefined) {
         this.armorShredByInstance.set(target.instanceId, { rate: application.rate, turns: duration });
         this.animateSkillEffect('fracture', application.source, target);
+        applied = true;
       } else if (application.effect === 'stun') {
         this.stunnedByInstance.set(target.instanceId, duration);
         this.animateSkillEffect('ice', application.source, target);
+        applied = true;
       } else if (application.effect === 'taunt') {
         this.tauntedByInstance.set(target.instanceId, { sourceId: application.source.instanceId, turns: duration });
         this.animateSkillEffect('physical', application.source, target);
+        applied = true;
+      }
+      if (!applied) return;
+      this.writeStatusApplicationFeedback(application.source, target, application.effect);
+      if (lostAttackCounts > 0) {
+        this.writeCombatLog(`${this.getCombatDieName(target)} loses ${lostAttackCounts} attack count${lostAttackCounts === 1 ? '' : 's'}!`);
       }
     });
   }
@@ -5817,7 +5967,7 @@ export class ArenaScene extends Phaser.Scene {
     const passiveSkill = getValidSkillDefinitions(definition).find((skill) => skill.type === 'Passive');
     const result = this.combatOrchestrator.runSync(
       this.getCombatFlowContext('Passive', attacker, target, 'Passive', passiveSkill?.title),
-      () => executePassiveSkillEffects(attacker, definition, classLevel, target, boardSideTargets, pips, passiveSkillIndex),
+      () => executePassiveSkillEffects(attacker, definition, classLevel, target, boardSideTargets, pips, passiveSkillIndex, (die) => this.getFootprintForDie(die)),
       {}
     );
     this.applySkillGrowth(attacker.instanceId, result);
@@ -5845,16 +5995,17 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState = this.grantFoeAttacks(attacker, result.grantAttacksToFoe, this.gameState);
     }
 
-    if (result.splashTargets?.length) {
-      this.playSplashSfxForDie(attacker, meta);
-      for (const die of result.splashTargets) {
+    if (result.splashTargets?.length && target) {
+      const splashTargets = this.getFootprintTargetsWithin(target, boardSideTargets, 1);
+      if (splashTargets.length > 0) this.playSplashSfxForDie(attacker, meta);
+      for (const die of splashTargets) {
         const dealt = Math.max(1, Math.ceil((result.splashDamageAmount ?? meta.splashDamage ?? definition.attack) * this.getCombanityDamageMultiplier(attacker, die) * this.getDiceCardSkillDamageMultiplier(attacker)));
         const splashHit = this.applyDamageWithRevive(die.instanceId, dealt, { source: attacker });
         this.gameState = splashHit.state;
         this.showDamageText(die, splashHit.dealt, '#ff9f58');
         await this.applyDamageDefeatHooks(attacker, die, splashHit.defeated || splashHit.killed);
         this.animateSkillEffect('fire', attacker, die);
-        this.addCombatActionDetail(`Fire splash hit ${this.getCombatDieName(die)} for ${formatCompact(splashHit.dealt)}${this.criticalSuffix(splashHit.critical)}`);
+        this.addCombatActionDetail(`Fire splash hit ${this.getCombatDieName(die)} for ${this.formatDamageFeedback(splashHit)}`);
       }
     }
 
@@ -5874,7 +6025,7 @@ export class ArenaScene extends Phaser.Scene {
         this.gameState = chainHit.state;
         this.showDamageText(chainVictim, chainHit.dealt, '#fff176');
         await this.applyDamageDefeatHooks(attacker, chainVictim, chainHit.defeated || chainHit.killed);
-        this.addCombatActionDetail(`Electric chain hit ${this.getCombatDieName(chainVictim)} for ${formatCompact(chainHit.dealt)}${this.criticalSuffix(chainHit.critical)}`);
+        this.addCombatActionDetail(`Electric chain hit ${this.getCombatDieName(chainVictim)} for ${this.formatDamageFeedback(chainHit)}`);
         chainSource = chainVictim;
       }
     }
@@ -5885,9 +6036,9 @@ export class ArenaScene extends Phaser.Scene {
       const attackerBoardSide = this.getBoardSideForDie(attacker);
       const heatwaveTargets = this.gameState.dice.filter((candidate) =>
         candidate.ownerId === enemyOwner && candidate.zone === 'board' && !candidate.isDestroyed && candidate.gridPosition &&
-        Math.abs(candidate.gridPosition.row - attacker.gridPosition!.row) <= 1 &&
+        this.getFootprintRowDistance(attacker, candidate) <= 1 &&
         (this.getBoardSideForDie(candidate) === attackerBoardSide
-          ? Math.abs(candidate.gridPosition.col - attacker.gridPosition!.col) <= 1
+          ? this.getFootprintChebyshevDistance(attacker, candidate) <= 1
           : this.getDistanceWithBoardSides(attacker, candidate) <= 1));
       for (const heatwaveTarget of heatwaveTargets) {
         const dealt = Math.max(1, Math.floor(result.heatwaveDamageAmount * this.getCombanityDamageMultiplier(attacker, heatwaveTarget) * this.getDiceCardSkillDamageMultiplier(attacker)));
@@ -5896,19 +6047,21 @@ export class ArenaScene extends Phaser.Scene {
         this.showDamageText(heatwaveTarget, heatwaveHit.dealt, '#ff7a35');
         this.animateSkillEffect('heatwave', attacker, heatwaveTarget);
         await this.applyDamageDefeatHooks(attacker, heatwaveTarget, heatwaveHit.defeated || heatwaveHit.killed);
-        this.addCombatActionDetail(`Heatwave hit ${this.getCombatDieName(heatwaveTarget)} for ${formatCompact(heatwaveHit.dealt)}${this.criticalSuffix(heatwaveHit.critical)}`);
+        this.addCombatActionDetail(`Heatwave hit ${this.getCombatDieName(heatwaveTarget)} for ${this.formatDamageFeedback(heatwaveHit)}`);
       }
     }
 
-    if (result.pierceTargets?.length) {
-      this.playPassiveSkillSfxForDie(attacker, meta);
-      for (const die of result.pierceTargets) {
+    if (meta.pierceBehindRange && target) {
+      const freshTarget = this.gameState.dice.find((die) => die.instanceId === target.instanceId && die.zone === 'board' && !die.isDestroyed && die.gridPosition);
+      const pierceTargets = freshTarget ? this.getPierceBehindTargets(attacker, freshTarget, meta.pierceBehindRange) : [];
+      if (pierceTargets.length > 0) this.playPassiveSkillSfxForDie(attacker, meta);
+      for (const die of pierceTargets) {
         const pierceDamage = Math.max(1, Math.floor(definition.attack * this.getCombanityDamageMultiplier(attacker, die) * this.getDiceCardSkillDamageMultiplier(attacker)));
         const pierceHit = this.applyDamageWithRevive(die.instanceId, pierceDamage, { source: attacker });
         this.gameState = pierceHit.state;
         this.showDamageText(die, pierceHit.dealt, '#c9d6d3');
         await this.applyDamageDefeatHooks(attacker, die, pierceHit.defeated || pierceHit.killed);
-        this.addCombatActionDetail(`Pierce hit ${this.getCombatDieName(die)} for ${formatCompact(pierceHit.dealt)}${this.criticalSuffix(pierceHit.critical)}`);
+        this.addCombatActionDetail(`Pierce hit ${this.getCombatDieName(die)} for ${this.formatDamageFeedback(pierceHit)}`);
       }
     }
 
@@ -5999,19 +6152,24 @@ export class ArenaScene extends Phaser.Scene {
           const lavaKey = `${meteorBoardSide}:${tile.row},${tile.col}`;
           this.lavaPoolsByTile.set(lavaKey, { damage: lavaDamage, turns: lavaTurns, sourceOwnerId: attacker.ownerId, sourceTypeId: attacker.typeId });
         });
+        const meteorVictimIds = new Set<string>();
         for (const tile of impactTiles) {
-          const victim = this.gameState.dice.find((d) =>
-            d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner && d.gridPosition?.row === tile.row && d.gridPosition?.col === tile.col
-            && this.getBoardSideForDie(d) === meteorBoardSide);
-          if (!victim) continue;
-          const hit = applyDirectDamage(victim, meteorDamage);
-          this.showDamageText(victim, hit.dealt, '#ff9f58');
-          await this.applyDamageDefeatHooks(attacker, victim, hit.defeated || hit.killed);
-          this.addCombatActionDetail(`Meteor hit ${this.getCombatDieName(victim)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
-          if (hit.critical) meteorCritical = true;
-          meteorHitNames.push(this.getCombatDieName(victim));
-          totalHits += 1;
-          totalDamage += hit.dealt;
+          const victims = this.gameState.dice.filter((d) =>
+            d.zone === 'board' && !d.isDestroyed && d.ownerId === enemyOwner
+            && this.getBoardSideForDie(d) === meteorBoardSide
+            && this.getFootprintCells(d).some((cell) => cell.row === tile.row && cell.col === tile.col));
+          for (const victim of victims) {
+            if (meteorVictimIds.has(victim.instanceId)) continue;
+            meteorVictimIds.add(victim.instanceId);
+            const hit = applyDirectDamage(victim, meteorDamage);
+            this.showDamageText(victim, hit.dealt, '#ff9f58');
+            await this.applyDamageDefeatHooks(attacker, victim, hit.defeated || hit.killed);
+            this.addCombatActionDetail(`Meteor hit ${this.getCombatDieName(victim)} for ${this.formatDamageFeedback(hit)}`);
+            if (hit.critical) meteorCritical = true;
+            meteorHitNames.push(this.getCombatDieName(victim));
+            totalHits += 1;
+            totalDamage += hit.dealt;
+          }
         }
         this.renderLavaPools();
       }
@@ -6038,7 +6196,7 @@ export class ArenaScene extends Phaser.Scene {
         this.showDamageText(freshTarget, instakillHit.dealt, '#c57cff');
         await this.applyDamageDefeatHooks(attacker, freshTarget, instakillHit.defeated || instakillHit.killed);
         this.addCombatActionDetail(targetIsBoss
-          ? `${activeSlot.title} hit ${this.getCombatDieName(freshTarget)} for ${formatCompact(instakillHit.dealt)}${this.criticalSuffix(instakillHit.critical)}`
+          ? `${activeSlot.title} hit ${this.getCombatDieName(freshTarget)} for ${this.formatDamageFeedback(instakillHit)}`
           : `${activeSlot.title} instantly defeated ${this.getCombatDieName(freshTarget)}`);
       }
       this.resetActiveMana(attacker.instanceId, activeSlot.key);
@@ -6052,12 +6210,12 @@ export class ArenaScene extends Phaser.Scene {
         const hit = applyDirectDamage(freshTarget, result.spearStrike.damage);
         this.showDamageText(freshTarget, hit.dealt, '#dbe7e4');
         await this.applyDamageDefeatHooks(attacker, freshTarget, hit.defeated || hit.killed);
-        this.addCombatActionDetail(`Spear hit ${this.getCombatDieName(freshTarget)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+        this.addCombatActionDetail(`Spear hit ${this.getCombatDieName(freshTarget)} for ${this.formatDamageFeedback(hit)}`);
         for (const die of this.getPierceBehindTargets(attacker, freshTarget, result.spearStrike.pierceRange)) {
           const pierceHit = applyDirectDamage(die, result.spearStrike.pierceDamage);
           this.showDamageText(die, pierceHit.dealt, '#b58cff');
           await this.applyDamageDefeatHooks(attacker, die, pierceHit.defeated || pierceHit.killed);
-          this.addCombatActionDetail(`Spear pierce hit ${this.getCombatDieName(die)} for ${formatCompact(pierceHit.dealt)}${this.criticalSuffix(pierceHit.critical)}`);
+          this.addCombatActionDetail(`Spear pierce hit ${this.getCombatDieName(die)} for ${this.formatDamageFeedback(pierceHit)}`);
         }
       }
       this.resetActiveMana(attacker.instanceId, activeSlot.key);
@@ -6076,7 +6234,7 @@ export class ArenaScene extends Phaser.Scene {
     if (result.shieldGain !== undefined) {
       this.playSkillSfxForDie(attacker, meta);
       const shieldGain = Math.max(1, Math.ceil(result.shieldGain * this.getCombanityDamageMultiplier(attacker, attacker) * this.getTypeUpgradeMultiplier(attacker)));
-      this.shieldHpByInstance.set(attacker.instanceId, (this.shieldHpByInstance.get(attacker.instanceId) ?? 0) + shieldGain);
+      this.grantShield(attacker, shieldGain);
       if (result.shieldTurns !== undefined) {
         const durationTurns = this.getSkillDurationTurns(result.shieldTurns);
         if (durationTurns !== undefined) this.shieldDurationTurnsByInstance.set(attacker.instanceId, durationTurns);
@@ -6086,29 +6244,25 @@ export class ArenaScene extends Phaser.Scene {
 
     if (result.activeSplashDamageAmount !== undefined && target?.gridPosition) {
       const targetBoardSide = this.getBoardSideForDie(target);
-      const splashTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.instanceId !== target.instanceId
-        && Math.abs((die.gridPosition?.row ?? 99) - target.gridPosition.row) <= 1
-        && Math.abs((die.gridPosition?.col ?? 99) - target.gridPosition.col) <= 1);
+      const splashTargets = this.getFootprintTargetsWithin(target, this.getLivingDiceOnBoardSide(targetBoardSide), 1);
       for (const splashTarget of splashTargets) {
         const hit = applyDirectDamage(splashTarget, result.activeSplashDamageAmount);
         this.showDamageText(splashTarget, hit.dealt, '#ff9f58');
         this.animateSkillEffect('fire', attacker, splashTarget);
         await this.applyDamageDefeatHooks(attacker, splashTarget, hit.defeated || hit.killed);
-        this.addCombatActionDetail(`Active splash hit ${this.getCombatDieName(splashTarget)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+        this.addCombatActionDetail(`Active splash hit ${this.getCombatDieName(splashTarget)} for ${this.formatDamageFeedback(hit)}`);
       }
     }
 
     if (result.heatwaveDamageAmount !== undefined && target?.gridPosition) {
       const targetBoardSide = this.getBoardSideForDie(target);
-      const heatwaveTargets = this.getLivingDiceOnBoardSide(targetBoardSide).filter((die) => die.instanceId !== target.instanceId
-        && Math.abs((die.gridPosition?.row ?? 99) - target.gridPosition.row) <= 1
-        && Math.abs((die.gridPosition?.col ?? 99) - target.gridPosition.col) <= 1);
+      const heatwaveTargets = this.getFootprintTargetsWithin(target, this.getLivingDiceOnBoardSide(targetBoardSide), 1);
       for (const heatwaveTarget of heatwaveTargets) {
         const hit = applyDirectDamage(heatwaveTarget, result.heatwaveDamageAmount);
         this.showDamageText(heatwaveTarget, hit.dealt, '#ff7a35');
         this.animateSkillEffect('heatwave', attacker, heatwaveTarget);
         await this.applyDamageDefeatHooks(attacker, heatwaveTarget, hit.defeated || hit.killed);
-        this.addCombatActionDetail(`Heatwave hit ${this.getCombatDieName(heatwaveTarget)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+        this.addCombatActionDetail(`Heatwave hit ${this.getCombatDieName(heatwaveTarget)} for ${this.formatDamageFeedback(hit)}`);
       }
     }
 
@@ -6125,7 +6279,7 @@ export class ArenaScene extends Phaser.Scene {
         this.showDamageText(chainVictim, hit.dealt, '#fff176');
         this.animateSkillEffect('electric', attacker, chainVictim);
         await this.applyDamageDefeatHooks(attacker, chainVictim, hit.defeated || hit.killed);
-        this.addCombatActionDetail(`Chain hit ${this.getCombatDieName(chainVictim)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+        this.addCombatActionDetail(`Chain hit ${this.getCombatDieName(chainVictim)} for ${this.formatDamageFeedback(hit)}`);
       }
     }
 
@@ -6147,7 +6301,7 @@ export class ArenaScene extends Phaser.Scene {
         const hit = applyDirectDamage(freshTarget, result.directDamage!.damage);
         this.showDamageText(freshTarget, hit.dealt, '#ffbf80');
         await this.applyDamageDefeatHooks(attacker, freshTarget, hit.defeated || hit.killed);
-        this.addCombatActionDetail(`Active hit ${this.getCombatDieName(freshTarget)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+        this.addCombatActionDetail(`Active hit ${this.getCombatDieName(freshTarget)} for ${this.formatDamageFeedback(hit)}`);
       }
     }
 
@@ -6359,7 +6513,7 @@ export class ArenaScene extends Phaser.Scene {
         this.showDamageText(target, hit.dealt, '#d79a4a');
         this.animateSkillEffect('physical', moved, target);
         await this.applyDamageDefeatHooks(moved, target, hit.defeated || hit.killed);
-        this.addCombatActionDetail(`Transform attack hit ${this.getCombatDieName(target)} for ${formatCompact(hit.dealt)}${this.criticalSuffix(hit.critical)}`);
+        this.addCombatActionDetail(`Transform attack hit ${this.getCombatDieName(target)} for ${this.formatDamageFeedback(hit)}`);
       }
     }
     const meta = getRuntimeSkillMeta(definition);
@@ -6372,6 +6526,7 @@ export class ArenaScene extends Phaser.Scene {
         this.playSkillSfxForDie(transformed, meta);
         const turns = Number.isFinite(result.extraAttacksTurns) ? Math.max(1, result.extraAttacksTurns) : 1;
         this.recordAttackCountEffect(recipient.instanceId, bonusAttacks);
+        this.writeAttackCountGainFeedback(recipient, bonusAttacks);
         const current = this.extraAttackTurnsByInstance.get(recipient.instanceId);
         this.extraAttackTurnsByInstance.set(recipient.instanceId, {
           extra: (current?.extra ?? 0) + bonusAttacks,
@@ -6686,9 +6841,9 @@ export class ArenaScene extends Phaser.Scene {
       this.instanceClassLevels.set(instanceId, 1);
       this.deuciferBossPending = false;
       this.deuciferBossSummoned = true;
-      if (this.activeChallenge === 'deucifer') this.turnLimit = Math.max(this.turnLimit, 20);
+      if (this.activeChallenge === 'deucifer') this.turnLimit = Math.max(this.turnLimit, this.gameState.turn + 9);
       this.enemyLoadoutRevealed = true;
-      this.writeCombatLog('Deucifer has spawned after round 10 — defeat him within 10 bonus rounds!');
+      this.writeCombatLog('Deucifer has spawned — defeat him within 10 bonus rounds!');
     } catch (error) {
       this.debug.warn('summonDeuciferBoss failed; no boss spawn.', { error });
       this.deuciferBossPending = false;
@@ -6735,6 +6890,10 @@ export class ArenaScene extends Phaser.Scene {
         const hit = this.applyDamageWithRevive(instanceId, tickDamage, { source: sourceProxy });
         this.gameState = hit.state;
         this.showDamageText(target, hit.dealt, '#74d66f');
+        const poisonDieName = this.getCombatDieName(target);
+        this.writeCombatLog(activeStacks.length > 1
+          ? `${poisonDieName} takes ${activeStacks.length} ticks of poison damage! (total: ${formatCompact(hit.dealt)})`
+          : `${poisonDieName} takes ${formatCompact(hit.dealt)} poison damage!`);
         await this.applyDamageDefeatHooks(sourceProxy, target, hit.defeated || hit.killed);
         if (hit.defeated) AudioManager.playSfx(this, AUDIO_KEYS.diceDie);
       }
@@ -6871,9 +7030,10 @@ export class ArenaScene extends Phaser.Scene {
   private getTileCenter(die: DiceInstanceState): { x: number; y: number } | undefined {
     if (!die.gridPosition) return undefined;
     const grid = this.getGridContainerForDie(die);
+    const footprintOffset = (this.getFootprintForDie(die) - 1) * (TILE_SIZE + TILE_GAP) / 2;
     return {
-      x: grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2,
-      y: grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
+      x: grid.x + die.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 + footprintOffset,
+      y: grid.y + die.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 + footprintOffset
     };
   }
 
@@ -6927,9 +7087,9 @@ export class ArenaScene extends Phaser.Scene {
     });
     if (candidates.length === 0) return null;
     const picked = candidates[Phaser.Math.Between(0, candidates.length - 1)]!;
-    return picked.gridPosition
-      ? { row: picked.gridPosition.row, col: picked.gridPosition.col, boardSide: this.getBoardSideForDie(picked) }
-      : null;
+    const cells = this.getFootprintCells(picked);
+    const cell = cells[Phaser.Math.Between(0, cells.length - 1)];
+    return cell ? { ...cell, boardSide: this.getBoardSideForDie(picked) } : null;
   }
 
   private getPlusPatternTiles(origin: { row: number; col: number }): Array<{ row: number; col: number }> {
@@ -7416,15 +7576,10 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.sys.isActive()) return;
     const freshWeakest = this.gameState.dice.find((die) => die.instanceId === weakest.instanceId && die.zone === 'board' && !die.isDestroyed && die.gridPosition);
     if (!freshWeakest?.gridPosition) return;
-    const center = freshWeakest.gridPosition;
-    const targetBoardSide = this.getBoardSideForDie(freshWeakest);
-    await AnimationManager.animateJudgmentHammer(this, this.getGridContainerForDie(freshWeakest).x + center.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2, this.getGridContainerForDie(freshWeakest).y + center.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2, 250);
-    const victims = getBoardDice(this.gameState, enemyOwner).filter((die) =>
-      die.gridPosition &&
-      this.getBoardSideForDie(die) === targetBoardSide &&
-      Math.abs(die.gridPosition.row - center.row) <= radius &&
-      Math.abs(die.gridPosition.col - center.col) <= radius
-    );
+    const centerPoint = this.getTileCenter(freshWeakest);
+    if (!centerPoint) return;
+    await AnimationManager.animateJudgmentHammer(this, centerPoint.x, centerPoint.y, 250);
+    const victims = this.getFootprintTargetsWithin(freshWeakest, getBoardDice(this.gameState, enemyOwner), radius, true);
     const hammerMarkedName = this.getCombatDieName(freshWeakest);
     const hammerHitNames: string[] = [];
     let hammerTotalDamage = 0;
@@ -7436,7 +7591,7 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState = hammerHit.state;
       this.showDamageText(die, hammerHit.dealt, '#ffd36f');
       await this.applyDamageDefeatHooks(attacker, die, hammerHit.defeated || hammerHit.killed, { judgmentHammerDepth: chainDepth + 1 });
-      this.addCombatActionDetail(`Judgment Hammer hit ${this.getCombatDieName(die)} for ${formatCompact(hammerHit.dealt)}${this.criticalSuffix(hammerHit.critical)}`);
+      this.addCombatActionDetail(`Judgment Hammer hit ${this.getCombatDieName(die)} for ${this.formatDamageFeedback(hammerHit)}`);
       hammerHitNames.push(this.getCombatDieName(die));
       hammerTotalDamage += hammerHit.dealt;
     }
@@ -7602,7 +7757,8 @@ export class ArenaScene extends Phaser.Scene {
       && !die.isDestroyed
       && Boolean(die.gridPosition)
       && this.getBoardSideForDie(die) === targetBoardSide
-      && (die.instanceId === target.instanceId || this.isOnTranscendencePattern(targetPos, this.getTranscendenceGridPosition(die.gridPosition!, targetBoardSide), pattern))
+      && (die.instanceId === target.instanceId || this.getFootprintCells(die).some((cell) =>
+        this.isOnTranscendencePattern(targetPos, this.getTranscendenceGridPosition(cell, targetBoardSide), pattern)))
     );
 
     let primaryDefeated = false;
@@ -7613,7 +7769,7 @@ export class ArenaScene extends Phaser.Scene {
       this.gameState = beamHit.state;
       this.showDamageText(die, beamHit.dealt, '#9ff8ff');
       await this.applyDamageDefeatHooks(attacker, die, beamHit.defeated || beamHit.killed);
-      this.addCombatActionDetail(`Beam hit ${this.getCombatDieName(die)} for ${formatCompact(beamHit.dealt)}${this.criticalSuffix(beamHit.critical)}`);
+      this.addCombatActionDetail(`Beam hit ${this.getCombatDieName(die)} for ${this.formatDamageFeedback(beamHit)}`);
       totalDamage += beamHit.dealt;
       if (die.instanceId === target.instanceId) primaryDefeated = beamHit.defeated;
     }
@@ -7794,6 +7950,11 @@ export class ArenaScene extends Phaser.Scene {
     return critical ? ' (CRITICAL)' : '';
   }
 
+  private formatDamageFeedback(hit: { dealt: number; absorbed?: number; critical?: boolean }, critical = hit.critical): string {
+    const absorbed = (hit.absorbed ?? 0) > 0 ? ` (${formatCompact(hit.absorbed!)} absorbed)` : '';
+    return `${formatCompact(hit.dealt)}${absorbed}${this.criticalSuffix(critical)}`;
+  }
+
   private showDamageText(target: DiceInstanceState, amount: number, color = '#ffdf7a', textOverride?: string) {
     const critical = this.criticalDamageTextByInstance.delete(target.instanceId);
     const shieldAbsorbed = this.shieldDamageTextByInstance.get(target.instanceId) ?? 0;
@@ -7802,8 +7963,9 @@ export class ArenaScene extends Phaser.Scene {
     if (critical) color = '#ff3333';
     if (!target.gridPosition || (visibleDamage <= 0 && shieldAbsorbed <= 0 && !textOverride)) return;
     const grid = this.getGridContainerForDie(target);
-    const x = grid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
-    const y = grid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18;
+    const footprintOffset = (this.getFootprintForDie(target) - 1) * (TILE_SIZE + TILE_GAP) / 2;
+    const x = grid.x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 + footprintOffset;
+    const y = grid.y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 + footprintOffset - 18;
     const damageLabel = textOverride
       ?? (shieldAbsorbed > 0
         ? visibleDamage > 0 ? `-${formatCompact(visibleDamage)}\n(-${formatCompact(shieldAbsorbed)})` : `-${formatCompact(shieldAbsorbed)}`
@@ -7822,11 +7984,12 @@ export class ArenaScene extends Phaser.Scene {
   private showHealText(target: DiceInstanceState, amount: number, critical = false) {
     const fallbackHand = target.ownerId === 'player' ? this.handDice.get(target.instanceId) : undefined;
     if (!target.gridPosition && !fallbackHand) return;
+    const footprintOffset = target.gridPosition ? (this.getFootprintForDie(target) - 1) * (TILE_SIZE + TILE_GAP) / 2 : 0;
     const x = target.gridPosition
-      ? (this.getGridContainerForDie(target)).x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2
+      ? (this.getGridContainerForDie(target)).x + target.gridPosition.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 + footprintOffset
       : fallbackHand!.x;
     const y = target.gridPosition
-      ? (this.getGridContainerForDie(target)).y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 - 18
+      ? (this.getGridContainerForDie(target)).y + target.gridPosition.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2 + footprintOffset - 18
       : fallbackHand!.y - 24;
     const text = this.add.text(x, y, `+${formatCompact(amount)}`, {
       fontFamily: 'Orbitron',

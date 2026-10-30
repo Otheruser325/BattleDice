@@ -44,6 +44,32 @@ const TALENT_COST_MULTIPLIER: Record<DiceRarity, number> = {
   Mythic: 20
 };
 
+const CLASS_TOKEN_COST_MULTIPLIER: Record<DiceRarity, number> = {
+  Common: 1,
+  Uncommon: 1.5,
+  Rare: 2,
+  Epic: 4,
+  Legendary: 10,
+  Mythic: 20
+};
+
+const CLASS_TOKEN_COSTS_BY_LEVEL: Record<number, number> = {
+  2: 50,
+  3: 150,
+  4: 300,
+  5: 500,
+  6: 800,
+  7: 1200,
+  8: 2000,
+  9: 4000,
+  10: 6000,
+  11: 10000,
+  12: 20000,
+  13: 40000,
+  14: 70000,
+  15: 100000
+};
+
 const TALENT_DIAMOND_DROP_RATE: Record<DiceRarity, number> = {
   Common: 0.1,
   Uncommon: 0.075,
@@ -61,7 +87,7 @@ const TALENT_MASTER_DROP_RATE: Record<DiceRarity, number> = {
   Legendary: 0.0625,
   Mythic: 0.025
 };
-const CLASS_COPY_COSTS_BY_RARITY: Record<number, Record<string, number>> = {
+const CLASS_COPY_COSTS_BY_RARITY: Record<number, Partial<Record<DiceRarity, number>>> = {
   2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1, Mythic: 1 },
   3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1, Mythic: 1 },
   4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 2, Mythic: 1 },
@@ -77,6 +103,51 @@ const CLASS_COPY_COSTS_BY_RARITY: Record<number, Record<string, number>> = {
   14: { Common: 7500, Uncommon: 5000, Rare: 3250, Epic: 650, Legendary: 15, Mythic: 4 },
   15: { Common: 10000, Uncommon: 7500, Rare: 5000, Epic: 1000, Legendary: 20, Mythic: 5 }
 };
+
+function normalizeClassRarity(rarity: unknown): DiceRarity {
+  return typeof rarity === 'string' && (RARITY_ORDER as readonly string[]).includes(rarity)
+    ? rarity as DiceRarity
+    : 'Common';
+}
+
+function readNonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function readNonNegativeCost(value: unknown): number | undefined {
+  const number = readNonNegativeNumber(value);
+  return number === undefined ? undefined : Math.floor(number);
+}
+
+function readClassLevel(level: unknown): number | undefined {
+  return typeof level === 'number' && Number.isInteger(level) && level >= 2 && level <= MAX_CLASS_LEVEL
+    ? level
+    : undefined;
+}
+
+function readClassCopyCost(level: number, rarity: string | undefined): number {
+  const validLevel = readClassLevel(level);
+  if (validLevel === undefined) return 0;
+  const row = CLASS_COPY_COSTS_BY_RARITY[validLevel];
+  if (!row || typeof row !== 'object') return 0;
+  return readNonNegativeCost(row[normalizeClassRarity(rarity)])
+    ?? readNonNegativeCost(row.Common)
+    ?? 0;
+}
+
+export function getClassCopyCost(level: number, rarity: string | undefined): number {
+  return readClassCopyCost(level, rarity);
+}
+
+export function getClassTokenCost(level: number, rarity: string | undefined): number {
+  const validLevel = readClassLevel(level);
+  const baseCost = validLevel === undefined ? undefined : readNonNegativeCost(CLASS_TOKEN_COSTS_BY_LEVEL[validLevel]);
+  if (baseCost === undefined) return 0;
+  const multiplier = readNonNegativeNumber(CLASS_TOKEN_COST_MULTIPLIER[normalizeClassRarity(rarity)]) ?? 1;
+  return Math.round(baseCost * multiplier);
+}
 
 
 const MAX_STORED_COPIES_BY_RARITY: Record<string, number> = {
@@ -102,7 +173,7 @@ function getMaxUsefulCopiesForType(scene: Phaser.Scene, typeId: DiceTypeId, clas
   if (classLevel >= MAX_CLASS_LEVEL) return 0;
   let remaining = 0;
   for (let lvl = classLevel + 1; lvl <= MAX_CLASS_LEVEL; lvl++) {
-    remaining += CLASS_COPY_COSTS_BY_RARITY[lvl]?.[rarity] ?? (lvl <= 1 ? 0 : lvl * 10);
+    remaining += readClassCopyCost(lvl, rarity);
   }
   return remaining;
 }
@@ -303,36 +374,26 @@ export interface DiceProgressState {
 const STARTER_TOKENS = 5000;
 const STARTER_DIAMONDS = 100;
 
-// A stored balance means the starter grant already happened (or was earned past), so the record is
-// marked claimed on sight. That stops an existing player's first wipe after this update from
-// looking like a fresh install and handing the starter economy out a second time.
 function resolveStarterTokens(saved: number | undefined): number {
-  const record = getInstallRecord();
-  if (typeof saved === 'number') {
-    if (!record?.starterTokens) updateInstallRecord({ starterTokens: true });
-    return saved;
-  }
-  if (record?.starterTokens) return 0;
-  updateInstallRecord({ starterTokens: true });
-  return STARTER_TOKENS;
+  if (typeof saved === 'number') return saved;
+  return getInstallRecord()?.starterTokensPersisted ? 0 : STARTER_TOKENS;
 }
 
 function resolveStarterDiamonds(saved: number | undefined): number {
-  const record = getInstallRecord();
-  if (typeof saved === 'number') {
-    if (!record?.starterDiamonds) updateInstallRecord({ starterDiamonds: true });
-    return saved;
-  }
-  if (record?.starterDiamonds) return 0;
-  updateInstallRecord({ starterDiamonds: true });
-  return STARTER_DIAMONDS;
+  if (typeof saved === 'number') return saved;
+  return getInstallRecord()?.starterDiamondsPersisted ? 0 : STARTER_DIAMONDS;
 }
 
 export function getDiceTokens(scene: Phaser.Scene): number {
   const stored = scene.registry.get(DICE_TOKENS_KEY) as number | undefined;
   if (stored !== undefined) return stored;
-  const tokens = resolveStarterTokens(readStored<number>(DICE_TOKENS_KEY));
+  const saved = readStored<number>(DICE_TOKENS_KEY);
+  const tokens = resolveStarterTokens(saved);
   scene.registry.set(DICE_TOKENS_KEY, tokens);
+  if (saved === undefined) writeStored(DICE_TOKENS_KEY, tokens);
+  if (!getInstallRecord()?.starterTokensPersisted) {
+    updateInstallRecord({ starterTokens: true, starterTokensPersisted: true });
+  }
   return tokens;
 }
 
@@ -651,8 +712,13 @@ export function getPrimarySkill(definition: DiceDefinition) {
 export function getDiamonds(scene: Phaser.Scene): number {
   const stored = scene.registry.get(DIAMONDS_KEY) as number | undefined;
   if (stored !== undefined) return stored;
-  const diamonds = resolveStarterDiamonds(readStored<number>(DIAMONDS_KEY));
+  const saved = readStored<number>(DIAMONDS_KEY);
+  const diamonds = resolveStarterDiamonds(saved);
   scene.registry.set(DIAMONDS_KEY, diamonds);
+  if (saved === undefined) writeStored(DIAMONDS_KEY, diamonds);
+  if (!getInstallRecord()?.starterDiamondsPersisted) {
+    updateInstallRecord({ starterDiamonds: true, starterDiamondsPersisted: true });
+  }
   return diamonds;
 }
 

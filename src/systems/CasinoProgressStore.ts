@@ -22,14 +22,8 @@ const STARTER_CHIPS = 30;
 const DEFAULT_PROGRESS: CasinoProgress = { chips: STARTER_CHIPS, chests: DEFAULT_CHESTS, fivesHand: null, fivesGauge: 0 };
 
 function resolveStarterChips(parsed: Partial<CasinoProgress> | undefined): number {
-  const record = getInstallRecord();
-  if (typeof parsed?.chips === 'number') {
-    if (!record?.starterChips) updateInstallRecord({ starterChips: true });
-    return parsed.chips;
-  }
-  if (record?.starterChips) return 0;
-  updateInstallRecord({ starterChips: true });
-  return STARTER_CHIPS;
+  if (typeof parsed?.chips === 'number') return parsed.chips;
+  return getInstallRecord()?.starterChipsPersisted ? 0 : STARTER_CHIPS;
 }
 
 function normalizeFivesHand(value: unknown): FivesHandState | null {
@@ -80,11 +74,17 @@ export class CasinoProgressStore {
   }
 
   static load(): CasinoProgress {
+    let parsed: Partial<CasinoProgress> | undefined;
     try {
-      const parsed = readIntegrityChecked<Partial<CasinoProgress>>(STORAGE_KEY);
-      return normalizeProgress({ ...DEFAULT_PROGRESS, chips: resolveStarterChips(parsed) });
+      parsed = readIntegrityChecked<Partial<CasinoProgress>>(STORAGE_KEY);
     } catch {
-      return normalizeProgress({ ...DEFAULT_PROGRESS, chips: resolveStarterChips(undefined) });
+      parsed = undefined;
     }
+    const progress = normalizeProgress({ ...DEFAULT_PROGRESS, chips: resolveStarterChips(parsed) });
+    if (typeof parsed?.chips !== 'number' || !getInstallRecord()?.starterChipsPersisted) {
+      writeIntegrityChecked(STORAGE_KEY, progress);
+      updateInstallRecord({ starterChips: true, starterChipsPersisted: true });
+    }
+    return progress;
   }
 }

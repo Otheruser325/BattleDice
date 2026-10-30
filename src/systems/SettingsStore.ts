@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { AppSettings } from '../types/game';
+import { ENABLE_DEBUG_LOGS } from '../utils/BuildFlags';
 
 const STORAGE_KEY = 'battle-dice-autoroller:settings';
 
@@ -8,7 +9,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   sfx: true,
   screenShake: true,
   reducedMotion: false,
-  quickEquipDice: false
+  quickEquipDice: false,
+  debugLogs: ENABLE_DEBUG_LOGS
 };
 
 export class SettingsStore {

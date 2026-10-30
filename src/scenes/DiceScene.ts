@@ -10,8 +10,11 @@ import {
   RARITY_TEXT_COLORS,
   getDiceTokens,
   getDiceProgress,
+  getOwnedTalentIndices,
   setDiceProgress,
   setDiceTokens,
+  getClassCopyCost,
+  getClassTokenCost,
   DEFAULT_LOADOUT_IDS
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
@@ -152,38 +155,6 @@ export class DiceScene extends Phaser.Scene {
   private modalEscHandler: (() => void) | null = null;
   private modalWheelHandler: ((pointer: Phaser.Input.Pointer, gameObjects: Phaser.GameObjects.GameObject[], dx: number, dy: number) => void) | null = null;
 
-  private readonly classTokenCosts: Record<number, Record<string, number>> = {
-    2: { Common: 50, Uncommon: 75, Rare: 100, Epic: 200, Legendary: 500, Mythic: 1000 },
-    3: { Common: 150, Uncommon: 225, Rare: 400, Epic: 750, Legendary: 1500, Mythic: 3000 },
-    4: { Common: 300, Uncommon: 450, Rare: 800, Epic: 1500, Legendary: 3000, Mythic: 6000 },
-    5: { Common: 500, Uncommon: 750, Rare: 1500, Epic: 3000, Legendary: 6000, Mythic: 12000 },
-    6: { Common: 800, Uncommon: 1200, Rare: 2500, Epic: 5000, Legendary: 10000, Mythic: 20000 },
-    7: { Common: 1200, Uncommon: 1800, Rare: 3750, Epic: 7500, Legendary: 15000, Mythic: 30000 },
-    8: { Common: 2000, Uncommon: 3000, Rare: 6000, Epic: 10000, Legendary: 20000, Mythic: 40000 },
-    9: { Common: 4000, Uncommon: 6000, Rare: 12000, Epic: 20000, Legendary: 40000, Mythic: 80000 },
-    10: { Common: 6000, Uncommon: 9000, Rare: 18000, Epic: 30000, Legendary: 60000, Mythic: 120000 },
-	11: { Common: 10000, Uncommon: 15000, Rare: 25000, Epic: 50000, Legendary: 100000, Mythic: 200000 },
-	12: { Common: 20000, Uncommon: 30000, Rare: 50000, Epic: 80000, Legendary: 150000, Mythic: 300000 },
-	13: { Common: 40000, Uncommon: 60000, Rare: 80000, Epic: 160000, Legendary: 300000, Mythic: 600000 },
-	14: { Common: 70000, Uncommon: 105000, Rare: 140000, Epic: 280000, Legendary: 600000, Mythic: 1200000 },
-	15: { Common: 100000, Uncommon: 150000, Rare: 200000, Epic: 400000, Legendary: 1000000, Mythic: 2000000 }
-  };
-  private readonly classCopyCosts: Record<number, Record<string, number>> = {
-    2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1, Mythic: 1 },
-    3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1, Mythic: 1 },
-    4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 2, Mythic: 1 },
-    5: { Common: 80, Uncommon: 50, Rare: 25, Epic: 8, Legendary: 2, Mythic: 1 },
-    6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 3, Mythic: 1 },
-    7: { Common: 200, Uncommon: 150, Rare: 75, Epic: 15, Legendary: 3, Mythic: 2 },
-    8: { Common: 400, Uncommon: 250, Rare: 120, Epic: 20, Legendary: 4, Mythic: 2 },
-    9: { Common: 700, Uncommon: 425, Rare: 200, Epic: 30, Legendary: 5, Mythic: 2 },
-    10: { Common: 1000, Uncommon: 750, Rare: 500, Epic: 60, Legendary: 6, Mythic: 3 },
-	11: { Common: 1500, Uncommon: 1000, Rare: 750, Epic: 100, Legendary: 8, Mythic: 3 },
-	12: { Common: 2500, Uncommon: 1750, Rare: 1000, Epic: 200, Legendary: 10, Mythic: 3 },
-	13: { Common: 5000, Uncommon: 3000, Rare: 2000, Epic: 400, Legendary: 12, Mythic: 4 },
-	14: { Common: 7500, Uncommon: 5000, Rare: 3250, Epic: 650, Legendary: 15, Mythic: 4 },
-	15: { Common: 10000, Uncommon: 7500, Rare: 5000, Epic: 1000, Legendary: 20, Mythic: 5 }
-  };
   private cardScrollOffset = 0;
 
   constructor() {
@@ -285,6 +256,45 @@ export class DiceScene extends Phaser.Scene {
       });
     };
     refreshSlots();
+
+    const shuffleLoadout = () => {
+      const available = definitions.filter((die) => !this.isDiceLocked(die.typeId));
+      const pool = [...available];
+      const selected: DiceDefinition[] = [];
+      while (selected.length < 5 && pool.length > 0) {
+        const [picked] = pool.splice(Phaser.Math.Between(0, pool.length - 1), 1);
+        if (picked) selected.push(picked);
+      }
+      if (selected.length < 5) {
+        getSelectedLoadout(this).forEach((typeId) => {
+          if (selected.length >= 5) return;
+          const fallback = definitions.find((die) => die.typeId === typeId);
+          if (fallback && !selected.some((die) => die.typeId === fallback.typeId)) selected.push(fallback);
+        });
+      }
+      if (selected.length !== 5) return;
+      selected.forEach((die) => {
+        const classLevel = getDiceProgress(this, die.typeId).classLevel;
+        const availableTalents = getOwnedTalentIndices(this, die).filter((index) => {
+          const talent = getTalentByIndex(die, index);
+          return talent ? classLevel >= getTalentClassNeeded(talent) : false;
+        });
+        const options: Array<number | null> = [null, ...availableTalents];
+        setEquippedTalentIndex(this, die, options[Phaser.Math.Between(0, options.length - 1)] ?? null);
+      });
+      setSelectedLoadout(this, selected.map((die) => die.typeId));
+      this.scene.restart();
+    };
+    const shuffleBtn = this.add.rectangle(panel.x + 122, panel.y + 110, 188, 30, 0x315e7a, 0.95)
+      .setStrokeStyle(2, 0x6f9fbd)
+      .setInteractive({ useHandCursor: true });
+    const shuffleLabel = this.add.text(shuffleBtn.x, shuffleBtn.y, 'SHUFFLE LOADOUT', {
+      fontFamily: 'Orbitron', fontSize: '11px', color: '#ffffff'
+    }).setOrigin(0.5);
+    shuffleBtn.on('pointerover', () => shuffleBtn.setFillStyle(0x3f7190, 1));
+    shuffleBtn.on('pointerout', () => shuffleBtn.setFillStyle(0x315e7a, 0.95));
+    shuffleBtn.on('pointerdown', shuffleLoadout);
+    shuffleLabel.setInteractive({ useHandCursor: true }).on('pointerdown', shuffleLoadout);
 
     const equipDieInSlot = (typeId: string, slot: number): boolean => {
       const nextLoadout = getSelectedLoadout(this);
@@ -551,8 +561,8 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     this.input.on('wheel', this.modalWheelHandler);
 
     const nextClass = Math.min(15, cls + 1);
-    const tokenCost = this.classTokenCosts[nextClass]?.[die.rarity] ?? 0;
-    const copyCost = this.classCopyCosts[nextClass]?.[die.rarity] ?? (nextClass <= 1 ? 0 : nextClass * 10);
+    const tokenCost = getClassTokenCost(nextClass, die.rarity);
+    const copyCost = getClassCopyCost(nextClass, die.rarity);
     const canUpgrade = !isMaxed && getDiceTokens(this) >= tokenCost && progress.copies >= copyCost;
 
     let costText: Phaser.GameObjects.Text;

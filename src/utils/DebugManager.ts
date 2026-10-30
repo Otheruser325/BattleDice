@@ -1,5 +1,5 @@
 import { BUILD_ENV } from './BuildEnv';
-import { ENABLE_DEBUG_LOGS } from './BuildFlags';
+import { DEBUG_LOGGING_AVAILABLE, ENABLE_DEBUG_LOGS } from './BuildFlags';
 
 type DebugLevel = 'log' | 'warn' | 'error';
 
@@ -22,19 +22,16 @@ declare global {
   }
 }
 
-const STORAGE_KEY = 'battle-dice-autoroller:debug';
 const MAX_HISTORY = 250;
 
 export class DebugManager {
-  private static enabled =
-    ENABLE_DEBUG_LOGS ||
-    (typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY) === '1');
+  private static enabled = DEBUG_LOGGING_AVAILABLE && ENABLE_DEBUG_LOGS;
 
   private static readonly history: DebugRecord[] = [];
   private static globalHooksInstalled = false;
 
   static installGlobalHooks() {
-    if (typeof window === 'undefined' || this.globalHooksInstalled) {
+    if (typeof window === 'undefined' || !DEBUG_LOGGING_AVAILABLE || this.globalHooksInstalled) {
       return;
     }
 
@@ -62,12 +59,10 @@ export class DebugManager {
   }
 
   static setEnabled(enabled: boolean) {
-    this.enabled = enabled;
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, enabled ? '1' : '0');
-    }
-
-    this.log('Debug', enabled ? 'Debug logging enabled.' : 'Debug logging disabled.');
+    const nextEnabled = DEBUG_LOGGING_AVAILABLE && enabled;
+    if (this.enabled === nextEnabled) return;
+    this.enabled = nextEnabled;
+    this.log('Debug', nextEnabled ? 'Debug logging enabled.' : 'Debug logging disabled.');
   }
 
   static scope(namespace: string) {
@@ -100,6 +95,7 @@ export class DebugManager {
   }
 
   private static write(level: DebugLevel, namespace: string, details: unknown[]) {
+    if (!DEBUG_LOGGING_AVAILABLE) return;
     const [messageSource, ...rest] = details;
     const record: DebugRecord = {
       at: new Date().toISOString(),

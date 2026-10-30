@@ -20,13 +20,14 @@ and `0`/`false`/`no`/`off`.
 | `VITE_DEBUG_LOGS` | app runtime | Force console debug logging on/off. Defaults to on for development builds. Guarded against shipping. |
 | `VITE_RIVALIS_WS_URL` | app runtime | Rivalis multiplayer websocket endpoint (`ws://` or `wss://`). |
 | `VITE_RIVALIS_TICKET_ENDPOINT` | app runtime | Endpoint used to fetch a Rivalis matchmaking ticket. |
-| `VITE_RIVALIS_TICKET_SOURCE` | app runtime | Where the ticket is read from: `query` (default) or `protocol`. |
 | `VITE_RIVALIS_RECONNECT_MAX` | app runtime | Positive integer reconnect attempts before giving up (default `4`). |
 | `VITE_BASE_PATH` | build config | Sub-path the app is served from, e.g. `/BattleDice/`. Overridden by `REPO_FIX`. |
 | `REPO_FIX` | build config | Explicit base path override; takes precedence over `VITE_BASE_PATH` and `GITHUB_REPOSITORY`. |
 | `GITHUB_REPOSITORY` | build config | `owner/repo`; the repo name is used as the base path when nothing else is set. |
 | `BATTLE_DICE_BUILD_MODE` | launcher bundle | Overrides the bundle `MODE`; set to `development` for a dev playtest bundle. |
 | `BATTLE_DICE_SOURCEMAP` | launcher bundle | Set to `1` to emit `main.js.map` for the production launcher bundle. |
+
+Rivalis tickets are sent as the WebSocket subprotocol (`Sec-WebSocket-Protocol`), not as a URL query parameter. The Rivalis server must accept the ticket there.
 
 `VITE_ENABLE_DEV_MENU` and `VITE_DEBUG_LOGS` are the only dev-only flags. They are refused by
 production builds (`npm run build`, `npm run bundle:playtest`, `npm run preview:launcher`). To use

@@ -1,11 +1,30 @@
+import { BUILD_ENV } from './BuildEnv';
+import { secureRandomBytes } from './RandomManager';
+
 const ENVELOPE_VERSION = 'bd2';
 const INSTALL_SECRET_KEY = 'battle-dice-autoroller:install-secret';
 const INSTALL_RECORD_KEY = 'battle-dice-autoroller:install-record';
+const SIGNING_DB_NAME = 'battle-dice-autoroller';
+const SIGNING_DB_VERSION = 1;
+const SIGNING_STORE = 'signing';
+const SIGNING_KEY_ID = 'install-secret';
+const SECRET_CIPHER_VERSION = 1;
 
 type Envelope = {
   v: string;
   d: unknown;
   s: string;
+};
+
+type EncryptedSecret = {
+  v: number;
+  iv: string;
+  d: string;
+};
+
+type SigningMaterial = {
+  key: CryptoKey;
+  secret: string;
 };
 
 const COOKIE_PREFIX = 'bda_';
@@ -25,53 +44,53 @@ function readCookie(name: string): string | null {
   }
 }
 
+function getCookiePath(): string {
+  const base = typeof BUILD_ENV.BASE_URL === 'string' ? BUILD_ENV.BASE_URL : '/';
+  if (!base.startsWith('/') || base.includes('..')) return '/';
+  return base.endsWith('/') ? base : `${base}/`;
+}
+
+function clearLegacyRootCookie(name: string): void {
+  if (typeof document === 'undefined' || getCookiePath() === '/') return;
+  document.cookie = `${name}=; max-age=0; path=/; Secure; SameSite=Strict`;
+}
+
 function writeCookie(name: string, value: string): void {
   try {
     if (typeof document === 'undefined') return;
-    document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${COOKIE_MAX_AGE_SECONDS}; path=/; SameSite=Lax`;
-  } catch {
-    // Best effort.
-  }
+    clearLegacyRootCookie(name);
+    document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${COOKIE_MAX_AGE_SECONDS}; path=${getCookiePath()}; Secure; SameSite=Strict`;
+  } catch {}
 }
 
 function clearCookie(name: string): void {
   try {
     if (typeof document === 'undefined') return;
-    document.cookie = `${name}=; max-age=0; path=/; SameSite=Lax`;
-  } catch {
-    // Best effort.
-  }
+    document.cookie = `${name}=; max-age=0; path=${getCookiePath()}; Secure; SameSite=Strict`;
+  } catch {}
 }
 
-// Only the install identity is mirrored to a cookie. Everything else stays in localStorage so
-// request headers stay small; a cleared gameplay key must not look like a brand new install.
-const COOKIE_MIRRORED_KEYS = new Set<string>([INSTALL_SECRET_KEY, INSTALL_RECORD_KEY]);
+const COOKIE_MIRRORED_KEYS = new Set<string>([INSTALL_RECORD_KEY]);
 
 function readStorage(key: string): string | null {
   try {
     const fromLocal = typeof localStorage === 'undefined' ? null : localStorage.getItem(key);
     if (fromLocal) return fromLocal;
-  } catch {
-    // Fall through to the cookie mirror.
-  }
+  } catch {}
   return COOKIE_MIRRORED_KEYS.has(key) ? readCookie(toCookieName(key)) : null;
 }
 
 function writeStorage(key: string, value: string): void {
   try {
     if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
-  } catch {
-    // Persistence is best effort; the in-memory registry keeps the session consistent.
-  }
+  } catch {}
   if (COOKIE_MIRRORED_KEYS.has(key)) writeCookie(toCookieName(key), value);
 }
 
 function removeStorage(key: string): void {
   try {
     if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
-  } catch {
-    // Best effort.
-  }
+  } catch {}
   if (COOKIE_MIRRORED_KEYS.has(key)) clearCookie(toCookieName(key));
 }
 
@@ -81,16 +100,154 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function randomBytes(byteLength: number): Uint8Array {
-  const bytes = new Uint8Array(byteLength);
-  const webCrypto = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
-  if (webCrypto?.getRandomValues) {
-    webCrypto.getRandomValues(bytes);
-    return bytes;
+function fromHex(value: string): Uint8Array | undefined {
+  if (value.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(value)) return undefined;
+  const bytes = new Uint8Array(value.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) {
+    bytes[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16);
   }
-  // getRandomValues is available in non-secure browser contexts too; this is a last resort.
-  for (let i = 0; i < byteLength; i += 1) bytes[i] = Math.floor(Math.random() * 256);
   return bytes;
+}
+
+function getSubtleCrypto(): SubtleCrypto {
+  const subtle = typeof globalThis !== 'undefined' ? globalThis.crypto?.subtle : undefined;
+  if (!subtle) throw new Error('Web Crypto is unavailable. Battle Dice requires a secure browser context.');
+  return subtle;
+}
+
+function openSigningDatabase(): Promise<IDBDatabase> {
+  if (typeof indexedDB === 'undefined') {
+    return Promise.reject(new Error('IndexedDB is unavailable. Battle Dice cannot initialize secure storage.'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(SIGNING_DB_NAME, SIGNING_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(SIGNING_STORE)) db.createObjectStore(SIGNING_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Unable to open secure storage.'));
+    request.onblocked = () => reject(new Error('Secure storage is blocked by another tab.'));
+  });
+}
+
+function readSigningMaterial(db: IDBDatabase): Promise<SigningMaterial | undefined> {
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(SIGNING_STORE, 'readonly').objectStore(SIGNING_STORE).get(SIGNING_KEY_ID);
+    request.onsuccess = () => {
+      const value = request.result as Partial<SigningMaterial> | undefined;
+      resolve(value?.key && typeof value.secret === 'string' ? value as SigningMaterial : undefined);
+    };
+    request.onerror = () => reject(request.error ?? new Error('Unable to read secure storage.'));
+  });
+}
+
+function writeSigningMaterial(db: IDBDatabase, material: SigningMaterial): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SIGNING_STORE, 'readwrite');
+    transaction.objectStore(SIGNING_STORE).put(material, SIGNING_KEY_ID);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error('Unable to save secure storage.'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('Secure storage write was aborted.'));
+  });
+}
+
+function isEncryptedSecret(value: unknown): value is EncryptedSecret {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<EncryptedSecret>;
+  return candidate.v === SECRET_CIPHER_VERSION
+    && typeof candidate.iv === 'string'
+    && typeof candidate.d === 'string';
+}
+
+async function encryptSecret(secret: string, key: CryptoKey): Promise<string> {
+  const iv = secureRandomBytes(12);
+  const encrypted = await getSubtleCrypto().encrypt({ name: 'AES-GCM', iv }, key, utf8.encode(secret));
+  return JSON.stringify({ v: SECRET_CIPHER_VERSION, iv: toHex(iv), d: toHex(new Uint8Array(encrypted)) });
+}
+
+async function decryptSecret(value: string, key: CryptoKey): Promise<string> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error('Secure storage contains a malformed signing key.');
+  }
+  if (!isEncryptedSecret(parsed)) throw new Error('Secure storage contains an unsupported signing key.');
+
+  const iv = fromHex(parsed.iv);
+  const encrypted = fromHex(parsed.d);
+  if (!iv || !encrypted) throw new Error('Secure storage contains an invalid signing key.');
+
+  const decrypted = await getSubtleCrypto().decrypt({ name: 'AES-GCM', iv }, key, encrypted);
+  return new TextDecoder().decode(decrypted);
+}
+
+function readLegacyInstallSecret(): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem(INSTALL_SECRET_KEY);
+      if (stored) return stored;
+    }
+  } catch {}
+  return readCookie(toCookieName(INSTALL_SECRET_KEY));
+}
+
+function clearLegacyInstallSecret(): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(INSTALL_SECRET_KEY);
+  } catch {}
+  clearCookie(toCookieName(INSTALL_SECRET_KEY));
+  clearLegacyRootCookie(toCookieName(INSTALL_SECRET_KEY));
+}
+
+async function loadOrCreateInstallSecret(): Promise<string> {
+  const db = await openSigningDatabase();
+  try {
+    const material = await readSigningMaterial(db);
+    if (material) {
+      const secret = await decryptSecret(material.secret, material.key);
+      clearLegacyInstallSecret();
+      return secret;
+    }
+
+    const legacy = readLegacyInstallSecret();
+    const secret = legacy && /^[0-9a-f]{64}$/i.test(legacy) ? legacy : toHex(secureRandomBytes(32));
+    const key = await getSubtleCrypto().generateKey(
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+    const encrypted = await encryptSecret(secret, key);
+    await writeSigningMaterial(db, { key, secret: encrypted });
+    clearLegacyInstallSecret();
+    return secret;
+  } finally {
+    db.close();
+  }
+}
+
+let installSecret: string | null = null;
+let initialization: Promise<void> | null = null;
+
+export function initializeSecureStorage(): Promise<void> {
+  if (installSecret !== null) return Promise.resolve();
+  if (!initialization) {
+    initialization = loadOrCreateInstallSecret().then((secret) => {
+      installSecret = secret;
+    });
+  }
+  return initialization;
+}
+
+function getInstallSecret(): string {
+  if (installSecret === null) throw new Error('Secure storage has not been initialized.');
+  return installSecret;
+}
+
+function signPayload(payload: string): string {
+  return toHex(hmacSha256(getInstallSecret(), `${ENVELOPE_VERSION}:${payload}`));
 }
 
 const SHA256_K = new Uint32Array([
@@ -178,32 +335,12 @@ function hmacSha256(key: string, message: string): Uint8Array {
   return sha256Bytes(concatBytes(outerPad, inner));
 }
 
-// Per-install secret held outside the game bundle. A local attacker can still read it from the
-// same origin, so this is not a trust boundary against a determined attacker; it does stop
-// forged envelopes and constant-key signing. Authoritative economy state belongs on the server.
-function loadInstallSecret(): string {
-  const stored = readStorage(INSTALL_SECRET_KEY);
-  if (stored) return stored;
-  const secret = toHex(randomBytes(32));
-  writeStorage(INSTALL_SECRET_KEY, secret);
-  return secret;
-}
-
-const installSecret = loadInstallSecret();
-
-function signPayload(payload: string): string {
-  return toHex(hmacSha256(installSecret, `${ENVELOPE_VERSION}:${payload}`));
-}
-
-// Legacy (bd1) envelopes were signed with an FNV-1a checksum over a shipped constant salt, so
-// they are attacker-forgeable and are rejected outright. Only the keyed MAC is trusted.
 function isEnvelope(value: unknown): value is Envelope {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<Envelope>;
   return candidate.v === ENVELOPE_VERSION && typeof candidate.s === 'string' && 'd' in candidate;
 }
 
-// Timing-safe comparison: signatures are attacker-influenced, so compare without early exit.
 function signaturesMatch(expected: string, actual: string): boolean {
   if (expected.length !== actual.length) return false;
   let diff = 0;
@@ -211,17 +348,12 @@ function signaturesMatch(expected: string, actual: string): boolean {
   return diff === 0;
 }
 
-// Unreadable bytes (legacy envelopes, plain JSON, or a failed signature) are untrusted, but they
-// may hold real player progress. Keep a copy under `<key>:recovery` before the slot is dropped or
-// overwritten so a save is never silently destroyed.
 function backupUnreadable(key: string, raw: string): void {
   try {
     if (typeof localStorage === 'undefined') return;
     const recoveryKey = `${key}:recovery`;
     if (!localStorage.getItem(recoveryKey)) localStorage.setItem(recoveryKey, raw);
-  } catch {
-    // Best effort.
-  }
+  } catch {}
 }
 
 function readVerified<T>(raw: string): T | undefined {
@@ -263,6 +395,9 @@ export interface InstallRecord {
   starterTokens: boolean;
   starterDiamonds: boolean;
   starterChips: boolean;
+  starterTokensPersisted: boolean;
+  starterDiamondsPersisted: boolean;
+  starterChipsPersisted: boolean;
 }
 
 function readInstallRecord(): InstallRecord | undefined {
@@ -276,7 +411,10 @@ function readInstallRecord(): InstallRecord | undefined {
     createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date(0).toISOString(),
     starterTokens: value.starterTokens === true,
     starterDiamonds: value.starterDiamonds === true,
-    starterChips: value.starterChips === true
+    starterChips: value.starterChips === true,
+    starterTokensPersisted: value.starterTokensPersisted === true,
+    starterDiamondsPersisted: value.starterDiamondsPersisted === true,
+    starterChipsPersisted: value.starterChipsPersisted === true
   };
 }
 
@@ -286,10 +424,6 @@ function writeInstallRecord(record: InstallRecord): void {
   writeStorage(INSTALL_RECORD_KEY, JSON.stringify(envelope));
 }
 
-// The starter economy grants live here rather than beside the gameplay state they describe, so
-// clearing a gameplay key cannot make the game believe the install is brand new and re-issue
-// them. The record is mirrored to a cookie, which survives a localStorage wipe, and the install
-// secret is mirrored alongside it so the copy still verifies.
 export function getInstallRecord(): InstallRecord | undefined {
   return readInstallRecord();
 }
@@ -297,11 +431,14 @@ export function getInstallRecord(): InstallRecord | undefined {
 export function updateInstallRecord(patch: Partial<InstallRecord>): InstallRecord {
   const current = getInstallRecord();
   const next: InstallRecord = {
-    installId: current?.installId ?? toHex(randomBytes(16)),
+    installId: current?.installId ?? toHex(secureRandomBytes(16)),
     createdAt: current?.createdAt ?? new Date().toISOString(),
     starterTokens: patch.starterTokens ?? current?.starterTokens ?? false,
     starterDiamonds: patch.starterDiamonds ?? current?.starterDiamonds ?? false,
-    starterChips: patch.starterChips ?? current?.starterChips ?? false
+    starterChips: patch.starterChips ?? current?.starterChips ?? false,
+    starterTokensPersisted: patch.starterTokensPersisted ?? current?.starterTokensPersisted ?? false,
+    starterDiamondsPersisted: patch.starterDiamondsPersisted ?? current?.starterDiamondsPersisted ?? false,
+    starterChipsPersisted: patch.starterChipsPersisted ?? current?.starterChipsPersisted ?? false
   };
   writeInstallRecord(next);
   return next;

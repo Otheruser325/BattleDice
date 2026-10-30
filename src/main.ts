@@ -10,6 +10,7 @@ import { AchievementsScene } from './scenes/AchievementsScene';
 import { DevScene } from './scenes/DevScene';
 import { DebugManager } from './utils/DebugManager';
 import { ENABLE_DEV_MENU } from './utils/BuildFlags';
+import { initializeSecureStorage } from './utils/SecureStorage';
 
 DebugManager.installGlobalHooks();
 
@@ -40,4 +41,16 @@ const config: Phaser.Types.Core.GameConfig = {
   }
 };
 
-new Phaser.Game(config);
+async function startGame() {
+  try {
+    await initializeSecureStorage();
+  } catch (error) {
+    console.error('Secure storage initialization failed.', error);
+    const container = document.getElementById('game-container');
+    if (container) container.textContent = 'Battle Dice could not initialize secure storage.';
+    return;
+  }
+  new Phaser.Game(config);
+}
+
+void startGame();

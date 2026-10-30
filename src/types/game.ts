@@ -258,4 +258,5 @@ export interface AppSettings {
   screenShake: boolean;
   reducedMotion: boolean;
   quickEquipDice: boolean;
+  debugLogs: boolean;
 }

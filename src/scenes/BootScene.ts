@@ -75,7 +75,8 @@ export class BootScene extends Phaser.Scene {
   }
 
   async create() {
-    SettingsStore.get(this);
+    const settings = SettingsStore.get(this);
+    DebugManager.setEnabled(settings.debugLogs);
     this.debug.log('Boot create started.');
 
     try {

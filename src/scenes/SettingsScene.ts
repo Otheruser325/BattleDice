@@ -3,6 +3,7 @@ import { SettingsStore } from '../systems/SettingsStore';
 import { PALETTE } from '../ui/theme';
 import type { AppSettings } from '../types/game';
 import { DebugManager } from '../utils/DebugManager';
+import { DEBUG_LOGGING_AVAILABLE } from '../utils/BuildFlags';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
 import { SCENE_KEYS } from './sceneKeys';
 import { ProfileStore } from '../systems/ProfileStore';
@@ -12,6 +13,37 @@ import { withBasePath } from '../utils/BuildEnv';
 import { formatCompact } from '../utils/FormatManager';
  
 type SettingKey = keyof AppSettings;
+
+function formatChangelogNotes(entries: string[]): string[] {
+  const lines: string[] = [];
+  entries.forEach((entry) => {
+    const text = entry.replace(/<-/g, '←').replace(/->/g, '→');
+    const markerPattern = /(^|\s)(-{1,5})(?=[A-Za-z])/g;
+    const markers: Array<{ start: number; end: number; depth: number }> = [];
+    let match: RegExpExecArray | null;
+    while ((match = markerPattern.exec(text)) !== null) {
+      markers.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        depth: match[2]?.length ?? 1
+      });
+    }
+
+    if (markers.length === 0) {
+      const content = text.trim();
+      if (content) lines.push(`  • ${content}`);
+      return;
+    }
+
+    const heading = text.slice(0, markers[0]?.start ?? 0).trim();
+    if (heading) lines.push(`  • ${heading}`);
+    markers.forEach((marker, index) => {
+      const content = text.slice(marker.end, markers[index + 1]?.start ?? text.length).trim();
+      if (content) lines.push(`${'  '.repeat(marker.depth)}• ${content}`);
+    });
+  });
+  return lines;
+}
  
 export class SettingsScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Settings;
@@ -108,19 +140,7 @@ export class SettingsScene extends Phaser.Scene {
     const overlay = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x041018, 0.45)
       .setInteractive()
       .setDepth(41);
- 
-    const panel = this.add.rectangle(width - 196, 230, 288, 350, 0x102434, 0.97)
-      .setStrokeStyle(1, 0x496a84)
-      .setDepth(42);
- 
-    const title = this.add.text(width - 314, 76, 'SETTINGS', {
-      fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text
-    }).setDepth(43);
- 
-    const subtitle = this.add.text(width - 314, 98, 'Menu overlay', {
-      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
-    }).setDepth(43);
- 
+
     const toggles: Array<[SettingKey, string]> = [
       ['music', 'Music playback'],
       ['sfx', 'Button + combat SFX'],
@@ -128,7 +148,20 @@ export class SettingsScene extends Phaser.Scene {
       ['reducedMotion', 'Reduced motion'],
       ['quickEquipDice', 'Quick-equip dice']
     ];
- 
+    if (DEBUG_LOGGING_AVAILABLE) toggles.push(['debugLogs', 'Debug logging']);
+    const extraRowCount = Math.max(0, toggles.length - 5);
+    const panel = this.add.rectangle(width - 196, 230 + extraRowCount * 22, 288, 350 + extraRowCount * 44, 0x102434, 0.97)
+      .setStrokeStyle(1, 0x496a84)
+      .setDepth(42);
+
+    const title = this.add.text(width - 314, 76, 'SETTINGS', {
+      fontFamily: 'Orbitron', fontSize: '20px', color: PALETTE.text
+    }).setDepth(43);
+
+    const subtitle = this.add.text(width - 314, 98, 'Menu overlay', {
+      fontFamily: 'Orbitron', fontSize: '11px', color: PALETTE.textMuted
+    }).setDepth(43);
+
     this.modalElements.push(overlay, panel, title, subtitle);
  
     toggles.forEach(([key, label], index) => {
@@ -137,7 +170,8 @@ export class SettingsScene extends Phaser.Scene {
       this.modalElements.push(...row);
     });
  
-    const changelogBtn = this.add.text(width - 314, 330, 'Changelog', {
+    const actionY = 330 + extraRowCount * 44;
+    const changelogBtn = this.add.text(width - 314, actionY, 'Changelog', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#f4b860', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     changelogBtn.on('pointerdown', () => {
@@ -147,7 +181,7 @@ export class SettingsScene extends Phaser.Scene {
       this.openChangelogModal();
     });
  
-    const nameBtn = this.add.text(width - 314, 360, 'Change Name', {
+    const nameBtn = this.add.text(width - 314, actionY + 30, 'Change Name', {
       fontFamily: 'Orbitron', fontSize: '13px', color: '#071018', backgroundColor: '#9fe6ff', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     nameBtn.on('pointerdown', () => {
@@ -157,7 +191,7 @@ export class SettingsScene extends Phaser.Scene {
       this.promptForNameChange();
     });
  
-    const close = this.add.text(width - 154, 360, 'Close', {
+    const close = this.add.text(width - 154, actionY + 30, 'Close', {
       fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.accentSoft, backgroundColor: '#173247', padding: { left: 10, right: 10, top: 6, bottom: 6 }
     }).setInteractive({ useHandCursor: true }).setDepth(43);
     close.on('pointerdown', () => {
@@ -272,27 +306,7 @@ export class SettingsScene extends Phaser.Scene {
       const payload = await response.json();
       const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => {
         const header = `• ${entry.version} (${entry.date})`;
-        const notes: string[] = [];
-        entry.notes.forEach((n) => {
-          let text = n.replace(/<-/g, '←').replace(/->/g, '→');
-          const parts = text.split(/ --/);
-          parts.forEach((part, index) => {
-            part = part.trim();
-            if (!part) return;
-            if (index === 0) {
-              const match = part.match(/^(-+)(.*)$/);
-              const content = match ? match[2].trim() : part;
-              if (content) {
-                notes.push(`  • ${content}`);
-              }
-            } else {
-              const content = part.replace(/^-+/, '').trim();
-              if (content) {
-                notes.push(`    • ${content}`);
-              }
-            }
-          });
-        });
+        const notes = formatChangelogNotes(entry.notes);
         return `${header}\n${notes.join('\n')}`;
       });
       body.setText(lines.join('\n\n') || 'No entries found.');
@@ -313,6 +327,7 @@ export class SettingsScene extends Phaser.Scene {
       if (this.subModalOpen) return;
       const next = SettingsStore.toggle(this, key);
       const on = next[key];
+      if (key === 'debugLogs') DebugManager.setEnabled(on);
       this.debug.event('Toggled setting.', { key, value: on });
       pill.setFillStyle(on ? 0xf4b860 : 0x183447, 1);
       pill.setStrokeStyle(1, on ? 0xffdfa4 : 0x4b6e89);

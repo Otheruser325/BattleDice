@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getAllDiceDefinitions, getDiceProgress, setDiceProgress, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, setDiceTokens, setDiamonds } from '../data/dice';
+import { getAllDiceDefinitions, getClassCopyCost, getDiceProgress, getTalentClassNeeded, getTalents, getUnobtainableTalentReason, getDiceTokens, getDiamonds, getRemainingUsefulCopies, grantDiceCopies, grantTalent, isTalentOwned, setDiceProgress, setDiceTokens, setDiamonds } from '../data/dice';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { AlertManager } from '../utils/AlertManager';
@@ -14,23 +14,7 @@ export class DevScene extends Phaser.Scene {
   private diceNameText!: Phaser.GameObjects.Text;
   private diceProgressText!: Phaser.GameObjects.Text;
   private walletText!: Phaser.GameObjects.Text;
-  private readonly classCopyCosts: Record<number, Record<string, number>> = {
-    2: { Common: 10, Uncommon: 8, Rare: 5, Epic: 2, Legendary: 1, Mythic: 1 },
-    3: { Common: 20, Uncommon: 15, Rare: 10, Epic: 4, Legendary: 1, Mythic: 1 },
-    4: { Common: 40, Uncommon: 30, Rare: 15, Epic: 6, Legendary: 2, Mythic: 1 },
-    5: { Common: 80, Uncommon: 50, Rare: 25, Epic: 8, Legendary: 2, Mythic: 1 },
-    6: { Common: 120, Uncommon: 80, Rare: 40, Epic: 10, Legendary: 3, Mythic: 1 },
-    7: { Common: 200, Uncommon: 150, Rare: 75, Epic: 15, Legendary: 3, Mythic: 2 },
-    8: { Common: 400, Uncommon: 250, Rare: 120, Epic: 20, Legendary: 4, Mythic: 2 },
-    9: { Common: 700, Uncommon: 425, Rare: 200, Epic: 30, Legendary: 5, Mythic: 2 },
-    10: { Common: 1000, Uncommon: 750, Rare: 500, Epic: 60, Legendary: 6, Mythic: 3 },
-    11: { Common: 1500, Uncommon: 1000, Rare: 750, Epic: 100, Legendary: 8, Mythic: 3 },
-    12: { Common: 2500, Uncommon: 1750, Rare: 1000, Epic: 200, Legendary: 10, Mythic: 3 },
-    13: { Common: 5000, Uncommon: 3000, Rare: 2000, Epic: 400, Legendary: 12, Mythic: 4 },
-    14: { Common: 7500, Uncommon: 5000, Rare: 3250, Epic: 650, Legendary: 15, Mythic: 4 },
-    15: { Common: 10000, Uncommon: 7500, Rare: 5000, Epic: 1000, Legendary: 20, Mythic: 5 }
-  };
-
+  private diceTalentText!: Phaser.GameObjects.Text;
   constructor() {
     super(DevScene.KEY);
   }
@@ -86,6 +70,15 @@ export class DevScene extends Phaser.Scene {
     this.makeButton(x + 274, y + 190, '+1000 CARDS', () => this.grantDiceCards(1000));
     this.makeButton(x + 390, y + 190, 'CLASS UP', () => this.classUpSelectedDie());
     this.makeButton(x + width / 2, y + 244, 'UNLOCK / MAX SELECTED DIE', () => this.grantDiceCardsToMaxClass());
+
+    this.diceTalentText = this.add.text(x + width / 2, y + 278, '', {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.textMuted,
+      align: 'center',
+      wordWrap: { width: width - 60 }
+    }).setOrigin(0.5);
+    this.makeButton(x + width / 2, y + 318, 'ENABLE COMPATIBLE TALENTS', () => this.enableCompatibleTalents());
   }
 
   private drawCurrencyGrantPanel(x: number, y: number, width: number, height: number) {
@@ -113,6 +106,7 @@ export class DevScene extends Phaser.Scene {
     this.makeButton(x + 58, y + 143, '+1,000', () => this.grantTokens(1_000));
     this.makeButton(x + 128, y + 143, '+10,000', () => this.grantTokens(10_000));
     this.makeButton(x + 210, y + 143, '+100,000', () => this.grantTokens(100_000));
+    this.makeButton(x + 300, y + 143, '+1,000,000', () => this.grantTokens(1_000_000));
 
     this.add.text(x + 18, y + 164, 'Diamonds', {
       fontFamily: 'Orbitron',
@@ -122,6 +116,7 @@ export class DevScene extends Phaser.Scene {
     this.makeButton(x + 52, y + 203, '+10', () => this.grantDiamonds(10));
     this.makeButton(x + 116, y + 203, '+100', () => this.grantDiamonds(100));
     this.makeButton(x + 188, y + 203, '+1,000', () => this.grantDiamonds(1_000));
+    this.makeButton(x + 268, y + 203, '+10,000', () => this.grantDiamonds(10_000));
 
     this.add.text(x + 18, y + 224, 'Casino Chips', {
       fontFamily: 'Orbitron',
@@ -208,7 +203,7 @@ export class DevScene extends Phaser.Scene {
     let additional = 0;
     while (level < 15) {
       const nextLevel = level + 1;
-      const required = this.classCopyCosts[nextLevel]?.[rarity] ?? 0;
+      const required = getClassCopyCost(nextLevel, rarity);
       if (required <= 0) break;
       if (remainingCopies < required) {
         additional += required - remainingCopies;
@@ -219,6 +214,38 @@ export class DevScene extends Phaser.Scene {
       level = nextLevel;
     }
     return additional;
+  }
+
+  private enableCompatibleTalents() {
+    const definition = this.getSelectedDefinition();
+    if (!definition) return;
+    const talents = getTalents(definition);
+    if (talents.length === 0) {
+      AlertManager.toast(this, { type: 'warning', message: `${definition.title} has no talents to enable.` });
+      return;
+    }
+    const granted: string[] = [];
+    const blockedByClass: string[] = [];
+    let locked = false;
+    talents.forEach((talent, index) => {
+      const reason = getUnobtainableTalentReason(this, definition, index);
+      if (reason === null) {
+        if (grantTalent(this, definition, index)) granted.push(talent.title);
+        return;
+      }
+      if (reason === 'class') blockedByClass.push(`${talent.title} (class ${getTalentClassNeeded(talent)})`);
+      if (reason === 'locked') locked = true;
+    });
+    if (granted.length > 0) {
+      AlertManager.toast(this, { type: 'success', message: `Enabled ${granted.join(', ')} on ${definition.title}.` });
+    } else if (locked) {
+      AlertManager.toast(this, { type: 'warning', message: `Unlock ${definition.title} before enabling its talents.` });
+    } else if (blockedByClass.length > 0) {
+      AlertManager.toast(this, { type: 'warning', message: `Class up ${definition.title} first: ${blockedByClass.join(', ')}.` });
+    } else {
+      AlertManager.toast(this, { type: 'warning', message: `${definition.title} has no compatible talents left to enable.` });
+    }
+    this.refresh();
   }
 
   private classUpSelectedDie() {
@@ -274,9 +301,20 @@ export class DevScene extends Phaser.Scene {
       const progress = getDiceProgress(this, definition.typeId);
       this.diceNameText.setText(`${definition.title} (${definition.rarity})`);
       this.diceProgressText.setText(`Type ID: ${definition.typeId}  •  Class ${progress.classLevel}  •  ${formatCompact(progress.copies)} cards`);
+      const talents = getTalents(definition);
+      if (talents.length === 0) {
+        this.diceTalentText.setText('Talents: none available');
+      } else if (definition.talentsComingSoon) {
+        this.diceTalentText.setText('Talents: coming soon');
+      } else {
+        const owned = talents.filter((_, index) => isTalentOwned(this, definition.typeId, index)).length;
+        const classGated = talents.filter((talent, index) => getUnobtainableTalentReason(this, definition, index) === 'class').length;
+        this.diceTalentText.setText(`Talents: ${owned}/${talents.length} owned${classGated > 0 ? ` • ${classGated} need a higher class` : ''}`);
+      }
     } else {
       this.diceNameText.setText('No dice loaded');
       this.diceProgressText.setText('Dice catalog unavailable.');
+      this.diceTalentText.setText('Talents: unavailable');
     }
 
     const casino = CasinoProgressStore.get(this);

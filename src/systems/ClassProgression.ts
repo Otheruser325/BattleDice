@@ -467,7 +467,7 @@ export function getClassScaledSkillDescription(definition: DiceDefinition, skill
     return `Deal +${formatPercent(modifiers.distanceDamageBonusRatePerTile)} damage for each tile of distance to the target.`;
   }
   if (modifiers.bonusDamagePerStatus !== undefined) {
-    return `Gains +${formatPercent(modifiers.bonusDamagePerStatus)} damage for each active status stack.`;
+    return `Gains +${formatPercent(modifiers.bonusDamagePerStatus)} damage for each active status stack on itself.`;
   }
   if (modifiers.soulBoostPercent !== undefined) {
     return `Conjures defeated ally souls. Soul Dice gains +${formatPercent(modifiers.soulBoostPercent)} damage and health for each soul conjured.`;

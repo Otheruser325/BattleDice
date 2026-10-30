@@ -47,8 +47,17 @@ export function createMatchBattleState(
 }
 
 const GRID_LIMIT = 5;
+const MAX_SERVER_HEALTH = 1_000_000;
+const MAX_SERVER_REVIVES = 100;
+const MAX_SERVER_ATTACKS = 100;
+const MAX_SERVER_TURN = 1_000_000;
 const OWNER_IDS: DiceOwnerId[] = ['player', 'enemy'];
 const ZONES: DiceInstanceState['zone'][] = ['hand', 'board', 'eliminated'];
+
+function boundedInteger(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
 
 function isOwnerId(value: unknown): value is DiceOwnerId {
   return typeof value === 'string' && (OWNER_IDS as string[]).includes(value);
@@ -77,12 +86,12 @@ function sanitizeServerDie(value: unknown, knownInstanceIds: Set<string>): DiceI
   if (!isZone(die.zone)) return null;
   if (die.zone === 'board' && sanitizeGridPosition(die.gridPosition) === undefined) return null;
 
-  const maxHealth = Math.max(1, Math.floor(Number(die.maxHealth) || 0));
-  const clampedHealth = Math.max(0, Math.min(maxHealth, Math.floor(Number(die.currentHealth) || 0)));
-  const isDestroyed = die.isDestroyed === true || clampedHealth === 0;
-  const currentHealth = isDestroyed ? 0 : clampedHealth;
+  const maxHealth = boundedInteger(die.maxHealth, 1, MAX_SERVER_HEALTH);
+  const currentHealth = boundedInteger(die.currentHealth, 0, maxHealth ?? 0);
+  if (maxHealth === undefined || currentHealth === undefined) return null;
+  const isDestroyed = die.isDestroyed === true || currentHealth === 0;
   const zone = isDestroyed ? 'eliminated' : die.zone;
-  const attacksRemaining = Math.max(0, Math.floor(Number(die.attacksRemaining) || 0));
+  const attacksRemaining = boundedInteger(die.attacksRemaining, 0, MAX_SERVER_ATTACKS) ?? 0;
 
   return {
     instanceId: die.instanceId,
@@ -90,12 +99,27 @@ function sanitizeServerDie(value: unknown, knownInstanceIds: Set<string>): DiceI
     ownerId: die.ownerId,
     zone,
     maxHealth,
-    currentHealth,
+    currentHealth: isDestroyed ? 0 : currentHealth,
     isDestroyed,
     hasFinishedAttacking: die.hasFinishedAttacking === true || attacksRemaining === 0,
     attacksRemaining,
     gridPosition: zone === 'board' ? sanitizeGridPosition(die.gridPosition) : undefined
   };
+}
+
+function sanitizeReviveCounts(value: unknown, knownInstanceIds: Set<string>, fallback: Record<string, number> = {}): Record<string, number> | undefined {
+  if (value === undefined) return { ...fallback };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+
+  const source = value as Record<string, unknown>;
+  const sanitized: Record<string, number> = {};
+  for (const instanceId of knownInstanceIds) {
+    if (source[instanceId] === undefined) continue;
+    const count = boundedInteger(source[instanceId], 0, MAX_SERVER_REVIVES);
+    if (count === undefined) return undefined;
+    sanitized[instanceId] = count;
+  }
+  return sanitized;
 }
 
 export function sanitizeServerBattleState(value: unknown, current: MatchBattleState): MatchBattleState | null {
@@ -111,18 +135,21 @@ export function sanitizeServerBattleState(value: unknown, current: MatchBattleSt
     sanitized.push(die);
   }
   if (sanitized.length !== current.dice.length) return null;
+  if (new Set(sanitized.map((die) => die.instanceId)).size !== current.dice.length) return null;
 
-  const turn = Math.floor(Number(incoming.turn));
-  if (!Number.isFinite(turn) || turn < 1) return null;
+  const turn = boundedInteger(incoming.turn, 1, MAX_SERVER_TURN);
+  if (turn === undefined) return null;
 
   const combatPhase: MatchBattleState['combatPhase'] =
     incoming.combatPhase === 'attacking' || incoming.combatPhase === 'resolved' ? incoming.combatPhase : 'idle';
+  const reviveCounts = sanitizeReviveCounts(incoming.reviveCounts, knownInstanceIds, current.reviveCounts);
+  if (!reviveCounts) return null;
 
   return {
     turn,
     combatPhase,
     dice: sanitized,
-    reviveCounts: incoming.reviveCounts && typeof incoming.reviveCounts === 'object' ? { ...incoming.reviveCounts } : current.reviveCounts
+    reviveCounts
   };
 }
 

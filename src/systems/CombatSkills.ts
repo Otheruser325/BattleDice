@@ -310,6 +310,38 @@ function selectChainTarget(
   return sorted[0]?.die;
 }
 
+function getTargetingFootprintCells(
+  die: DiceInstanceState,
+  footprintForDie?: (die: DiceInstanceState) => number
+): Array<{ row: number; col: number }> {
+  if (!die.gridPosition) return [];
+  const footprint = Math.max(1, Math.floor(footprintForDie?.(die) ?? 1));
+  const cells: Array<{ row: number; col: number }> = [];
+  for (let rowOffset = 0; rowOffset < footprint; rowOffset++) {
+    for (let colOffset = 0; colOffset < footprint; colOffset++) {
+      cells.push({ row: die.gridPosition.row + rowOffset, col: die.gridPosition.col + colOffset });
+    }
+  }
+  return cells;
+}
+
+function getTargetingFootprintDistance(
+  first: DiceInstanceState,
+  second: DiceInstanceState,
+  footprintForDie?: (die: DiceInstanceState) => number
+): number {
+  let best = Number.POSITIVE_INFINITY;
+  getTargetingFootprintCells(first, footprintForDie).forEach((firstCell) => {
+    getTargetingFootprintCells(second, footprintForDie).forEach((secondCell) => {
+      best = Math.min(best, Math.max(
+        Math.abs(firstCell.row - secondCell.row),
+        Math.abs(firstCell.col - secondCell.col)
+      ));
+    });
+  });
+  return best;
+}
+
 function addStatusApplication(
   result: SkillEffectResult,
   meta: DiceSkillRuntimeMeta,
@@ -625,7 +657,8 @@ export function executeCombatStartSkillEffects(
   classLevel: number,
   target?: DiceInstanceState,
   boardSideTargets: DiceInstanceState[] = [],
-  pips = 1
+  pips = 1,
+  footprintForDie?: (die: DiceInstanceState) => number
 ): CombatStartResult {
   const result: CombatStartResult = { combatStartAuras: [] };
   const meta = getUnlockedSkillMeta(definition, classLevel, 'CombatStart');
@@ -644,8 +677,7 @@ export function executeCombatStartSkillEffects(
   const splashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
   if (meta.splashDamage !== undefined || meta.splashDamageRatesByPip !== undefined || splashRate !== undefined) {
     const targets = boardSideTargets.filter((candidate) => candidate.instanceId !== target.instanceId && candidate.gridPosition
-      && Math.abs(candidate.gridPosition.row - target.gridPosition.row) <= 1
-      && Math.abs(candidate.gridPosition.col - target.gridPosition.col) <= 1);
+      && getTargetingFootprintDistance(target, candidate, footprintForDie) <= 1);
     if (targets.length > 0) {
       result.splashTargets = targets;
       result.splashDamageAmount = resolvePipScaledDamage(meta.splashDamage, definition.attack, meta.splashDamageRate, meta.splashDamageRatesByPip, pips);
@@ -667,12 +699,7 @@ export function executeCombatStartSkillEffects(
       .filter((candidate) => candidate.instanceId !== target.instanceId && Boolean(candidate.gridPosition))
       .map((candidate) => ({
         die: candidate,
-        distance: candidate.gridPosition && target.gridPosition
-          ? Math.max(
-            Math.abs(target.gridPosition.row - candidate.gridPosition.row),
-            Math.abs(target.gridPosition.col - candidate.gridPosition.col)
-          )
-          : Number.POSITIVE_INFINITY
+        distance: getTargetingFootprintDistance(target, candidate, footprintForDie)
       }))
       .filter(({ distance }) => distance <= chainRange);
     const chainTarget = selectChainTarget(chainCandidates, meta.skillTargeting ?? meta.targetingMode ?? 'Nearest');
@@ -744,7 +771,8 @@ export function executePassiveSkillEffects(
   target: DiceInstanceState | undefined,
   boardSideTargets: DiceInstanceState[],
   pips = 1,
-  passiveSkillIndex?: number
+  passiveSkillIndex?: number,
+  footprintForDie?: (die: DiceInstanceState) => number
 ): PassiveEffectResult {
   const result: PassiveEffectResult = {};
   const meta = getUnlockedSkillMeta(definition, classLevel, 'Passive', passiveSkillIndex);
@@ -763,10 +791,9 @@ export function executePassiveSkillEffects(
   const hasSplashMapping = meta.splashDamageRatesByPip !== undefined;
   if (meta.splashDamage !== undefined || hasSplashMapping || splashRate !== undefined) {
     const splashTargets = boardSideTargets.filter((die) =>
-      die.instanceId !== target.instanceId &&
-      die.gridPosition &&
-      Math.abs(die.gridPosition.row - target.gridPosition!.row) <= 1 &&
-      Math.abs(die.gridPosition.col - target.gridPosition!.col) <= 1
+      die.instanceId !== target.instanceId
+      && die.gridPosition
+      && getTargetingFootprintDistance(target, die, footprintForDie) <= 1
     );
     if (splashTargets.length > 0) {
       result.splashTargets = splashTargets;
@@ -787,12 +814,7 @@ export function executePassiveSkillEffects(
       .filter((die) => die.instanceId !== target.instanceId && Boolean(die.gridPosition) && Boolean(target.gridPosition))
       .map((die) => ({
         die,
-        distance: target.gridPosition && die.gridPosition
-          ? Math.max(
-            Math.abs(target.gridPosition.row - die.gridPosition.row),
-            Math.abs(target.gridPosition.col - die.gridPosition.col)
-          )
-          : Number.POSITIVE_INFINITY
+        distance: getTargetingFootprintDistance(target, die, footprintForDie)
       }))
       .filter(({ distance }) => distance <= chainRange);
     const chainTarget = selectChainTarget(chainCandidates, chainMode);
@@ -810,19 +832,22 @@ export function executePassiveSkillEffects(
   if (meta.pierceBehindRange && attacker.gridPosition) {
     const pierceTargets: DiceInstanceState[] = [];
     const attackerBoardSide = attacker.ownerId === 'player' ? 0 : 4;
-    const targetBoardSide = target.ownerId === 'player' ? 0 : 4;
     const rowStep = Math.sign(target.gridPosition.row - attacker.gridPosition.row);
     const colStep = attackerBoardSide === 0 ? 1 : -1;
-    const targetCol = target.gridPosition.col;
-    for (let i = 1; i <= meta.pierceBehindRange; i++) {
+    const targetFootprint = Math.max(1, Math.floor(footprintForDie?.(target) ?? 1));
+    const hitIds = new Set<string>();
+    for (let i = targetFootprint; i < targetFootprint + meta.pierceBehindRange; i++) {
       const row = target.gridPosition.row + rowStep * i;
-      const col = targetCol + colStep * i;
+      const col = target.gridPosition.col + colStep * i;
       const hit = boardSideTargets.find((die) =>
-        die.gridPosition &&
-        die.gridPosition.row === row &&
-        die.gridPosition.col === col
+        die.instanceId !== target.instanceId
+        && !hitIds.has(die.instanceId)
+        && getTargetingFootprintCells(die, footprintForDie).some((cell) => cell.row === row && cell.col === col)
       );
-      if (hit) pierceTargets.push(hit);
+      if (hit) {
+        hitIds.add(hit.instanceId);
+        pierceTargets.push(hit);
+      }
     }
     if (pierceTargets.length > 0) {
       result.pierceTargets = pierceTargets;

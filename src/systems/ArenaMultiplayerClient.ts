@@ -12,9 +12,6 @@ export type ArenaMultiplayerTopic =
   | 'arena:turn:state';
 
 type ConnectionState = 'disabled' | 'connecting' | 'connected' | 'queued' | 'lobby' | 'matched' | 'disconnected' | 'failed';
-const RIVALIS_TICKET_SOURCES = ['query', 'protocol'] as const;
-type RivalisTicketSource = (typeof RIVALIS_TICKET_SOURCES)[number];
-
 function readTrimmedEnv(key: string): string {
   const value = BUILD_ENV[key];
   return typeof value === 'string' ? value.trim() : '';
@@ -92,7 +89,6 @@ export class ArenaMultiplayerClient {
   private readonly endpoint = readTrimmedEnv('VITE_RIVALIS_WS_URL');
   private readonly ticketEndpoint = readTrimmedEnv('VITE_RIVALIS_TICKET_ENDPOINT');
   private readonly endpointError = getRivalisEndpointError(this.endpoint);
-  private readonly ticketSource: RivalisTicketSource = RIVALIS_TICKET_SOURCES.find((source) => source === BUILD_ENV.VITE_RIVALIS_TICKET_SOURCE) ?? 'query';
   private runtimeTicket = readRuntimeTicket();
   private client: WSClient<ArenaMultiplayerTopic> | null = null;
   private socketOpen = false;
@@ -135,7 +131,7 @@ export class ArenaMultiplayerClient {
 
     this.client = new WSClient<ArenaMultiplayerTopic>(this.endpoint, {
       reconnect: { maxAttempts: this.getReconnectMaxAttempts(), baseDelayMs: 500, maxDelayMs: 5000 },
-      ticketSource: this.ticketSource
+      ticketSource: 'protocol'
     });
     this.client.on('client:connect', () => {
       const pendingJoin = this.pendingJoin;
