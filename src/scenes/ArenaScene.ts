@@ -152,6 +152,10 @@ export class ArenaScene extends Phaser.Scene {
   private combatAttackCountNegativeDeltaByInstance: Map<string, number> = new Map();
   private grantedAttackCountByInstance: Map<string, number> = new Map();
   private attackCountEffectSeenByInstance: Map<string, { positive: boolean; negative: boolean }> = new Map();
+  private attackCountFeedbackByInstance: Map<string, {
+    gain?: { amount: number; text: string };
+    loss?: { amount: number; text: string };
+  }> = new Map();
   private manaPausedTurnsByInstance: Map<string, number> = new Map();
   private combanityAttackMultiplierByInstance: Map<string, { multiplier: number; turns: number }> = new Map();
   private combanityBonusByOwner: Record<'player' | 'enemy', { multiplier: number; reduction: number; label: string; allowsFullReduction: boolean }> = {
@@ -298,6 +302,7 @@ export class ArenaScene extends Phaser.Scene {
     this.combatAttackCountNegativeDeltaByInstance.clear();
     this.grantedAttackCountByInstance.clear();
     this.attackCountEffectSeenByInstance.clear();
+    this.attackCountFeedbackByInstance.clear();
     this.manaPausedTurnsByInstance.clear();
     this.combanityAttackMultiplierByInstance.clear();
     this.combanityBonusByOwner = {
@@ -3251,6 +3256,7 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private async startCombat() {
+    this.attackCountFeedbackByInstance.clear();
     const requiredDice = Math.min(25, this.currentHandOrder.length);
     const boardPlaced = getBoardDice(this.gameState, 'player').length;
     if (!this.diceRolled || boardPlaced < requiredDice) {
@@ -3374,7 +3380,7 @@ export class ArenaScene extends Phaser.Scene {
     const die = this.gameState.dice.find((candidate) => candidate.instanceId === instanceId);
     if (die) {
       this.animateGrowthEffect(die, delta > 0);
-      this.writeAttackCountGainFeedback(die, delta);
+      this.writeAttackCountFeedback(die, delta);
     }
   }
 
@@ -3424,12 +3430,30 @@ export class ArenaScene extends Phaser.Scene {
     this.grantedAttackCountByInstance.set(instanceId, (this.grantedAttackCountByInstance.get(instanceId) ?? 0) + delta);
     this.recordAttackCountEffect(instanceId, delta);
     const die = this.gameState.dice.find((candidate) => candidate.instanceId === instanceId);
-    if (die) this.writeAttackCountGainFeedback(die, delta);
+    if (die) this.writeAttackCountFeedback(die, delta);
   }
 
-  private writeAttackCountGainFeedback(die: DiceInstanceState, delta: number) {
-    if (!Number.isFinite(delta) || delta === 0) return;
-    this.writeCombatLog(`${this.getCombatDieName(die)} ${delta > 0 ? 'gains' : 'loses'} ${formatCompact(Math.abs(delta))} attack count!`);
+  private writeAttackCountFeedback(die: DiceInstanceState, delta: number) {
+    if (!Number.isFinite(delta) || delta === 0 || !this.combatLog) return;
+    const direction = delta > 0 ? 'gain' : 'loss';
+    const feedback = this.attackCountFeedbackByInstance.get(die.instanceId) ?? { gain: undefined, loss: undefined };
+    const previous = feedback[direction];
+    const amount = (previous?.amount ?? 0) + Math.abs(delta);
+    const line = `${this.getCombatDieName(die)} ${delta > 0 ? 'gains' : 'loses'} ${formatCompact(amount)} attack count${amount === 1 ? '' : 's'}!`;
+    if (previous) {
+      const index = this.combatLogHistory.lastIndexOf(previous.text);
+      if (index >= 0) {
+        this.combatLogHistory[index] = line;
+        if (index === this.combatLogHistory.length - 1) this.nativeCombatLogSetText?.(line);
+        this.refreshHistoryModalView(false);
+        feedback[direction] = { amount, text: line };
+        this.attackCountFeedbackByInstance.set(die.instanceId, feedback);
+        return;
+      }
+    }
+    this.writeCombatLog(line);
+    feedback[direction] = { amount, text: line };
+    this.attackCountFeedbackByInstance.set(die.instanceId, feedback);
   }
 
   private getAttackCountBuffLines(die: DiceInstanceState): Array<{ text: string; color: string }> {
@@ -3826,7 +3850,7 @@ export class ArenaScene extends Phaser.Scene {
         this.combatAttackCountNegativeDeltaByInstance.set(die.instanceId, combatNegativeDelta);
         this.recordAttackCountEffect(die.instanceId, combatPositiveDelta);
         this.recordAttackCountEffect(die.instanceId, combatNegativeDelta);
-        if (combatAttackCountDelta > 0) this.writeAttackCountGainFeedback(transformedDie, combatAttackCountDelta);
+        if (combatAttackCountDelta > 0) this.writeAttackCountFeedback(transformedDie, combatAttackCountDelta);
         const withPermanent = this.computeAttackCount(transformedDie.instanceId, pips, pipAuraDelta, transformedDie);
         const stunned = this.stunnedByInstance.has(transformedDie.instanceId);
         const mightyRoar = shouldMightyRoar(transformedDie);
@@ -3868,7 +3892,7 @@ export class ArenaScene extends Phaser.Scene {
       const slow = this.getAttackDeltaSummary(die.instanceId);
       if (!slow || slow.delta >= 0) return;
       const lostAttackCounts = Math.abs(slow.delta);
-      this.writeCombatLog(`${this.getCombatDieName(die)} loses ${lostAttackCounts} attack count${lostAttackCounts === 1 ? '' : 's'}!`);
+      this.writeAttackCountFeedback(die, -lostAttackCounts);
     });
     [...playerBoardDice, ...enemyBoardDice].forEach((die) => {
       const definition = this.getDefinitionForInstance(die);
@@ -5864,13 +5888,13 @@ export class ArenaScene extends Phaser.Scene {
 
   private applyStatusApplications(applications: StatusEffectApplication[] | undefined) {
     if (!applications?.length) return;
+    const lostAttackCountsByInstance = new Map<string, { die: DiceInstanceState; amount: number }>();
     applications.forEach((application) => {
       const target = this.gameState.dice.find((die) => die.instanceId === application.target.instanceId && !die.isDestroyed);
       if (!target) return;
       const duration = this.getSkillDurationTurns(application.duration);
       if (duration === undefined) return;
       let applied = false;
-      let lostAttackCounts = 0;
       if (application.effect === 'poison' && application.damage !== undefined) {
         const damage = Math.max(1, Math.floor(application.damage * this.getDiceCardSkillDamageMultiplier(application.source)));
         const existing = this.poisonByInstance.get(target.instanceId);
@@ -5895,7 +5919,11 @@ export class ArenaScene extends Phaser.Scene {
         const appliedDelta = nextDelta - previousDelta;
         this.attackDeltaByInstance.set(target.instanceId, { delta: nextDelta, turns: Math.max(...nextStacks.map((stack) => stack.turns)), stacks: nextStacks });
         this.recordAttackCountEffect(target.instanceId, appliedDelta);
-        if (appliedDelta < 0) lostAttackCounts = Math.abs(appliedDelta);
+        if (appliedDelta < 0) {
+          const lost = lostAttackCountsByInstance.get(target.instanceId) ?? { die: target, amount: 0 };
+          lost.amount += Math.abs(appliedDelta);
+          lostAttackCountsByInstance.set(target.instanceId, lost);
+        }
         if (appliedDelta !== 0) {
           this.gameState = {
             ...this.gameState,
@@ -5923,10 +5951,8 @@ export class ArenaScene extends Phaser.Scene {
       }
       if (!applied) return;
       this.writeStatusApplicationFeedback(application.source, target, application.effect);
-      if (lostAttackCounts > 0) {
-        this.writeCombatLog(`${this.getCombatDieName(target)} loses ${lostAttackCounts} attack count${lostAttackCounts === 1 ? '' : 's'}!`);
-      }
     });
+    lostAttackCountsByInstance.forEach(({ die, amount }) => this.writeAttackCountFeedback(die, -amount));
   }
 
   private async applyTeleportSkillEffect(attacker: DiceInstanceState, target: DiceInstanceState, skillIndex: number) {
@@ -6526,7 +6552,7 @@ export class ArenaScene extends Phaser.Scene {
         this.playSkillSfxForDie(transformed, meta);
         const turns = Number.isFinite(result.extraAttacksTurns) ? Math.max(1, result.extraAttacksTurns) : 1;
         this.recordAttackCountEffect(recipient.instanceId, bonusAttacks);
-        this.writeAttackCountGainFeedback(recipient, bonusAttacks);
+        this.writeAttackCountFeedback(recipient, bonusAttacks);
         const current = this.extraAttackTurnsByInstance.get(recipient.instanceId);
         this.extraAttackTurnsByInstance.set(recipient.instanceId, {
           extra: (current?.extra ?? 0) + bonusAttacks,
