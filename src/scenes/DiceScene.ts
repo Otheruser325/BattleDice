@@ -132,8 +132,7 @@ export function getDiceModalDisplayDefinition(die: DiceDefinition, classLevel: n
     ...transformed,
     typeId: die.typeId,
     title: transformStats.title ?? die.title,
-    accent: transformStats.accent ?? die.accent,
-    skills: transformStats.skills?.length ? transformStats.skills : transformed.skills
+    accent: transformStats.accent ?? die.accent
   };
 }
 

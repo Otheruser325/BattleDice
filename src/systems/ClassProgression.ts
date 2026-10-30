@@ -33,9 +33,8 @@ export function applyTransformStats(definition: DiceDefinition, transformIndex =
   const stats = getTransformStats(definition, transformIndex);
   if (!stats) return definition;
   if (stats.title && definition.title === stats.title) return definition;
-  const skills = mergeSkillsByIndex(definition.skills, stats.skills);
-
-  return {
+  const mergedSkills = mergeSkillsByIndex(definition.skills, stats.skills);
+  const transformedDefinition: DiceDefinition = {
     ...definition,
     title: stats.title ?? definition.title,
     attack: scaleStatValue(stats.attack, definition.attack, stats.attackMultiplier),
@@ -46,12 +45,24 @@ export function applyTransformStats(definition: DiceDefinition, transformIndex =
     accent: stats.accent ?? definition.accent,
     rarity: stats.rarity ?? definition.rarity,
     isBoss: stats.isBoss ?? definition.isBoss,
-    skills,
+    skills: mergedSkills,
     transformStats: definition.transformStats,
     transformFlags: definition.transformFlags,
     alternateButton: definition.alternateButton,
     baseButton: definition.baseButton
   };
+  const skills = mergedSkills.map((skill, index) => {
+    if (skill.descriptionLocked) return skill;
+    const baseSkill = definition.skills[index];
+    const overlaySkill = stats.skills?.[index];
+    const sourceModifiers = baseSkill && typeof overlaySkill?.type !== 'string'
+      ? baseSkill.modifiers
+      : undefined;
+    if (!sourceModifiers && !skill.modifiers) return skill;
+    const description = getClassScaledSkillDescription(transformedDefinition, skill, 1, sourceModifiers);
+    return description === skill.description ? skill : { ...skill, description };
+  });
+  return { ...transformedDefinition, skills };
 }
 
 export const MAX_CLASS_LEVEL = 15;
@@ -384,6 +395,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
         modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
         modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
         const scaledSkill = { ...skill, modifiers };
+        if (typeof skill.description !== 'string' || !skill.description.trim()) return scaledSkill;
         const descriptionDefinition: DiceDefinition = {
           ...definition,
           attack: scaleStatValue(definition.attack, 1, multiplier),
