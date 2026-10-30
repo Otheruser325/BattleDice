@@ -8,7 +8,7 @@ export function getTransformStats(definition: DiceDefinition, transformIndex = 0
 
 export function getTransformRecoveryRate(definition: DiceDefinition, transformIndex = 0): number | undefined {
   const rate = getTransformStats(definition, transformIndex)?.recoveryRate;
-  return rate === undefined ? undefined : Math.max(0, Math.min(1, rate));
+  return typeof rate === 'number' && Number.isFinite(rate) ? Math.max(0, Math.min(1, rate)) : undefined;
 }
 
 export function resolveStatMultiplier(multiplier: number | undefined): number {
@@ -102,12 +102,22 @@ function formatPercent(rate: number): string {
   return formatPercentValue(rate, 2);
 }
 
-function scaleFlatDamage(value: number | undefined, multiplier: number): number | undefined {
-  return value === undefined ? undefined : Math.max(1, Math.round(value * multiplier));
+function scaleFlatDamage(value: number | null | undefined, multiplier: number): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.round(value * multiplier)) : undefined;
 }
 
-function scaleDamageRange(range: [number, number] | undefined, multiplier: number): [number, number] | undefined {
-  return range ? [Math.max(1, Math.round(range[0] * multiplier)), Math.max(1, Math.round(range[1] * multiplier))] : undefined;
+function scaleDamageRange(range: [number, number] | null | undefined, multiplier: number): [number, number] | undefined {
+  if (!Array.isArray(range)) return undefined;
+  return [
+    Math.max(1, Math.round(resolveStatValue(range[0], 1) * multiplier)),
+    Math.max(1, Math.round(resolveStatValue(range[1], 1) * multiplier))
+  ];
+}
+
+function omitNullishModifiers(modifiers: DiceSkillModifier): DiceSkillModifier {
+  return Object.fromEntries(
+    Object.entries(modifiers).filter(([, value]) => value !== undefined && value !== null)
+  ) as DiceSkillModifier;
 }
 
 function getModifier(skill: DiceSkillDefinition | undefined): DiceSkillModifier {
@@ -178,8 +188,8 @@ function normalizeSingularUnits(text: string): string {
   return text.replace(/\b1 (tiles|spaces|squares|hexes)\b/g, (_, unit: string) => `1 ${PLURAL_UNIT_FORMS[unit]}`);
 }
 
-function scaleDisplayDamage(value: number | undefined, multiplier: number): number | undefined {
-  return value === undefined ? undefined : Math.max(1, Math.round(value * Math.max(1, multiplier)));
+function scaleDisplayDamage(value: number | null | undefined, multiplier: number): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.round(value * Math.max(1, multiplier))) : undefined;
 }
 
 function getDynamicSkillDescription(description: string, source: DiceSkillModifier, display: DiceSkillModifier, skillDamageMultiplier = 1): string {
@@ -263,7 +273,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     health: scaleStatValue(definition.health, 1, multiplier)
   };
   const skills = definition.skills.map((skill) => {
-    const source = skill.modifiers as DiceSkillModifier | undefined;
+    const source = skill.modifiers ? omitNullishModifiers(skill.modifiers) : undefined;
     if (!source) return skill;
 
     const modifiers: DiceSkillModifier = { ...source };
@@ -359,7 +369,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       modifiers.ricochetCount = source.ricochetCount + 1;
     }
 
-    const scaledSkill = { ...skill, modifiers };
+    const scaledSkill = { ...skill, modifiers: omitNullishModifiers(modifiers) };
     return {
       ...scaledSkill,
       description: getClassScaledSkillDescription(scaledDefinitionForDescription, scaledSkill, 1, source)
@@ -370,40 +380,44 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     ...definition,
     attack: scaleStatValue(definition.attack, 1, multiplier),
     health: scaleStatValue(definition.health, 1, multiplier),
-    transformStats: definition.transformStats?.map((stats) => ({
-      ...stats,
-      attack: stats.attack === undefined ? undefined : scaleStatValue(stats.attack, 1, multiplier),
-      health: stats.health === undefined ? undefined : scaleStatValue(stats.health, 1, multiplier),
-      skills: stats.skills?.map((skill) => {
-        const source = skill.modifiers;
-        if (!source) return skill;
-        const modifiers: DiceSkillModifier = { ...source };
-        modifiers.splashDamage = scaleFlatDamage(source.splashDamage, multiplier);
-        modifiers.heatwaveDamage = scaleFlatDamage(source.heatwaveDamage, multiplier);
-        modifiers.chainDamage = scaleFlatDamage(source.chainDamage, multiplier);
-        modifiers.poisonDamage = scaleFlatDamage(source.poisonDamage, multiplier);
-        modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
-        modifiers.activeHeal = scaleFlatDamage(source.activeHeal, multiplier);
-        modifiers.meteorDamage = scaleFlatDamage(source.meteorDamage, multiplier);
-        modifiers.lavaDamage = scaleFlatDamage(source.lavaDamage, multiplier);
-        modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
-        modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
-        modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
-        modifiers.bossDamage = scaleFlatDamage(source.bossDamage, multiplier);
-        modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
-        modifiers.shield = scaleFlatDamage(source.shield, multiplier);
-        modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
-        modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
-        const scaledSkill = { ...skill, modifiers };
-        if (typeof skill.description !== 'string' || !skill.description.trim()) return scaledSkill;
-        const descriptionDefinition: DiceDefinition = {
-          ...definition,
-          attack: scaleStatValue(definition.attack, 1, multiplier),
-          health: scaleStatValue(definition.health, 1, multiplier)
-        };
-        return { ...scaledSkill, description: getClassScaledSkillDescription(descriptionDefinition, scaledSkill, 1, source) };
-      })
-    })),
+    transformStats: definition.transformStats?.map((stats) => {
+      if (!stats || typeof stats !== 'object') return stats;
+      return {
+        ...stats,
+        attack: typeof stats.attack === 'number' && Number.isFinite(stats.attack) ? scaleStatValue(stats.attack, 1, multiplier) : undefined,
+        health: typeof stats.health === 'number' && Number.isFinite(stats.health) ? scaleStatValue(stats.health, 1, multiplier) : undefined,
+        skills: stats.skills?.map((skill) => {
+          if (!skill || typeof skill !== 'object') return skill;
+          const source = skill.modifiers ? omitNullishModifiers(skill.modifiers) : undefined;
+          if (!source) return skill;
+          const modifiers: DiceSkillModifier = { ...source };
+          modifiers.splashDamage = scaleFlatDamage(source.splashDamage, multiplier);
+          modifiers.heatwaveDamage = scaleFlatDamage(source.heatwaveDamage, multiplier);
+          modifiers.chainDamage = scaleFlatDamage(source.chainDamage, multiplier);
+          modifiers.poisonDamage = scaleFlatDamage(source.poisonDamage, multiplier);
+          modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
+          modifiers.activeHeal = scaleFlatDamage(source.activeHeal, multiplier);
+          modifiers.meteorDamage = scaleFlatDamage(source.meteorDamage, multiplier);
+          modifiers.lavaDamage = scaleFlatDamage(source.lavaDamage, multiplier);
+          modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
+          modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
+          modifiers.hammerDamage = scaleFlatDamage(source.hammerDamage, multiplier);
+          modifiers.bossDamage = scaleFlatDamage(source.bossDamage, multiplier);
+          modifiers.revengeDamage = scaleFlatDamage(source.revengeDamage, multiplier);
+          modifiers.shield = scaleFlatDamage(source.shield, multiplier);
+          modifiers.transformAttackDamage = scaleFlatDamage(source.transformAttackDamage, multiplier);
+          modifiers.damageRange = scaleDamageRange(source.damageRange, multiplier);
+          const scaledSkill = { ...skill, modifiers: omitNullishModifiers(modifiers) };
+          if (typeof skill.description !== 'string' || !skill.description.trim()) return scaledSkill;
+          const descriptionDefinition: DiceDefinition = {
+            ...definition,
+            attack: scaleStatValue(definition.attack, 1, multiplier),
+            health: scaleStatValue(definition.health, 1, multiplier)
+          };
+          return { ...scaledSkill, description: getClassScaledSkillDescription(descriptionDefinition, scaledSkill, 1, source) };
+        })
+      };
+    }),
     skills
   };
 

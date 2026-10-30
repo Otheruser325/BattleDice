@@ -11,6 +11,13 @@ function isSkillEntry(entry: unknown): entry is DiceSkillDefinition {
   return Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry);
 }
 
+function definedOverlayFields<T extends object>(value: T | null | undefined): Partial<T> {
+  if (!value) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null)
+  ) as Partial<T>;
+}
+
 // A transform row leaves an index untouched by leaving an empty object there, matching the talent
 // overlay convention. A row that declares its own type is a full replacement; a row that only names
 // properties (typically modifiers) overlays onto the base skill, so a form that changes one flag does
@@ -33,8 +40,11 @@ export function mergeSkillsByIndex(
     }
     merged[index] = {
       ...current,
-      ...entry,
-      modifiers: { ...(current.modifiers ?? {}), ...(entry.modifiers ?? {}) }
+      ...definedOverlayFields(entry),
+      modifiers: {
+        ...(current.modifiers ?? {}),
+        ...definedOverlayFields(entry.modifiers)
+      }
     };
   });
   return merged;
@@ -62,8 +72,11 @@ export function mergeSkillOverlayByIndex(
     merged[index] = current
       ? {
         ...current,
-        ...entry,
-        modifiers: { ...(current.modifiers ?? {}), ...(entry.modifiers ?? {}) }
+        ...definedOverlayFields(entry),
+        modifiers: {
+          ...(current.modifiers ?? {}),
+          ...definedOverlayFields(entry.modifiers)
+        }
       }
       : cloneSkill(entry);
   });
