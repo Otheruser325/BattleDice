@@ -135,6 +135,7 @@ export interface ClientBattleDie {
   instanceId: string;
   typeId: string;
   ownerId: OwnerId;
+  boardSide?: OwnerId;
   zone: DiceZone;
   maxHealth: number;
   currentHealth: number;

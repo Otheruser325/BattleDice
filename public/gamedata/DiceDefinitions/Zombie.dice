@@ -9,7 +9,7 @@
     {
       "type": "OnKill",
       "title": "Zombie Pandemic",
-      "description": "Turns a defeated enemy into a Zombie Die on your side with 30% of its maximum HP.",
+      "description": "Turns a defeated enemy into an allied Zombie Die on the tile where it fell with 30% of its maximum HP.",
       "modifiers": {
         "hasPlague": true,
         "plaguedDieType": "Zombie",

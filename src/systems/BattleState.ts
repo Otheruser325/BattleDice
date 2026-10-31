@@ -5,6 +5,7 @@ import type {
   MatchBattleState
 } from '../types/game';
 import { getRuntimeSkillMetaForTrigger, resolveDamage } from './DiceSkills';
+import { resolveReviveStats } from './Revive';
 import { getCombatDistance } from './CombatRange';
 import { secureChance, securePick } from '../utils/RandomManager';
 
@@ -396,9 +397,19 @@ export function executeAttack(
     && (!runtimeMeta.dontReviveWhenLastOneStanding || hasOtherLiving)
   );
   if (updatedTarget?.isDestroyed && canRevive && secureChance(reviveChance!)) {
-    const revivedMaxHealth = Math.max(1, Math.round(
-      target.maxHealth * Math.max(0, Math.min(1, runtimeMeta.reviveHealth ?? 1))
-    ));
+    const reviveStats = resolveReviveStats({
+      maxHealth: target.maxHealth,
+      baseAttack: targetDefinition?.attack ?? 1,
+      healthRate: runtimeMeta.reviveHealth,
+      attackRate: runtimeMeta.reviveAttack
+    });
+    if (targetDefinition) {
+      definitions.set(targetId, {
+        ...targetDefinition,
+        attack: reviveStats.attack,
+        health: reviveStats.maxHealth
+      });
+    }
     newState = {
       ...newState,
       reviveCounts: { ...state.reviveCounts, [targetId]: previousRevives + 1 },
@@ -408,8 +419,8 @@ export function executeAttack(
               ...die,
               isDestroyed: false,
               zone: 'board',
-              maxHealth: revivedMaxHealth,
-              currentHealth: revivedMaxHealth,
+              maxHealth: reviveStats.maxHealth,
+              currentHealth: reviveStats.currentHealth,
               attacksRemaining: target.attacksRemaining,
               hasFinishedAttacking: target.hasFinishedAttacking,
               gridPosition: targetPosition

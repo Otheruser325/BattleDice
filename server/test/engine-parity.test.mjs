@@ -727,9 +727,11 @@ test('plague converts a defeated enemy into a scaled allied die', () => {
   assert.ok(raised);
   assert.equal(raised.typeId, 'Zombie');
   assert.equal(raised.ownerId, 'player');
-  assert.equal(raised.maxHealth, 3);
-  assert.equal(raised.currentHealth, 3);
+  assert.equal(raised.maxHealth, 100);
+  assert.equal(raised.currentHealth, 30);
   assert.deepEqual(raised.gridPosition, { row: 1, col: 0 });
+  assert.equal(raised.mana.infiltrated, 1);
+  assert.equal(combat.definitions.get(raised.instanceId).attack, 300);
   assert.equal(raised.pips, 5);
   assert.ok(resolution.events.some((event) => event.kind === 'summon'));
 });
@@ -787,6 +789,9 @@ test('class scaling applies to nuclear damage and plague summons', () => {
   const plagueResolution = resolve(plagueSetup.combat, plagueSetup.catalog, levelRules);
   const raised = plagueResolution.state.dice.find((die) => die.instanceId.includes('plague'));
   assert.ok(raised);
+  assert.equal(raised.maxHealth, 110);
+  assert.equal(raised.currentHealth, 33);
+  assert.equal(raised.mana.infiltrated, 1);
   assert.equal(plagueSetup.combat.definitions.get(raised.instanceId).attack, 330);
 });
 
@@ -881,8 +886,10 @@ test('revive health and attack scale on every successful revival', () => {
   const revived = resolution.state.dice.find((die) => die.instanceId === reviverInstance.instanceId);
   const revivedDefinition = combat.definitions.get(reviverInstance.instanceId);
 
-  assert.equal(resolution.events.filter((event) => event.kind === 'revive').length, 2);
-  assert.equal(revived.maxHealth, 25);
-  assert.equal(revivedDefinition.health, 25);
+  const reviveEvents = resolution.events.filter((event) => event.kind === 'revive');
+  assert.equal(reviveEvents.length, 2);
+  assert.ok(reviveEvents.every((event) => event.text.includes('50 health')));
+  assert.equal(revived.maxHealth, 100);
+  assert.equal(revivedDefinition.health, 100);
   assert.equal(revivedDefinition.attack, 6);
 });

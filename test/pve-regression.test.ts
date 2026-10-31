@@ -3,6 +3,7 @@ import test from 'node:test';
 import { applyClassProgression } from '../src/systems/ClassProgression';
 import { executeRevengeSkillEffects } from '../src/systems/CombatSkills';
 import { resolvePlagueSpawn } from '../src/systems/Plague';
+import { resolveReviveStats } from '../src/systems/Revive';
 import type { DiceDefinition, DiceInstanceState } from '../src/types/game';
 
 const zombie: DiceDefinition = {
@@ -28,15 +29,15 @@ const zombie: DiceDefinition = {
   }]
 };
 
-test('PvE plague keeps the defeated tile and rolled pips while class-scaling attack', () => {
+test('PvE plague keeps the defeated tile and rolled pips with a 30% current-health fill', () => {
   const spawn = resolvePlagueSpawn({
     baseDefinition: zombie,
     classLevel: 2,
     healthRate: 0.3,
     attackRate: 0.6,
-    defeatedMaxHealth: 10,
     defeatedPips: 5,
     defeatedPosition: { row: 3, col: 2 },
+    defeatedBoardSide: 'enemy',
     footprint: 1,
     gridSize: 5,
     isAvailable: () => true
@@ -44,9 +45,23 @@ test('PvE plague keeps the defeated tile and rolled pips while class-scaling att
 
   assert.ok(spawn);
   assert.deepEqual(spawn.position, { row: 3, col: 2 });
+  assert.equal(spawn.boardSide, 'enemy');
   assert.equal(spawn.pips, 5);
-  assert.equal(spawn.maxHealth, 3);
+  assert.equal(spawn.maxHealth, 924);
+  assert.equal(spawn.currentHealth, 277);
+  assert.equal(spawn.definition.health, 924);
   assert.equal(spawn.definition.attack, 330);
+});
+
+test('PvE revive keeps full max health while scaling current health and attack', () => {
+  const stats = resolveReviveStats({
+    maxHealth: 100,
+    baseAttack: 10,
+    healthRate: 0.5,
+    attackRate: 0.8
+  });
+
+  assert.deepEqual(stats, { maxHealth: 100, currentHealth: 50, attack: 8 });
 });
 
 test('PvE revenge requires hasRevenge and uses the passive threshold', () => {

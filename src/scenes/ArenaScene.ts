@@ -24,6 +24,7 @@ import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getRuntimeSkillMeta, getRunti
 import { CombatSkillOrchestrator, executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeOnTransformedSkillEffects, executeCombatStartSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeRevengeSkillEffects, applySkillDamageModifiers, getCombatStartManaEffect, getCombatStartTauntEffect, chooseInfiltratorPlacement, canSkillStrikeFirst, collectCombatStartAuras, computeCombatStartBonus, computeCombatStartFoeBonus, type CombatFlowContext, type CombatFlowPhase, type StatusEffectApplication } from '../systems/CombatSkills';
 import { getClassMultiplier, applyClassProgression, applyTransformStats, getTransformRecoveryRate, getClassScaledSkillDescription } from '../systems/ClassProgression';
 import { resolvePlagueSpawn } from '../systems/Plague';
+import { resolveReviveStats } from '../systems/Revive';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
@@ -6072,15 +6073,17 @@ export class ArenaScene extends Phaser.Scene {
       return { state: resolvedState, dealt: Math.max(0, before.currentHealth - (after?.currentHealth ?? 0)), absorbed: shieldAbsorbed, defeated: true, killed: true, critical: criticalDamage.critical };
     }
     const nextReviveCount = previousRevives + 1;
-    const reviveHealthRate = Phaser.Math.Clamp(reviveMeta?.reviveHealth ?? 1, 0, 1);
-    const reviveAttackRate = Phaser.Math.Clamp(reviveMeta?.reviveAttack ?? 1, 0, 1);
-    const revivedMaxHealth = Math.max(1, Math.round(before.maxHealth * reviveHealthRate));
-    const revivedAttack = Math.max(1, Math.round((beforeDefinition?.attack ?? 1) * reviveAttackRate));
+    const reviveStats = resolveReviveStats({
+      maxHealth: before.maxHealth,
+      baseAttack: beforeDefinition?.attack ?? 1,
+      healthRate: reviveMeta?.reviveHealth,
+      attackRate: reviveMeta?.reviveAttack
+    });
     if (beforeDefinition) {
       this.instanceDefinitionOverrides.set(instanceId, {
         ...beforeDefinition,
-        attack: revivedAttack,
-        health: revivedMaxHealth
+        attack: reviveStats.attack,
+        health: reviveStats.maxHealth
       });
     }
     this.reviveCountByInstance.set(instanceId, nextReviveCount);
@@ -6100,8 +6103,8 @@ export class ArenaScene extends Phaser.Scene {
             ...die,
             isDestroyed: false,
             zone: before.zone === 'board' ? 'board' : before.zone,
-            maxHealth: revivedMaxHealth,
-            currentHealth: revivedMaxHealth,
+            maxHealth: reviveStats.maxHealth,
+            currentHealth: reviveStats.currentHealth,
             attacksRemaining: before.attacksRemaining,
             hasFinishedAttacking: before.hasFinishedAttacking,
             gridPosition: beforePosition
@@ -7283,22 +7286,23 @@ export class ArenaScene extends Phaser.Scene {
     const base = this.definitions.get(plague.typeId);
     if (!base) return;
     const ownerId = attacker.ownerId;
+    const boardSide = this.getBoardSideForDie(defeated);
     const footprint = this.getFootprintForDefinition(base);
-    const usedCells = this.collectOccupiedCells(ownerId);
+    const usedCells = this.collectOccupiedCellsOnBoardSide(boardSide);
     const spawn = resolvePlagueSpawn({
       baseDefinition: base,
       classLevel,
       healthRate: plague.healthRate,
       attackRate: plague.attackRate,
-      defeatedMaxHealth: defeated.maxHealth,
       defeatedPips: this.getPipsForDie(defeated),
       defeatedPosition: defeated.gridPosition,
+      defeatedBoardSide: boardSide,
       footprint,
       gridSize: GRID_SIZE,
       isAvailable: (row, col) => this.canPlaceFootprint(row, col, footprint, usedCells)
     });
     if (!spawn) return;
-    const { definition, maxHealth, pips, position } = spawn;
+    const { definition, maxHealth, currentHealth, pips, position, boardSide: spawnBoardSide } = spawn;
     const instanceId = `${ownerId}-${plague.typeId}-plague-${Date.now()}-${Phaser.Math.Between(1, 9999)}`;
     const spawned: DiceInstanceState = {
       instanceId,
@@ -7306,7 +7310,7 @@ export class ArenaScene extends Phaser.Scene {
       ownerId,
       zone: 'board',
       maxHealth,
-      currentHealth: maxHealth,
+      currentHealth,
       isDestroyed: false,
       hasFinishedAttacking: true,
       attacksRemaining: 0,
@@ -7315,6 +7319,8 @@ export class ArenaScene extends Phaser.Scene {
     this.gameState = { ...this.gameState, dice: [...this.gameState.dice, spawned] };
     this.instanceDefinitionOverrides.set(instanceId, definition);
     this.instanceClassLevels.set(instanceId, classLevel);
+    if (spawnBoardSide === ownerId) this.infiltratedBoardSideByInstance.delete(instanceId);
+    else this.infiltratedBoardSideByInstance.set(instanceId, spawnBoardSide);
     if (ownerId === 'player') this.dicePips.set(instanceId, pips);
     else this.enemyDicePips.set(instanceId, pips);
     this.renderDice();

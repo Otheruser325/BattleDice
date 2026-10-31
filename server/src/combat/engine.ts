@@ -482,6 +482,10 @@ function otherOwner(ownerId: OwnerId): OwnerId {
   return ownerId === 'player' ? 'enemy' : 'player';
 }
 
+function boardSideOf(die: CombatDie): OwnerId {
+  return die.mana['infiltrated'] === 1 ? otherOwner(die.ownerId) : die.ownerId;
+}
+
 function cellsFor(die: CombatDie, definition: DiceDefinition, position = die.gridPosition): BattlePosition[] {
   if (!position) return [];
   const footprint = footprintFor(definition);
@@ -755,6 +759,7 @@ export function toClientState(
     combatPhase: state.combatPhase,
     dice: visibleDice.map((die) => {
       const ownerId: OwnerId = mirror ? otherOwner(die.ownerId) : die.ownerId;
+      const boardSide = boardSideOf(die);
       let gridPosition = die.gridPosition;
       if (gridPosition && mirror) {
         const definition = getDefinition(state, definitions, die);
@@ -768,6 +773,7 @@ export function toClientState(
         instanceId: die.instanceId,
         typeId: die.typeId,
         ownerId,
+        boardSide: mirror ? otherOwner(boardSide) : boardSide,
         zone: die.zone,
         maxHealth: die.maxHealth,
         currentHealth: die.currentHealth,
@@ -1072,7 +1078,8 @@ function applyPlague(
   const base = sourceDefinition.typeId === typeId ? sourceDefinition : matchingDefinition ?? sourceDefinition;
   const healthRate = clamp(numberMod(modifiers, 'plaguedDieHealth') ?? 1, 0, 1);
   const attackRate = Math.max(0, numberMod(modifiers, 'plaguedDieAttack') ?? 1);
-  const maxHealth = Math.max(1, Math.ceil(defeated.maxHealth * healthRate));
+  const maxHealth = Math.max(1, Math.round(base.health));
+  const currentHealth = Math.max(1, Math.round(maxHealth * healthRate));
   const definition: DiceDefinition = {
     ...base,
     typeId,
@@ -1080,6 +1087,7 @@ function applyPlague(
     health: maxHealth,
     skills: base.skills.map((skill) => ({ ...skill, modifiers: skill.modifiers ? { ...skill.modifiers } : skill.modifiers }))
   };
+  const defeatedBoardSide = boardSideOf(defeated);
   const instanceId = `${source.ownerId === 'player' ? 'a' : 'b'}-plague-${state.dice.length + 1}`;
   const spawned: CombatDie = {
     instanceId,
@@ -1088,7 +1096,7 @@ function applyPlague(
     ownerId: source.ownerId,
     zone: 'board',
     maxHealth,
-    currentHealth: maxHealth,
+    currentHealth,
     isDestroyed: false,
     hasFinishedAttacking: true,
     attacksRemaining: 0,
@@ -1105,23 +1113,13 @@ function applyPlague(
     growth: 0,
     boostedAttacks: 0
   };
-  const occupied = new Set<string>();
-  for (const die of state.dice) {
-    if (die.zone !== 'board' || die.isDestroyed || !die.gridPosition) continue;
-    occupy(die, effectiveDefinition(state, definitions, die), die.gridPosition, occupied);
-  }
+  if (!defeatedPosition) return;
   const footprint = footprintFor(definition);
-  const preferred = defeatedPosition
-    ? {
-        row: Math.max(0, Math.min(GRID_SIZE - footprint, defeatedPosition.row)),
-        col: Math.max(0, Math.min(GRID_SIZE - footprint, defeatedPosition.col))
-      }
-    : { row: 0, col: 0 };
-  const positions = [preferred];
-  for (let row = 0; row < GRID_SIZE; row += 1) for (let col = 0; col < GRID_SIZE; col += 1) positions.push({ row, col });
-  const position = positions.find((candidate) => canPlace(spawned, definition, candidate, occupied));
-  if (!position) return;
-  spawned.gridPosition = position;
+  if (defeatedPosition.row < 0 || defeatedPosition.col < 0
+    || defeatedPosition.row + footprint > GRID_SIZE
+    || defeatedPosition.col + footprint > GRID_SIZE) return;
+  spawned.gridPosition = { row: defeatedPosition.row, col: defeatedPosition.col };
+  if (defeatedBoardSide !== source.ownerId) spawned.mana['infiltrated'] = 1;
   state.dice.push(spawned);
   definitions.set(instanceId, definition);
   addEvent(events, 'summon', `${effectiveDefinition(state, definitions, source).title} spreads the plague, raising ${definition.title}.`, {
@@ -1156,20 +1154,22 @@ function handleDefeat(
   if (canRevive && random() < chance) {
     const healthRate = clamp(numberMod(onDeathModifiers, 'reviveHealth') ?? 1, 0, 1);
     const attackRate = clamp(numberMod(onDeathModifiers, 'reviveAttack') ?? 1, 0, 1);
+    const revivedMaxHealth = Math.max(1, Math.round(target.maxHealth));
+    const revivedHealth = Math.max(1, Math.round(revivedMaxHealth * healthRate));
     const revivedDefinition: DiceDefinition = {
       ...definition,
       attack: Math.max(1, Math.round(definition.attack * attackRate)),
-      health: Math.max(1, Math.round(target.maxHealth * healthRate))
+      health: revivedMaxHealth
     };
     state.reviveCounts[target.instanceId] = previousRevives + 1;
     definitions.set(target.instanceId, revivedDefinition);
     target.isDestroyed = false;
     target.zone = 'board';
-    target.maxHealth = revivedDefinition.health;
-    target.currentHealth = revivedDefinition.health;
+    target.maxHealth = revivedMaxHealth;
+    target.currentHealth = revivedHealth;
     target.attacksRemaining = 0;
     target.hasFinishedAttacking = true;
-    addEvent(events, 'revive', `${definition.title} revives with ${target.maxHealth} health!`, {
+    addEvent(events, 'revive', `${definition.title} revives with ${target.currentHealth} health!`, {
       ownerId: target.ownerId,
       targetId: target.instanceId
     });
