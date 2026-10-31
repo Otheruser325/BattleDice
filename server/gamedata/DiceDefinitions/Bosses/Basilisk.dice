@@ -28,6 +28,7 @@
       "title": "Rapacious Revenge",
       "description": "When Basilisk falls below 20% HP, it bites the nearest enemy dice 5 times for 100 damage.",
       "modifiers": {
+        "hasRevenge": true,
         "revengeThresholdRate": 0.2,
         "revengeHits": 5,
         "revengeDamage": 100,

@@ -157,6 +157,7 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   damageRatePerKill?: number;
   avoidAttackChance?: number;
   missingHealRate?: number;
+  hasRevenge?: boolean;
   revengeThresholdRate?: number;
   revengeHits?: number;
   revengeDamage?: number;

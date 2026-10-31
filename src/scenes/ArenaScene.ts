@@ -23,6 +23,7 @@ import { buildSkillIndex } from '../data/SkillLoader';
 import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getStatusEffectDurationFromModifiers, getSkillLockClass, getInitialTransformIndex, getAvailableTransformIndices, getPipTriggeredTransformIndex, getPipMappedRate, resolvePipScaledDamage, gateMetaByRangeThreshold, isRangeThresholdSatisfied, getNuclearAreaDimensions } from '../systems/DiceSkills';
 import { CombatSkillOrchestrator, executeOnDamagedSkillEffects, executeOnDeathSkillEffects, executeOnKillSkillEffects, executeOnTransformedSkillEffects, executeCombatStartSkillEffects, executeCombatEndSkillEffects, executePassiveSkillEffects, executeActiveSkillEffects, executeRevengeSkillEffects, applySkillDamageModifiers, getCombatStartManaEffect, getCombatStartTauntEffect, chooseInfiltratorPlacement, canSkillStrikeFirst, collectCombatStartAuras, computeCombatStartBonus, computeCombatStartFoeBonus, type CombatFlowContext, type CombatFlowPhase, type StatusEffectApplication } from '../systems/CombatSkills';
 import { getClassMultiplier, applyClassProgression, applyTransformStats, getTransformRecoveryRate, getClassScaledSkillDescription } from '../systems/ClassProgression';
+import { resolvePlagueSpawn } from '../systems/Plague';
 import { SCENE_KEYS } from './sceneKeys';
 import { CasinoProgressStore } from '../systems/CasinoProgressStore';
 import { AUDIO_KEYS, AudioManager } from '../utils/AudioManager';
@@ -6015,7 +6016,7 @@ export class ArenaScene extends Phaser.Scene {
       const definition = this.getDefinitionForInstance(before);
       const classLevel = this.instanceClassLevels.get(before.instanceId) ?? 1;
       if (definition) {
-        const revengeSkill = getValidSkillDefinitions(definition).find((skill) => skill.modifiers?.revengeThresholdRate !== undefined);
+        const revengeSkill = getValidSkillDefinitions(definition).find((skill) => skill.modifiers?.hasRevenge === true && skill.modifiers.revengeThresholdRate !== undefined);
         const revengeResult = this.combatOrchestrator.runSync(
           this.getCombatFlowContext('OnDamaged', before, after, revengeSkill?.type, revengeSkill?.title),
           () => executeRevengeSkillEffects(
@@ -7268,7 +7269,8 @@ export class ArenaScene extends Phaser.Scene {
       }
       this.renderLavaPools();
     }
-    this.animateMeteorImpact(enemyOwner, origin);
+    this.playSkillSfxForDie(source, meta);
+    this.animateNuclearMissile(enemyOwner, origin);
     this.writeCombatLog(`☢️ ${this.getCombatDieName(source)} detonates a nuclear strike on the opposite board for ${formatCompact(damage)} damage!`);
   }
 
@@ -7277,26 +7279,26 @@ export class ArenaScene extends Phaser.Scene {
     defeated: DiceInstanceState,
     plague: { typeId: string; healthRate: number; attackRate: number }
   ): void {
-    const base = this.definitions.get(plague.typeId) ?? this.getDefinitionForInstance(attacker);
+    const classLevel = this.instanceClassLevels.get(attacker.instanceId) ?? 1;
+    const base = this.definitions.get(plague.typeId);
     if (!base) return;
     const ownerId = attacker.ownerId;
     const footprint = this.getFootprintForDefinition(base);
     const usedCells = this.collectOccupiedCells(ownerId);
-    const preferred = {
-      row: Math.max(0, Math.min(GRID_SIZE - footprint, defeated.gridPosition?.row ?? 0)),
-      col: Math.max(0, Math.min(GRID_SIZE - footprint, GRID_SIZE - footprint - (defeated.gridPosition?.col ?? 0)))
-    };
-    const candidates = [preferred, ...Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => ({
-      row: Math.floor(index / GRID_SIZE), col: index % GRID_SIZE
-    }))];
-    const position = candidates.find((tile) => this.canPlaceFootprint(tile.row, tile.col, footprint, usedCells));
-    if (!position) return;
-    const maxHealth = Math.max(1, Math.ceil(defeated.maxHealth * plague.healthRate));
-    const definition = {
-      ...base,
-      attack: Math.max(1, Math.round(base.attack * plague.attackRate)),
-      health: maxHealth
-    };
+    const spawn = resolvePlagueSpawn({
+      baseDefinition: base,
+      classLevel,
+      healthRate: plague.healthRate,
+      attackRate: plague.attackRate,
+      defeatedMaxHealth: defeated.maxHealth,
+      defeatedPips: this.getPipsForDie(defeated),
+      defeatedPosition: defeated.gridPosition,
+      footprint,
+      gridSize: GRID_SIZE,
+      isAvailable: (row, col) => this.canPlaceFootprint(row, col, footprint, usedCells)
+    });
+    if (!spawn) return;
+    const { definition, maxHealth, pips, position } = spawn;
     const instanceId = `${ownerId}-${plague.typeId}-plague-${Date.now()}-${Phaser.Math.Between(1, 9999)}`;
     const spawned: DiceInstanceState = {
       instanceId,
@@ -7312,9 +7314,9 @@ export class ArenaScene extends Phaser.Scene {
     };
     this.gameState = { ...this.gameState, dice: [...this.gameState.dice, spawned] };
     this.instanceDefinitionOverrides.set(instanceId, definition);
-    this.instanceClassLevels.set(instanceId, this.instanceClassLevels.get(attacker.instanceId) ?? 1);
-    if (ownerId === 'player') this.dicePips.set(instanceId, 1);
-    else this.enemyDicePips.set(instanceId, 1);
+    this.instanceClassLevels.set(instanceId, classLevel);
+    if (ownerId === 'player') this.dicePips.set(instanceId, pips);
+    else this.enemyDicePips.set(instanceId, pips);
     this.renderDice();
     this.renderEnemyDice();
     this.writeCombatLog(`${this.getQualifiedCombatDieName(attacker)} spreads the plague, raising ${this.getCombatDieName(spawned)} on its side!`);
@@ -7728,6 +7730,69 @@ export class ArenaScene extends Phaser.Scene {
         plus.lineBetween(tx, ty - TILE_SIZE * 0.58, tx, ty + TILE_SIZE * 0.58);
         this.tweens.add({ targets: burst, scale: 3.2, alpha: 0, duration: 220, onComplete: () => burst.destroy() });
         this.tweens.add({ targets: plus, alpha: 0, duration: 260, onComplete: () => plus.destroy() });
+      }
+    });
+  }
+
+  private animateNuclearMissile(boardSide: 'player' | 'enemy', tile: { row: number; col: number }) {
+    const targetGrid = boardSide === 'player' ? this.playerGridContainer : this.enemyGridContainer;
+    const tx = targetGrid.x + tile.col * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const ty = targetGrid.y + tile.row * (TILE_SIZE + TILE_GAP) + TILE_SIZE / 2;
+    const reticle = this.add.circle(tx, ty, TILE_SIZE * 0.42, 0xff3b30, 0.1)
+      .setStrokeStyle(2, 0xff6b5a, 0.9)
+      .setDepth(1998);
+    this.tweens.add({
+      targets: reticle,
+      scale: 1.3,
+      alpha: 0.18,
+      duration: 420,
+      yoyo: true,
+      repeat: 1
+    });
+
+    const missile = this.add.container(tx + TILE_SIZE * 1.8, ty - TILE_SIZE * 4.5).setDepth(2000);
+    const body = this.add.graphics();
+    body.fillStyle(0xe8eef4, 1);
+    body.fillRect(-6, -18, 12, 36);
+    body.fillStyle(0xff3b30, 1);
+    body.fillTriangle(0, 28, -8, 8, 8, 8);
+    body.fillStyle(0x8d99ae, 1);
+    body.fillTriangle(-6, -14, -18, -24, -6, -24);
+    body.fillTriangle(6, -14, 18, -24, 6, -24);
+    body.fillStyle(0xffa14d, 0.95);
+    body.fillRect(-4, 20, 8, 9);
+    missile.add(body);
+
+    const trail = this.add.graphics().setDepth(1999);
+    this.tweens.add({
+      targets: missile,
+      x: tx,
+      y: ty,
+      duration: 760,
+      ease: 'Cubic.In',
+      onUpdate: () => {
+        trail.clear();
+        trail.lineStyle(6, 0xffa14d, 0.38);
+        trail.lineBetween(missile.x + 15, missile.y - 34, missile.x, missile.y + 10);
+        trail.lineStyle(2, 0xfff3c4, 0.7);
+        trail.lineBetween(missile.x + 11, missile.y - 22, missile.x + 2, missile.y + 4);
+      },
+      onComplete: () => {
+        reticle.destroy();
+        trail.destroy();
+        missile.destroy();
+        const flash = this.add.circle(tx, ty, TILE_SIZE * 0.55, 0xfff3c4, 0.95).setDepth(2001);
+        const shockwave = this.add.circle(tx, ty, TILE_SIZE * 0.32, 0xff3b30, 0)
+          .setStrokeStyle(4, 0xff6b5a, 0.85)
+          .setDepth(2001);
+        const cloud = this.add.container(tx, ty).setDepth(2002);
+        const stem = this.add.rectangle(0, -8, 10, 30, 0xffa14d, 0.72);
+        const cap = this.add.circle(0, -30, 22, 0xff5a36, 0.58);
+        const crown = this.add.circle(10, -42, 13, 0xffc16a, 0.48);
+        cloud.add([stem, cap, crown]);
+        this.tweens.add({ targets: flash, scale: 2.8, alpha: 0, duration: 240, onComplete: () => flash.destroy() });
+        this.tweens.add({ targets: shockwave, scale: 2.3, alpha: 0, duration: 380, onComplete: () => shockwave.destroy() });
+        this.tweens.add({ targets: cloud, y: ty - 28, alpha: 0, scale: 1.35, duration: 520, delay: 80, onComplete: () => cloud.destroy() });
       }
     });
   }

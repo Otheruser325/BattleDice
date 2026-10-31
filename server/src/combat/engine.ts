@@ -978,6 +978,7 @@ function dealDamage(
   const absorbed = Math.min(target.shieldHp, damage);
   target.shieldHp = Math.max(0, target.shieldHp - absorbed);
   damage -= absorbed;
+  const previousHealth = target.currentHealth;
   target.currentHealth = Math.max(0, target.currentHealth - damage);
   const onDamagedDamage = damage > 0 ? damage : absorbed;
   addEvent(events, 'damage', `${effectiveDefinition(state, definitions, target).title} takes ${damage} damage${absorbed > 0 ? ` (${absorbed} absorbed)` : ''}${critical ? ' (CRITICAL)' : ''}.`, {
@@ -989,6 +990,9 @@ function dealDamage(
   });
   if (attacker && onDamagedDamage > 0) {
     applyOnDamaged(state, definitions, target, attacker, onDamagedDamage, events, random);
+  }
+  if (attacker && target.currentHealth > 0) {
+    applyRevenge(state, definitions, target, attacker, previousHealth, events, random);
   }
   if (target.currentHealth <= 0) {
     handleDefeat(state, definitions, attacker, target, events, random, options.chainDepth ?? 0);
@@ -1064,7 +1068,8 @@ function applyPlague(
   const configured = stringMod(modifiers, 'plaguedDieType')?.trim();
   const typeId = !configured || configured === '{instanceId}' ? source.typeId : configured;
   const sourceDefinition = effectiveDefinition(state, definitions, source);
-  const base = [...definitions.values()].find((definition) => definition.typeId === typeId) ?? sourceDefinition;
+  const matchingDefinition = [...definitions.values()].find((definition) => definition.typeId === typeId);
+  const base = sourceDefinition.typeId === typeId ? sourceDefinition : matchingDefinition ?? sourceDefinition;
   const healthRate = clamp(numberMod(modifiers, 'plaguedDieHealth') ?? 1, 0, 1);
   const attackRate = Math.max(0, numberMod(modifiers, 'plaguedDieAttack') ?? 1);
   const maxHealth = Math.max(1, Math.ceil(defeated.maxHealth * healthRate));
@@ -1087,7 +1092,7 @@ function applyPlague(
     isDestroyed: false,
     hasFinishedAttacking: true,
     attacksRemaining: 0,
-    pips: 1,
+    pips: defeated.pips,
     mana: {},
     shieldHp: 0,
     shieldTurns: 0,
@@ -1105,8 +1110,12 @@ function applyPlague(
     if (die.zone !== 'board' || die.isDestroyed || !die.gridPosition) continue;
     occupy(die, effectiveDefinition(state, definitions, die), die.gridPosition, occupied);
   }
+  const footprint = footprintFor(definition);
   const preferred = defeatedPosition
-    ? { row: defeatedPosition.row, col: GRID_SIZE - 1 - defeatedPosition.col }
+    ? {
+        row: Math.max(0, Math.min(GRID_SIZE - footprint, defeatedPosition.row)),
+        col: Math.max(0, Math.min(GRID_SIZE - footprint, defeatedPosition.col))
+      }
     : { row: 0, col: 0 };
   const positions = [preferred];
   for (let row = 0; row < GRID_SIZE; row += 1) for (let col = 0; col < GRID_SIZE; col += 1) positions.push({ row, col });
@@ -1267,7 +1276,7 @@ function applyOnDamaged(
   definitions: Map<string, DiceDefinition>,
   target: CombatDie,
   attacker: CombatDie,
-  damage: number,
+  _damage: number,
   events: CombatEvent[],
   random: RandomSource
 ): void {
@@ -1305,21 +1314,41 @@ function applyOnDamaged(
     const foeGrant = attackGrantAmount(modifiers, 'grantAttacksToFoe', true);
     if (foeGrant > 0) grantAttacks(state, definitions, target, foeGrant, false, events, random, grantMode(modifiers));
   }
-  const revengeThreshold = numberMod(modifiers, 'revengeThresholdRate');
-  if (vengeanceIsActive(target, damage, revengeThreshold)) {
-    const hits = Math.max(1, Math.floor(numberMod(modifiers, 'revengeHits') ?? 1));
-    const revengeDamage = numberMod(modifiers, 'revengeDamage') ?? definition.attack;
-    for (let index = 0; index < hits && !attacker.isDestroyed; index += 1) {
-      dealDamage(state, definitions, target, attacker, Math.max(1, Math.floor(revengeDamage)), events, random, {
-        allowCritical: false,
-        chainDepth: 1
-      });
-    }
-  }
 }
 
-function vengeanceIsActive(target: CombatDie, damage: number, threshold: number | undefined): boolean {
-  return threshold !== undefined && damage > 0 && target.currentHealth > 0 && target.currentHealth < target.maxHealth * threshold;
+function applyRevenge(
+  state: CombatState,
+  definitions: Map<string, DiceDefinition>,
+  target: CombatDie,
+  attacker: CombatDie,
+  previousHealth: number,
+  events: CombatEvent[],
+  random: RandomSource
+): void {
+  const definition = effectiveDefinition(state, definitions, target);
+  const skill = definition.skills.find((candidate) => (
+    skillUnlocked(candidate, target.classLevel)
+    && booleanMod(candidate.modifiers, 'hasRevenge')
+    && numberMod(candidate.modifiers, 'revengeThresholdRate') !== undefined
+  ));
+  if (!skill) return;
+  const threshold = clamp(numberMod(skill.modifiers, 'revengeThresholdRate') ?? 0, 0, 1);
+  if (threshold <= 0
+    || previousHealth < target.maxHealth * threshold
+    || target.currentHealth >= target.maxHealth * threshold) return;
+  const hits = Math.max(1, Math.floor(numberMod(skill.modifiers, 'revengeHits') ?? 1));
+  const revengeDamage = numberMod(skill.modifiers, 'revengeDamage') ?? definition.attack;
+  for (let index = 0; index < hits && !attacker.isDestroyed; index += 1) {
+    dealDamage(state, definitions, target, attacker, Math.max(1, Math.floor(revengeDamage)), events, random, {
+      allowCritical: false,
+      chainDepth: 1
+    });
+  }
+  addEvent(events, 'skill', `${definition.title} unleashes Revenge!`, {
+    ownerId: target.ownerId,
+    sourceId: target.instanceId,
+    targetId: attacker.instanceId
+  });
 }
 
 function heal(

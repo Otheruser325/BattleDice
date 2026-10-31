@@ -19,14 +19,14 @@ function definition(typeId, overrides = {}) {
   };
 }
 
-function setup(playerDefinitions, enemyDefinitions, extraDefinitions = []) {
+function setup(playerDefinitions, enemyDefinitions, extraDefinitions = [], setupRules = rules) {
   const definitions = new Map([...playerDefinitions, ...enemyDefinitions, ...extraDefinitions].map((entry) => [entry.typeId, entry]));
   const catalog = { get: (typeId) => definitions.get(typeId) };
   const combat = createCombatSetup(
-    playerDefinitions.map((entry) => ({ typeId: entry.typeId, classLevel: 1, talentIndex: null })),
-    enemyDefinitions.map((entry) => ({ typeId: entry.typeId, classLevel: 1, talentIndex: null })),
+    playerDefinitions.map((entry) => ({ typeId: entry.typeId, classLevel: entry.classLevel ?? 1, talentIndex: null })),
+    enemyDefinitions.map((entry) => ({ typeId: entry.typeId, classLevel: entry.classLevel ?? 1, talentIndex: null })),
     catalog,
-    rules
+    setupRules
   );
   const playerPositions = [
     { row: 1, col: 4 },
@@ -48,8 +48,8 @@ function setup(playerDefinitions, enemyDefinitions, extraDefinitions = []) {
   return { combat, catalog };
 }
 
-function resolve(combat, catalog) {
-  return resolveCombat(combat.state, combat.definitions, rules, 'parity-seed', catalog);
+function resolve(combat, catalog, resolveRules = rules) {
+  return resolveCombat(combat.state, combat.definitions, resolveRules, 'parity-seed', catalog);
 }
 
 test('on-damaged skills fire through shields and apply status', () => {
@@ -720,6 +720,8 @@ test('plague converts a defeated enemy into a scaled allied die', () => {
   });
   const fragile = definition('Fragile', { health: 10, attack: 1 });
   const { combat, catalog } = setup([zombie], [fragile]);
+  const fragileInstance = combat.state.dice.find((die) => die.ownerId === 'enemy');
+  fragileInstance.pips = 5;
   const resolution = resolve(combat, catalog);
   const raised = resolution.state.dice.find((die) => die.instanceId.includes('plague'));
   assert.ok(raised);
@@ -727,6 +729,8 @@ test('plague converts a defeated enemy into a scaled allied die', () => {
   assert.equal(raised.ownerId, 'player');
   assert.equal(raised.maxHealth, 3);
   assert.equal(raised.currentHealth, 3);
+  assert.deepEqual(raised.gridPosition, { row: 1, col: 0 });
+  assert.equal(raised.pips, 5);
   assert.ok(resolution.events.some((event) => event.kind === 'summon'));
 });
 
@@ -747,6 +751,72 @@ test('on-death nuclear strike damages the opposite origin once', () => {
   const survivor = resolution.state.dice.find((die) => die.typeId === 'Brute');
   assert.equal(survivor.currentHealth, 376);
   assert.ok(resolution.events.some((event) => event.text.includes('nuclear strike')));
+});
+
+test('class scaling applies to nuclear damage and plague summons', () => {
+  const levelRules = { ...rules, useLevelling: true };
+  const nuclear = definition('Nuclear', {
+    classLevel: 2,
+    health: 100,
+    attack: 1,
+    skills: [{
+      type: 'OnDeath',
+      title: 'Nuclear Missile',
+      description: '',
+      modifiers: { hasNuclear: true, nuclearDamage: 600, nuclearArea: '3x3' }
+    }]
+  });
+  const brute = definition('Brute', { health: 1_000, attack: 999 });
+  const nuclearSetup = setup([nuclear], [brute], [], levelRules);
+  const nuclearResolution = resolve(nuclearSetup.combat, nuclearSetup.catalog, levelRules);
+  const survivor = nuclearResolution.state.dice.find((die) => die.typeId === 'Brute');
+  assert.equal(survivor.currentHealth, 339);
+
+  const zombie = definition('Zombie', {
+    classLevel: 2,
+    attack: 500,
+    skills: [{
+      type: 'OnKill',
+      title: 'Zombie Pandemic',
+      description: '',
+      modifiers: { hasPlague: true, plaguedDieType: 'Zombie', plaguedDieHealth: 0.3, plaguedDieAttack: 0.6 }
+    }]
+  });
+  const fragile = definition('Fragile', { health: 10, attack: 1 });
+  const plagueSetup = setup([zombie], [fragile], [], levelRules);
+  const plagueResolution = resolve(plagueSetup.combat, plagueSetup.catalog, levelRules);
+  const raised = plagueResolution.state.dice.find((die) => die.instanceId.includes('plague'));
+  assert.ok(raised);
+  assert.equal(plagueSetup.combat.definitions.get(raised.instanceId).attack, 330);
+});
+
+test('revenge requires hasRevenge and can trigger from a passive threshold', () => {
+  const striker = definition('Striker', { attack: 60, health: 1_000 });
+  const makeBasilisk = (hasRevenge) => definition('Basilisk', {
+    attack: 1,
+    health: 100,
+    skills: [{
+      type: 'Passive',
+      title: 'Rapacious Revenge',
+      description: '',
+      modifiers: {
+        ...(hasRevenge ? { hasRevenge: true } : {}),
+        revengeThresholdRate: 0.8,
+        revengeHits: 1,
+        revengeDamage: 7
+      }
+    }]
+  });
+  const withFlag = setup([striker], [makeBasilisk(true)]);
+  const flaggedResolution = resolve(withFlag.combat, withFlag.catalog);
+  const flaggedSurvivor = flaggedResolution.state.dice.find((die) => die.typeId === 'Striker');
+  assert.equal(flaggedSurvivor.currentHealth, 992);
+  assert.ok(flaggedResolution.events.some((event) => event.text.includes('Revenge')));
+
+  const withoutFlag = setup([striker], [makeBasilisk(false)]);
+  const unflaggedResolution = resolve(withoutFlag.combat, withoutFlag.catalog);
+  const unflaggedSurvivor = unflaggedResolution.state.dice.find((die) => die.typeId === 'Striker');
+  assert.equal(unflaggedSurvivor.currentHealth, 999);
 });
 
 test('locked trigger metadata cannot leak nuclear strikes', () => {

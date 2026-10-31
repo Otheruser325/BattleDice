@@ -391,7 +391,8 @@ export function executeRevengeSkillEffects(
   const revengeSkill = getValidSkillDefinitions(definition).find((skill) => {
     const threshold = skill.modifiers?.revengeThresholdRate;
     const lockClass = getSkillLockClass(skill);
-    return typeof threshold === 'number'
+    return skill.modifiers?.hasRevenge === true
+      && typeof threshold === 'number'
       && Number.isFinite(threshold)
       && previousHealth >= maxHealth * threshold
       && currentHealth < maxHealth * threshold
@@ -402,7 +403,7 @@ export function executeRevengeSkillEffects(
   const scopedDefinition: DiceDefinition = { ...definition, skills: [revengeSkill] };
   const meta = getRuntimeSkillMeta(scopedDefinition, undefined, true);
   const threshold = Math.max(0, Math.min(1, meta.revengeThresholdRate ?? 0));
-  if (threshold <= 0) return result;
+  if (meta.hasRevenge !== true || threshold <= 0) return result;
 
   if (meta.missingHealRate !== undefined) result.missingHealRate = Math.max(0, Math.min(1, meta.missingHealRate));
   result.revenge = {

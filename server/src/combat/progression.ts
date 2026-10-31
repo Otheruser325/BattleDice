@@ -124,6 +124,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
       'activeDamage',
       'activeHeal',
       'meteorDamage',
+      'nuclearDamage',
       'lavaDamage',
       'beamDamage',
       'pierceBehindDamage',

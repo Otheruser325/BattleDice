@@ -19,7 +19,8 @@
     "preview:launcher": "npm run launcher:prepare && vite --host 127.0.0.1",
     "server:dev": "npm --prefix server run dev",
     "server:build": "npm --prefix server run build",
-    "server:test": "npm --prefix server test"
+    "server:test": "npm --prefix server test",
+    "test:pve": "node scripts/run-pve-tests.mjs"
   },
   "dependencies": {
     "@rivalis/browser": "^6.0.0",

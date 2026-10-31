@@ -169,6 +169,7 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   damageRatePerKill?: number;
   avoidAttackChance?: number;
   missingHealRate?: number;
+  hasRevenge?: boolean;
   revengeThresholdRate?: number;
   revengeHits?: number;
   revengeDamage?: number;
@@ -857,6 +858,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     damageRatePerKill: (modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill,
     avoidAttackChance: (avoidModifier as { avoidAttackChance?: number } | undefined)?.avoidAttackChance,
     missingHealRate: (missingHealModifier as { missingHealRate?: number } | undefined)?.missingHealRate,
+    hasRevenge: Boolean((modifiers as { hasRevenge?: boolean } | undefined)?.hasRevenge),
     revengeThresholdRate: (modifiers as { revengeThresholdRate?: number } | undefined)?.revengeThresholdRate,
     revengeHits: (modifiers as { revengeHits?: number } | undefined)?.revengeHits,
     revengeDamage: (modifiers as { revengeDamage?: number } | undefined)?.revengeDamage,

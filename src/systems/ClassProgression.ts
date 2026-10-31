@@ -213,6 +213,7 @@ function getDynamicSkillDescription(description: string, source: DiceSkillModifi
     'activeDamage',
     'activeHeal',
     'meteorDamage',
+    'nuclearDamage',
     'lavaDamage',
     'beamDamage',
     'pierceBehindDamage',
@@ -300,6 +301,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     modifiers.activeDamage = scaleFlatDamage(displayModifiers.activeDamage, multiplier);
     modifiers.activeHeal = scaleFlatDamage(displayModifiers.activeHeal, multiplier);
     modifiers.meteorDamage = scaleFlatDamage(displayModifiers.meteorDamage, multiplier);
+    modifiers.nuclearDamage = scaleFlatDamage(displayModifiers.nuclearDamage, multiplier);
     modifiers.lavaDamage = scaleFlatDamage(displayModifiers.lavaDamage, multiplier);
     modifiers.beamDamage = scaleFlatDamage(displayModifiers.beamDamage, multiplier);
     modifiers.pierceBehindDamage = scaleFlatDamage(displayModifiers.pierceBehindDamage, multiplier);
@@ -417,6 +419,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
           modifiers.activeDamage = scaleFlatDamage(source.activeDamage, multiplier);
           modifiers.activeHeal = scaleFlatDamage(source.activeHeal, multiplier);
           modifiers.meteorDamage = scaleFlatDamage(source.meteorDamage, multiplier);
+          modifiers.nuclearDamage = scaleFlatDamage(source.nuclearDamage, multiplier);
           modifiers.lavaDamage = scaleFlatDamage(source.lavaDamage, multiplier);
           modifiers.beamDamage = scaleFlatDamage(source.beamDamage, multiplier);
           modifiers.pierceBehindDamage = scaleFlatDamage(source.pierceBehindDamage, multiplier);
