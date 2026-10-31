@@ -9,7 +9,7 @@
     {
       "type": "OnDeath",
       "title": "Nuclear Missile",
-      "description": "On death, strikes the opposite grid origin in a 3x3 area for 600 damage to all affected enemy dice. Triggers once per match.",
+      "description": "Strikes the opposite grid origin in a 3x3 area for 600 damage to all affected enemy dice.",
       "modifiers": {
         "hasNuclear": true,
         "nuclearDamage": 600,
