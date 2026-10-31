@@ -9,12 +9,11 @@
     {
       "type": "OnKill",
       "title": "Zombie Pandemic",
-      "description": "Turns a defeated enemy into a Zombie Die on your side with 30% of its maximum HP and 60% of this die's attack.",
+      "description": "Turns a defeated enemy into a Zombie Die on your side with 30% of its maximum HP.",
       "modifiers": {
         "hasPlague": true,
         "plaguedDieType": "Zombie",
         "plaguedDieHealth": 0.3,
-        "plaguedDieAttack": 0.6,
         "skillSfx": "dice_zombie_skill"
       }
     }
