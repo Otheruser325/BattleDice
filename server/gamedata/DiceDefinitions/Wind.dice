@@ -1,0 +1,43 @@
+{
+  "typeId": "Wind",
+  "title": "Wind Dice",
+  "attack": 22,
+  "health": 480,
+  "range": 6,
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Gale Tempo",
+      "description": "Shoots twice as many attacks for 2 turns without spending an attack, then cannot gain mana again until the effect ends.",
+      "manaNeeded": 10,
+      "modifiers": {
+        "attackCountIncrease": 1,
+        "statusDuration": 2,
+        "disableManaGain": true,
+        "consumeAttack": false,
+        "skillSfx": "dice_wind_skill"
+      }
+    }
+  ],
+  "accent": "#78e6a8",
+  "rarity": "Common",
+  "targetingMode": "Nearest",
+  "talents": [
+    {
+      "title": "Mighty Wind",
+      "description": "Amount of attacks while passive is up is increased to 3 times, with the mana charge rate taking 50% more hits to charge up.",
+      "classNeeded": 9,
+      "modifiers": {
+        "skills": [
+          {
+            "description": "Shoots three times as many attacks for 2 turns without spending an attack, then cannot gain mana again until the effect ends.",
+            "manaNeeded": 15,
+            "modifiers": {
+              "attackCountIncrease": 2
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

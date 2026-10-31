@@ -1,0 +1,25 @@
+{
+  "typeId": "Judgment",
+  "title": "Judgment Dice",
+  "attack": 30,
+  "health": 800,
+  "range": 4,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "OnKill",
+      "title": "Judge Hammer",
+      "description": "Summons a judge hammer on the weakest foe, dealing 150 damage in a 3x3 radius. Hammer kills can retrigger this effect.",
+      "modifiers": {
+        "hammerDamage": 150,
+        "hammerRadius": 1,
+        "canRetriggerSkill": true,
+        "maxSkillRetriggers": 10,
+        "hasHammer": true,
+        "skillSfx": "dice_judgment_skill"
+      }
+    }
+  ],
+  "accent": "#ffd36f",
+  "targetingMode": "Weakest"
+}

@@ -33,9 +33,11 @@
     "Drizzle",
     "Armor",
     "Druid",
-	"Sword",
-	"Discharge",
-	"Reverse"
+    "Sword",
+    "Discharge",
+    "Reverse",
+    "Zombie",
+    "Nuclear"
   ],
   "exclusiveTypeIds": [
     {

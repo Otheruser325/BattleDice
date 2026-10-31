@@ -4,7 +4,9 @@ type BuildEnv = Record<string, BuildEnvValue> & {
   DEV?: boolean;
   MODE?: string;
   PROD?: boolean;
+  VITE_RIVALIS_IDENTITY_ENDPOINT?: string;
   VITE_RIVALIS_RECONNECT_MAX?: string;
+  VITE_RIVALIS_TICKET_ENDPOINT?: string;
   VITE_RIVALIS_WS_URL?: string;
 };
 

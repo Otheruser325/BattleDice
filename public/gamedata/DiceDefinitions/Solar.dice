@@ -26,6 +26,7 @@
         "title": "Scorchin' Hot",
         "description": "In Solar Form, basic attacks deal 80%/60%/40% splash damage based on Solar Dice's odd pip count (1/3/5).",
         "modifiers": {
+          "hasSplash": true,
           "splashDamageRatesByPip": { "1": 0.8, "3": 0.6, "5": 0.4 },
           "skillSfx": "dice_fire_skill"
         }

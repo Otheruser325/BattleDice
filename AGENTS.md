@@ -2,6 +2,17 @@
 
 Repository-specific guidance for Battle Dice. See `.agents/skills/` for the full code style and testing skills.
 
+## Multiplayer server
+
+- `server/` is an isolated Node package deployed separately from the static client. It is intentionally CommonJS because `@toolcase/serializer` 2.0.2 has an ESM-only extensionless import that fails under Node ESM; do not switch it back without upgrading and retesting the Rivalis dependency pair.
+- Keep `@rivalis/core` and `@rivalis/browser` on the same major. The server currently pins `6.0.0`.
+- `arena:turn:sync` is authoritative: the server owns boards, pips, combat resolution, deadlines, and results. Clients may submit only their own board, and PvP must start/render from server state. Do not add a client-authoritative PvP mode; local combat remains for PvE only.
+- Multiplayer names and player IDs come from the signed `bd_guest` cookie and ticket claims. Do not accept `playerName` or a player ID from join payloads; the client syncs its profile name to `/api/multiplayer/identity` before requesting a ticket. Ticket issuance requires that existing guest cookie and must not mint an anonymous identity.
+- Placement snapshots are viewer-filtered: only the viewer's own dice, pips, class levels, and talents are sent until combat resolves. `applyBoard` must validate the entire submission before mutating canonical dice, and a rejected board must leave the match state unchanged.
+- The server owns a bounded per-match combat record and includes it in `matched` setup/resume. Keep reconnect restoration and the PvP log on that record rather than trusting a client-supplied history.
+- Production requires `TICKET_SECRET` (at least 32 bytes) and exact `ALLOWED_ORIGINS`. Tickets are sent by WebSocket subprotocol, consumed once at authentication, and must never be logged or placed in client build variables. The client must request a fresh ticket for every reconnect.
+- Room state is in memory. Keep the Fly deployment on one machine unless matchmaking/lobby state is moved to shared coordination.
+
 ## Comment policy
 
 Code comments are reserved for **major** code changes only — for example a new system, a non-obvious invariant, a Phaser 3 workaround, or a deliberate trade-off that is not evident from the code.

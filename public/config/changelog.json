@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v0.8.0-beta",
+      "date": "2026-10-31",
+      "notes": [
+        "New features: --Zombie Dice (Epic) spreads the plague on kill, raising defeated enemies as allied Zombies --Nuclear Dice (Legendary) detonates a 3x3 strike on death, once per match",
+        "General changes: --revival now requires hasRevive, and reviveHealth/reviveAttack scale a revived die's stats on every successful revival --trigger effects are isolated to their exact trigger so OnKill, OnTransformed and OnDeath metadata cannot leak into other effects",
+        "Multiplayer: --PvE and PvP use the same trigger, plague and nuclear rules"
+      ]
+    },
+    {
       "version": "v0.7.6-beta",
       "date": "2026-10-30",
       "notes": [

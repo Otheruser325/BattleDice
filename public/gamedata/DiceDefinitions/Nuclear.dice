@@ -1,0 +1,23 @@
+{
+  "typeId": "Nuclear",
+  "title": "Nuclear Dice",
+  "attack": 24,
+  "health": 700,
+  "range": 4,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "OnDeath",
+      "title": "Nuclear Missile",
+      "description": "On death, strikes the opposite grid origin in a 3x3 area for 600 damage to all affected enemy dice. Triggers once per match.",
+      "modifiers": {
+        "hasNuclear": true,
+        "nuclearDamage": 600,
+        "nuclearArea": "3x3",
+        "skillSfx": "dice_nuclear_skill"
+      }
+    }
+  ],
+  "accent": "#e60026",
+  "targetingMode": "Furthest"
+}

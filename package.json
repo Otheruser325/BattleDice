@@ -1,7 +1,7 @@
 {
   "name": "battle-dice-autoroller",
   "private": true,
-  "version": "0.7.6-beta",
+  "version": "0.8.0-beta",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,10 @@
     "copy:playtest-assets": "node scripts/sync-playtest-assets.mjs",
     "clean:playtest-assets": "npm run launcher:clean",
     "dev:clean": "npm run launcher:clean",
-    "preview:launcher": "npm run launcher:prepare && vite --host 127.0.0.1"
+    "preview:launcher": "npm run launcher:prepare && vite --host 127.0.0.1",
+    "server:dev": "npm --prefix server run dev",
+    "server:build": "npm --prefix server run build",
+    "server:test": "npm --prefix server test"
   },
   "dependencies": {
     "@rivalis/browser": "^6.0.0",

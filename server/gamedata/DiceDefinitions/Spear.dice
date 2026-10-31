@@ -1,0 +1,33 @@
+{
+  "typeId": "Spear",
+  "title": "Spear Dice",
+  "attack": 26,
+  "health": 900,
+  "range": 2,
+  "rarity": "Uncommon",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Piercing Spear",
+      "description": "Basic attacks also stab the tile directly behind the target.",
+      "modifiers": {
+        "pierceBehindRange": 1,
+        "attackSfx": "dice_spear_skill"
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Charged Spear",
+      "description": "Sends in a charged spear that deals 104 damage to its target, then 208 damage to foes hit behind it with +1 piercing range.",
+      "manaNeeded": 8,
+      "modifiers": {
+        "activeDamage": 104,
+        "pierceBehindDamage": 208,
+        "pierceBehindRange": 2,
+        "skillSfx": "dice_spear_skill"
+      }
+    }
+  ],
+  "accent": "#c9d6d3",
+  "targetingMode": "Nearest"
+}

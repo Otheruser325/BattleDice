@@ -1,0 +1,20 @@
+{
+  "typeId": "Discharge",
+  "title": "Discharge Dice",
+  "attack": 28,
+  "health": 650,
+  "range": 4,
+  "rarity": "Rare",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Overloaded Electrons",
+      "description": "Gains +25% damage for each time it has an active status effect.",
+      "modifiers": {
+        "bonusDamagePerStatus": 0.25
+      }
+    }
+  ],
+  "accent": "#ff6f61",
+  "targetingMode": "Nearest"
+}

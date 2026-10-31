@@ -1,0 +1,23 @@
+{
+  "typeId": "Zombie",
+  "title": "Zombie Dice",
+  "attack": 32,
+  "health": 840,
+  "range": 3,
+  "rarity": "Epic",
+  "skills": [
+    {
+      "type": "OnKill",
+      "title": "Zombie Pandemic",
+      "description": "Turns a defeated enemy into a Zombie Die on your side with 30% of its maximum HP.",
+      "modifiers": {
+        "hasPlague": true,
+        "plaguedDieType": "Zombie",
+        "plaguedDieHealth": 0.3,
+        "skillSfx": "dice_zombie_skill"
+      }
+    }
+  ],
+  "accent": "#7d927f",
+  "targetingMode": "Nearest"
+}

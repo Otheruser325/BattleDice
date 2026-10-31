@@ -4,7 +4,7 @@ import type {
   DiceOwnerId,
   MatchBattleState
 } from '../types/game';
-import { getRuntimeSkillMeta, resolveDamage } from './DiceSkills';
+import { getRuntimeSkillMetaForTrigger, resolveDamage } from './DiceSkills';
 import { getCombatDistance } from './CombatRange';
 import { secureChance, securePick } from '../utils/RandomManager';
 
@@ -77,10 +77,11 @@ function sanitizeGridPosition(value: unknown): DiceInstanceState['gridPosition']
   return { row, col };
 }
 
-function sanitizeServerDie(value: unknown, knownInstanceIds: Set<string>): DiceInstanceState | null {
+function sanitizeServerDie(value: unknown, knownInstanceIds: Set<string>, allowNewInstances: boolean): DiceInstanceState | null {
   if (!value || typeof value !== 'object') return null;
   const die = value as Partial<DiceInstanceState>;
-  if (typeof die.instanceId !== 'string' || !knownInstanceIds.has(die.instanceId)) return null;
+  if (typeof die.instanceId !== 'string' || (!allowNewInstances && !knownInstanceIds.has(die.instanceId))) return null;
+  if (allowNewInstances && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,79}$/.test(die.instanceId)) return null;
   if (typeof die.typeId !== 'string' || die.typeId.length === 0) return null;
   if (!isOwnerId(die.ownerId)) return null;
   if (!isZone(die.zone)) return null;
@@ -92,6 +93,7 @@ function sanitizeServerDie(value: unknown, knownInstanceIds: Set<string>): DiceI
   const isDestroyed = die.isDestroyed === true || currentHealth === 0;
   const zone = isDestroyed ? 'eliminated' : die.zone;
   const attacksRemaining = boundedInteger(die.attacksRemaining, 0, MAX_SERVER_ATTACKS) ?? 0;
+  const transformIndex = boundedInteger(die.transformIndex, 0, 20);
 
   return {
     instanceId: die.instanceId,
@@ -103,7 +105,8 @@ function sanitizeServerDie(value: unknown, knownInstanceIds: Set<string>): DiceI
     isDestroyed,
     hasFinishedAttacking: die.hasFinishedAttacking === true || attacksRemaining === 0,
     attacksRemaining,
-    gridPosition: zone === 'board' ? sanitizeGridPosition(die.gridPosition) : undefined
+    gridPosition: zone === 'board' ? sanitizeGridPosition(die.gridPosition) : undefined,
+    ...(transformIndex !== undefined ? { transformIndex } : {})
   };
 }
 
@@ -122,7 +125,7 @@ function sanitizeReviveCounts(value: unknown, knownInstanceIds: Set<string>, fal
   return sanitized;
 }
 
-export function sanitizeServerBattleState(value: unknown, current: MatchBattleState): MatchBattleState | null {
+export function sanitizeServerBattleState(value: unknown, current: MatchBattleState, allowNewInstances = false): MatchBattleState | null {
   if (!value || typeof value !== 'object') return null;
   const incoming = value as Partial<MatchBattleState>;
   if (!Array.isArray(incoming.dice)) return null;
@@ -130,12 +133,12 @@ export function sanitizeServerBattleState(value: unknown, current: MatchBattleSt
   const knownInstanceIds = new Set(current.dice.map((die) => die.instanceId));
   const sanitized: DiceInstanceState[] = [];
   for (const entry of incoming.dice) {
-    const die = sanitizeServerDie(entry, knownInstanceIds);
+    const die = sanitizeServerDie(entry, knownInstanceIds, allowNewInstances);
     if (!die) return null;
     sanitized.push(die);
   }
-  if (sanitized.length !== current.dice.length) return null;
-  if (new Set(sanitized.map((die) => die.instanceId)).size !== current.dice.length) return null;
+  if (!allowNewInstances && sanitized.length !== current.dice.length) return null;
+  if (new Set(sanitized.map((die) => die.instanceId)).size !== sanitized.length) return null;
 
   const turn = boundedInteger(incoming.turn, 1, MAX_SERVER_TURN);
   if (turn === undefined) return null;
@@ -380,18 +383,22 @@ export function executeAttack(
 
   let updatedTarget = newState.dice.find((die) => die.instanceId === targetId);
   const targetDefinition = definitionOverrides?.target ?? definitions.get(target.typeId);
-  const runtimeMeta = targetDefinition ? getRuntimeSkillMeta(targetDefinition) : undefined;
+  const runtimeMeta = targetDefinition ? getRuntimeSkillMetaForTrigger(targetDefinition, 'OnDeath') : undefined;
   const previousRevives = state.reviveCounts?.[targetId] ?? 0;
   const reviveChance = runtimeMeta?.reviveChance === undefined
     ? undefined
     : Math.max(0, Math.min(1, runtimeMeta.reviveChance * Math.pow(runtimeMeta.reviveChanceRate ?? 1, previousRevives)));
   const hasOtherLiving = hasOtherLivingDie(state, target.ownerId, targetId);
   const canRevive = Boolean(
-    reviveChance !== undefined
+    runtimeMeta?.hasRevive === true
+    && reviveChance !== undefined
     && (runtimeMeta?.maxRevives === undefined || previousRevives < runtimeMeta.maxRevives)
     && (!runtimeMeta.dontReviveWhenLastOneStanding || hasOtherLiving)
   );
   if (updatedTarget?.isDestroyed && canRevive && secureChance(reviveChance!)) {
+    const revivedMaxHealth = Math.max(1, Math.round(
+      target.maxHealth * Math.max(0, Math.min(1, runtimeMeta.reviveHealth ?? 1))
+    ));
     newState = {
       ...newState,
       reviveCounts: { ...state.reviveCounts, [targetId]: previousRevives + 1 },
@@ -401,7 +408,8 @@ export function executeAttack(
               ...die,
               isDestroyed: false,
               zone: 'board',
-              currentHealth: die.maxHealth,
+              maxHealth: revivedMaxHealth,
+              currentHealth: revivedMaxHealth,
               attacksRemaining: target.attacksRemaining,
               hasFinishedAttacking: target.hasFinishedAttacking,
               gridPosition: targetPosition

@@ -1,0 +1,56 @@
+{
+  "typeId": "Magician",
+  "title": "Magician Dice",
+  "attack": 50,
+  "health": 2000,
+  "range": 6,
+  "footprint": 2,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Mana Manipulator",
+      "description": "Steals 1 mana from all enemy charging actives.",
+      "modifiers": {
+        "manaSteal": 1,
+        "manaStealType": "enemy"
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Spell Strike",
+      "description": "Summons 3 magic meteors on random opposing-board tiles, causing 200 damage in plus patterns. Leaves lava on each epicentre for 4 turns. Foes standing on lava take 100 damage at combat start.",
+      "manaNeeded": 12,
+      "modifiers": {
+        "hasMeteor": true,
+        "meteorDamage": 200,
+        "meteorCount": 3,
+        "meteorRandomOrientation": true,
+        "lavaDamage": 100,
+        "statusDuration": 4,
+        "skillSfx": "dice_meteor_skill",
+        "lavaPoolPattern": [
+          [
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Wizard Royale",
+      "description": "Summons a friendly Wizard Dice.",
+      "manaNeeded": 18,
+      "modifiers": {
+        "summonType": "Wizard",
+        "summonCount": 1,
+        "allowSummonedDieToRoll": true,
+        "unlockAtClass": 6
+      }
+    }
+  ],
+  "accent": "#b073ff",
+  "targetingMode": "Nearest",
+  "isBoss": true
+}

@@ -29,6 +29,7 @@ function getCspConnectSources(env: Record<string, string>): string[] {
   };
   addOrigin(env.VITE_RIVALIS_WS_URL, ['ws:', 'wss:']);
   addOrigin(env.VITE_RIVALIS_TICKET_ENDPOINT);
+  addOrigin(env.VITE_RIVALIS_IDENTITY_ENDPOINT);
   return [...sources];
 }
 

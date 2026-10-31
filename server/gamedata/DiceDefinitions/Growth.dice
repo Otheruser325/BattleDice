@@ -1,0 +1,21 @@
+{
+  "typeId": "Growth",
+  "title": "Growth Dice",
+  "attack": 26,
+  "health": 720,
+  "range": 4,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "CombatEnd",
+      "title": "Exponential Growth",
+      "description": "Permanently gains +1 attack count for the remainder of the match.",
+      "modifiers": {
+        "hasGrowth": true,
+        "growthDelta": 1
+      }
+    }
+  ],
+  "accent": "#8a2be2",
+  "targetingMode": "Nearest"
+}

@@ -125,6 +125,7 @@ export interface SkillEffectResult {
   grantAttacksToFoe?: number;
   specialAttackDamage?: number;
   specialAttackTarget?: DiceInstanceState;
+  plague?: { typeId: string; healthRate: number; attackRate: number };
   revenge?: { hits: number; damage: number; range: number; mode: DiceTargetingMode };
   splashTargets?: DiceInstanceState[];
   heatwaveDamageAmount?: number;
@@ -518,17 +519,15 @@ function getUnlockedSkillMeta(
   skillIndex?: number
 ): DiceSkillRuntimeMeta | undefined {
   const skills = getValidSkillDefinitions(definition);
-  const hasTrigger = skillIndex === undefined
-    ? skills.some((skill) => skill.type === trigger)
-    : skills[skillIndex]?.type === trigger;
-  if (!hasTrigger) return undefined;
-  const meta = getRuntimeSkillMetaForTrigger(definition, trigger, skillIndex);
-  const skill = skillIndex === undefined
-    ? skills.find((candidate) => candidate.type === trigger)
-    : skills[skillIndex];
-  const lockClass = skill ? getSkillLockClass(skill) : meta.unlockAtClass;
-  if (lockClass !== undefined && classLevel < lockClass) return undefined;
-  return meta;
+  const eligible = skills.filter((skill, index) => {
+    if (index !== skillIndex && skillIndex !== undefined) return false;
+    if (skill.type !== trigger) return false;
+    const lockClass = getSkillLockClass(skill);
+    return lockClass === undefined || classLevel >= lockClass;
+  });
+  if (eligible.length === 0) return undefined;
+  const scoped = { ...definition, skills: eligible };
+  return getRuntimeSkillMetaForTrigger(scoped, trigger, trigger === 'Active' ? 0 : undefined);
 }
 
 export function executeOnDamagedSkillEffects(
@@ -626,6 +625,15 @@ export function executeOnKillSkillEffects(
   applyGrowth(result, meta);
   applySummon(result, meta);
   if (meta.onKillDamage !== undefined) result.specialAttackDamage = Math.max(1, meta.onKillDamage);
+  if (meta.hasPlague === true) {
+    const configuredType = meta.plaguedDieType?.trim();
+    const typeId = !configuredType || configuredType === '{instanceId}' ? attacker.typeId : configuredType;
+    result.plague = {
+      typeId,
+      healthRate: Math.max(0, Math.min(1, meta.plaguedDieHealth ?? 1)),
+      attackRate: Math.max(0, meta.plaguedDieAttack ?? 1)
+    };
+  }
 
   const allyBonus = applyAllyExtraAttacks(result, meta);
   if (allyBonus > 0) result.extraEffects = [`OnKill grants +${allyBonus} attacks to ally`];
@@ -675,7 +683,7 @@ export function executeCombatStartSkillEffects(
   if (!target?.gridPosition) return result;
 
   const splashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
-  if (meta.splashDamage !== undefined || meta.splashDamageRatesByPip !== undefined || splashRate !== undefined) {
+  if (meta.hasSplash === true && (meta.splashDamage !== undefined || meta.splashDamageRatesByPip !== undefined || splashRate !== undefined)) {
     const targets = boardSideTargets.filter((candidate) => candidate.instanceId !== target.instanceId && candidate.gridPosition
       && getTargetingFootprintDistance(target, candidate, footprintForDie) <= 1);
     if (targets.length > 0) {
@@ -689,7 +697,7 @@ export function executeCombatStartSkillEffects(
   }
 
   const chainRate = getPipMappedRate(meta.chainDamageRatesByPip, pips, meta.chainDamageRate);
-  if (meta.chainDamage !== undefined || meta.chainDamageRatesByPip !== undefined || chainRate !== undefined) {
+  if (meta.hasChain === true && (meta.chainDamage !== undefined || meta.chainDamageRatesByPip !== undefined || chainRate !== undefined)) {
     const chainRange = Math.max(1, Math.floor(
       typeof meta.chainRange === 'number' && Number.isFinite(meta.chainRange)
         ? meta.chainRange
@@ -789,7 +797,7 @@ export function executePassiveSkillEffects(
 
   const splashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
   const hasSplashMapping = meta.splashDamageRatesByPip !== undefined;
-  if (meta.splashDamage !== undefined || hasSplashMapping || splashRate !== undefined) {
+  if (meta.hasSplash === true && (meta.splashDamage !== undefined || hasSplashMapping || splashRate !== undefined)) {
     const splashTargets = boardSideTargets.filter((die) =>
       die.instanceId !== target.instanceId
       && die.gridPosition
@@ -803,7 +811,7 @@ export function executePassiveSkillEffects(
 
   const chainRate = getPipMappedRate(meta.chainDamageRatesByPip, pips, meta.chainDamageRate);
   const hasChainMapping = meta.chainDamageRatesByPip !== undefined;
-  if (meta.chainDamage !== undefined || hasChainMapping || chainRate !== undefined) {
+  if (meta.hasChain === true && (meta.chainDamage !== undefined || hasChainMapping || chainRate !== undefined)) {
     const chainRange = Math.max(1, Math.floor(
       typeof meta.chainRange === 'number' && Number.isFinite(meta.chainRange)
         ? meta.chainRange
@@ -886,7 +894,7 @@ export function executeActiveSkillEffects(
   applySummon(result, meta);
 
   const activeSplashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
-  if (meta.splashDamage !== undefined || meta.splashDamageRatesByPip !== undefined || activeSplashRate !== undefined) {
+  if (meta.hasSplash === true && (meta.splashDamage !== undefined || meta.splashDamageRatesByPip !== undefined || activeSplashRate !== undefined)) {
     result.activeSplashDamageAmount = resolvePipScaledDamage(meta.splashDamage, definition.attack, meta.splashDamageRate, meta.splashDamageRatesByPip, pips);
   }
 
@@ -895,7 +903,7 @@ export function executeActiveSkillEffects(
     result.heatwaveDamageAmount = resolvePipScaledDamage(meta.heatwaveDamage, definition.attack, meta.heatwaveDamageRate, meta.heatwaveDamageRatesByPip, pips);
   }
 
-  if (meta.chainDamage !== undefined || meta.chainDamageRatesByPip !== undefined || meta.chainDamageRate !== undefined) {
+  if (meta.hasChain === true && (meta.chainDamage !== undefined || meta.chainDamageRatesByPip !== undefined || meta.chainDamageRate !== undefined)) {
     const chainTarget = target && !target.isDestroyed ? target : undefined;
     if (chainTarget) {
       result.chainTarget = chainTarget;
@@ -907,7 +915,7 @@ export function executeActiveSkillEffects(
     return result;
   }
 
-  if (meta.meteorDamage !== undefined || meta.meteorCount !== undefined) {
+  if (meta.hasMeteor === true && (meta.meteorDamage !== undefined || meta.meteorCount !== undefined)) {
     const meteorManaNeeded = activeSlot?.manaNeeded ?? (meta.manaNeeded ?? 7);
     if (currentMana >= meteorManaNeeded) {
       result.meteorStrike = {

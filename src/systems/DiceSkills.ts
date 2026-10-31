@@ -16,18 +16,23 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   splashDamage?: number;
   splashDamageRate?: number;
   splashDamageRatesByPip?: Record<string, number>;
+  hasSplash?: boolean;
   heatwaveDamage?: number;
   heatwaveDamageRate?: number;
   heatwaveDamageRatesByPip?: Record<string, number>;
   chainDamage?: number;
   chainDamageRate?: number;
   chainDamageRatesByPip?: Record<string, number>;
+  hasChain?: boolean;
   chainRange?: number;
   chainTargets?: number;
   reviveChance?: number;
   reviveChanceRate?: number;
   maxRevives?: number;
   dontReviveWhenLastOneStanding?: boolean;
+  hasRevive?: boolean;
+  reviveHealth?: number;
+  reviveAttack?: number;
   allyExtraAttacks?: number;
   foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
@@ -69,6 +74,7 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   canFireWithNoTargets?: boolean;
   meteorDamage?: number;
   meteorCount?: number;
+  hasMeteor?: boolean;
   meteorRandomOrientation?: boolean;
   summonType?: string;
   summonCount?: number;
@@ -112,6 +118,15 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   hasGrowth?: boolean;
   growthDelta?: number;
   growthChance?: number;
+  hasPlague?: boolean;
+  plaguedDieType?: string;
+  plaguedDieHealth?: number;
+  plaguedDieAttack?: number;
+  hasNuclear?: boolean;
+  nuclearDamage?: number;
+  nuclearArea?: number[] | string;
+  nuclearPool?: string;
+  nuclearPoolLifespan?: number;
   skillRangeThreshold?: number;
   instakill?: boolean;
   bossDamage?: number;
@@ -377,16 +392,50 @@ export function getChainTargetLimit(meta: Pick<DiceSkillRuntimeMeta, 'chainTarge
   return Math.max(0, floored);
 }
 
+const TRIGGER_EXCLUSIVE_KEYS: Partial<Record<DiceSkillType, string[]>> = {
+  OnKill: ['onKillDamage', 'hasHammer', 'hammerDamage', 'hammerRadius', 'canRetriggerSkill', 'maxSkillRetriggers', 'leonRageRate'],
+  OnTransformed: ['transformAttackDamage', 'onTransformedExtraAttacks', 'onTransformedDurationTurns'],
+  OnDeath: ['deathDamage'],
+  OnDamaged: ['onHitDamage'],
+  CombatStart: ['combatStartDamage'],
+  CombatEnd: ['combatEndDamage']
+};
+
+function isolateTriggerMeta(meta: DiceSkillRuntimeMeta, trigger: DiceSkillType): DiceSkillRuntimeMeta {
+  const allowed = new Set(TRIGGER_EXCLUSIVE_KEYS[trigger] ?? []);
+  for (const keys of Object.values(TRIGGER_EXCLUSIVE_KEYS)) {
+    for (const key of keys) {
+      if (!allowed.has(key)) delete (meta as Record<string, unknown>)[key];
+    }
+  }
+  return meta;
+}
+
 export function getRuntimeSkillMetaForTrigger(definition: DiceDefinition | undefined, trigger: DiceSkillType, skillIndex?: number): DiceSkillRuntimeMeta {
   const validDefinition = getValidDefinition(definition);
   if (skillIndex !== undefined) {
     const selected = validDefinition.skills[skillIndex];
-    if (!selected || selected.type !== trigger) return getRuntimeSkillMeta({ ...validDefinition, skills: [] });
-    return getRuntimeSkillMeta({ ...validDefinition, skills: [selected] }, trigger === 'Active' ? 0 : undefined);
+    if (!selected || selected.type !== trigger) return isolateTriggerMeta(getRuntimeSkillMeta({ ...validDefinition, skills: [] }), trigger);
+    return isolateTriggerMeta(getRuntimeSkillMeta({ ...validDefinition, skills: [selected] }, trigger === 'Active' ? 0 : undefined), trigger);
   }
   const triggerSkills = validDefinition.skills.filter((skill) => skill.type === trigger);
-  if (triggerSkills.length === 0) return getRuntimeSkillMeta({ ...validDefinition, skills: [] });
-  return getRuntimeSkillMeta({ ...validDefinition, skills: triggerSkills }, undefined, true);
+  if (triggerSkills.length === 0) return isolateTriggerMeta(getRuntimeSkillMeta({ ...validDefinition, skills: [] }), trigger);
+  return isolateTriggerMeta(getRuntimeSkillMeta({ ...validDefinition, skills: triggerSkills }, undefined, true), trigger);
+}
+
+export function getNuclearAreaDimensions(value: number[] | string | undefined): { rows: number; cols: number } {
+  if (Array.isArray(value)) {
+    const rows = Number.isFinite(value[0]) ? Math.max(1, Math.floor(value[0])) : 3;
+    const cols = Number.isFinite(value[1]) ? Math.max(1, Math.floor(value[1])) : rows;
+    return { rows, cols };
+  }
+  if (typeof value === 'string') {
+    const match = value.match(/(\d+)\s*[xX×]\s*(\d+)/);
+    if (match) return { rows: Math.max(1, Number(match[1])), cols: Math.max(1, Number(match[2])) };
+    const single = Number(value);
+    if (Number.isFinite(single)) return { rows: Math.max(1, Math.floor(single)), cols: Math.max(1, Math.floor(single)) };
+  }
+  return { rows: 3, cols: 3 };
 }
 
 // A skill that declares a skillRangeThreshold gates every modifier it carries behind that proximity.
@@ -486,6 +535,14 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     ? Math.max(0, Math.floor(rawMaxRevives))
     : undefined;
   const dontReviveWhenLastOneStanding = (modifiers as { dontReviveWhenLastOneStanding?: boolean } | undefined)?.dontReviveWhenLastOneStanding === true;
+  const rawReviveHealth = (modifiers as { reviveHealth?: number } | undefined)?.reviveHealth;
+  const reviveHealth = typeof rawReviveHealth === 'number' && Number.isFinite(rawReviveHealth)
+    ? Math.max(0, Math.min(1, rawReviveHealth))
+    : undefined;
+  const rawReviveAttack = (modifiers as { reviveAttack?: number } | undefined)?.reviveAttack;
+  const reviveAttack = typeof rawReviveAttack === 'number' && Number.isFinite(rawReviveAttack)
+    ? Math.max(0, Math.min(1, rawReviveAttack))
+    : undefined;
   const notes = modifiers?.notes ?? [];
   const explicitRate = (modifiers as { targetMaxHpBonusRate?: number } | undefined)?.targetMaxHpBonusRate;
   const explicitCurrentRate = (modifiers as { targetCurrentHpBonusRate?: number } | undefined)?.targetCurrentHpBonusRate;
@@ -574,6 +631,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
   const chainDamageRate = allModifiers
     .map((modifier) => (modifier as { chainDamageRate?: number }).chainDamageRate)
     .find((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const hasSplash = allModifiers.some((modifier) => (modifier as { hasSplash?: boolean }).hasSplash === true);
+  const hasChain = allModifiers.some((modifier) => (modifier as { hasChain?: boolean }).hasChain === true);
+  const hasMeteor = Boolean((activeModifiers as { hasMeteor?: boolean } | undefined)?.hasMeteor ?? (modifiers as { hasMeteor?: boolean } | undefined)?.hasMeteor);
   const unlockAtClass = getSkillLockClass(selectedActiveSkill ?? primary);
   const criticalModifiers = allModifiers.find((modifier) =>
     (modifier as { criticalChanceIncrease?: number }).criticalChanceIncrease !== undefined
@@ -608,6 +668,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     splashDamage: allModifiers
       .map((modifier) => (modifier as { splashDamage?: number }).splashDamage)
       .find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    hasSplash,
     splashDamageRate,
     splashDamageRatesByPip,
     heatwaveDamage,
@@ -616,12 +677,16 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     chainDamage: allModifiers
       .map((modifier) => (modifier as { chainDamage?: number }).chainDamage)
       .find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    hasChain,
     chainDamageRate,
     chainDamageRatesByPip,
     reviveChance,
     reviveChanceRate,
     maxRevives,
     dontReviveWhenLastOneStanding,
+    hasRevive: Boolean((modifiers as { hasRevive?: boolean } | undefined)?.hasRevive),
+    reviveHealth,
+    reviveAttack,
     allyExtraAttacks: modifiers?.allyExtraAttacks ?? 0,
     foeExtraAttacks: modifiers?.foeExtraAttacks ?? 0,
     grantAttacksToAlly: resolveGrantAttackValue(allModifiers, 'grantAttacksToAlly'),
@@ -678,6 +743,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     ),
     chainRange: (activeModifiers as { chainRange?: number } | undefined)?.chainRange ?? (modifiers as { chainRange?: number } | undefined)?.chainRange,
     chainTargets: (activeModifiers as { chainTargets?: number } | undefined)?.chainTargets ?? (modifiers as { chainTargets?: number } | undefined)?.chainTargets,
+    hasMeteor,
     meteorDamage: (activeModifiers as { meteorDamage?: number } | undefined)?.meteorDamage ?? (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
     meteorCount: (activeModifiers as { meteorCount?: number } | undefined)?.meteorCount ?? (modifiers as { meteorCount?: number } | undefined)?.meteorCount,
     meteorRandomOrientation: Boolean((activeModifiers as { meteorRandomOrientation?: boolean } | undefined)?.meteorRandomOrientation ?? (modifiers as { meteorRandomOrientation?: boolean } | undefined)?.meteorRandomOrientation),
@@ -734,6 +800,15 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     hasGrowth: Boolean((modifiers as { hasGrowth?: boolean } | undefined)?.hasGrowth),
     growthDelta: modifiers?.growthDelta,
     growthChance: modifiers?.growthChance,
+    hasPlague: Boolean((modifiers as { hasPlague?: boolean } | undefined)?.hasPlague),
+    plaguedDieType: (modifiers as { plaguedDieType?: string } | undefined)?.plaguedDieType,
+    plaguedDieHealth: (modifiers as { plaguedDieHealth?: number } | undefined)?.plaguedDieHealth,
+    plaguedDieAttack: (modifiers as { plaguedDieAttack?: number } | undefined)?.plaguedDieAttack,
+    hasNuclear: Boolean((modifiers as { hasNuclear?: boolean } | undefined)?.hasNuclear),
+    nuclearDamage: (modifiers as { nuclearDamage?: number } | undefined)?.nuclearDamage,
+    nuclearArea: (modifiers as { nuclearArea?: number[] | string } | undefined)?.nuclearArea,
+    nuclearPool: (modifiers as { nuclearPool?: string } | undefined)?.nuclearPool,
+    nuclearPoolLifespan: (modifiers as { nuclearPoolLifespan?: number } | undefined)?.nuclearPoolLifespan,
     skillRangeThreshold: (modifiers as { skillRangeThreshold?: number } | undefined)?.skillRangeThreshold,
     instakill: Boolean((activeModifiers as { instakill?: boolean } | undefined)?.instakill ?? (modifiers as { instakill?: boolean } | undefined)?.instakill),
     bossDamage: (activeModifiers as { bossDamage?: number } | undefined)?.bossDamage ?? (modifiers as { bossDamage?: number } | undefined)?.bossDamage,

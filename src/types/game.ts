@@ -25,12 +25,14 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   splashDamage?: number;
   splashDamageRate?: number;
   splashDamageRatesByPip?: Record<string, number>;
+  hasSplash?: boolean;
   heatwaveDamage?: number;
   heatwaveDamageRate?: number;
   heatwaveDamageRatesByPip?: Record<string, number>;
   chainDamage?: number;
   chainDamageRate?: number;
   chainDamageRatesByPip?: Record<string, number>;
+  hasChain?: boolean;
   chainRange?: number;
   chainTargets?: number;
   poisonDamage?: number;
@@ -44,6 +46,7 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   skillTargeting?: DiceTargetingMode;
   canFireWithNoTargets?: boolean;
   meteorDamage?: number;
+  hasMeteor?: boolean;
   lavaDamage?: number;
   lavaPoolPattern?: Array<[number, number]>;
   beamDamage?: number;
@@ -59,6 +62,9 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   reviveChanceRate?: number;
   maxRevives?: number;
   dontReviveWhenLastOneStanding?: boolean;
+  hasRevive?: boolean;
+  reviveHealth?: number;
+  reviveAttack?: number;
   damageRange?: [number, number];
   targetMaxHpBonusRate?: number;
   targetCurrentHpBonusRate?: number;
@@ -123,6 +129,15 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   hasGrowth?: boolean;
   growthDelta?: number;
   growthChance?: number;
+  hasPlague?: boolean;
+  plaguedDieType?: string;
+  plaguedDieHealth?: number;
+  plaguedDieAttack?: number;
+  hasNuclear?: boolean;
+  nuclearDamage?: number;
+  nuclearArea?: number[] | string;
+  nuclearPool?: string;
+  nuclearPoolLifespan?: number;
   skillRangeThreshold?: number;
   skillSfx?: string;
   hitsAllFoes?: boolean;
@@ -243,6 +258,7 @@ export interface DiceInstanceState {
     row: number;
     col: number;
   };
+  transformIndex?: number;
 }
 
 export interface MatchBattleState {

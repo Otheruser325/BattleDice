@@ -1,0 +1,52 @@
+{
+  "typeId": "Time",
+  "title": "Time Dice",
+  "attack": 22,
+  "health": 720,
+  "range": 5,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Temporal Acceleration",
+      "description": "Ally dice matching this die's rolled pip count gain +1 attack count until the next turn.",
+      "modifiers": {
+        "pipMatchAllyAttackDelta": 1,
+        "skillSfx": "dice_time_skill"
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Temporal Dilation",
+      "description": "Enemy dice matching this die's rolled pip count gain -1 attack count until the next turn.",
+      "modifiers": {
+        "pipMatchFoeAttackDelta": -1,
+        "skillSfx": "dice_time_skill"
+      }
+    }
+  ],
+  "accent": "#aeb7c2",
+  "targetingMode": "Nearest",
+  "talents": [
+    {
+      "title": "Temporal Delusion",
+      "description": "The matching pip no longer grants allies bonus attack counts. Enemy dice matching this die's rolled pip count lose 2 attack counts instead of the usual 1 until the next turn.",
+      "classNeeded": 9,
+      "modifiers": {
+        "skills": [
+          {
+            "disableSkill": true,
+            "modifiers": {
+              "pipMatchAllyAttackDelta": 0
+            }
+          },
+          {
+            "modifiers": {
+              "pipMatchFoeAttackDelta": -2
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

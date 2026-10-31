@@ -1,0 +1,11 @@
+{
+  "typeId": "Sword",
+  "title": "Sword Dice",
+  "attack": 50,
+  "health": 880,
+  "range": 2,
+  "rarity": "Common",
+  "skills": [],
+  "accent": "#ffffff",
+  "targetingMode": "Nearest"
+}

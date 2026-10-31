@@ -11,6 +11,7 @@
       "title": "Last Rattle",
       "description": "When defeated, it immediately comes back to life. Revival chance halves for each successful revive.",
       "modifiers": {
+        "hasRevive": true,
         "reviveChance": 1,
         "reviveChanceRate": 0.5,
         "maxRevives": 5,

@@ -1,0 +1,26 @@
+{
+  "typeId": "Poison",
+  "title": "Poison Dice",
+  "attack": 20,
+  "health": 640,
+  "range": 5,
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Toxic Mark",
+      "description": "Deals 25 direct toxic damage, then applies 25 poison damage per turn for 3 turns (stacks).",
+      "manaNeeded": 5,
+      "modifiers": {
+        "activeDamage": 25,
+        "statusDuration": 3,
+        "poisonDamage": 25,
+        "statusEffect": "poison",
+        "skillSfx": "dice_poison_skill"
+      }
+    }
+  ],
+  "accent": "#86d68f",
+  "rarity": "Common",
+  "targetingMode": "Nearest",
+  "talentsComingSoon": true
+}

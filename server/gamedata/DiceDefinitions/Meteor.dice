@@ -1,0 +1,68 @@
+{
+  "typeId": "Meteor",
+  "title": "Meteor Dice",
+  "attack": 18,
+  "health": 640,
+  "range": 5,
+  "rarity": "Epic",
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Meteor Strike",
+      "description": "Throws a striking meteor at a random foe on the opposing board, causing 120 damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern for 3 turns. Foes standing on a lava tile take 50 damage at the start of combat.",
+      "manaNeeded": 7,
+      "modifiers": {
+        "statusDuration": 3,
+        "hasMeteor": true,
+        "meteorCount": 1,
+        "meteorDamage": 120,
+        "lavaDamage": 50,
+        "skillSfx": "dice_meteor_skill",
+        "lavaPoolPattern": [
+          [
+            0,
+            0
+          ],
+          [
+            -1,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            -1
+          ],
+          [
+            0,
+            1
+          ]
+        ]
+      }
+    }
+  ],
+  "accent": "#ff7a35",
+  "targetingMode": "Nearest",
+  "talents": [
+    {
+      "title": "Triple Strike",
+      "description": "Can summon three meteors in random opponent's spaces on their board, at the cost of needing 3 additional mana to charge up.",
+      "classNeeded": 9,
+      "modifiers": {
+        "skills": [
+          {
+            "title": "Triple Strike",
+            "description": "Throws 3 striking meteors at random tiles on the opposing board, causing 120 damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern for 3 turns. Foes standing on a lava tile take 50 damage at the start of combat.",
+            "manaNeeded": 10,
+            "modifiers": {
+              "meteorCount": 3,
+              "meteorRandomOrientation": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

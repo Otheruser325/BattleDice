@@ -1,0 +1,43 @@
+{
+  "typeId": "Leon",
+  "title": "Leon Dice",
+  "attack": 40,
+  "health": 3000,
+  "range": 4,
+  "footprint": 2,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Furious Claw",
+      "description": "Enemy dice 2 tiles closer to Leon will be attacked doubly, with critical chance increased to 25%.",
+      "modifiers": {
+        "attackCountIncrease": 1,
+        "criticalChanceIncrease": 0.2,
+        "skillRangeThreshold": 2
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Mighty Roar",
+      "description": "If no dice are in range, teleports close to the nearest enemy die and immediately executes Furious Claw, stunning its target for 2 turns.",
+      "modifiers": {
+        "statusEffect": "stun",
+        "stunDuration": 2,
+        "teleportSkillFireIndex": 0
+      }
+    },
+    {
+      "type": "OnKill",
+      "title": "Rage Or Nothing",
+      "description": "Leon gains +20% basic attack damage for each fallen foe.",
+      "modifiers": {
+        "damageRatePerKill": 0.2,
+        "unlockAtClass": 6
+      }
+    }
+  ],
+  "accent": "#ffbf4a",
+  "targetingMode": "Nearest",
+  "isBoss": true
+}

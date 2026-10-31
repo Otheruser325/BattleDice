@@ -13,6 +13,7 @@
       "manaNeeded": 7,
       "modifiers": {
         "statusDuration": 3,
+        "hasMeteor": true,
         "meteorCount": 1,
         "meteorDamage": 120,
         "lavaDamage": 50,

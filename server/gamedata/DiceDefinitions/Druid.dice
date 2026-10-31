@@ -1,0 +1,68 @@
+{
+  "typeId": "Druid",
+  "title": "Druid Dice",
+  "attack": 36,
+  "health": 600,
+  "range": 5,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Druidic Essence",
+      "description": "Instead of attacking enemies, basic attacks heal the weakest ally for the full attack power, and orbs ricochet onto 1 nearby ally within 2 tiles.",
+      "modifiers": {
+        "ricochetCount": 1,
+        "ricochetRange": 2,
+        "healOnAttack": true,
+		"onlyTargetsAllies": true,
+        "skillTargeting": "Weakest",
+        "attackSfx": "dice_heal_skill"
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Ferocious Nature",
+      "description": "Transforms into a powerful bear after helping his allies for long enough.",
+      "manaNeeded": 20,
+      "modifiers": {
+        "consumeAttack": false,
+        "transformToNextForm": true,
+        "canFireWithNoTargets": true,
+        "skillSfx": "dice_berserk_skill"
+      }
+    }
+  ],
+  "transformStats": [{
+    "title": "Druid Bear",
+    "attack": 50,
+    "health": 1400,
+    "range": 2,
+    "targetingMode": "Nearest",
+    "accent": "#9b6a3a",
+    "recoveryRate": 1,
+    "skills": [
+      {
+        "type": "OnTransformed",
+        "title": "Uncontrollable Maul",
+        "description": "Teleports onto the nearest enemy and deals 250 damage upon mauling.",
+        "modifiers": {
+          "transformAttackDamage": 250
+        }
+      },
+      {
+        "type": "Passive",
+        "title": "Critical Claw",
+        "description": "While in Bear Form, critical chance is increased to 25%.",
+        "modifiers": {
+          "criticalChanceIncrease": 0.2,
+          "criticalDamageIncrease": 0
+        }
+      }
+    ]
+  }],
+  "transformFlags": ["bearForm"],
+  "alternateButton": ["View Bear Form"],
+  "baseButton": ["View Druid Dice"],
+  "accent": "#6ec97a",
+  "targetingMode": "Nearest"
+}

@@ -1,0 +1,40 @@
+{
+  "typeId": "Fire",
+  "title": "Fire Dice",
+  "attack": 26,
+  "health": 800,
+  "range": 4,
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Splash Ember",
+      "description": "Attacks cause 13 splash damage to adjacent foes on the target's board.",
+      "modifiers": {
+        "splashDamage": 13,
+        "hasSplash": true,
+        "skillSfx": "dice_fire_skill"
+      }
+    }
+  ],
+  "accent": "#ff8d6d",
+  "rarity": "Common",
+  "targetingMode": "Nearest",
+  "talents": [
+    {
+      "title": "Scorcher",
+      "description": "Splash damage is amplified to 20, but base attack is reduced to 20.",
+      "classNeeded": 9,
+      "comingSoon": true,
+      "modifiers": {
+        "attackDelta": -6,
+        "skills": [
+          {
+            "modifiers": {
+              "splashDamage": 20
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

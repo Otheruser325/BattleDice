@@ -1,0 +1,39 @@
+{
+  "typeId": "Transcendence",
+  "title": "Transcendence Dice",
+  "attack": 40,
+  "health": 640,
+  "range": 5,
+  "rarity": "Legendary",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Perpendicular Beam",
+      "description": "If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for 520 damage.",
+      "modifiers": {
+	    "beamDamage": 520,
+        "transformPipCount": 6,
+		"attackSfx": "dice_transcendence_attack"
+      }
+    }
+  ],
+  "transformStats": [{
+    "title": "The Transcendence",
+    "range": 9,
+    "accent": "#6ff6ff",
+    "symbol": "✦",
+    "transformDuration": 1,
+    "skills": [{
+      "modifiers": {
+        "beamDamage": 520,
+        "hasBeam": true,
+		"attackSfx": "dice_transcendence_t_attack"
+      }
+    }]
+  }],
+  "transformFlags": ["transcendentForm"],
+  "alternateButton": ["View The Transcendence"],
+  "baseButton": ["View Base Form"],
+  "accent": "#7099d6",
+  "targetingMode": "Nearest"
+}

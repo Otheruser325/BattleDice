@@ -1,0 +1,22 @@
+{
+  "typeId": "Lock",
+  "title": "Lock Dice",
+  "attack": 14,
+  "health": 900,
+  "range": 3,
+  "rarity": "Uncommon",
+  "skills": [
+    {
+      "type": "CombatStart",
+      "title": "Sealed In",
+      "description": "Locks the nearest foe in chains within a 2-tile radius, preventing it from attacking until combat ends.",
+      "modifiers": {
+        "lockRange": 2,
+        "canLockFoes": true,
+        "numLocks": 1
+      }
+    }
+  ],
+  "accent": "#626262",
+  "targetingMode": "Nearest"
+}

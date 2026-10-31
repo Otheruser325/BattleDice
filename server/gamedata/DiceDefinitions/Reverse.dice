@@ -1,0 +1,24 @@
+{
+  "typeId": "Reverse",
+  "title": "Reverse Dice",
+  "attack": 22,
+  "health": 620,
+  "range": 5,
+  "rarity": "Epic",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Awakening Melody",
+      "description": "Can swap pip counts with a different placed die before combat. Triggers once per turn.",
+      "modifiers": {
+        "canBeDraggedPostCombat": true,
+        "canBeRepositioned": false,
+        "canReversePips": true,
+        "reverseLimit": 1,
+        "reverseCooldown": 1
+      }
+    }
+  ],
+  "accent": "#d3d3d3",
+  "targetingMode": "Nearest"
+}

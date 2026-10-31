@@ -1,0 +1,42 @@
+{
+  "typeId": "Deucifer",
+  "title": "Deucifer Dice",
+  "attack": 80,
+  "health": 5000,
+  "range": 5,
+  "footprint": 2,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "Passive",
+      "title": "Hell's Siphon",
+      "description": "Odd pip counts make attacks heal Deucifer for 50% of damage dealt.",
+      "modifiers": {
+        "deuciferOddSiphonRate": 0.5
+      }
+    },
+    {
+      "type": "Passive",
+      "title": "Hell's Gathering",
+      "description": "Even pip counts make attacks deal 50% more damage.",
+      "modifiers": {
+        "deuciferEvenDamageRate": 0.5
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Rise From Hell",
+      "description": "Summons an Imp Dice on a random unoccupied tile.",
+      "manaNeeded": 14,
+      "modifiers": {
+        "summonType": "Imp",
+        "summonCount": 1,
+        "summonPattern": [[0, 1], [0, -1], [1, 0], [-1, 0]],
+        "allowSummonedDieToRoll": true
+      }
+    }
+  ],
+  "accent": "#ff4d2e",
+  "targetingMode": "Nearest",
+  "isBoss": true
+}
