@@ -9,7 +9,10 @@
     {
       "type": "Passive",
       "title": "Sharp Exploit",
-      "description": "Targeted foes below 50% of their max HP receive 50% more damage.",
+      "description": "Targeted foes below {lowHpThresholdRate} of their max HP receive {lowHpDamageBonusRate} more damage.",
+      "classBenefits": {
+        "lowHpDamageBonusRate": [0.0, 0.02, 0.04, 0.06, 0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2, 0.22, 0.24, 0.26, 0.28]
+      },
       "modifiers": {
         "lowHpThresholdRate": 0.5,
         "lowHpDamageBonusRate": 0.5

@@ -94,6 +94,14 @@ export class DebugManager {
     return [...this.history];
   }
 
+  private static stringify(value: unknown): string {
+    try {
+      return JSON.stringify(value ?? '') ?? String(value);
+    } catch {
+      return String(value);
+    }
+  }
+
   private static write(level: DebugLevel, namespace: string, details: unknown[]) {
     if (!DEBUG_LOGGING_AVAILABLE) return;
     const [messageSource, ...rest] = details;
@@ -101,7 +109,7 @@ export class DebugManager {
       at: new Date().toISOString(),
       level,
       namespace,
-      message: typeof messageSource === 'string' ? messageSource : JSON.stringify(messageSource ?? ''),
+      message: typeof messageSource === 'string' ? messageSource : this.stringify(messageSource),
       details: typeof messageSource === 'string' ? rest : details
     };
 

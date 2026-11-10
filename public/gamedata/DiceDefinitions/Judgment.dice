@@ -9,7 +9,7 @@
     {
       "type": "OnKill",
       "title": "Judge Hammer",
-      "description": "Summons a judge hammer on the weakest foe, dealing 150 damage in a 3x3 radius. Hammer kills can retrigger this effect.",
+      "description": "Summons a judge hammer on the weakest foe, dealing {hammerDamage} damage in a 3x3 radius. Hammer kills can retrigger this effect.",
       "modifiers": {
         "hammerDamage": 150,
         "hammerRadius": 1,

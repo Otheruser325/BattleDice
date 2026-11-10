@@ -10,17 +10,17 @@
     {
       "type": "Passive",
       "title": "Hell's Siphon",
-      "description": "Odd pip counts make attacks heal Deucifer for 50% of damage dealt.",
+      "description": "Odd pip counts make attacks heal Deucifer for {oddPipSiphonRate} of damage dealt.",
       "modifiers": {
-        "deuciferOddSiphonRate": 0.5
+        "oddPipSiphonRate": 0.5
       }
     },
     {
       "type": "Passive",
       "title": "Hell's Gathering",
-      "description": "Even pip counts make attacks deal 50% more damage.",
+      "description": "Even pip counts make attacks deal {evenPipDamageRate} more damage.",
       "modifiers": {
-        "deuciferEvenDamageRate": 0.5
+        "evenPipDamageRate": 0.5
       }
     },
     {
@@ -32,7 +32,8 @@
         "summonType": "Imp",
         "summonCount": 1,
         "summonPattern": [[0, 1], [0, -1], [1, 0], [-1, 0]],
-        "allowSummonedDieToRoll": true
+        "allowSummonedDieToRoll": true,
+        "skillSfx": ["dice_growth_success_01", "dice_growth_success_02"]
       }
     }
   ],

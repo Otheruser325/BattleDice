@@ -15,15 +15,17 @@ import {
   setDiceTokens,
   getClassCopyCost,
   getClassTokenCost,
-  DEFAULT_LOADOUT_IDS
+  DEFAULT_LOADOUT_IDS,
+  checkDiceCollectionAchievements
 } from '../data/dice';
 import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
-import { applyClassProgression, applyTransformStats, getClassProgressionPreview, getClassScaledSkillDescription } from '../systems/ClassProgression';
+import { applyClassProgression, applyTransformStats, getClassProgressionPreview, getClassScaledSkillDescription, getClassScaledTalentDescription, type SkillDescriptionContext } from '../systems/ClassProgression';
+import { getPoolDefinitions } from '../data/pools';
 import { SCENE_KEYS } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { AchievementStore } from '../systems/AchievementStore';
-import type { DiceDefinition, DiceSkillDefinition } from '../types/game';
+import type { DiceDefinition, DiceSkillDefinition, DiceTalentDefinition } from '../types/game';
 import { SettingsStore } from '../systems/SettingsStore';
 import { applyDiceTalent, getTalentClassNeeded } from '../systems/DiceTalents';
 import { getEquippedTalentIndex, getTalentByIndex, getUnobtainableTalentReason, isTalentComingSoon, isTalentOwned, setEquippedTalentIndex } from '../data/dice';
@@ -35,11 +37,31 @@ function formatSkillType(type: string | undefined): string {
   return type.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number, definition?: DiceDefinition, skillDamageMultiplier = 1, descriptorDefinition?: DiceDefinition, sourceModifiers?: DiceSkillDefinition['modifiers']): string {
+function formatSkillEntry(skill: DiceSkillDefinition, index: number, total: number, definition?: DiceDefinition, skillDamageMultiplier = 1, descriptorDefinition?: DiceDefinition, sourceModifiers?: DiceSkillDefinition['modifiers'], descriptionContext?: SkillDescriptionContext): string {
   const prefix = total > 1 ? `${index + 1}. ` : '';
   const manaLine = skill.type === 'Active' && (skill.manaNeeded ?? 0) > 0 ? `\nMana needed: ${skill.manaNeeded}` : '';
-  const description = definition ? getClassScaledSkillDescription(definition, skill, skillDamageMultiplier, sourceModifiers) : skill.description;
+  const description = definition ? getClassScaledSkillDescription(definition, skill, skillDamageMultiplier, sourceModifiers, descriptionContext) : skill.description;
   return `${prefix}${skill.title} (${formatSkillType(skill.type)})${manaLine}\n${description}`;
+}
+
+function buildDescriptionContext(
+  scene: Phaser.Scene,
+  definition: DiceDefinition,
+  classLevel: number
+): SkillDescriptionContext {
+  return {
+    diceDefinitions: Object.fromEntries(getAllDiceDefinitions(scene).map((candidate) => [candidate.typeId, candidate])),
+    poolDefinitions: Object.fromEntries(getPoolDefinitions(scene).map((candidate) => [candidate.typeId, candidate])),
+    classLevel,
+    isBoss: definition.isBoss === true
+  };
+}
+
+function getTalentDescriptionDefinition(definition: DiceDefinition, talent: DiceTalentDefinition): DiceDefinition {
+  return {
+    ...definition,
+    skills: mergeSkillsByIndex(definition.skills, talent.modifiers?.skills)
+  };
 }
 
 function resolveTransformIndex(definition: DiceDefinition, transformIndex?: number): number | undefined {
@@ -71,19 +93,22 @@ function formatSkillTypeLine(definition: DiceDefinition): string {
   return `${visibleSkills.length} SKILLS`;
 }
 
-export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1, transformIndex?: number, descriptorDefinition?: DiceDefinition): string {
+export function formatSkillInfo(definition: DiceDefinition, locked = false, skillDamageMultiplier = 1, transformIndex?: number, descriptorDefinition?: DiceDefinition, classLevel = 1, scene?: Phaser.Scene): string {
   if (locked) return '??? — Obtain copies to unlock\nVisit the Shop to purchase copies of this die.';
   if (isFormComingSoon(definition, transformIndex)) return 'Coming soon...';
   const visibleSkills = getFormSkills(definition, transformIndex).map((skill, index) => ({ skill, index }));
   if (visibleSkills.length === 0) return 'This dice does not have any special skills.';
   const sourceSkills = descriptorDefinition ? getFormSkills(descriptorDefinition, transformIndex) : [];
+  const descriptionContext = scene
+    ? buildDescriptionContext(scene, definition, classLevel)
+    : undefined;
   return visibleSkills.map(({ skill }, visibleIndex) => {
     const sourceSkill = sourceSkills.find((candidate) => candidate.title === skill.title && candidate.type === skill.type)
       ?? sourceSkills[visibleIndex];
     return formatSkillEntry(skill, visibleIndex, visibleSkills.length, {
       ...definition,
       skills: definition.skills
-    }, skillDamageMultiplier, descriptorDefinition, sourceSkill?.modifiers);
+    }, skillDamageMultiplier, descriptorDefinition, sourceSkill?.modifiers, descriptionContext);
   }).join('\n\n');
 }
 
@@ -168,10 +193,12 @@ export class DiceScene extends Phaser.Scene {
 
   create() {
     const panel = drawPanel(this, 'DICE', 'Deck slots 1-3 save separate loadouts  |  Non-defaults unlock with copies');
+    const controlsDepth = 10;
     const rarityRank: Record<string, number> = { Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4, Mythic: 5 };
     const definitions = [...getAllDiceDefinitions(this)].sort((a, b) => (rarityRank[a.rarity] ?? 99) - (rarityRank[b.rarity] ?? 99) || a.title.localeCompare(b.title));
     let loadout = getSelectedLoadout(this);
     this.debug.log('Dice scene rendered.', { diceCount: definitions.length });
+    checkDiceCollectionAchievements(this);
 
     let tokens = getDiceTokens(this);
     const tokenText = this.add.text(panel.x + 28, panel.y + 58, `DICE TOKENS: ${formatCompact(tokens)}  •  Click a die, then EQUIP to assign it to a slot`, {
@@ -187,8 +214,8 @@ export class DiceScene extends Phaser.Scene {
     const deckBoxes: Phaser.GameObjects.Rectangle[] = [];
     for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
       const x = panel.right - 212 + i * 58;
-      const box = this.add.rectangle(x, panel.y + 116, 46, 34, 0x1b4058, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
-      const lbl = this.add.text(x, panel.y + 116, `${i + 1}`, { fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text }).setOrigin(0.5);
+      const box = this.add.rectangle(x, panel.y + 116, 46, 34, 0x1b4058, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true }).setDepth(controlsDepth);
+      const lbl = this.add.text(x, panel.y + 116, `${i + 1}`, { fontFamily: 'Orbitron', fontSize: '14px', color: PALETTE.text }).setOrigin(0.5).setDepth(controlsDepth + 1);
       box.on('pointerdown', () => {
         setActiveLoadoutSlot(this, i);
         selectedDeckSlot = i;
@@ -200,12 +227,12 @@ export class DiceScene extends Phaser.Scene {
       deckBoxes.push(box);
       slotLabels.push(lbl);
     }
-    const deckLabel = this.add.text(panel.right - 212, panel.y + 90, 'DECK', { fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted }).setOrigin(0.5);
+    const deckLabel = this.add.text(panel.right - 212, panel.y + 90, 'DECK', { fontFamily: 'Orbitron', fontSize: '10px', color: PALETTE.textMuted }).setOrigin(0.5).setDepth(controlsDepth + 1);
     const slotStartX = panel.centerX - 312;
     for (let i = 0; i < 5; i++) {
       const x = slotStartX + i * 112;
-      const box = this.add.rectangle(x, panel.y + 118, 104, 46, 0x173247, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true });
-      const lbl = this.add.text(x, panel.y + 118, loadout[i]?.slice(0, 4).toUpperCase() ?? '-', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5);
+      const box = this.add.rectangle(x, panel.y + 118, 104, 46, 0x173247, 0.95).setStrokeStyle(2, 0x406987).setInteractive({ useHandCursor: true }).setDepth(controlsDepth);
+      const lbl = this.add.text(x, panel.y + 118, loadout[i]?.slice(0, 4).toUpperCase() ?? '-', { fontFamily: 'Orbitron', fontSize: '13px', color: PALETTE.text }).setOrigin(0.5).setDepth(controlsDepth + 1);
       const selectSlot = () => {
         if (!pendingEquipTypeId) {
           selectedSlot = i;
@@ -283,10 +310,11 @@ export class DiceScene extends Phaser.Scene {
     };
     const shuffleBtn = this.add.rectangle(panel.x + 122, panel.y + 110, 188, 30, 0x315e7a, 0.95)
       .setStrokeStyle(2, 0x6f9fbd)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive({ useHandCursor: true })
+      .setDepth(controlsDepth);
     const shuffleLabel = this.add.text(shuffleBtn.x, shuffleBtn.y, 'SHUFFLE LOADOUT', {
       fontFamily: 'Orbitron', fontSize: '11px', color: '#ffffff'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(controlsDepth + 1);
     shuffleBtn.on('pointerover', () => shuffleBtn.setFillStyle(0x3f7190, 1));
     shuffleBtn.on('pointerout', () => shuffleBtn.setFillStyle(0x315e7a, 0.95));
     shuffleBtn.on('pointerdown', shuffleLoadout);
@@ -349,7 +377,7 @@ export class DiceScene extends Phaser.Scene {
         color: PALETTE.textMuted
       });
 
-      const skillInfo = formatSkillInfo(displayedDie, locked);
+      const skillInfo = formatSkillInfo(displayedDie, locked, 1, undefined, undefined, cls, this);
       const displayType = locked
         ? 'LOCKED'
         : formatSkillTypeLine(displayedDie);
@@ -373,7 +401,7 @@ export class DiceScene extends Phaser.Scene {
         statLine.setText(`ATK ${formatCompact(nextDisplayedDie.attack)}  |  HP ${formatCompact(nextDisplayedDie.health)}
 RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         skillTypeLine.setText(formatSkillTypeLine(nextDisplayedDie));
-        skillDesc.setText(formatSkillInfo(nextDisplayedDie, this.isDiceLocked(die.typeId)));
+        skillDesc.setText(formatSkillInfo(nextDisplayedDie, this.isDiceLocked(die.typeId), 1, undefined, undefined, nextCls, this));
       };
       refreshCardStats.push(refreshCardStatLine);
 
@@ -428,6 +456,9 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const viewHeight = panel.height - 230;
     const viewLeft = panel.x + 12;
     const viewWidth = panel.width - 24;
+    this.add.rectangle(panel.centerX, (panel.y + viewTop) / 2, panel.width, viewTop - panel.y, 0x000000, 0)
+      .setDepth(7)
+      .setInteractive();
     const maskShape = this.add.rectangle(viewLeft, viewTop, viewWidth, viewHeight, 0xffffff, 0)
       .setOrigin(0, 0)
       .setVisible(false);
@@ -521,11 +552,17 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     const skillViewportWidth = 470;
     const skillViewportHeight = 112;
     const skillViewportTop = height / 2 - 88;
-    const skillTextContent = formatSkillInfo(displayDie, false, 1, formIndex > 0 ? formIndex - 1 : undefined, die);
+    const skillTextContent = formatSkillInfo(displayDie, false, 1, formIndex > 0 ? formIndex - 1 : undefined, die, cls, this);
     const currentTalentIndex = getEquippedTalentIndex(this, die);
     const equippedTalent = getTalentByIndex(die, currentTalentIndex);
+    const equippedTalentDescription = equippedTalent
+      ? (() => {
+        const talentDefinition = getTalentDescriptionDefinition(die, equippedTalent);
+        return getClassScaledTalentDescription(talentDefinition, equippedTalent, 1, buildDescriptionContext(this, talentDefinition, cls));
+      })()
+      : '';
     const skillTextWithTalent = equippedTalent
-      ? `${skillTextContent}\n\nTalent — ${equippedTalent.title}\n${equippedTalent.description}`
+      ? `${skillTextContent}\n\nTalent — ${equippedTalent.title}\n${equippedTalentDescription}`
       : skillTextContent;
     const skillContainer = this.add.container(width / 2, skillViewportTop);
     const skill = this.add.text(0, 0, skillTextWithTalent, {
@@ -616,7 +653,7 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
     } else {
       altBtn.setVisible(false);
     }
-    const close = this.add.text(width / 2, height / 2 + 170, 'Close', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const close = this.add.text(width / 2, height / 2 + 170, 'CLOSE', { fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted, backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     if (canUpgrade) {
       const showUpgradeTooltip = () => upgradeTooltip.setVisible(true);
       const hideUpgradeTooltip = () => upgradeTooltip.setVisible(false);
@@ -654,7 +691,6 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         this.modalWheelHandler = null;
       }
     };
-    overlay.on('pointerdown', closeModal);
     close.on('pointerdown', closeModal);
     this.modalEscHandler = () => closeModal();
     this.input.keyboard?.on('keydown-ESC', this.modalEscHandler);
@@ -704,20 +740,14 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
         fontFamily: 'Orbitron', fontSize: '22px', color: PALETTE.textMuted
       }).setOrigin(0.5);
       elements.push(message);
-      const closeSoon = this.add.text(width / 2, centerY + 158, 'CLOSE', {
+      const closeSoon = this.add.text(width / 2, centerY + 170, 'CLOSE', {
         fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted,
-        backgroundColor: '#173247', padding: { left: 10, right: 10, top: 5, bottom: 5 }
+        backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 }
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       const closeSoonModal = () => {
-        elements.forEach((element) => element.destroy());
-        this.modalElements = [];
-        if (this.modalEscHandler) {
-          this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
-          this.modalEscHandler = null;
-        }
+        this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
       };
       closeSoon.on('pointerdown', closeSoonModal);
-      overlay.on('pointerdown', closeSoonModal);
       elements.push(closeSoon);
       this.modalElements = elements;
       elements.forEach((element) => (element as any).setDepth?.(450));
@@ -726,22 +756,12 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       return;
     }
 
-    const close = () => {
-      elements.forEach((element) => element.destroy());
-      this.modalElements = [];
-      if (this.modalEscHandler) {
-        this.input.keyboard?.off('keydown-ESC', this.modalEscHandler);
-        this.modalEscHandler = null;
-      }
-      if (this.modalWheelHandler) {
-        this.input.off('wheel', this.modalWheelHandler);
-        this.modalWheelHandler = null;
-      }
+    const returnToDice = () => {
+      this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
     };
     const reopen = () => {
-      close();
       onUpdate();
-      this.openDiceModal(typeId, tokenText, onUpdate, onEquipRequest, formIndex);
+      returnToDice();
     };
 
     definition.talents.forEach((talent, index) => {
@@ -758,7 +778,14 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       const name = this.add.text(width / 2 - 224, y - 20, `${active ? '● ' : ''}${talent.title}`, {
         fontFamily: 'Orbitron', fontSize: '11px', color: active ? '#fff1c2' : PALETTE.text
       }).setOrigin(0, 0.5);
-      const description = this.add.text(width / 2 - 224, y + 2, talent.description, {
+      const talentDefinition = getTalentDescriptionDefinition(definition, talent);
+      const descriptionText = getClassScaledTalentDescription(
+        talentDefinition,
+        talent,
+        1,
+        buildDescriptionContext(this, talentDefinition, classLevel)
+      );
+      const description = this.add.text(width / 2 - 224, y + 2, descriptionText, {
         fontFamily: 'Orbitron', fontSize: '9px', color: PALETTE.textMuted, wordWrap: { width: 330 }
       }).setOrigin(0, 0.5);
       const gateText = obtain === 'invalid'
@@ -802,16 +829,15 @@ RANGE ${nextDisplayedDie.range} (${getRangeLabel(nextDisplayedDie.range)})`);
       elements.push(row, name, description, gate, action);
     });
 
-    const closeButton = this.add.text(width / 2, centerY + 158, 'CLOSE', {
+    const closeButton = this.add.text(width / 2, centerY + 170, 'CLOSE', {
       fontFamily: 'Orbitron', fontSize: '12px', color: PALETTE.textMuted,
-      backgroundColor: '#173247', padding: { left: 10, right: 10, top: 5, bottom: 5 }
+      backgroundColor: '#173247', padding: { left: 8, right: 8, top: 4, bottom: 4 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    closeButton.on('pointerdown', close);
-    overlay.on('pointerdown', close);
+    closeButton.on('pointerdown', returnToDice);
     elements.push(closeButton);
     this.modalElements = elements;
     elements.forEach((element) => (element as any).setDepth?.(450));
-    this.modalEscHandler = close;
-    this.input.keyboard?.on('keydown-ESC', close);
+    this.modalEscHandler = returnToDice;
+    this.input.keyboard?.on('keydown-ESC', returnToDice);
   }
 }

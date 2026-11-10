@@ -18,9 +18,13 @@ export type StatusEffect =
   | 'stun'
   | 'berserk'
   | 'acceleration'
-  | 'dilation';
+  | 'dilation'
+  | 'disorientation';
+export type PoolTarget = 'foes' | 'allies' | 'both';
 
 export type SkillModifiers = Record<string, unknown>;
+
+export type SkillClassBenefits = Record<string, number[]>;
 
 export interface DiceSkillDefinition {
   type: SkillType;
@@ -28,6 +32,7 @@ export interface DiceSkillDefinition {
   description: string;
   manaNeeded?: number;
   modifiers?: SkillModifiers;
+  classBenefits?: SkillClassBenefits;
   descriptionLocked?: boolean;
   disableSkill?: boolean;
 }
@@ -55,6 +60,36 @@ export interface DiceTransformStats {
   transformDuration?: number;
   symbol?: string;
   skills?: Array<DiceSkillDefinition | null>;
+}
+
+export interface PoolDefinition {
+  typeId: string;
+  title: string;
+  damage: number;
+  pattern?: Array<[number, number]>;
+  duration?: number;
+  statusEffect?: StatusEffect;
+  statusDuration?: number;
+  maxStacks?: number;
+  affects?: PoolTarget;
+  accent?: string;
+}
+
+export interface CombatPool {
+  typeId: string;
+  title: string;
+  row: number;
+  col: number;
+  damage: number;
+  turns: number;
+  ownerId: OwnerId;
+  sourceTypeId: string;
+  sourceInstanceId?: string;
+  statusEffect?: StatusEffect;
+  statusDuration?: number;
+  maxStacks?: number;
+  affects: PoolTarget;
+  accent?: string;
 }
 
 export interface DiceDefinition {
@@ -108,6 +143,14 @@ export interface CombatDie {
   gridPosition?: BattlePosition;
   pips: number;
   mana: Record<string, number>;
+  poisonStacks?: Array<{
+    damage: number;
+    turns: number;
+    sourceId?: string;
+    sourceOwnerId?: OwnerId;
+    sourceTypeId?: string;
+  }>;
+  slowStacks?: Array<{ delta: number; turns: number }>;
   shieldHp: number;
   shieldTurns: number;
   attackDelta: number;
@@ -120,6 +163,7 @@ export interface CombatDie {
   growth: number;
   boostedAttacks: number;
   transformIndex?: number;
+  transformTurns?: number;
 }
 
 export interface CombatState {
@@ -128,7 +172,10 @@ export interface CombatState {
   dice: CombatDie[];
   reviveCounts: Record<string, number>;
   lockedBy: Record<string, string>;
-  lavaPools: Array<{ row: number; col: number; damage: number; turns: number; ownerId: OwnerId; typeId: string }>;
+  lockTurns: Record<string, number>;
+  lockStatus?: Record<string, { effect: StatusEffect; turns: number; attackDelta?: number }>;
+  gridLocks: Record<OwnerId, Record<string, number>>;
+  pools: CombatPool[];
 }
 
 export interface ClientBattleDie {
@@ -151,6 +198,9 @@ export interface ClientBattleState {
   combatPhase: 'idle' | 'attacking' | 'resolved';
   dice: ClientBattleDie[];
   reviveCounts?: Record<string, number>;
+  pools?: Array<Omit<CombatPool, 'ownerId' | 'sourceTypeId' | 'sourceInstanceId'> & {
+    boardSide: OwnerId;
+  }>;
 }
 
 export type CombatEventKind =

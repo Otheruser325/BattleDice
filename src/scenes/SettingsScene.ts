@@ -11,6 +11,7 @@ import { getDiamonds } from '../data/dice';
 import { AlertManager } from '../utils/AlertManager';
 import { withBasePath } from '../utils/BuildEnv';
 import { formatCompact } from '../utils/FormatManager';
+import { LoginManager } from '../utils/LoginManager';
  
 type SettingKey = keyof AppSettings;
 
@@ -150,7 +151,7 @@ export class SettingsScene extends Phaser.Scene {
     ];
     if (DEBUG_LOGGING_AVAILABLE) toggles.push(['debugLogs', 'Debug logging']);
     const extraRowCount = Math.max(0, toggles.length - 5);
-    const panel = this.add.rectangle(width - 196, 230 + extraRowCount * 22, 288, 350 + extraRowCount * 44, 0x102434, 0.97)
+    const panel = this.add.rectangle(width - 196, 230 + extraRowCount * 22, 288, 390 + extraRowCount * 44, 0x102434, 0.97)
       .setStrokeStyle(1, 0x496a84)
       .setDepth(42);
 
@@ -198,7 +199,16 @@ export class SettingsScene extends Phaser.Scene {
       if (this.subModalOpen) return;
       this.closeModal();
     });
-    this.modalElements.push(changelogBtn, nameBtn, close);
+
+    const logoutBtn = this.add.text(width - 154, actionY + 62, 'Log Out', {
+      fontFamily: 'Orbitron', fontSize: '13px', color: '#ffffff', backgroundColor: '#9b2d2d', padding: { left: 10, right: 10, top: 6, bottom: 6 }
+    }).setInteractive({ useHandCursor: true }).setDepth(43);
+    logoutBtn.on('pointerdown', () => {
+      if (this.subModalOpen) return;
+      this.debug.event('Logging out.');
+      LoginManager.resetToLogin(this);
+    });
+    this.modalElements.push(changelogBtn, nameBtn, close, logoutBtn);
   }
  
   private async openChangelogModal() {
@@ -286,6 +296,7 @@ export class SettingsScene extends Phaser.Scene {
       this.input.off('wheel', onWheel);
       this.input.keyboard?.off('keydown-UP', onUp);
       this.input.keyboard?.off('keydown-DOWN', onDown);
+      this.input.keyboard?.off('keydown-ESC', close);
       [overlay, panel, title, closeBtn, contentContainer, maskShape].forEach((e) => e.destroy());
       this.subModalOpen = false;
       this.subModalCloseHandler = null;
@@ -304,6 +315,7 @@ export class SettingsScene extends Phaser.Scene {
     try {
       const response = await fetch(withBasePath('config/changelog.json'));
       const payload = await response.json();
+      if (isClosed) return;
       const lines: string[] = (payload.entries ?? []).map((entry: { version: string; date: string; notes: string[] }) => {
         const header = `• ${entry.version} (${entry.date})`;
         const notes = formatChangelogNotes(entry.notes);
@@ -315,7 +327,7 @@ export class SettingsScene extends Phaser.Scene {
       body.setY(0);
       scrollY = 0;
     } catch {
-      body.setText('Could not fetch config/changelog.json');
+      if (!isClosed) body.setText('Could not fetch config/changelog.json');
     }
   }
  

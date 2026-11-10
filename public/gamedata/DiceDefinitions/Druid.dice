@@ -4,19 +4,23 @@
   "attack": 36,
   "health": 600,
   "range": 5,
+  "attackSfx": "dice_heal_skill",
   "rarity": "Legendary",
   "skills": [
     {
       "type": "Passive",
       "title": "Druidic Essence",
-      "description": "Instead of attacking enemies, basic attacks heal the weakest ally for the full attack power, and orbs ricochet onto 1 nearby ally within 2 tiles.",
+      "description": "Instead of attacking enemies, basic attacks heal the weakest ally for the full attack power, and orbs ricochet onto {ricochetCount} nearby ally target(s) within {ricochetRange} tiles.",
+      "classBenefits": {
+        "ricochetCount": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+      },
       "modifiers": {
         "ricochetCount": 1,
         "ricochetRange": 2,
+        "hasRicochet": true,
         "healOnAttack": true,
 		"onlyTargetsAllies": true,
-        "skillTargeting": "Weakest",
-        "attackSfx": "dice_heal_skill"
+        "skillTargeting": "Weakest"
       }
     },
     {
@@ -40,13 +44,14 @@
     "targetingMode": "Nearest",
     "accent": "#9b6a3a",
     "recoveryRate": 1,
+	"attackSfx": "dice_druid_bear_attack",
     "skills": [
       {
         "type": "OnTransformed",
         "title": "Uncontrollable Maul",
-        "description": "Teleports onto the nearest enemy and deals 250 damage upon mauling.",
+        "description": "Teleports onto the nearest enemy and deals {skillDamage} damage upon mauling.",
         "modifiers": {
-          "transformAttackDamage": 250
+          "skillDamage": 250
         }
       },
       {

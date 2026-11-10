@@ -15,7 +15,8 @@
         "canBeRepositioned": false,
         "canReversePips": true,
         "reverseLimit": 1,
-        "reverseCooldown": 1
+        "reverseCooldown": 1,
+        "skillSfx": ["dice_reverse_merge_01", "dice_reverse_merge_02", "dice_reverse_merge_03", "dice_reverse_merge_04", "dice_reverse_merge_05", "dice_reverse_merge_06", "dice_reverse_merge_07"]
       }
     }
   ],

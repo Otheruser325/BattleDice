@@ -10,15 +10,21 @@
     {
       "type": "Passive",
       "title": "Distorting Appearance",
-      "description": "Enemy dice in Basilisk's range have a 30% chance to ignore attacking the boss outright until the next turn.",
+      "description": "Enemy dice in Basilisk's range have a {avoidAttackChance} chance to ignore attacking the boss outright until the next turn.",
+      "classBenefits": {
+        "avoidAttackChance": [0.0, 0.02, 0.04, 0.06, 0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2, 0.22, 0.24, 0.26, 0.28]
+      },
       "modifiers": {
-        "avoidAttackChance": 0.3
+        "avoidAttackChance": 0.25
       }
     },
     {
       "type": "OnKill",
       "title": "Delicious Appetite",
-      "description": "Dice defeated by Basilisk restore 25% of Basilisk's missing max HP.",
+      "description": "Dice defeated by Basilisk restore {missingHealRate} of Basilisk's missing max HP.",
+      "classBenefits": {
+        "missingHealRate": [0.0, 0.015, 0.03, 0.045, 0.06, 0.075, 0.09, 0.105, 0.12, 0.135, 0.15, 0.165, 0.18, 0.195, 0.21]
+      },
       "modifiers": {
         "missingHealRate": 0.25
       }
@@ -26,7 +32,11 @@
     {
       "type": "Passive",
       "title": "Rapacious Revenge",
-      "description": "When Basilisk falls below 20% HP, it bites the nearest enemy dice 5 times for 100 damage.",
+      "description": "When Basilisk falls below {revengeThresholdRate} HP, it bites the nearest enemy dice {revengeHits} times for {revengeDamage} damage.",
+      "classBenefits": {
+        "revengeThresholdRate": [0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14],
+        "revengeHits": [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2]
+      },
       "modifiers": {
         "hasRevenge": true,
         "revengeThresholdRate": 0.2,

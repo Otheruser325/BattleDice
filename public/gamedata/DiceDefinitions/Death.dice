@@ -1,7 +1,7 @@
 {
   "typeId": "Death",
   "title": "Death Dice",
-  "attack": 22,
+  "attack": 24,
   "health": 640,
   "range": 4,
   "rarity": "Epic",
@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Death Incarnate",
-      "description": "Conjures defeated ally souls. After capturing 2 ally souls, transforms into Instakill Form, doubling its max HP and fully heals itself. In Instakill Form: accumulates mana and instantly kills a target.",
+      "description": "Conjures defeated ally souls. After capturing {maxSouls} ally souls, transforms into Instakill Form, doubling its max HP and fully heals itself. In Instakill Form: accumulates mana and instantly kills a target.",
       "modifiers": {
         "canConjureSouls": true,
         "conjureType": "ally",
@@ -25,16 +25,16 @@
     "accent": "#c06bdb",
     "symbol": "☠",
     "recoveryRate": 1,
+    "attackSfx": "dice_death_t_attack",
     "skills": [{
       "type": "Active",
       "title": "Reaper's Touch",
-      "description": "Instantly kills a target. Bosses instead take 10x Death Dice's attack as damage.",
+      "description": "Instantly kills a target. Bosses instead take {bossDamageRate}x Death Dice's attack as damage.",
       "manaNeeded": 12,
       "modifiers": {
         "instakill": true,
         "bossDamageRate": 10,
-        "skillSfx": "dice_death_skill_01",
-        "attackSfx": "dice_death_t_attack"
+        "skillSfx": "dice_death_skill_01"
       }
     }]
   }],

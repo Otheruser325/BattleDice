@@ -10,7 +10,10 @@
     {
       "type": "CombatStart",
       "title": "Spellcast",
-      "description": "Feeds the Magician +2 mana.",
+      "description": "Feeds the Magician +{allyManaGain} mana.",
+      "classBenefits": {
+        "allyManaGain": [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3]
+      },
       "modifiers": {
         "allyManaGain": 2
       }
@@ -18,10 +21,10 @@
     {
       "type": "Active",
       "title": "Fireballer",
-      "description": "Tosses a powerful fireball that deals 400 damage onto a targeted foe.",
+      "description": "Tosses a powerful fireball that deals {skillDamage} damage onto a targeted foe.",
       "manaNeeded": 10,
       "modifiers": {
-        "activeDamage": 400
+        "skillDamage": 400
       }
     }
   ],

@@ -115,8 +115,10 @@ export class CasinoScene extends Phaser.Scene {
   private rollButton!: Phaser.GameObjects.Text;
   private activeRewardDetailClose: (() => void) | null = null;
   private casinoGrantChipsHandler: (() => void) | null = null;
+  private modalOpen = false;
 
   create() {
+    this.modalOpen = false;
     if (this.casinoGrantChipsHandler) this.registry.events.off('casino:grantChips', this.casinoGrantChipsHandler);
     this.casinoGrantChipsHandler = () => {
       if (this.chipText?.scene) this.render();
@@ -237,6 +239,7 @@ export class CasinoScene extends Phaser.Scene {
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
       lock.on('pointerdown', () => {
+        if (this.modalOpen || this.activeRewardDetailClose) return;
         if (!this.tableActive || this.rollsLeft >= 3 || this.rollsLeft <= 0 || this.isRolling || this.hasCompletedFiveOfAKind()) return;
         this.locks[i] = !this.locks[i];
         this.saveFivesHand();
@@ -281,6 +284,8 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private showTableInfoModal(section: 'fives' | 'craps') {
+    if (this.modalOpen || this.activeRewardDetailClose) return;
+    this.modalOpen = true;
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.62)
       .setInteractive()
@@ -336,6 +341,7 @@ export class CasinoScene extends Phaser.Scene {
     close = () => {
       this.input.keyboard?.off('keydown-ESC', escHandler);
       [overlay, panel, title, text, closeButton].forEach((element) => element.destroy());
+      this.modalOpen = false;
     };
     overlay.on('pointerdown', close);
     closeButton.on('pointerdown', close);
@@ -394,6 +400,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private startFives() {
+    if (this.modalOpen || this.activeRewardDetailClose) return;
     const progress = CasinoProgressStore.get(this);
     if (this.tableActive) return AlertManager.toast(this, { type: 'warning', message: 'Finish current table first.' });
     if (progress.chips < 10) return AlertManager.toast(this, { type: 'warning', message: 'Need 10 chips for Fives.' });
@@ -410,6 +417,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private async rollDice() {
+    if (this.modalOpen || this.activeRewardDetailClose) return;
     const lockedCost = this.getLockedDiceRerollCost();
     const progress = CasinoProgressStore.get(this);
     if (!this.tableActive || this.rollsLeft <= 0 || this.isRolling) return;
@@ -429,6 +437,7 @@ export class CasinoScene extends Phaser.Scene {
     }
 
     this.rollsLeft -= 1;
+    const animationLocks = [...this.locks];
     const combo = evaluateFivesCombo(this.dice);
     if (combo.combo === 'Five-of-a-kind') this.locks = [true, true, true, true, true];
 
@@ -445,7 +454,7 @@ export class CasinoScene extends Phaser.Scene {
 
     try {
       await AnimationManager.animateDiceRoll(this, this.dice, this.diceSprites, {
-        locked: isGuaranteed ? [false, false, false, false, false] : this.locks,
+        locked: isGuaranteed ? [false, false, false, false, false] : animationLocks,
         jitter: 8
       });
     } finally {
@@ -457,6 +466,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private cashOut() {
+    if (this.modalOpen || this.activeRewardDetailClose) return;
     if (!this.tableActive || this.rollsLeft === 3 || this.isRolling) return;
     const payout = evaluateFivesCombo(this.dice);
     CasinoProgressStore.mutate(this, (current) => ({
@@ -472,6 +482,7 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private playCraps() {
+    if (this.modalOpen || this.activeRewardDetailClose) return;
     const progress = CasinoProgressStore.get(this);
     if (this.tableActive) return AlertManager.toast(this, { type: 'warning', message: 'Finish current table first.' });
     if (progress.chips < 2) return AlertManager.toast(this, { type: 'warning', message: 'Need 2 chips for Craps.' });
@@ -503,6 +514,7 @@ export class CasinoScene extends Phaser.Scene {
     AchievementStore.unlock(this, 'vegas_boy');
     if (next.casinoTablesPlayed >= 10) AchievementStore.unlock(this, 'gambolic');
     if (next.casinoTablesPlayed >= 50) AchievementStore.unlock(this, 'risksino');
+    if (next.casinoTablesPlayed >= 250) AchievementStore.unlock(this, 'aced_it');
   }
 
   private getComboSfxKey(combo: string): string | null {
@@ -567,6 +579,8 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private openChestModal(type: ChestType) {
+    if (this.modalOpen || this.activeRewardDetailClose) return;
+    this.modalOpen = true;
     const amount = CasinoProgressStore.get(this).chests[type];
     let close = () => undefined;
     const { width, height } = this.scale;
@@ -620,13 +634,14 @@ export class CasinoScene extends Phaser.Scene {
     close = () => {
       this.input.keyboard?.off('keydown-ESC', escHandler);
       [overlay, panel, title, chest, count, dropInfo, ratesBtn, open, openAll, closeBtn].forEach((o) => o.destroy());
+      this.modalOpen = false;
     };
     const doOpen = (all: boolean) => {
       const latest = CasinoProgressStore.get(this).chests[type];
       const openCount = all ? latest : Math.min(1, latest);
       if (openCount <= 0) return AlertManager.toast(this, { type: 'warning', message: `No ${type} chests available.` });
-      this.openChests(type, openCount, all);
       close();
+      this.openChests(type, openCount, all);
     };
 
     const open = this.add.text(width / 2 - 100, height / 2 + 146, 'Open', {
@@ -643,7 +658,7 @@ export class CasinoScene extends Phaser.Scene {
       backgroundColor: amount > 0 ? '#2c9b52' : '#5d6770',
       padding: { left: 12, right: 12, top: 6, bottom: 6 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    const closeBtn = this.add.text(width / 2, height / 2 + 184, 'Close', {
+    const closeBtn = this.add.text(width / 2, height / 2 + 184, 'CLOSE', {
       fontFamily: 'Orbitron',
       fontSize: '11px',
       color: PALETTE.textMuted,
@@ -797,6 +812,8 @@ export class CasinoScene extends Phaser.Scene {
   }
 
   private showRewardsModal(type: ChestType, entries: ChestRewardEntry[], diceTokens: number, diamonds: number, talents: TalentDropResult[] = []) {
+    if (this.modalOpen || this.activeRewardDetailClose) return;
+    this.modalOpen = true;
     const { width, height } = this.scale;
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.58).setInteractive();
     const panel = this.add.rectangle(width / 2, height / 2, 930, 560, 0x153449, 0.98).setStrokeStyle(2, 0x4f7ea1);
@@ -811,7 +828,7 @@ export class CasinoScene extends Phaser.Scene {
       color: PALETTE.accentSoft
     }).setOrigin(0.5);
     const talentSummary = this.add.text(width / 2, height / 2 - 188, talents.length > 0
-      ? `TALENTS UNLOCKED: ${talents.map((talent) => `${talent.title} — ${talent.talentTitle}`).join('  •  ')}`
+      ? `TALENTS UNLOCKED: ${talents.length}`
       : '', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
@@ -824,7 +841,7 @@ export class CasinoScene extends Phaser.Scene {
       fontSize: '14px',
       color: '#7ddcff'
     }).setOrigin(0.5);
-    const closeBtn = this.add.text(width / 2, height / 2 + 252, 'Close', {
+    const closeBtn = this.add.text(width / 2, height / 2 + 252, 'CLOSE', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted,
@@ -877,36 +894,45 @@ export class CasinoScene extends Phaser.Scene {
       }) : null;
       card.on('pointerover', () => card.setFillStyle(0x2a6080, 0.95));
       card.on('pointerout', () => card.setFillStyle(0x204d6a, 0.95));
-      card.on('pointerdown', () => this.showRewardDiceDetails(entry.typeId));
+      card.on('pointerdown', () => {
+        if (this.activeRewardDetailClose) return;
+        this.showRewardDiceDetails(entry.typeId);
+      });
       container.add([card, header, titleText, copiesText]);
       if (newBadge) container.add(newBadge);
     });
 
-    const diceCardRows = Math.ceil(entries.length / 3);
     talents.forEach((talent, index) => {
-      const y = diceCardRows * 92 + index * 92;
-      const card = this.add.rectangle(132, y + 38, 264, 76, 0x3a2c4f, 0.95)
+      const rewardIndex = entries.length + index;
+      const col = rewardIndex % 3;
+      const row = Math.floor(rewardIndex / 3);
+      const x = col * 280;
+      const y = row * 92;
+      const card = this.add.rectangle(x + 132, y + 38, 264, 76, 0x3a2c4f, 0.95)
         .setStrokeStyle(2, 0xf4b860)
         .setInteractive({ useHandCursor: true });
-      const header = this.add.rectangle(132, y + 18, 264, 28, 0xf4b860, 0.18);
-      const titleText = this.add.text(16, y + 10, `${talent.title.toUpperCase()} — ${talent.talentTitle.toUpperCase()}`, {
+      const header = this.add.rectangle(x + 132, y + 18, 264, 28, 0xf4b860, 0.18);
+      const titleText = this.add.text(x + 16, y + 10, `${talent.title.toUpperCase()} — ${talent.talentTitle.toUpperCase()}`, {
         fontFamily: 'Orbitron',
         fontSize: '11px',
         color: '#fff1c2',
         wordWrap: { width: 232 }
       });
-      const kindText = this.add.text(16, y + 50, 'TALENT UNLOCKED', {
+      const kindText = this.add.text(x + 16, y + 50, 'TALENT UNLOCKED', {
         fontFamily: 'Orbitron',
         fontSize: '12px',
         color: PALETTE.accentSoft
       });
       card.on('pointerover', () => card.setFillStyle(0x4a3a63, 0.95));
       card.on('pointerout', () => card.setFillStyle(0x3a2c4f, 0.95));
-      card.on('pointerdown', () => this.showRewardDiceDetails(talent.typeId));
+      card.on('pointerdown', () => {
+        if (this.activeRewardDetailClose) return;
+        this.showRewardDiceDetails(talent.typeId);
+      });
       container.add([card, header, titleText, kindText]);
     });
 
-    const totalRewardRows = diceCardRows + talents.length;
+    const totalRewardRows = Math.ceil((entries.length + talents.length) / 3);
     const maxScroll = Math.max(0, totalRewardRows * 92 - rewardsHeight);
     let offset = 0;
     const scrollBounds = new Phaser.Geom.Rectangle(width / 2 - 430, rewardsTop, 860, rewardsHeight);
@@ -930,12 +956,14 @@ export class CasinoScene extends Phaser.Scene {
       this.input.off('wheel', wheelHandler);
       this.input.keyboard?.off('keydown-ESC', escHandler);
       [overlay, panel, title, tokenSummary, talentSummary, diamondSummary, closeBtn, container, mask].forEach((obj) => obj.destroy());
+      this.modalOpen = false;
     };
     closeBtn.on('pointerdown', close);
     overlay.on('pointerdown', () => undefined);
   }
 
   private showRewardDiceDetails(typeId: string, formIndex = 0) {
+    if (this.activeRewardDetailClose) return;
     const definition = getAllDiceDefinitions(this).find((d) => d.typeId === typeId);
     if (!definition) return;
     const progress = getDiceProgress(this, definition.typeId);
@@ -980,7 +1008,7 @@ export class CasinoScene extends Phaser.Scene {
       color: PALETTE.text,
       align: 'right'
     }).setOrigin(1, 0.5);
-    const rarityStats = this.add.text(width / 2 - 126, height / 2 - 84, displayDie.rarity, {
+    const rarityStats = this.add.text(width / 2 - 126, height / 2 - 84, displayDie.rarity.toUpperCase(), {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: rarityColor,
@@ -999,7 +1027,7 @@ export class CasinoScene extends Phaser.Scene {
     const skillViewportWidth = 470;
     const skillViewportHeight = 132;
     const skillViewportTop = height / 2 - 70;
-    const skillTextContent = formatSkillInfo(displayDie, false, 1, formIndex > 0 ? formIndex - 1 : undefined, definition);
+    const skillTextContent = formatSkillInfo(displayDie, false, 1, formIndex > 0 ? formIndex - 1 : undefined, definition, cls, this);
     const skillContainer = this.add.container(width / 2, skillViewportTop);
     const skill = this.add.text(0, 0, skillTextContent, {
       fontFamily: 'Orbitron',
@@ -1049,11 +1077,12 @@ export class CasinoScene extends Phaser.Scene {
     } else {
       altBtn.setVisible(false);
     }
-    const closeBtn = this.add.text(width / 2, height / 2 + 146, 'Close', {
+    const closeBtn = this.add.text(width / 2, height / 2 + 146, 'CLOSE', {
       fontFamily: 'Orbitron',
       fontSize: '12px',
       color: PALETTE.textMuted,
       backgroundColor: '#173247',
+      align: 'center',
       padding: { left: 8, right: 8, top: 4, bottom: 4 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     

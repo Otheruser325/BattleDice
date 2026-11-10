@@ -1,9 +1,27 @@
-import type { DiceDefinition, DiceSkillDefinition, SkillModifiers } from './types.js';
+import type { DiceDefinition, DiceSkillDefinition, SkillClassBenefits, SkillModifiers } from './types.js';
 
 const MAX_CLASS_LEVEL = 15;
 const DEFAULT_TALENT_CLASS_NEEDED = 9;
 const CLASS_UP_STAT_MULTIPLIER = 1.1;
 const BOSS_CLASS_STAT_MULTIPLIER = 1.2;
+const DAMAGE_SCALING_KEYS = [
+  'splashDamage',
+  'heatwaveDamage',
+  'chainDamage',
+  'poisonDamage',
+  'skillDamage',
+  'skillHealing',
+  'meteorDamage',
+  'nuclearDamage',
+  'beamDamage',
+  'pierceBehindDamage',
+  'hammerDamage',
+  'bossDamage',
+  'revengeDamage',
+  'shield',
+    'damageRange'
+] as const;
+const DAMAGE_SCALING_KEY_SET = new Set<string>(DAMAGE_SCALING_KEYS);
 const ROOT_TALENT_KEYS = new Set([
   'attackDelta',
   'healthDelta',
@@ -31,10 +49,18 @@ function scaleRange(value: unknown, multiplier: number): [number, number] | unde
   return [Math.max(1, Math.round(min * multiplier)), Math.max(1, Math.round(max * multiplier))];
 }
 
+function cloneClassBenefits(classBenefits: SkillClassBenefits | undefined): SkillClassBenefits | undefined {
+  if (!classBenefits) return undefined;
+  return Object.fromEntries(
+    Object.entries(classBenefits).map(([key, series]) => [key, Array.isArray(series) ? [...series] : series])
+  );
+}
+
 function cloneSkill(skill: DiceSkillDefinition): DiceSkillDefinition {
   return {
     ...skill,
-    modifiers: skill.modifiers ? { ...skill.modifiers } : skill.modifiers
+    modifiers: skill.modifiers ? { ...skill.modifiers } : skill.modifiers,
+    classBenefits: cloneClassBenefits(skill.classBenefits)
   };
 }
 
@@ -61,7 +87,10 @@ function mergeTalentSkills(
           modifiers: {
             ...(current.modifiers ?? {}),
             ...definedFields(row.modifiers as unknown as Record<string, unknown> | undefined)
-          }
+          },
+          classBenefits: row.classBenefits
+            ? cloneClassBenefits(row.classBenefits)
+            : cloneClassBenefits(current.classBenefits)
         }
       : cloneSkill(row);
   });
@@ -73,6 +102,53 @@ function getTalentClassNeeded(talent: { classNeeded?: number }): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_CLASS_LEVEL
     ? value
     : DEFAULT_TALENT_CLASS_NEEDED;
+}
+
+export function getClassBenefitValue(series: unknown, classLevel: number): number | undefined {
+  if (!Array.isArray(series) || series.length === 0) return undefined;
+  const boundedClassLevel = Number.isFinite(classLevel)
+    ? Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(classLevel)))
+    : 1;
+  const index = Math.min(series.length - 1, boundedClassLevel - 1);
+  return numberValue(series[index]);
+}
+
+function applyClassBenefits(skill: DiceSkillDefinition, classLevel: number, modifiers: SkillModifiers): SkillModifiers {
+  if (!skill.classBenefits) return modifiers;
+  Object.entries(skill.classBenefits).forEach(([key, series]) => {
+    if (DAMAGE_SCALING_KEY_SET.has(key) || key === 'manaNeeded') return;
+    const benefit = getClassBenefitValue(series, classLevel);
+    if (benefit === undefined) return;
+    const current = modifiers[key];
+    if (typeof current !== 'number' || !Number.isFinite(current)) return;
+    modifiers[key] = current + benefit;
+  });
+  return modifiers;
+}
+
+function scaleSkillModifiers(
+  source: SkillModifiers,
+  skill: DiceSkillDefinition,
+  classLevel: number,
+  multiplier: number
+): SkillModifiers {
+  const modifiers: SkillModifiers = { ...source };
+  DAMAGE_SCALING_KEYS.forEach((key) => {
+    if (key === 'damageRange') return;
+    const scaled = scaleFlat(source[key], multiplier);
+    if (scaled !== undefined) modifiers[key] = scaled;
+  });
+  const range = scaleRange(source.damageRange, multiplier);
+  if (range) modifiers.damageRange = range;
+  return applyClassBenefits(skill, classLevel, modifiers);
+}
+
+function getClassAdjustedManaNeeded(skill: DiceSkillDefinition, classLevel: number): number | undefined {
+  const base = skill.manaNeeded;
+  if (typeof base !== 'number' || !Number.isFinite(base)) return undefined;
+  const benefit = getClassBenefitValue(skill.classBenefits?.manaNeeded, classLevel);
+  if (benefit === undefined || benefit === 0) return base;
+  return Math.max(1, Math.round(base + benefit));
 }
 
 export function applyTalent(
@@ -110,108 +186,38 @@ export function applyTalent(
   };
 }
 
+export function getClassMultiplier(definition: Pick<DiceDefinition, 'isBoss'>, classLevel: number): number {
+  const level = Math.max(1, Math.min(MAX_CLASS_LEVEL, Number.isFinite(classLevel) ? Math.floor(classLevel) : 1));
+  return (definition.isBoss === true ? BOSS_CLASS_STAT_MULTIPLIER : CLASS_UP_STAT_MULTIPLIER) ** (level - 1);
+}
+
 export function applyClassProgression(definition: DiceDefinition, classLevel: number): DiceDefinition {
-  const level = Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(classLevel)));
+  const level = Math.max(1, Math.min(MAX_CLASS_LEVEL, Number.isFinite(classLevel) ? Math.floor(classLevel) : 1));
   const classUps = level - 1;
   const multiplier = (definition.isBoss === true ? BOSS_CLASS_STAT_MULTIPLIER : CLASS_UP_STAT_MULTIPLIER) ** classUps;
-  const scaleModifiers = (source: SkillModifiers): SkillModifiers => {
-    const modifiers: SkillModifiers = { ...source };
-    for (const key of [
-      'splashDamage',
-      'heatwaveDamage',
-      'chainDamage',
-      'poisonDamage',
-      'activeDamage',
-      'activeHeal',
-      'meteorDamage',
-      'nuclearDamage',
-      'lavaDamage',
-      'beamDamage',
-      'pierceBehindDamage',
-      'hammerDamage',
-      'bossDamage',
-      'revengeDamage',
-      'shield',
-      'transformAttackDamage'
-    ]) {
-      const scaled = scaleFlat(source[key], multiplier);
-      if (scaled !== undefined) modifiers[key] = scaled;
-    }
-    const range = scaleRange(source.damageRange, multiplier);
-    if (range) modifiers.damageRange = range;
-
-    if (definition.typeId === 'Skull' && numberValue(source.reviveChance) !== undefined) {
-      modifiers.reviveChance = Math.min(1, (numberValue(source.reviveChance) ?? 0) + 0.01 * classUps);
-    }
-    if (definition.typeId === 'Sniper' && numberValue(source.distanceDamageBonusRatePerTile) !== undefined) {
-      modifiers.distanceDamageBonusRatePerTile = (numberValue(source.distanceDamageBonusRatePerTile) ?? 0) + 0.005 * classUps;
-    }
-    if (definition.typeId === 'Discharge' && numberValue(source.bonusDamagePerStatus) !== undefined) {
-      modifiers.bonusDamagePerStatus = (numberValue(source.bonusDamagePerStatus) ?? 0) + 0.005 * classUps;
-    }
-    if (definition.typeId === 'Iron' && numberValue(source.targetCurrentHpBonusRate) !== undefined) {
-      modifiers.targetCurrentHpBonusRate = (numberValue(source.targetCurrentHpBonusRate) ?? 0) + 0.004 * classUps;
-    }
-    if (numberValue(source.lowHpDamageBonusRate) !== undefined) {
-      modifiers.lowHpDamageBonusRate = Math.min(0.78, (numberValue(source.lowHpDamageBonusRate) ?? 0) + 0.02 * classUps);
-    }
-    if (definition.typeId === 'Berserk' && numberValue(source.berserkThresholdRate) !== undefined) {
-      modifiers.berserkThresholdRate = Math.min(0.95, (numberValue(source.berserkThresholdRate) ?? 0) + 0.01 * classUps);
-    }
-    if (source.checkForAdjacentAllies === true && numberValue(source.targetMaxHpBonusRate) !== undefined) {
-      modifiers.targetMaxHpBonusRate = (numberValue(source.targetMaxHpBonusRate) ?? 0) + 0.002 * classUps;
-    }
-    if (definition.typeId === 'Assassin' && numberValue(source.numAttacksBoosted) !== undefined) {
-      modifiers.numAttacksBoosted = (numberValue(source.numAttacksBoosted) ?? 0) + Math.floor(classUps / 4);
-    }
-    if (numberValue(source.armorReduction) !== undefined) {
-      modifiers.armorReduction = Math.min(0.95, (numberValue(source.armorReduction) ?? 0) + 0.01 * classUps);
-    }
-    if (definition.typeId === 'Battery' && numberValue(source.allyManaGain) !== undefined) {
-      modifiers.allyManaGain = (numberValue(source.allyManaGain) ?? 0) + Math.floor(classUps / 5);
-    }
-    if ((definition.typeId === 'Magician' || definition.typeId === 'Wizard') && numberValue(source.allyManaGain) !== undefined) {
-      modifiers.allyManaGain = (numberValue(source.allyManaGain) ?? 0) + Math.floor(classUps / 4);
-    }
-    if (definition.typeId === 'Magician' && numberValue(source.manaSteal) !== undefined) {
-      modifiers.manaSteal = (numberValue(source.manaSteal) ?? 0) + Math.floor(classUps / 5);
-    }
-    if (definition.typeId === 'Magician' && numberValue(source.statusDuration) !== undefined) {
-      modifiers.statusDuration = (numberValue(source.statusDuration) ?? 0) + Math.floor(classUps / 4);
-    }
-    if (numberValue(source.avoidAttackChance) !== undefined) {
-      modifiers.avoidAttackChance = Math.min(0.95, (numberValue(source.avoidAttackChance) ?? 0) + 0.03 * classUps);
-    }
-    if (numberValue(source.missingHealRate) !== undefined) {
-      modifiers.missingHealRate = Math.min(1, (numberValue(source.missingHealRate) ?? 0) + 0.015 * classUps);
-    }
-    if (numberValue(source.revengeThresholdRate) !== undefined) {
-      modifiers.revengeThresholdRate = Math.min(0.95, (numberValue(source.revengeThresholdRate) ?? 0) + 0.01 * classUps);
-    }
-    if (numberValue(source.revengeHits) !== undefined) {
-      modifiers.revengeHits = (numberValue(source.revengeHits) ?? 0) + Math.floor(classUps / 6);
-    }
-    if (definition.typeId === 'Druid' && numberValue(source.ricochetCount) !== undefined && level >= 10) {
-      modifiers.ricochetCount = (numberValue(source.ricochetCount) ?? 0) + 1;
-    }
-    return modifiers;
-  };
 
   return {
     ...definition,
     attack: Math.max(1, Math.round(definition.attack * multiplier)),
     health: Math.max(1, Math.round(definition.health * multiplier)),
-    skills: definition.skills.map((skill) => ({
-      ...skill,
-      modifiers: skill.modifiers ? scaleModifiers(skill.modifiers) : skill.modifiers
-    })),
+    skills: definition.skills.map((skill) => {
+      const manaNeeded = getClassAdjustedManaNeeded(skill, level);
+      return {
+        ...skill,
+        ...(manaNeeded !== undefined ? { manaNeeded } : {}),
+        modifiers: skill.modifiers ? scaleSkillModifiers(skill.modifiers, skill, level, multiplier) : skill.modifiers
+      };
+    }),
     transformStats: definition.transformStats?.map((stats) => ({
       ...stats,
       attack: stats.attack === undefined ? undefined : Math.max(1, Math.round(stats.attack * multiplier)),
       health: stats.health === undefined ? undefined : Math.max(1, Math.round(stats.health * multiplier)),
       skills: Array.isArray(stats.skills)
         ? stats.skills.map((skill) => (
-            skill && skill.modifiers ? { ...skill, modifiers: scaleModifiers(skill.modifiers) } : skill
+            skill && skill.modifiers ? {
+              ...skill,
+              modifiers: scaleSkillModifiers(skill.modifiers, skill, level, multiplier)
+            } : skill
           ))
         : stats.skills
     }))

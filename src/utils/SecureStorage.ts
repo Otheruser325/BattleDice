@@ -55,12 +55,15 @@ function clearLegacyRootCookie(name: string): void {
   document.cookie = `${name}=; max-age=0; path=/; Secure; SameSite=Strict`;
 }
 
-function writeCookie(name: string, value: string): void {
+function writeCookie(name: string, value: string): boolean {
   try {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined') return false;
     clearLegacyRootCookie(name);
     document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${COOKIE_MAX_AGE_SECONDS}; path=${getCookiePath()}; Secure; SameSite=Strict`;
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function clearCookie(name: string): void {
@@ -80,11 +83,16 @@ function readStorage(key: string): string | null {
   return COOKIE_MIRRORED_KEYS.has(key) ? readCookie(toCookieName(key)) : null;
 }
 
-function writeStorage(key: string, value: string): void {
+function writeStorage(key: string, value: string): boolean {
+  let stored = false;
   try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, value);
+      stored = true;
+    }
   } catch {}
-  if (COOKIE_MIRRORED_KEYS.has(key)) writeCookie(toCookieName(key), value);
+  if (COOKIE_MIRRORED_KEYS.has(key)) stored = writeCookie(toCookieName(key), value) || stored;
+  return stored;
 }
 
 function removeStorage(key: string): void {
@@ -380,13 +388,17 @@ export function readIntegrityChecked<T>(key: string): T | undefined {
   return value;
 }
 
-export function writeIntegrityChecked<T>(key: string, value: T): void {
+export function writeIntegrityChecked<T>(key: string, value: T): boolean {
   const existing = readStorage(key);
   if (existing && readVerified(existing) === undefined) backupUnreadable(key, existing);
 
   const payload = JSON.stringify(value);
   const envelope: Envelope = { v: ENVELOPE_VERSION, d: value, s: signPayload(payload) };
-  writeStorage(key, JSON.stringify(envelope));
+  return writeStorage(key, JSON.stringify(envelope));
+}
+
+export function removeIntegrityChecked(key: string): void {
+  removeStorage(key);
 }
 
 export interface InstallRecord {

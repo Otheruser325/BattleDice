@@ -63,6 +63,10 @@
     {
       "typeId": "Basilisk",
       "path": "Bosses/Basilisk.dice"
+    },
+    {
+      "typeId": "Silence",
+      "path": "Bosses/Silence.dice"
     }
   ]
 }

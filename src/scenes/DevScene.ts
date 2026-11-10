@@ -6,6 +6,8 @@ import { AlertManager } from '../utils/AlertManager';
 import { SCENE_KEYS } from './sceneKeys';
 import { formatCompact } from '../utils/FormatManager';
 import { DEV_MENU_AVAILABLE } from '../utils/BuildFlags';
+import { DUNGEON_DAILY_TICKETS, getDungeonModifier } from '../systems/DungeonEvent';
+import { getDungeonDevState, getDungeonEventWindowForScene, getDungeonProgress, getDungeonRun, grantDungeonTickets, setDungeonDevState } from '../systems/DungeonStore';
 
 export class DevScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Dev;
@@ -15,6 +17,9 @@ export class DevScene extends Phaser.Scene {
   private diceProgressText!: Phaser.GameObjects.Text;
   private walletText!: Phaser.GameObjects.Text;
   private diceTalentText!: Phaser.GameObjects.Text;
+  private dungeonStatusText!: Phaser.GameObjects.Text;
+  private dungeonToggleButton!: Phaser.GameObjects.Text;
+  private dungeonCardsButton!: Phaser.GameObjects.Text;
   constructor() {
     super(DevScene.KEY);
   }
@@ -27,15 +32,16 @@ export class DevScene extends Phaser.Scene {
 
     const panel = drawPanel(this, 'DEV BUILD MENU', 'PLAYTEST GRANTS — SHIPS ENABLED');
 
-    this.add.text(panel.x + 30, panel.y + 92, 'Use these controls to seed local playtest progress without affecting game balance tuning.', {
+    this.add.text(panel.x + 30, panel.y + 86, 'Use these controls to seed local playtest progress without affecting game balance tuning.', {
       fontFamily: 'Orbitron',
       fontSize: '13px',
       color: PALETTE.textMuted,
       wordWrap: { width: panel.width - 60 }
     });
 
-    this.drawDiceGrantPanel(panel.x + 38, panel.y + 142, panel.width * 0.56, 360);
-    this.drawCurrencyGrantPanel(panel.x + panel.width * 0.64, panel.y + 142, panel.width * 0.30, 360);
+    this.drawDiceGrantPanel(panel.x + 38, panel.y + 112, panel.width * 0.56, 340);
+    this.drawCurrencyGrantPanel(panel.x + panel.width * 0.64, panel.y + 112, panel.width * 0.30, 340);
+    this.drawDungeonPanel(panel.x + 38, panel.y + 458, panel.width - 76, 86);
     this.refresh();
   }
 
@@ -134,6 +140,72 @@ export class DevScene extends Phaser.Scene {
     });
     this.makeButton(x + 52, y + 323, '+100', () => this.grantGauge(100));
     this.makeButton(x + 128, y + 323, 'Set 1k', () => this.setGauge(1000));
+  }
+
+  private drawDungeonPanel(x: number, y: number, width: number, height: number) {
+    this.add.rectangle(x + width / 2, y + height / 2, width, height, 0x173247, 0.94)
+      .setStrokeStyle(1, 0x9b5f3a);
+    this.add.text(x + 18, y + 22, 'DUNGEONS', {
+      fontFamily: 'Orbitron',
+      fontSize: '14px',
+      color: '#f4b860'
+    }).setOrigin(0, 0.5);
+
+    this.dungeonStatusText = this.add.text(x + 126, y + 28, '', {
+      fontFamily: 'Orbitron',
+      fontSize: '11px',
+      color: PALETTE.textMuted,
+      lineSpacing: 4,
+      wordWrap: { width: width - 610 }
+    }).setOrigin(0, 0.5);
+
+    this.dungeonToggleButton = this.makeButton(x + width - 70, y + 24, 'PERMANENTIZE', () => this.toggleDungeonEvent());
+    this.makeButton(x + width - 195, y + 24, 'REFRESH CYCLE', () => this.refreshDungeonCycle());
+    this.makeButton(x + width - 300, y + 24, '+1 TICKET', () => this.grantTicketBundle(1));
+    this.makeButton(x + width - 395, y + 24, '+10 TICKETS', () => this.grantTicketBundle(10));
+    this.dungeonCardsButton = this.makeButton(x + width - 90, y + 64, 'DUNGEON CARDS', () => this.toggleDungeonCards());
+  }
+
+  private toggleDungeonCards() {
+    const current = getDungeonDevState(this);
+    const dungeonCardsEnabled = !current.dungeonCardsEnabled;
+    setDungeonDevState(this, { dungeonCardsEnabled });
+    AlertManager.toast(this, {
+      type: 'success',
+      message: dungeonCardsEnabled
+        ? 'Dungeon Cards enabled for dungeon runs.'
+        : 'Dungeon Cards disabled; existing dungeon card modes apply.'
+    });
+    this.refresh();
+  }
+
+  private toggleDungeonEvent() {
+    const current = getDungeonDevState(this);
+    const forceEventActive = !current.forceEventActive;
+    setDungeonDevState(this, { forceEventActive });
+    AlertManager.toast(this, {
+      type: 'success',
+      message: forceEventActive ? 'Dungeon event forced active until restored.' : 'Dungeon event restored to its normal schedule.'
+    });
+    this.refresh();
+  }
+
+  private refreshDungeonCycle() {
+    const current = getDungeonDevState(this);
+    const cycle = current.cycle + 1;
+    setDungeonDevState(this, { forceEventActive: true, cycle });
+    const event = getDungeonEventWindowForScene(this);
+    AlertManager.toast(this, {
+      type: 'success',
+      message: `Dungeon cycle ${cycle} — ${getDungeonModifier(event.eventKey)} modifier and refreshed rewards.`
+    });
+    this.refresh();
+  }
+
+  private grantTicketBundle(amount: number) {
+    const progress = grantDungeonTickets(this, amount);
+    AlertManager.toast(this, { type: 'success', message: `Granted ${amount} Dungeon ticket${amount === 1 ? '' : 's'} (${progress.ticketsRemaining} left).` });
+    this.refresh();
   }
 
   private makeButton(x: number, y: number, label: string, onClick: () => void) {
@@ -316,6 +388,21 @@ export class DevScene extends Phaser.Scene {
       this.diceProgressText.setText('Dice catalog unavailable.');
       this.diceTalentText.setText('Talents: unavailable');
     }
+
+    const dev = getDungeonDevState(this);
+    const event = getDungeonEventWindowForScene(this);
+    const eventKey = event.eventKey || new Date(event.nextStartsAt).toISOString().slice(0, 10);
+    const dungeonProgress = getDungeonProgress(this);
+    const dungeonRun = getDungeonRun(this);
+    const eventState = dev.forceEventActive
+      ? `FORCED DEV EVENT • CYCLE ${dev.cycle}`
+      : event.active
+        ? `${event.label} EVENT LIVE • CYCLE ${dev.cycle}`
+        : `EVENT CLOSED • NEXT ${new Date(event.nextStartsAt).toISOString().slice(5, 10)} • CYCLE ${dev.cycle}`;
+    const ticketState = `TICKETS ${dungeonProgress.ticketsRemaining}/${DUNGEON_DAILY_TICKETS}${dungeonProgress.ticketsRemaining > DUNGEON_DAILY_TICKETS ? ' OVER CAP' : ''}${dungeonRun ? ` • RUN WAVE ${dungeonRun.wave}` : ''}`;
+    this.dungeonStatusText.setText(`${eventState} • ${getDungeonModifier(eventKey).toUpperCase()}\n${ticketState} • DUNGEON CARDS ${dev.dungeonCardsEnabled ? 'ON' : 'OFF'}`);
+    this.dungeonToggleButton.setText(dev.forceEventActive ? 'RESTORE NORMAL' : 'PERMANENTIZE');
+    this.dungeonCardsButton.setText(dev.dungeonCardsEnabled ? 'CARDS: ON' : 'CARDS: OFF');
 
     const casino = CasinoProgressStore.get(this);
     this.walletText.setText([

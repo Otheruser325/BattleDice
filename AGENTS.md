@@ -22,8 +22,8 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 ## Talent skill descriptions
 
 - A talent records all of its metadata on the single `talents[].modifiers` object. There is no separate `talents[].skills` array and no `modifiers.skillModifiers`: the per-skill overlay lives at `talents[].modifiers.skills` (an array of `DiceSkillDefinition`-shaped entries, matched to base skills by index). Keeping stats on one object avoids ambiguous metadata updates.
-- `DiceSkillDefinition.descriptionLocked` marks a skill whose authored description must be shown verbatim; class scaling and dynamic recomputation skip it.
-- `applyDiceTalent` bakes recomputed descriptions onto the skills so both the DiceScene card and the info-panel/modal paths show the same text. It only applies the talent at or above `classNeeded`; callers pass the effective class level.
+- `DiceSkillDefinition.descriptionLocked` marks a skill whose authored description must be shown verbatim; class scaling and automatic recomputation skip it, but explicit `{modifierName}` placeholders still resolve.
+- `applyDiceTalent` merges talent overlays and keeps authored skill descriptions templated (marking them locked); `getClassScaledSkillDescription` resolves placeholders at render time with the effective class and runtime damage modifiers, so talent text does not freeze at C1. It only applies the talent at or above `classNeeded`; callers pass the effective class level.
 - A talent removes a base skill only through the per-skill overlay form (`talents[].modifiers.skills[i].disableSkill`). The former talent-root `talents[].disableSkill` (boolean / index / index array) was removed so a talent cannot disable arbitrary skills it does not explicitly overlay. The overlay form is what Time's Temporal Delusion uses to retire Temporal Acceleration.
 - `talents[].comingSoon` marks a single talent as a work-in-progress. Coming-soon talents are excluded from `getAcquirableTalentIndices` (so shops and chests never offer them), cannot be equipped, and report the `coming-soon` reason in `getUnobtainableTalentReason`.
 
@@ -38,12 +38,12 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 
 ## Multi-projectile attacks
 
-- `spendBasicAttack` returns the projectile count for the attack (from `basicAttacksPerAttackByInstance`, i.e. `1 + attackCountIncrease`). The basic-attack branch in `runCombatLoop` loops that many times so each projectile re-applies damage with `source: attacker`. On-damaged effects (Armor Dice's Heavy Plating), passive hooks, and defeat hooks therefore resolve once per projectile, not once per attack action.
+- `spendBasicAttack` returns the projectile count for the attack (from `basicAttacksPerAttackByInstance`, i.e. `1 + projectileCountIncrease`). The basic-attack branch in `runCombatLoop` loops that many times so each projectile re-applies damage with `source: attacker`. On-damaged effects (Armor Dice's Heavy Plating), passive hooks, and defeat hooks therefore resolve once per projectile, not once per attack action.
 - Keep `source: attacker` on every projectile's `applyDamageWithRevive` call. Omitting it makes on-damaged effects fall back to treating the victim as its own attacker.
 - The Druidic Essence heal branch (`healOnAttack`) must mirror the damage branch: call `spendBasicAttack` once, loop `applyBasicHeal` per projectile, and accumulate `basicAttackHitCount` so the combat log appends "N times" for multi-projectile heals. Do not replace this with a single `applyBasicHeal` plus `spendAttack`.
 - `applyBasicHeal` must accumulate the actual amount `healDie` reports (crit-doubled, capped at missing health) rather than recomputing `baseAmount * targetCount`; the latter drops the critical double from both the returned total and the log line. `healDie` owns the critical roll, so callers report `healResult.healed` and `healResult.critical`.
 - The basic-attack heal log is generic (`"<owner> <die> heals <target> for N health!"`), matching the damage line's shape. Do not hardcode a skill name (the old `uses Druidic Essence` text assumed Druid and misreported every other `healOnAttack` source).
-- The info popup separates the two effects: `attackCountIncrease` (via `basicAttacksPerAttackByInstance`) is shown as its own `Projectile Count +/-` line and is excluded from the `Attack Count` total, because the stored `count` is `1 + attackCountIncrease` (Wind's Gale Tempo reads as "Projectile Count +1", not an attack count). Do not fold the projectile delta back into the attack-count sum.
+- The info popup separates the two effects: `projectileCountIncrease` (via `basicAttacksPerAttackByInstance`) is shown as its own `Projectile Count +/-` line and is excluded from the `Attack Count` total, because the stored `count` is `1 + projectileCountIncrease` (Wind's Gale Tempo reads as "Projectile Count +1", not an attack count). Do not fold the projectile delta back into the attack-count sum.
 
 ## Skill mana metadata
 
@@ -64,13 +64,19 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 
 ## Healing criticals
 
-- `healDie` owns the critical roll (`applyCriticalHealing`) and returns the actual healed amount (crit-doubled, clamped to missing health). Every heal path should route through it so a critical doubles the heal; a caller that recomputes the base amount silently loses the double. The Fountain of Love combat-end heal applies `applyCriticalHealing` directly because it writes health in a bulk map, and must keep using `critHeal.amount`.
+- `healDie` owns the critical roll (`applyCriticalHealing`) and returns the actual healed amount (crit-doubled, clamped to missing health). Every heal path should route through it so a critical doubles the heal; a caller that recomputes the base amount silently loses the double. The Fountain of Love and Dungeon Cards `Dice Regen` combat-end heals apply `applyCriticalHealing` directly because they write health in a bulk map, and must keep using `critHeal.amount`. Both heal a percentage of **max HP** (minimum 1 at a positive rate), then cap the result at missing health; do not derive their base amount from missing health.
 
-## attackCountIncrease resolution
+## Projectile and temporary attack count resolution
 
-- `attackCountIncrease` is a die-wide attack multiplier. `getRuntimeSkillMeta` resolves it as the maximum positive value across every skill modifier that can drive an attack (Active, Passive, OnDamaged, ...), not just the selected Active skill or `skills[0]`. A talent may relocate the property onto a different skill, and Wind's Mighty Wind raises it above Gale Tempo's base value.
-- Non-finite or non-positive `attackCountIncrease` values are ignored, so a malformed value falls back to `0` (one projectile) instead of producing `NaN` projectile counts.
-- `skillRangeThreshold` gates **every** modifier the skill carries, not just `attackCountIncrease`. `isRangeThresholdSatisfied` treats it as "the target must be within `effectiveRange - threshold`", and `gateMetaByRangeThreshold` strips the gated fields (`attackCountIncrease`, `criticalChanceIncrease`, `criticalDamageIncrease`, and the four attack-grant fields) when out of range. Resolve the gate from the triggering skill's meta (`getRuntimeSkillMetaForTrigger`) so a whole-die lookup cannot leak an in-range bonus — Leon's Furious Claw only grants its 25% crit within 2 tiles of the target.
+- `attackCount` and `projectileCount` are Passive-exclusive static counts. Sum them across unlocked Passive skills; they apply every combat without `skillDuration` and are never sourced from Active or other hook skills. A Passive that also declares `skillRangeThreshold` is conditional (Leon's Furious Claw), so it drives the range-gated special case but must not be added to the unconditional passive totals used by attack/projectile counts.
+- `attackCountIncrease`/`projectileCountIncrease` are timed hook effects, resolved only from non-Passive skills (Active, OnTransformed, OnKill, OnDamaged, CombatStart, CombatEnd, OnDeath); a Passive copy is ignored. The duration comes from the triggering skill's `skillDuration`. Active adds the attacks immediately and tracks turns in `extraAttackTurnsByInstance`; OnDeath applies the timed attack/projectile buff when the caster is immediately revived. `skillDuration` is the non-status duration for skill effects; `statusDuration` and `{effect}Duration` remain the status-effect durations. The PvP engine mirrors this with `projectileBonus`/`projectileBonusTurns`, `extraAttacks`/`extraAttackTurns`, and `manaPausedTurns`; those timed values decay at the end of the round instead of being cleared there.
+- `skillRangeThreshold` gates **every** modifier the skill carries. `isRangeThresholdSatisfied` treats it as "the target must be within `effectiveRange - threshold`", and `gateMetaByRangeThreshold` strips the gated fields (`attackCount`, `projectileCount`, `attackCountIncrease`, `projectileCountIncrease`, `criticalChanceIncrease`, `criticalDamageIncrease`, and the four attack-grant fields) when out of range. Resolve the gate from the triggering skill's meta (`getRuntimeSkillMetaForTrigger`) so a whole-die lookup cannot leak an in-range bonus — Leon's Furious Claw only grants its 25% crit within 2 tiles of the target.
+- Dungeon wave carryover must persist `attackCountBuff`, `projectileCountBuff`, and `manaPausedTurns` alongside statuses, growth, revive, and transform state. `startGame` resets runtime maps before `initializeBattle`, so `applyDungeonCarryover` restores them after that reset; otherwise a wave clear silently drops buffs until they are reapplied.
+- Nuclear is one-shot for Active/OnTransformed detonations, but an OnDeath detonation calls `applyNuclearStrike(..., { allowRepeat: true })`. An immediately revived caster can therefore detonate again on each later death, while Active/OnTransformed hooks still see `nuclearUsedByInstance` and remain one-shot. Server `triggerNuclear` uses the same `allowRepeat` split.
+
+## Pool linger SFX
+
+- A pool definition may set `lingerSfx` (string or array). At combat start, ArenaScene plays it once per die per matching pool type before resolving that pool's damage/status effect. `PoolCatalogLoader` normalizes the metadata; keep the referenced audio key in the normal audio preload path.
 
 ## Chain targeting
 
@@ -81,6 +87,11 @@ Do **not** add comments for minor changes such as a simple bugfix, a small tweak
 
 - `shieldDurationTurnsByInstance` holds the remaining turns for a duration shield; `shieldHpByInstance` holds the absorb pool. A shield with a duration survives combat start so Shield Dice's 2-turn Bulwark covers the current and the following turn; `expireUntimedShields` clears only duration-less shields (Armor's on-damaged plating) at combat start. `applyTimedSkillDecay` owns expiry for the timed ones.
 - The in-combat info panel appends the remaining turns to the shield line so players can see how long the shield lasts.
+
+## Skill class benefits and descriptions
+
+- `skills[].classBenefits` maps an exact `modifiers` key to 15 additive class values; index 0 is class 1. Shorter arrays reuse their last value. Damage-scaling keys are excluded and continue to use the hardcoded compound class multiplier.
+- Skill descriptions resolve `{modifierName}` and `{modifiers.["modifierName"]}` placeholders after class and damage scaling. Explicit placeholders also resolve in locked talent text.
 
 ## Stat multiplier hardening
 

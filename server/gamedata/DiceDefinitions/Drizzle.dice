@@ -4,17 +4,17 @@
   "attack": 20,
   "health": 540,
   "range": 6,
+  "attackSfx": "dice_drizzle_attack",
   "rarity": "Uncommon",
   "skills": [
     {
       "type": "Active",
       "title": "Heavy Rain",
-      "description": "Makes drizzle appear on all enemy dice, causing 50 damage.",
+      "description": "Makes drizzle appear on all enemy dice, causing {skillDamage} damage.",
       "manaNeeded": 3,
       "modifiers": {
-        "activeDamage": 50,
+        "skillDamage": 50,
         "hitsAllFoes": true,
-        "attackSfx": "dice_drizzle_attack",
         "skillSfx": "dice_drizzle_skill"
       }
     }

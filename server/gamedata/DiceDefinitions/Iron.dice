@@ -9,7 +9,10 @@
     {
       "type": "Passive",
       "title": "Crush Armor",
-      "description": "Deals bonus damage equal to 12% of the target's current HP.",
+      "description": "Deals bonus damage equal to {targetCurrentHpBonusRate} of the target's current HP.",
+      "classBenefits": {
+        "targetCurrentHpBonusRate": [0.0, 0.004, 0.008, 0.012, 0.016, 0.02, 0.024, 0.028, 0.032, 0.036, 0.04, 0.044, 0.048, 0.052, 0.056]
+      },
       "modifiers": {
         "targetCurrentHpBonusRate": 0.12
       }

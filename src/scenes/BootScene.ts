@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
 import { DiceCatalogLoader } from '../data/DiceCatalogLoader';
+import { PoolCatalogLoader } from '../data/PoolCatalogLoader';
 import { SettingsStore } from '../systems/SettingsStore';
 import { AlertManager } from '../utils/AlertManager';
 import { AnimationManager } from '../utils/AnimationManager';
 import { DebugManager } from '../utils/DebugManager';
 import { AudioManager } from '../utils/AudioManager';
 import { withBasePath } from '../utils/BuildEnv';
+import { LoginManager } from '../utils/LoginManager';
 import { SCENE_KEYS } from './sceneKeys';
 
 const MENU_BACKGROUND_PATH = withBasePath('assets/images/bg/Background-floor.png');
@@ -80,25 +82,31 @@ export class BootScene extends Phaser.Scene {
     this.debug.log('Boot create started.');
 
     try {
-      const flags = await DiceCatalogLoader.loadFetchableDefinitions(this);
+      const [flags, poolFlags] = await Promise.all([
+        DiceCatalogLoader.loadFetchableDefinitions(this),
+        PoolCatalogLoader.loadDefinitions(this)
+      ]);
       this.progressLabel.setText('Battle station ready.');
-      this.debug.log('Dice catalog hydrated successfully.', {
-        fetchableTypeIds: flags.fetchableTypeIds
+      this.debug.log('Dice and pool catalogs hydrated successfully.', {
+        fetchableTypeIds: flags.fetchableTypeIds,
+        typeIds: poolFlags.typeIds
       });
 
-      AnimationManager.fadeOut(
-        this,
-        [this.titleText, this.progressBar, this.progressBox, this.progressLabel],
-        320,
-        () => this.scene.start(SCENE_KEYS.Menu)
-      );
+      LoginManager.present(this, () => {
+        AnimationManager.fadeOut(
+          this,
+          [this.titleText, this.progressBar, this.progressBox, this.progressLabel],
+          260,
+          () => this.scene.start(SCENE_KEYS.Menu)
+        );
+      });
     } catch (error) {
-      this.debug.error('Failed to load dice catalog.', error);
-      this.progressLabel.setText('Dice definitions failed to load.');
+      this.debug.error('Failed to load game catalogs.', error);
+      this.progressLabel.setText('Game definitions failed to load.');
       AlertManager.show(this, {
         type: 'error',
-        title: 'DICE LOAD FAILURE',
-        message: 'The dice definition catalog could not be loaded. Check Flags.json and the referenced type-id files.'
+        title: 'CATALOG LOAD FAILURE',
+        message: 'The dice or pool definition catalogs could not be loaded. Check their Flags.json files and referenced type-id files.'
       });
     }
   }

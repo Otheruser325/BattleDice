@@ -1,0 +1,114 @@
+{
+  "typeId": "Silence",
+  "title": "Silence Dice",
+  "attack": 30,
+  "health": 2500,
+  "range": 5,
+  "footprint": 2,
+  "rarity": "Mythic",
+  "skills": [
+    {
+      "type": "Active",
+      "title": "Silent Treatment",
+      "description": "Chains up to {numLocks} random enemy dice anywhere on the board for {lockDuration} turns, preventing them from acting or returning to hand.",
+      "manaNeeded": 15,
+      "classBenefits": {
+        "manaNeeded": [
+          0,
+          0,
+          0,
+          -1,
+          -1,
+          -1,
+          -2,
+          -2,
+          -2,
+          -3,
+          -3,
+          -3,
+          -4,
+          -4,
+          -4
+        ]
+      },
+      "modifiers": {
+        "hasLock": true,
+        "lockRange": -1,
+        "lockSideTargeting": "foes",
+        "numLocks": 2,
+        "lockDuration": 2,
+        "skillSfx": "dice_silence_lock",
+        "skillTargeting": "Random"
+      }
+    },
+    {
+      "type": "CombatEnd",
+      "title": "Nasty Nightmare",
+      "description": "A random enemy die in hand gains Disorientation for {disorientationDuration} turns, causing it to place itself randomly after rolling.",
+      "classBenefits": {
+        "disorientationDuration": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2
+        ]
+      },
+      "modifiers": {
+        "statusEffect": "disorientation",
+        "disorientationDuration": 2,
+        "statusToOpposingHand": true
+      }
+    },
+    {
+      "type": "Active",
+      "title": "Entrapped Chaos",
+      "description": "Chains up to {numLocks} random enemy board tiles for {gridLockDuration} turns, preventing dice from being placed there.",
+      "manaNeeded": 10,
+      "classBenefits": {
+        "manaNeeded": [
+          0,
+          0,
+          0,
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -2,
+          -2,
+          -2,
+          -2,
+          -3,
+          -3,
+          -3
+        ]
+      },
+      "modifiers": {
+        "hasLock": true,
+        "lockRange": -1,
+        "lockSideTargeting": "foes",
+        "numLocks": 3,
+        "canLockGridTiles": true,
+        "onlyLockGridTiles": true,
+        "gridLockDuration": 3,
+        "unlockAtClass": 6,
+        "skillSfx": "dice_silence_grid_lock",
+        "skillTargeting": "Random"
+      }
+    }
+  ],
+  "accent": "#b8bcc4",
+  "targetingMode": "Nearest",
+  "isBoss": true
+}

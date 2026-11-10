@@ -116,6 +116,10 @@ function readNonNegativeNumber(value: unknown): number | undefined {
     : undefined;
 }
 
+export function normalizeDiceCopyCount(copies: number): number {
+  return Number.isFinite(copies) ? Math.max(0, Math.round(copies)) : 0;
+}
+
 function readNonNegativeCost(value: unknown): number | undefined {
   const number = readNonNegativeNumber(value);
   return number === undefined ? undefined : Math.floor(number);
@@ -414,10 +418,11 @@ export function getDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId): DicePr
   if (!isTypeIdFetchable(scene, typeId)) return { classLevel: 1, copies: defaultCopies, unlocked: false };
   const progress = store[typeId];
   if (!progress) return { classLevel: 1, copies: defaultCopies, unlocked: DEFAULT_LOADOUT_IDS.has(typeId) };
+  const copies = normalizeDiceCopyCount(progress.copies);
   return {
     classLevel: progress.classLevel,
-    copies: progress.copies,
-    unlocked: progress.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || progress.copies > 0
+    copies,
+    unlocked: progress.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || copies > 0
   };
 }
 
@@ -433,7 +438,7 @@ function sanitizeDiceProgressStore(scene: Phaser.Scene, store: Record<string, Di
     }
     const classLevel = Math.max(1, Math.min(MAX_CLASS_LEVEL, value.classLevel || 1));
     const maxCopies = Math.min(getMaxStoredCopiesForType(scene, typeId), getMaxUsefulCopiesForType(scene, typeId, classLevel));
-    const copies = Math.max(0, Math.min(value.copies || 0, maxCopies));
+    const copies = Math.max(0, Math.min(normalizeDiceCopyCount(value.copies || 0), maxCopies));
     const unlocked = value.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || copies > 0;
     if (classLevel !== value.classLevel || copies !== value.copies || unlocked !== value.unlocked) {
       changed = true;
@@ -656,12 +661,14 @@ export function setDiceProgress(scene: Phaser.Scene, typeId: DiceTypeId, next: D
   if (!isTypeIdFetchable(scene, typeId)) return;
   const store = (scene.registry.get(DICE_PROGRESS_KEY) as Record<string, DiceProgressState> | undefined) ?? {};
   const existing = store[typeId];
+  const classLevel = Math.max(1, Math.min(15, next.classLevel));
+  const copies = normalizeDiceCopyCount(next.copies);
   const updated = {
     ...store,
     [typeId]: {
-      classLevel: Math.max(1, Math.min(15, next.classLevel)),
-      copies: Math.max(0, Math.min(next.copies, Math.min(getMaxStoredCopiesForType(scene, typeId), getMaxUsefulCopiesForType(scene, typeId, Math.max(1, Math.min(MAX_CLASS_LEVEL, next.classLevel)))))),
-      unlocked: next.unlocked === true || existing?.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || next.copies > 0
+      classLevel,
+      copies: Math.max(0, Math.min(copies, Math.min(getMaxStoredCopiesForType(scene, typeId), getMaxUsefulCopiesForType(scene, typeId, classLevel)))),
+      unlocked: next.unlocked === true || existing?.unlocked === true || DEFAULT_LOADOUT_IDS.has(typeId) || copies > 0
     }
   };
   scene.registry.set(DICE_PROGRESS_KEY, updated);
@@ -683,20 +690,41 @@ export function getRemainingUsefulCopies(scene: Phaser.Scene, typeId: DiceTypeId
 }
 
 export function grantDiceCopies(scene: Phaser.Scene, typeId: DiceTypeId, copies: number) {
-  if (copies <= 0) return;
+  const amount = normalizeDiceCopyCount(copies);
+  if (amount <= 0) return;
   if (!isTypeIdFetchable(scene, typeId)) return;
   const definition = scene.cache.json.get(`dice:${typeId}`) as DiceDefinition | undefined;
   const progress = getDiceProgress(scene, typeId);
   if (DEFAULT_LOADOUT_IDS.has(typeId) || progress.unlocked) {
     const maxUseful = getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
-    setDiceProgress(scene, typeId, { ...progress, copies: Math.min(progress.copies + copies, Math.min(getMaxStoredCopiesForType(scene, typeId), maxUseful)) });
-    return;
+    setDiceProgress(scene, typeId, { ...progress, copies: Math.min(progress.copies + amount, Math.min(getMaxStoredCopiesForType(scene, typeId), maxUseful)) });
+  } else {
+    const spendForUnlock = 1;
+    const remainder = Math.max(0, amount - spendForUnlock);
+    const maxUseful = getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
+    setDiceProgress(scene, typeId, { classLevel: progress.classLevel, copies: Math.min(progress.copies + remainder, Math.min(getMaxStoredCopiesForType(scene, typeId), maxUseful)), unlocked: true });
+    if (definition?.rarity === 'Legendary') AchievementStore.unlock(scene, 'darkest_hour');
   }
-  const spendForUnlock = 1;
-  const remainder = Math.max(0, copies - spendForUnlock);
-  const maxUseful = getMaxUsefulCopiesForType(scene, typeId, progress.classLevel);
-  setDiceProgress(scene, typeId, { classLevel: progress.classLevel, copies: Math.min(progress.copies + remainder, Math.min(getMaxStoredCopiesForType(scene, typeId), maxUseful)), unlocked: true });
-  if (definition?.rarity === 'Legendary') AchievementStore.unlock(scene, 'darkest_hour');
+  checkDiceCollectionAchievements(scene);
+}
+
+export function checkDiceCollectionAchievements(scene: Phaser.Scene) {
+  const definitions = getAllDiceDefinitions(scene);
+  let owned = 0;
+  let copiesObtained = 0;
+  definitions.forEach((definition) => {
+    const progress = getDiceProgress(scene, definition.typeId);
+    if (progress.unlocked) owned += 1;
+    copiesObtained += progress.copies;
+    if (progress.unlocked && !DEFAULT_LOADOUT_IDS.has(definition.typeId)) copiesObtained += 1;
+    for (let level = 2; level <= progress.classLevel; level++) {
+      copiesObtained += readClassCopyCost(level, definition.rarity);
+    }
+  });
+  if (owned >= 10) AchievementStore.unlock(scene, 'dice_collector');
+  if (owned >= 25) AchievementStore.unlock(scene, 'dice_lover');
+  if (copiesObtained > 1_000) AchievementStore.unlock(scene, 'endless_printing');
+  if (copiesObtained > 5_000) AchievementStore.unlock(scene, 'universal_printing');
 }
 
 export function getRangeLabel(range: number): string {
@@ -828,10 +856,7 @@ export function refreshShopOffers(scene: Phaser.Scene): ShopState | null {
     ...existing,
     offerRefreshDay: currentDay,
     offerRefreshCount: used + 1,
-    offerRefreshNonce: (existing.offerRefreshNonce ?? 0) + 1,
-    claimedFreebieIds: [],
-    freebieClaimedThisSession: false,
-    freebieClaimedAt: null
+    offerRefreshNonce: (existing.offerRefreshNonce ?? 0) + 1
   });
   return generateOrGetShopOffers(scene, true);
 }
@@ -1080,19 +1105,31 @@ export function generateOrGetShopOffers(scene: Phaser.Scene, forceRegenerate = f
     });
   });
 
+  const dailyFreebieClaimed = (() => {
+    if (existing.generatedDay === currentDay) return existing.freebieClaimedThisSession;
+    if (existing.freebieClaimedAt) {
+      const hoursSinceClaim = (Date.now() - existing.freebieClaimedAt) / (1000 * 60 * 60);
+      if (hoursSinceClaim < 24) return true;
+    }
+    return false;
+  })();
+  const nextClaimedFreebieIds = existing.generatedDay === currentDay
+    ? [...claimedFreebieIds].filter((id) => offers.some((offer) => offer.id === id))
+    : [];
+  if (dailyFreebieClaimed) {
+    for (const offer of offers) {
+      if (!offer.isFreebie) continue;
+      offer.purchased = true;
+      if (!nextClaimedFreebieIds.includes(offer.id)) nextClaimedFreebieIds.push(offer.id);
+    }
+  }
+
   const newState: ShopState = {
     offers,
     generatedDay: currentDay,
-    freebieClaimedThisSession: (() => {
-      if (existing.generatedDay === currentDay) return existing.freebieClaimedThisSession;
-      if (existing.freebieClaimedAt) {
-        const hoursSinceClaim = (Date.now() - existing.freebieClaimedAt) / (1000 * 60 * 60);
-        if (hoursSinceClaim < 24) return true; // Still on cooldown
-      }
-      return false; // Can claim fresh
-    })(),
+    freebieClaimedThisSession: dailyFreebieClaimed,
     freebieClaimedAt: existing.freebieClaimedAt ?? null,
-    claimedFreebieIds: existing.generatedDay === currentDay ? [...claimedFreebieIds].filter((id) => offers.some((offer) => offer.id === id)) : [],
+    claimedFreebieIds: nextClaimedFreebieIds,
     diceTokenFirstPurchaseIds: existing.diceTokenFirstPurchaseIds ?? [],
     casinoChipFirstPurchaseIds: existing.casinoChipFirstPurchaseIds ?? [],
     offerRefreshDay: existing.offerRefreshDay === currentDay ? existing.offerRefreshDay : currentDay,

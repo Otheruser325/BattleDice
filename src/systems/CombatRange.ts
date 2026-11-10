@@ -12,13 +12,36 @@ function getRelativeEnemyColumn(attacker: DiceInstanceState, target: DiceInstanc
   return (ARENA_GRID_SIZE - 1) - targetCol;
 }
 
-export function getCombatDistance(attacker: DiceInstanceState, target: DiceInstanceState): number {
+export function getCombatDistance(
+  attacker: DiceInstanceState,
+  target: DiceInstanceState,
+  footprintForDie?: (die: DiceInstanceState) => number
+): number {
   if (!attacker.gridPosition || !target.gridPosition) return Number.POSITIVE_INFINITY;
 
-  const attackerCol = attacker.gridPosition.col;
-  const relativeTargetCol = getRelativeEnemyColumn(attacker, target);
-  const lateralOffset = Math.abs(attackerCol - relativeTargetCol);
-  return lateralOffset + 1;
+  const attackerFootprint = Math.max(1, Math.floor(footprintForDie?.(attacker) ?? 1));
+  const targetFootprint = Math.max(1, Math.floor(footprintForDie?.(target) ?? 1));
+  let best = Number.POSITIVE_INFINITY;
+  for (let attackerRow = 0; attackerRow < attackerFootprint; attackerRow++) {
+    for (let attackerCol = 0; attackerCol < attackerFootprint; attackerCol++) {
+      for (let targetRow = 0; targetRow < targetFootprint; targetRow++) {
+        for (let targetCol = 0; targetCol < targetFootprint; targetCol++) {
+          const source = {
+            ...attacker,
+            gridPosition: { row: attacker.gridPosition.row + attackerRow, col: attacker.gridPosition.col + attackerCol }
+          };
+          const destination = {
+            ...target,
+            gridPosition: { row: target.gridPosition.row + targetRow, col: target.gridPosition.col + targetCol }
+          };
+          const attackerBoardCol = source.gridPosition.col;
+          const relativeTargetCol = getRelativeEnemyColumn(source, destination);
+          best = Math.min(best, Math.abs(attackerBoardCol - relativeTargetCol) + 1);
+        }
+      }
+    }
+  }
+  return best;
 }
 
 export function getDisplayedRangeCoverage(attacker: DiceInstanceState, range: number): { columns: number[]; tileCount: number } {
@@ -81,4 +104,38 @@ export function getCoveredEnemyRows(attacker: DiceInstanceState, range: number):
 
 export function getCoveredEnemyTileCount(attacker: DiceInstanceState, range: number): number {
   return getCoveredEnemyColumns(attacker, range).length * ARENA_GRID_SIZE;
+}
+
+export function getGridChebyshevDistance(
+  first: Pick<DiceInstanceState, 'gridPosition'>,
+  second: Pick<DiceInstanceState, 'gridPosition'>,
+  firstFootprint = 1,
+  secondFootprint = 1
+): number {
+  if (!first.gridPosition || !second.gridPosition) return Number.POSITIVE_INFINITY;
+  let best = Number.POSITIVE_INFINITY;
+  for (let firstRow = 0; firstRow < Math.max(1, Math.floor(firstFootprint)); firstRow++) {
+    for (let firstCol = 0; firstCol < Math.max(1, Math.floor(firstFootprint)); firstCol++) {
+      for (let secondRow = 0; secondRow < Math.max(1, Math.floor(secondFootprint)); secondRow++) {
+        for (let secondCol = 0; secondCol < Math.max(1, Math.floor(secondFootprint)); secondCol++) {
+          best = Math.min(best, Math.max(
+            Math.abs(first.gridPosition.row + firstRow - (second.gridPosition.row + secondRow)),
+            Math.abs(first.gridPosition.col + firstCol - (second.gridPosition.col + secondCol))
+          ));
+        }
+      }
+    }
+  }
+  return best;
+}
+
+export function isWithinGridRadius(
+  first: Pick<DiceInstanceState, 'gridPosition'>,
+  second: Pick<DiceInstanceState, 'gridPosition'>,
+  radius: number | undefined,
+  footprintForDie?: (die: Pick<DiceInstanceState, 'gridPosition'>) => number
+): boolean {
+  if (radius === undefined) return true;
+  const resolvedRadius = Math.max(0, Math.floor(radius));
+  return getGridChebyshevDistance(first, second, footprintForDie?.(first) ?? 1, footprintForDie?.(second) ?? 1) <= resolvedRadius;
 }

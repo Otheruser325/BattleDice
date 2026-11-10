@@ -9,7 +9,10 @@
     {
       "type": "CombatStart",
       "title": "Quick Charge",
-      "description": "All friendly charging active skills gain +1 mana.",
+      "description": "All friendly charging active skills gain +{allyManaGain} mana.",
+      "classBenefits": {
+        "allyManaGain": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+      },
       "modifiers": {
         "allyManaGain": 1,
         "skillSfx": "dice_battery_skill"

@@ -1,0 +1,12 @@
+{
+  "typeId": "Fallout",
+  "title": "Fallout",
+  "damage": 60,
+  "duration": 2,
+  "statusEffect": "poison",
+  "statusDuration": 2,
+  "maxStacks": 3,
+  "affects": "foes",
+  "lingerSfx": "dice_poison_skill",
+  "accent": "#8cff66"
+}

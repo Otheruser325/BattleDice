@@ -25,7 +25,10 @@ export class SettingsStore {
   static set(scene: Phaser.Scene, nextSettings: Partial<AppSettings>): AppSettings {
     const merged = { ...this.get(scene), ...nextSettings };
     scene.registry.set('settings', merged);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    } catch {
+    }
     return merged;
   }
 

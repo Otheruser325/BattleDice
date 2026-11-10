@@ -9,7 +9,7 @@
     {
       "type": "OnDamaged",
       "title": "Heavy Plating",
-      "description": "Creates 20 armour every time it absorbs damage.",
+      "description": "Creates {shield} armour every time it absorbs damage.",
       "modifiers": {
         "shield": 20,
         "skillSfx": "dice_armor_skill"

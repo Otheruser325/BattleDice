@@ -5,6 +5,15 @@ import { secureRandomBetween } from '../utils/RandomManager';
 const STATUS_EFFECTS: DiceStatusEffect[] = [...DICE_STATUS_EFFECT_POOL];
 const STATUS_DURATION_TYPES: DiceStatusEffectDurationEffect[] = [...DICE_STATUS_EFFECT_POOL];
 
+type SfxMetadata = string | readonly string[];
+
+function resolveSfxMetadata(value: unknown): SfxMetadata | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (!Array.isArray(value)) return undefined;
+  const keys = value.filter((key): key is string => typeof key === 'string' && key.trim().length > 0);
+  return keys.length > 0 ? keys : undefined;
+}
+
 export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties {
   transformFlags: string[];
   [key: `has${string}`]: boolean | undefined;
@@ -17,6 +26,7 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   splashDamageRate?: number;
   splashDamageRatesByPip?: Record<string, number>;
   hasSplash?: boolean;
+  hasHeatwave?: boolean;
   heatwaveDamage?: number;
   heatwaveDamageRate?: number;
   heatwaveDamageRatesByPip?: Record<string, number>;
@@ -34,8 +44,10 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   reviveHealth?: number;
   reviveAttack?: number;
   allyExtraAttacks?: number;
+  allyExtraAttacksRadius?: number;
   foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
+  grantAttacksToAllyRadius?: number;
   grantAttacksToFoe?: number;
   grantAttacksTargeting?: DiceTargetingMode;
   grantAttacksToFoeTargeting?: DiceTargetingMode;
@@ -52,8 +64,8 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   poisonDamage?: number;
   poisonDamageRate?: number;
   poisonDamageRatesByPip?: Record<string, number>;
-  activeDamageRate?: number;
-  activeDamageRatesByPip?: Record<string, number>;
+  skillDamageRate?: number;
+  skillDamageRatesByPip?: Record<string, number>;
   distanceDamageBonusPerTile?: number;
   distanceDamageBonusRatePerTile?: number;
   bonusDamagePerStatus?: number;
@@ -66,8 +78,10 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   berserkDamageMultiplier?: number;
   pipMatchAllyAttackDelta?: number;
   pipMatchFoeAttackDelta?: number;
-  activeDamage?: number;
-  activeHeal?: number;
+  skillDamage?: number;
+  rapidFireCount?: number;
+  rapidFireIncrease?: number;
+  skillHealing?: number;
   activeOnlyTargetsAllies?: boolean;
   activeSkillTargeting?: DiceTargetingMode;
   skillTargeting?: DiceTargetingMode;
@@ -80,12 +94,14 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   summonCount?: number;
   summonPattern?: Array<[number, number]>;
   allowSummonedDieToRoll?: boolean;
-  lavaDamage?: number;
-  lavaPoolPattern?: Array<[number, number]>;
+  meteorPoolType?: string;
+  meteorPoolPattern?: Array<[number, number]>;
+  meteorPoolDuration?: number;
   beamDamage?: number;
   hasBeam?: boolean;
   pierceBehindRange?: number;
   pierceBehindDamage?: number;
+  hasPierce?: boolean;
   hammerDamage?: number;
   hammerRadius?: number;
   canRetriggerSkill?: boolean;
@@ -96,15 +112,25 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   activeStatusEffect?: DiceStatusEffect;
   statusEffects?: DiceStatusEffect[];
   tauntRange?: number;
+  hasLock?: boolean;
   lockRange?: number;
-  canLockFoes?: boolean;
-  canLockAllies?: boolean;
+  lockSideTargeting?: 'allies' | 'foes' | 'both';
+  lockDuration?: number;
+  lockUnlockApplyStatusEffect?: boolean;
+  canLockGridTiles?: boolean;
+  onlyLockGridTiles?: boolean;
+  gridLockDuration?: number;
+  statusToOpposingHand?: boolean;
   numLocks?: number;
   teleportRange?: number;
   teleportSkillFireIndex?: number;
   isInfiltrator?: boolean;
   strikeFirst?: boolean;
+  attackCount?: number;
   attackCountIncrease?: number;
+  projectileCount?: number;
+  projectileCountIncrease?: number;
+  skillDuration?: number;
   unlockAtClass?: number;
   numAttacksBoosted?: number;
   numAttacksDamageMult?: number;
@@ -118,6 +144,10 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   hasGrowth?: boolean;
   growthDelta?: number;
   growthChance?: number;
+  hasCardOrbit?: boolean;
+  cardOrbitCount?: number;
+  cardOrbitDamageRate?: number;
+  unleashCardOrbit?: boolean;
   hasPlague?: boolean;
   plaguedDieType?: string;
   plaguedDieHealth?: number;
@@ -132,20 +162,24 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   bossDamage?: number;
   bossDamageRate?: number;
   bossDamageRatesByPip?: Record<string, number>;
-  skillSfxKey?: string;
-  activeSkillSfxKey?: string;
-  passiveSkillSfxKey?: string;
-  attackSfxKey?: string;
+  skillSfxKey?: SfxMetadata;
+  activeSkillSfxKey?: SfxMetadata;
+  passiveSkillSfxKey?: SfxMetadata;
+  growthSuccessSfxKey?: SfxMetadata;
+  growthFailedSfxKey?: SfxMetadata;
   canConjureSouls?: boolean;
   conjureType?: 'ally' | 'enemy' | 'both';
   maxSouls?: number;
   noMaxSouls?: boolean;
   soulBoostPercent?: number;
   onTransformedDurationTurns?: number;
-  deuciferOddSiphonRate?: number;
-  deuciferEvenDamageRate?: number;
+  oddPipSiphonRate?: number;
+  evenPipSiphonRate?: number;
+  evenPipDamageRate?: number;
+  oddPipDamageRate?: number;
   manaGain?: number;
   allyManaGain?: number;
+  manaGainRadius?: number;
   foeManaGain?: number;
   manaSteal?: number;
   manaStealType?: 'ally' | 'enemy' | 'both';
@@ -156,14 +190,10 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   hitsAllAllies?: boolean;
   ricochetCount?: number;
   ricochetRange?: number;
+  hasRicochet?: boolean;
+  ricochetDropOff?: number;
   healOnAttack?: boolean;
   transformToNextForm?: boolean;
-  transformAttackDamage?: number;
-  deathDamage?: number;
-  onKillDamage?: number;
-  onHitDamage?: number;
-  combatStartDamage?: number;
-  combatEndDamage?: number;
   criticalChanceIncrease?: number;
   criticalDamageIncrease?: number;
   damageRatePerKill?: number;
@@ -201,6 +231,21 @@ function resolveGrantAttackValue(
     .map((modifier) => (modifier as Record<string, unknown>)[key])
     .find((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate));
   return value === undefined ? undefined : Math.max(0, value);
+}
+
+function resolveRadiusValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;
+}
+
+function resolveGrantAttackRadius(
+  modifiers: DiceSkillModifier[],
+  key: GrantAttackKey
+): number | undefined {
+  const source = modifiers.find((modifier) => {
+    const value = (modifier as Record<string, unknown>)[key];
+    return typeof value === 'number' && Number.isFinite(value);
+  });
+  return resolveRadiusValue((source as Record<string, unknown> | undefined)?.[`${key}Radius`]);
 }
 
 function resolveGrantAttackTargeting(
@@ -394,19 +439,15 @@ export function getChainTargetLimit(meta: Pick<DiceSkillRuntimeMeta, 'chainTarge
 }
 
 const TRIGGER_EXCLUSIVE_KEYS: Partial<Record<DiceSkillType, string[]>> = {
-  OnKill: ['onKillDamage', 'hasHammer', 'hammerDamage', 'hammerRadius', 'canRetriggerSkill', 'maxSkillRetriggers', 'leonRageRate'],
-  OnTransformed: ['transformAttackDamage', 'onTransformedExtraAttacks', 'onTransformedDurationTurns'],
-  OnDeath: ['deathDamage'],
-  OnDamaged: ['onHitDamage'],
-  CombatStart: ['combatStartDamage'],
-  CombatEnd: ['combatEndDamage']
+  OnKill: ['hasHammer', 'hammerDamage', 'hammerRadius', 'canRetriggerSkill', 'maxSkillRetriggers', 'leonRageRate'],
+  OnTransformed: ['onTransformedExtraAttacks', 'onTransformedDurationTurns']
 };
 
 function isolateTriggerMeta(meta: DiceSkillRuntimeMeta, trigger: DiceSkillType): DiceSkillRuntimeMeta {
   const allowed = new Set(TRIGGER_EXCLUSIVE_KEYS[trigger] ?? []);
   for (const keys of Object.values(TRIGGER_EXCLUSIVE_KEYS)) {
     for (const key of keys) {
-      if (!allowed.has(key)) delete (meta as Record<string, unknown>)[key];
+      if (!allowed.has(key)) delete (meta as unknown as Record<string, unknown>)[key];
     }
   }
   return meta;
@@ -443,13 +484,21 @@ export function getNuclearAreaDimensions(value: number[] | string | undefined): 
 // The gate is evaluated per triggering skill so a whole-die meta lookup cannot leak an in-range bonus
 // (Leon's critical chance) outside the range the skill's own text promises.
 const RANGE_THRESHOLD_KEYS: Array<keyof DiceSkillRuntimeMeta> = [
+  'attackCount',
+  'projectileCount',
+  'rapidFireCount',
+  'rapidFireIncrease',
   'attackCountIncrease',
+  'projectileCountIncrease',
   'criticalChanceIncrease',
   'criticalDamageIncrease',
   'allyExtraAttacks',
+  'allyExtraAttacksRadius',
   'foeExtraAttacks',
   'grantAttacksToAlly',
-  'grantAttacksToFoe'
+  'grantAttacksToAllyRadius',
+  'grantAttacksToFoe',
+  'manaGainRadius'
 ];
 
 export function getRangeThresholdForMeta(meta: DiceSkillRuntimeMeta): number | undefined {
@@ -468,7 +517,7 @@ export function gateMetaByRangeThreshold(meta: DiceSkillRuntimeMeta, inRange: bo
   if (inRange || getRangeThresholdForMeta(meta) === undefined) return meta;
   const gated: DiceSkillRuntimeMeta = { ...meta };
   RANGE_THRESHOLD_KEYS.forEach((key) => {
-    delete (gated as Record<string, unknown>)[key];
+    delete (gated as unknown as Record<string, unknown>)[key];
   });
   return gated;
 }
@@ -506,10 +555,38 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     ? skills.filter((skill, index) => skill.type !== 'Active' || index === activeSkillIndex)
     : skills;
   const allModifiers = runtimeSkills.map((skill) => skill.modifiers).filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
-  const attackCountIncreases = allModifiers
+  const passiveModifiers = runtimeSkills
+    .filter((skill) => skill.type === 'Passive')
+    .map((skill) => skill.modifiers)
+    .filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
+  const passiveCountSum = (key: 'attackCount' | 'projectileCount') => passiveModifiers.reduce((total, modifier) => {
+    const value = (modifier as { [K in typeof key]?: number })[key];
+    return total + (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
+  }, 0);
+  const timedModifiers = runtimeSkills
+    .filter((skill) => skill.type !== 'Passive')
+    .map((skill) => skill.modifiers)
+    .filter((modifier): modifier is NonNullable<typeof modifier> => Boolean(modifier));
+  const attackCountIncreases = timedModifiers
     .map((modifier) => (modifier as { attackCountIncrease?: number }).attackCountIncrease)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
   const maxAttackCountIncrease = attackCountIncreases.length > 0 ? Math.max(...attackCountIncreases) : 0;
+  const projectileCountIncreases = timedModifiers
+    .map((modifier) => (modifier as { projectileCountIncrease?: number }).projectileCountIncrease)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  const maxProjectileCountIncrease = projectileCountIncreases.length > 0 ? Math.max(...projectileCountIncreases) : 0;
+  const passiveAttackCount = Math.max(0, Math.floor(passiveCountSum('attackCount')));
+  const passiveProjectileCount = Math.max(0, Math.floor(passiveCountSum('projectileCount')));
+  const cardOrbitModifier = passiveModifiers.find((modifier) => modifier.hasCardOrbit === true);
+  const rawCardOrbitCount = cardOrbitModifier?.cardOrbitCount;
+  const cardOrbitCount = typeof rawCardOrbitCount === 'number' && Number.isFinite(rawCardOrbitCount)
+    ? Math.max(0, Math.floor(rawCardOrbitCount))
+    : 0;
+  const rawCardOrbitDamageRate = cardOrbitModifier?.cardOrbitDamageRate;
+  const cardOrbitDamageRate = typeof rawCardOrbitDamageRate === 'number' && Number.isFinite(rawCardOrbitDamageRate)
+    ? Math.max(0, rawCardOrbitDamageRate)
+    : 0;
+  const unleashCardOrbit = activeModifiers?.unleashCardOrbit === true;
   const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
     const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
     return sum === 0 ? undefined : sum;
@@ -558,14 +635,16 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
   const allNotes = allModifiers.flatMap((modifier) => modifier.notes ?? []);
   const getActiveNoteValue = (prefix: string) => activeModifiers?.notes?.find((note) => note.startsWith(prefix))?.slice(prefix.length);
   const getAnyNoteValue = (prefix: string) => allNotes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
-  const directOddSiphonRate = allModifiers
-    .map((modifier) => (modifier as { deuciferOddSiphonRate?: number }).deuciferOddSiphonRate)
-    .find((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  const directEvenDamageRate = allModifiers
-    .map((modifier) => (modifier as { deuciferEvenDamageRate?: number }).deuciferEvenDamageRate)
-    .find((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  const oddSiphonRate = directOddSiphonRate ?? Number(getAnyNoteValue('runtime:deuciferOddSiphon='));
-  const evenDamageRate = directEvenDamageRate ?? Number(getAnyNoteValue('runtime:deuciferEvenDamage='));
+  const passiveNotes = passiveModifiers.flatMap((modifier) => modifier.notes ?? []);
+  const getPassiveNoteValue = (prefix: string) => passiveNotes.find((note) => note.startsWith(prefix))?.slice(prefix.length);
+  const passiveRate = (key: 'oddPipSiphonRate' | 'evenPipSiphonRate' | 'evenPipDamageRate' | 'oddPipDamageRate') =>
+    passiveModifiers
+      .map((modifier) => modifier[key])
+      .find((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const oddSiphonRate = passiveRate('oddPipSiphonRate') ?? Number(getPassiveNoteValue('runtime:oddPipSiphon='));
+  const evenSiphonRate = passiveRate('evenPipSiphonRate') ?? Number(getPassiveNoteValue('runtime:evenPipSiphon='));
+  const evenDamageRate = passiveRate('evenPipDamageRate') ?? Number(getPassiveNoteValue('runtime:evenPipDamage='));
+  const oddDamageRate = passiveRate('oddPipDamageRate') ?? Number(getPassiveNoteValue('runtime:oddPipDamage='));
   const parseStatusEffect = (value: unknown): DiceStatusEffect | undefined => {
     if (typeof value !== 'string') return undefined;
     return STATUS_EFFECTS.includes(value as DiceStatusEffect) ? value as DiceStatusEffect : undefined;
@@ -598,12 +677,30 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     ? [activeModifiers]
     : [modifiers, ...allModifiers])
     .filter((modifier): modifier is DiceSkillModifier => Boolean(modifier));
-  const lockModifiers = lockModifierCandidates.find((modifier) =>
-    (modifier as { lockRange?: number; canLockFoes?: boolean; canLockAllies?: boolean }).lockRange !== undefined
-    || (modifier as { canLockFoes?: boolean; canLockAllies?: boolean }).canLockFoes === true
-    || (modifier as { canLockFoes?: boolean; canLockAllies?: boolean }).canLockAllies === true
-  );
-  const getPipRateObject = (key: 'splashDamageRatesByPip' | 'heatwaveDamageRatesByPip' | 'chainDamageRatesByPip' | 'activeDamageRatesByPip' | 'poisonDamageRatesByPip' | 'bossDamageRatesByPip'): Record<string, number> | undefined => {
+  const lockModifiers = lockModifierCandidates.find((modifier) => modifier.hasLock === true);
+  const hasLock = lockModifiers?.hasLock === true;
+  const rawLockRange = lockModifiers?.lockRange;
+  const lockRange = typeof rawLockRange === 'number' && Number.isFinite(rawLockRange) && (rawLockRange === -1 || rawLockRange > 0)
+    ? rawLockRange
+    : undefined;
+  const rawLockSideTargeting = lockModifiers?.lockSideTargeting;
+  const legacyCanLockAllies = (lockModifiers as { canLockAllies?: boolean } | undefined)?.canLockAllies === true;
+  const lockSideTargeting: 'allies' | 'foes' | 'both' =
+    rawLockSideTargeting === 'allies' || rawLockSideTargeting === 'foes' || rawLockSideTargeting === 'both'
+      ? rawLockSideTargeting
+      : legacyCanLockAllies ? 'both' : 'foes';
+  const lockDuration = (() => {
+    const value = lockModifiers?.lockDuration;
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : undefined;
+  })();
+  const canLockGridTiles = hasLock && lockModifiers?.canLockGridTiles === true;
+  const onlyLockGridTiles = canLockGridTiles && lockModifiers?.onlyLockGridTiles === true;
+  const lockUnlockApplyStatusEffect = lockModifiers?.lockUnlockApplyStatusEffect === true;
+  const gridLockDuration = (() => {
+    const value = lockModifiers?.gridLockDuration;
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : undefined;
+  })();
+  const getPipRateObject = (key: 'splashDamageRatesByPip' | 'heatwaveDamageRatesByPip' | 'chainDamageRatesByPip' | 'skillDamageRatesByPip' | 'poisonDamageRatesByPip' | 'bossDamageRatesByPip'): Record<string, number> | undefined => {
     const candidate = allModifiers
       .map((modifier) => (modifier as Record<string, unknown>)[key])
       .find((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value));
@@ -617,7 +714,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
   const splashDamageRatesByPip = getPipRateObject('splashDamageRatesByPip');
   const heatwaveDamageRatesByPip = getPipRateObject('heatwaveDamageRatesByPip');
   const chainDamageRatesByPip = getPipRateObject('chainDamageRatesByPip');
-  const activeDamageRatesByPip = getPipRateObject('activeDamageRatesByPip');
+  const skillDamageRatesByPip = getPipRateObject('skillDamageRatesByPip');
   const poisonDamageRatesByPip = getPipRateObject('poisonDamageRatesByPip');
   const bossDamageRatesByPip = getPipRateObject('bossDamageRatesByPip');
   const heatwaveDamageRate = allModifiers
@@ -633,6 +730,15 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     .map((modifier) => (modifier as { chainDamageRate?: number }).chainDamageRate)
     .find((value): value is number => typeof value === 'number' && Number.isFinite(value));
   const hasSplash = allModifiers.some((modifier) => (modifier as { hasSplash?: boolean }).hasSplash === true);
+  const hasHeatwave = allModifiers.some((modifier) => (modifier as { hasHeatwave?: boolean }).hasHeatwave === true);
+  const hasPierce = allModifiers.some((modifier) => (modifier as { hasPierce?: boolean }).hasPierce === true);
+  const hasRicochet = allModifiers.some((modifier) => (modifier as { hasRicochet?: boolean }).hasRicochet === true);
+  const ricochetDropOff = (() => {
+    const value = allModifiers
+      .map((modifier) => (modifier as { ricochetDropOff?: number }).ricochetDropOff)
+      .find((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry));
+    return value === undefined ? undefined : Math.min(1, Math.max(0, value));
+  })();
   const hasChain = allModifiers.some((modifier) => (modifier as { hasChain?: boolean }).hasChain === true);
   const hasMeteor = Boolean((activeModifiers as { hasMeteor?: boolean } | undefined)?.hasMeteor ?? (modifiers as { hasMeteor?: boolean } | undefined)?.hasMeteor);
   const unlockAtClass = getSkillLockClass(selectedActiveSkill ?? primary);
@@ -644,6 +750,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     (modifier as { summonType?: string }).summonType !== undefined
     || (modifier as { allowSummonedDieToRoll?: boolean }).allowSummonedDieToRoll !== undefined
   ) ?? modifiers;
+  const growthSfxModifier = allModifiers.find((modifier) =>
+    modifier.growthSuccessSfx !== undefined || modifier.growthFailedSfx !== undefined
+  );
   const avoidModifier = allModifiers.find((modifier) =>
     (modifier as { avoidAttackChance?: number }).avoidAttackChance !== undefined
   ) ?? modifiers;
@@ -670,6 +779,7 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
       .map((modifier) => (modifier as { splashDamage?: number }).splashDamage)
       .find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
     hasSplash,
+    hasHeatwave,
     splashDamageRate,
     splashDamageRatesByPip,
     heatwaveDamage,
@@ -689,18 +799,46 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     reviveHealth,
     reviveAttack,
     allyExtraAttacks: modifiers?.allyExtraAttacks ?? 0,
+    allyExtraAttacksRadius: resolveRadiusValue((modifiers as { allyExtraAttacksRadius?: unknown } | undefined)?.allyExtraAttacksRadius),
     foeExtraAttacks: modifiers?.foeExtraAttacks ?? 0,
     grantAttacksToAlly: resolveGrantAttackValue(allModifiers, 'grantAttacksToAlly'),
+    grantAttacksToAllyRadius: resolveGrantAttackRadius(allModifiers, 'grantAttacksToAlly'),
     grantAttacksToFoe: resolveGrantAttackValue(allModifiers, 'grantAttacksToFoe'),
     grantAttacksTargeting: resolveGrantAttackTargeting(allModifiers, 'grantAttacksToAlly'),
     grantAttacksToFoeTargeting: resolveGrantAttackTargeting(allModifiers, 'grantAttacksToFoe'),
     targetingMode: validDefinition.targetingMode,
     statusEffect: parseStatusEffect((modifiers as { statusEffect?: string } | undefined)?.statusEffect),
+    statusToOpposingHand: (modifiers as { statusToOpposingHand?: boolean } | undefined)?.statusToOpposingHand === true,
     statusDuration: (selectedStatusModifiers as { statusDuration?: number } | undefined)?.statusDuration,
     ...statusDurationProperties,
     maxStacks: (modifiers as { maxStacks?: number } | undefined)?.maxStacks,
     manaNeeded: activeSkill ? (activeSkill.manaNeeded ?? 0) : 0,
+    attackCount: passiveAttackCount,
     attackCountIncrease: maxAttackCountIncrease,
+    projectileCount: passiveProjectileCount,
+    projectileCountIncrease: maxProjectileCountIncrease,
+    hasCardOrbit: cardOrbitModifier !== undefined,
+    cardOrbitCount,
+    cardOrbitDamageRate,
+    unleashCardOrbit,
+    rapidFireCount: (() => {
+      const value = activeModifiers?.rapidFireCount
+        ?? allModifiers.map((modifier) => modifier.rapidFireCount).find((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry) && entry > 0);
+      return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : undefined;
+    })(),
+    rapidFireIncrease: (() => {
+      const total = allModifiers.reduce((sum, modifier) => {
+        const value = modifier.rapidFireIncrease;
+        return sum + (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
+      }, 0);
+      return total > 0 ? total : undefined;
+    })(),
+    skillDuration: (() => {
+      const value = [activeModifiers, ...timedModifiers]
+        .map((modifier) => (modifier as { skillDuration?: number } | undefined)?.skillDuration)
+        .find((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry) && entry > 0);
+      return value === undefined ? 0 : Math.max(0, Math.floor(value));
+    })(),
     unlockAtClass,
     numAttacksBoosted: (modifiers as { numAttacksBoosted?: number } | undefined)?.numAttacksBoosted,
     numAttacksDamageMult: (modifiers as { numAttacksDamageMult?: number } | undefined)?.numAttacksDamageMult,
@@ -713,8 +851,9 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     poisonDamage: (activeModifiers as { poisonDamage?: number } | undefined)?.poisonDamage ?? (modifiers as { poisonDamage?: number } | undefined)?.poisonDamage,
     poisonDamageRate: (activeModifiers as { poisonDamageRate?: number } | undefined)?.poisonDamageRate ?? (modifiers as { poisonDamageRate?: number } | undefined)?.poisonDamageRate,
     poisonDamageRatesByPip: (activeModifiers as { poisonDamageRatesByPip?: Record<string, number> } | undefined)?.poisonDamageRatesByPip ?? poisonDamageRatesByPip,
-    activeDamageRate: (activeModifiers as { activeDamageRate?: number } | undefined)?.activeDamageRate ?? (modifiers as { activeDamageRate?: number } | undefined)?.activeDamageRate,
-    activeDamageRatesByPip: (activeModifiers as { activeDamageRatesByPip?: Record<string, number> } | undefined)?.activeDamageRatesByPip ?? activeDamageRatesByPip,
+    skillDamageRate: (activeModifiers as { skillDamageRate?: number } | undefined)?.skillDamageRate
+      ?? allModifiers.map((modifier) => modifier.skillDamageRate).find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    skillDamageRatesByPip: (activeModifiers as { skillDamageRatesByPip?: Record<string, number> } | undefined)?.skillDamageRatesByPip ?? skillDamageRatesByPip,
     distanceDamageBonusPerTile: (damageModifiers as { distanceDamageBonusPerTile?: number } | undefined)?.distanceDamageBonusPerTile,
     distanceDamageBonusRatePerTile: (damageModifiers as { distanceDamageBonusRatePerTile?: number } | undefined)?.distanceDamageBonusRatePerTile,
     bonusDamagePerStatus: (modifiers as { bonusDamagePerStatus?: number } | undefined)?.bonusDamagePerStatus,
@@ -733,8 +872,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     berserkDamageMultiplier: (modifiers as { berserkDamageMultiplier?: number } | undefined)?.berserkDamageMultiplier,
     pipMatchAllyAttackDelta: sumModifier('pipMatchAllyAttackDelta'),
     pipMatchFoeAttackDelta: sumModifier('pipMatchFoeAttackDelta'),
-    activeDamage: (activeModifiers as { activeDamage?: number } | undefined)?.activeDamage ?? (modifiers as { activeDamage?: number } | undefined)?.activeDamage,
-    activeHeal: (activeModifiers as { activeHeal?: number } | undefined)?.activeHeal ?? (modifiers as { activeHeal?: number } | undefined)?.activeHeal,
+    skillDamage: (activeModifiers as { skillDamage?: number } | undefined)?.skillDamage
+      ?? allModifiers.map((modifier) => modifier.skillDamage).find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    skillHealing: (activeModifiers as { skillHealing?: number } | undefined)?.skillHealing
+      ?? allModifiers.map((modifier) => modifier.skillHealing).find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
     activeOnlyTargetsAllies: Boolean((activeModifiers as { onlyTargetsAllies?: boolean } | undefined)?.onlyTargetsAllies),
     activeSkillTargeting: (activeModifiers as { skillTargeting?: DiceTargetingMode } | undefined)?.skillTargeting,
     skillTargeting: (modifiers as { skillTargeting?: DiceTargetingMode } | undefined)?.skillTargeting,
@@ -748,12 +889,20 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     meteorDamage: (activeModifiers as { meteorDamage?: number } | undefined)?.meteorDamage ?? (modifiers as { meteorDamage?: number } | undefined)?.meteorDamage,
     meteorCount: (activeModifiers as { meteorCount?: number } | undefined)?.meteorCount ?? (modifiers as { meteorCount?: number } | undefined)?.meteorCount,
     meteorRandomOrientation: Boolean((activeModifiers as { meteorRandomOrientation?: boolean } | undefined)?.meteorRandomOrientation ?? (modifiers as { meteorRandomOrientation?: boolean } | undefined)?.meteorRandomOrientation),
-    lavaDamage: (activeModifiers as { lavaDamage?: number } | undefined)?.lavaDamage ?? (modifiers as { lavaDamage?: number } | undefined)?.lavaDamage,
-    lavaPoolPattern: (activeModifiers as { lavaPoolPattern?: Array<[number, number]> } | undefined)?.lavaPoolPattern ?? (modifiers as { lavaPoolPattern?: Array<[number, number]> } | undefined)?.lavaPoolPattern,
+    meteorPoolType: (activeModifiers as { meteorPoolType?: string } | undefined)?.meteorPoolType
+      ?? allModifiers.map((modifier) => modifier.meteorPoolType).find((value): value is string => typeof value === 'string'),
+    meteorPoolPattern: (activeModifiers as { meteorPoolPattern?: Array<[number, number]> } | undefined)?.meteorPoolPattern
+      ?? allModifiers.map((modifier) => modifier.meteorPoolPattern).find((value): value is Array<[number, number]> => Array.isArray(value)),
+    meteorPoolDuration: (() => {
+      const value = (activeModifiers as { meteorPoolDuration?: number } | undefined)?.meteorPoolDuration
+        ?? allModifiers.map((modifier) => modifier.meteorPoolDuration).find((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate));
+      return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : undefined;
+    })(),
     beamDamage: (modifiers as { beamDamage?: number } | undefined)?.beamDamage ?? (Number.isFinite(parsedBeamDamage) ? parsedBeamDamage : undefined),
     hasBeam: Boolean((modifiers as { hasBeam?: boolean } | undefined)?.hasBeam === true),
     pierceBehindRange: (modifiers as { pierceBehindRange?: number } | undefined)?.pierceBehindRange,
     pierceBehindDamage: (activeModifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage ?? (modifiers as { pierceBehindDamage?: number } | undefined)?.pierceBehindDamage,
+    hasPierce,
     hammerDamage: (modifiers as { hammerDamage?: number } | undefined)?.hammerDamage,
     hammerRadius: (modifiers as { hammerRadius?: number } | undefined)?.hammerRadius,
     canRetriggerSkill: Boolean((modifiers as { canRetriggerSkill?: boolean } | undefined)?.canRetriggerSkill),
@@ -771,7 +920,8 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     activeStatusEffect,
     statusEffects,
     tauntRange: (tauntModifiers as { tauntRange?: number } | undefined)?.tauntRange,
-    lockRange: (lockModifiers as { lockRange?: number } | undefined)?.lockRange,
+    hasLock,
+    lockRange,
     teleportRange: (modifiers as { teleportRange?: number } | undefined)?.teleportRange,
     teleportSkillFireIndex: (() => {
       const value = (modifiers as { teleportSkillFireIndex?: unknown } | undefined)?.teleportSkillFireIndex;
@@ -779,8 +929,12 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     })(),
     isInfiltrator: Boolean((modifiers as { isInfiltrator?: boolean } | undefined)?.isInfiltrator === true),
     strikeFirst: Boolean((modifiers as { strikeFirst?: boolean } | undefined)?.strikeFirst === true),
-    canLockFoes: Boolean((lockModifiers as { canLockFoes?: boolean } | undefined)?.canLockFoes === true),
-    canLockAllies: Boolean((lockModifiers as { canLockAllies?: boolean } | undefined)?.canLockAllies === true),
+    lockSideTargeting,
+    lockDuration,
+    lockUnlockApplyStatusEffect,
+    canLockGridTiles,
+    onlyLockGridTiles,
+    gridLockDuration,
     numLocks: (() => {
       const value = (lockModifiers as { numLocks?: unknown } | undefined)?.numLocks;
       return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : undefined;
@@ -815,10 +969,15 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     bossDamage: (activeModifiers as { bossDamage?: number } | undefined)?.bossDamage ?? (modifiers as { bossDamage?: number } | undefined)?.bossDamage,
     bossDamageRate: (activeModifiers as { bossDamageRate?: number } | undefined)?.bossDamageRate ?? (modifiers as { bossDamageRate?: number } | undefined)?.bossDamageRate,
     bossDamageRatesByPip: (activeModifiers as { bossDamageRatesByPip?: Record<string, number> } | undefined)?.bossDamageRatesByPip ?? bossDamageRatesByPip,
-    skillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx=') ?? getAnyNoteValue('runtime:skillSfx=') ?? getNoteValue('runtime:skillSfx='),
-    activeSkillSfxKey: (activeModifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getActiveNoteValue('runtime:skillSfx='),
-    passiveSkillSfxKey: (modifiers as { skillSfx?: string } | undefined)?.skillSfx ?? getNoteValue('runtime:skillSfx='),
-    attackSfxKey: (modifiers as { attackSfx?: string } | undefined)?.attackSfx ?? getNoteValue('runtime:attackSfx='),
+    skillSfxKey: resolveSfxMetadata((activeModifiers as { skillSfx?: unknown } | undefined)?.skillSfx)
+      ?? resolveSfxMetadata((modifiers as { skillSfx?: unknown } | undefined)?.skillSfx)
+      ?? getActiveNoteValue('runtime:skillSfx=')
+      ?? getAnyNoteValue('runtime:skillSfx=')
+      ?? getNoteValue('runtime:skillSfx='),
+    activeSkillSfxKey: resolveSfxMetadata((activeModifiers as { skillSfx?: unknown } | undefined)?.skillSfx) ?? getActiveNoteValue('runtime:skillSfx='),
+    passiveSkillSfxKey: resolveSfxMetadata((modifiers as { skillSfx?: unknown } | undefined)?.skillSfx) ?? getNoteValue('runtime:skillSfx='),
+    growthSuccessSfxKey: resolveSfxMetadata(growthSfxModifier?.growthSuccessSfx),
+    growthFailedSfxKey: resolveSfxMetadata(growthSfxModifier?.growthFailedSfx),
     canConjureSouls: Boolean((modifiers as { canConjureSouls?: boolean } | undefined)?.canConjureSouls),
     conjureType: ((modifiers as { conjureType?: 'ally' | 'enemy' | 'both' } | undefined)?.conjureType),
     maxSouls: (modifiers as { maxSouls?: number } | undefined)?.maxSouls,
@@ -826,14 +985,17 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     soulBoostPercent: (modifiers as { soulBoostPercent?: number } | undefined)?.soulBoostPercent,
     onTransformedExtraAttacks: onTransformedModifiers?.allyExtraAttacks ?? 0,
     onTransformedDurationTurns: onTransformedModifiers?.statusDuration,
-    deuciferOddSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
-    deuciferEvenDamageRate: Number.isFinite(evenDamageRate) ? evenDamageRate : undefined,
+    oddPipSiphonRate: Number.isFinite(oddSiphonRate) ? oddSiphonRate : undefined,
+    evenPipSiphonRate: Number.isFinite(evenSiphonRate) ? evenSiphonRate : undefined,
+    evenPipDamageRate: Number.isFinite(evenDamageRate) ? evenDamageRate : undefined,
+    oddPipDamageRate: Number.isFinite(oddDamageRate) ? oddDamageRate : undefined,
     summonType: (summonModifier as { summonType?: string } | undefined)?.summonType,
     summonCount: (summonModifier as { summonCount?: number } | undefined)?.summonCount,
     summonPattern: (summonModifier as { summonPattern?: Array<[number, number]> } | undefined)?.summonPattern,
     allowSummonedDieToRoll: Boolean((summonModifier as { allowSummonedDieToRoll?: boolean } | undefined)?.allowSummonedDieToRoll),
     manaGain: (activeModifiers as { manaGain?: number } | undefined)?.manaGain ?? (modifiers as { manaGain?: number } | undefined)?.manaGain,
     allyManaGain: (activeModifiers as { allyManaGain?: number } | undefined)?.allyManaGain ?? (modifiers as { allyManaGain?: number } | undefined)?.allyManaGain,
+    manaGainRadius: resolveRadiusValue((activeModifiers as { manaGainRadius?: unknown } | undefined)?.manaGainRadius ?? (modifiers as { manaGainRadius?: unknown } | undefined)?.manaGainRadius),
     foeManaGain: (activeModifiers as { foeManaGain?: number } | undefined)?.foeManaGain ?? (modifiers as { foeManaGain?: number } | undefined)?.foeManaGain,
     manaSteal: (activeModifiers as { manaSteal?: number } | undefined)?.manaSteal ?? (modifiers as { manaSteal?: number } | undefined)?.manaSteal,
     manaStealType: (activeModifiers as { manaStealType?: 'ally' | 'enemy' | 'both' } | undefined)?.manaStealType ?? (modifiers as { manaStealType?: 'ally' | 'enemy' | 'both' } | undefined)?.manaStealType,
@@ -845,14 +1007,10 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     ricochetRange: allModifiers
       .map((modifier) => (modifier as { ricochetRange?: number }).ricochetRange)
       .find((value): value is number => typeof value === 'number' && Number.isFinite(value)),
+    hasRicochet,
+    ricochetDropOff,
     healOnAttack: Boolean(allModifiers.some((modifier) => (modifier as { healOnAttack?: boolean }).healOnAttack === true)),
     transformToNextForm: Boolean(allModifiers.some((modifier) => (modifier as { transformToNextForm?: boolean }).transformToNextForm === true)),
-    transformAttackDamage: (modifiers as { transformAttackDamage?: number } | undefined)?.transformAttackDamage,
-    deathDamage: (modifiers as { deathDamage?: number } | undefined)?.deathDamage,
-    onKillDamage: (modifiers as { onKillDamage?: number } | undefined)?.onKillDamage,
-    onHitDamage: (modifiers as { onHitDamage?: number } | undefined)?.onHitDamage,
-    combatStartDamage: (modifiers as { combatStartDamage?: number } | undefined)?.combatStartDamage,
-    combatEndDamage: (modifiers as { combatEndDamage?: number } | undefined)?.combatEndDamage,
      criticalChanceIncrease: (criticalModifiers as { criticalChanceIncrease?: number } | undefined)?.criticalChanceIncrease,
      criticalDamageIncrease: (criticalModifiers as { criticalDamageIncrease?: number } | undefined)?.criticalDamageIncrease,
     damageRatePerKill: (modifiers as { damageRatePerKill?: number } | undefined)?.damageRatePerKill,

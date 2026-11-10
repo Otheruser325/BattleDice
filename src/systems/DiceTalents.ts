@@ -3,7 +3,7 @@ import type { DiceDefinition, DiceRarity, DiceSkillDefinition, DiceSkillModifier
 import type { ChestType } from './CasinoComboTypes';
 import { secureChance, secureRandomInt } from '../utils/RandomManager';
 import { mergeSkillOverlayByIndex, SKILL_SOURCE_SKILLS } from './SkillOverlay';
-import { applyStatModifiers, applyOverlaySkillDescriptions } from './ClassProgression';
+import { applyStatModifiers } from './ClassProgression';
 import {
   DEFAULT_TALENT_CLASS_NEEDED,
   RARITY_ORDER,
@@ -85,6 +85,10 @@ function getDisabledSkillIndices(
   return disabled;
 }
 
+export function areTalentsSuppressedForChallenge(challenge: string | null | undefined): boolean {
+  return challenge === 'dungeon';
+}
+
 export function applyDiceTalent(definition: DiceDefinition, talentIndex: number | null | undefined, classLevel?: number): DiceDefinition {
   if (definition.talentsComingSoon) return definition;
   const talent = getTalentByIndex(definition, talentIndex);
@@ -101,12 +105,7 @@ export function applyDiceTalent(definition: DiceDefinition, talentIndex: number 
     ? mergedSkills.map((skill) => ({ ...skill, modifiers: { ...(skill.modifiers ?? {}), ...rootSkillModifiers } }))
     : mergedSkills;
   const describedSkills = applySkillDescriptions(withRootModifiers, skillOverlay);
-  const resolvedSkills = applyOverlaySkillDescriptions(
-    { ...definition, skills: describedSkills },
-    baseSkills,
-    describedSkills,
-    skillOverlay
-  );
+  const resolvedSkills = describedSkills;
   const disabledIndices = getDisabledSkillIndices(skillOverlay, resolvedSkills.length);
   const finalSkills = disabledIndices.size === 0
     ? resolvedSkills

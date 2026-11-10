@@ -5,7 +5,10 @@ export const SKILL_SOURCE_SKILLS = Symbol('skillSourceSkills');
 export function cloneSkill(skill: DiceSkillDefinition): DiceSkillDefinition {
   return {
     ...skill,
-    modifiers: skill.modifiers ? { ...skill.modifiers } : skill.modifiers
+    modifiers: skill.modifiers ? { ...skill.modifiers } : skill.modifiers,
+    classBenefits: skill.classBenefits
+      ? Object.fromEntries(Object.entries(skill.classBenefits).map(([key, series]) => [key, Array.isArray(series) ? [...series] : series])) as DiceSkillDefinition['classBenefits']
+      : skill.classBenefits
   };
 }
 
@@ -20,10 +23,6 @@ function definedOverlayFields<T extends object>(value: T | null | undefined): Pa
   ) as Partial<T>;
 }
 
-// A transform row leaves an index untouched by leaving an empty object there, matching the talent
-// overlay convention. A row that declares its own type is a full replacement; a row that only names
-// properties (typically modifiers) overlays onto the base skill, so a form that changes one flag does
-// not have to restate the skill's type, title, and description.
 export function mergeSkillsByIndex(
   baseSkills: DiceSkillDefinition[] | undefined,
   overlay: Array<DiceSkillDefinition | null | undefined> | undefined
@@ -56,9 +55,6 @@ export function isSkillListComingSoon(comingSoon?: boolean): boolean {
   return comingSoon === true;
 }
 
-// Talent overlays are additive: an entry only changes the properties it names, so a talent can
-// retitle or re-describe a skill without dropping the fields the runtime depends on. An entry
-// past the end of the base list still appends, and an empty entry leaves its index untouched.
 export function mergeSkillOverlayByIndex(
   baseSkills: DiceSkillDefinition[] | undefined,
   overlay: Array<DiceSkillDefinition | null | undefined> | undefined

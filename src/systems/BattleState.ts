@@ -4,8 +4,8 @@ import type {
   DiceOwnerId,
   MatchBattleState
 } from '../types/game';
-import { getRuntimeSkillMetaForTrigger, resolveDamage } from './DiceSkills';
-import { resolveReviveStats } from './Revive';
+import { getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, resolveDamage } from './DiceSkills';
+import { resolveReviveStats } from './CombatSkills';
 import { getCombatDistance } from './CombatRange';
 import { secureChance, securePick } from '../utils/RandomManager';
 
@@ -280,6 +280,17 @@ export function getLivingDiceCount(state: MatchBattleState, ownerId: DiceOwnerId
   return state.dice.filter((die) => die.ownerId === ownerId && !die.isDestroyed).length;
 }
 
+export type TerminalBattleOwner = 'player' | 'enemy' | 'mutual' | null;
+
+export function getTerminalBattleOwner(playerLiving: number, enemyLiving: number): TerminalBattleOwner {
+  const player = Math.max(0, Math.floor(Number(playerLiving) || 0));
+  const enemy = Math.max(0, Math.floor(Number(enemyLiving) || 0));
+  if (player === 0 && enemy === 0) return 'mutual';
+  if (enemy === 0) return 'player';
+  if (player === 0) return 'enemy';
+  return null;
+}
+
 function hasOtherLivingDie(state: MatchBattleState, ownerId: DiceOwnerId, instanceId: string): boolean {
   return state.dice.some((die) =>
     die.ownerId === ownerId &&
@@ -335,8 +346,10 @@ export function findAttackTarget(
   if (!attacker.gridPosition) return undefined;
   const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
 
+  const footprintForDie = (die: DiceInstanceState) => definitions.get(die.typeId)?.footprint ?? 1;
+
   const reachable = enemyDice
-    .map((die) => ({ die, distance: getCombatDistance(attacker, die) }))
+    .map((die) => ({ die, distance: getCombatDistance(attacker, die, footprintForDie) }))
     .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));
 
   if (reachable.length === 0) return undefined;

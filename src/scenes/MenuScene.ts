@@ -5,8 +5,8 @@ import { MENU_TABS, PALETTE, getLayout } from '../ui/theme';
 import { SCENE_KEYS, type SceneKey } from './sceneKeys';
 import { AudioManager } from '../utils/AudioManager';
 import { ProfileStore } from '../systems/ProfileStore';
-import { AchievementStore } from '../systems/AchievementStore';
 import { DEV_MENU_AVAILABLE } from '../utils/BuildFlags';
+import { AlertManager } from '../utils/AlertManager';
 
 type MenuTab = (typeof MENU_TABS)[number];
 
@@ -14,10 +14,11 @@ export class MenuScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Menu;
 
   private activeSceneKey: SceneKey = SCENE_KEYS.Shop;
-  private tabButtons: Array<{ tab: MenuTab; container: Phaser.GameObjects.Container; label: Phaser.GameObjects.Text; chip: Phaser.GameObjects.Text; }> = [];
+  private tabButtons: Array<{ tab: MenuTab; container: Phaser.GameObjects.Container; hit: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; chip: Phaser.GameObjects.Text; }> = [];
+  private tabsBlockedByPopup = false;
+  private lastTabCursor = false;
   private readonly debug = DebugManager.attachScene(MenuScene.KEY);
-  private achievementPopupTimer: Phaser.Time.TimerEvent | null = null;
-  private achievementPopupActive = false;
+  private cursorRefreshTimer: Phaser.Time.TimerEvent | null = null;
 
   constructor() {
     super(MenuScene.KEY);
@@ -87,7 +88,7 @@ export class MenuScene extends Phaser.Scene {
 
       container.add([hit, label, chip]);
       container.setDepth(11);
-      this.tabButtons.push({ tab, container, label, chip });
+      this.tabButtons.push({ tab, container, hit, label, chip });
     });
 
     if (!this.scene.isActive(SCENE_KEYS.Settings)) {
@@ -97,35 +98,65 @@ export class MenuScene extends Phaser.Scene {
     this.ensureUsername();
     this.openTab(MENU_TABS.find((tab) => tab.sceneKey === this.activeSceneKey) ?? MENU_TABS[2]);
     
-    // Start achievement popup checker
-    this.achievementPopupTimer = this.time.addEvent({
+    if (!this.scene.isActive(SCENE_KEYS.AchievementPopup)) {
+      this.scene.launch(SCENE_KEYS.AchievementPopup);
+    }
+    this.scene.bringToTop(SCENE_KEYS.AchievementPopup);
+
+    this.cursorRefreshTimer = this.time.addEvent({
       delay: 100,
       loop: true,
-      callback: () => this.checkAchievementPopups()
+      callback: () => this.refreshTabCursor()
     });
-    
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.tabButtons = [];
-      this.achievementPopupTimer?.destroy();
-      this.achievementPopupTimer = null;
+      this.cursorRefreshTimer?.destroy();
+      this.cursorRefreshTimer = null;
+      this.input.setDefaultCursor('default');
+      this.input.setCursor('default');
     });
   }
 
-  private checkAchievementPopups() {
-    if (this.achievementPopupActive) return;
-    const pending = AchievementStore.getPendingPopups();
-    if (pending.length === 0) return;
+  private hasBlockingPopup(): boolean {
+    if (AlertManager.isOpen()) return true;
+    const activeScene = this.scene.get(this.activeSceneKey) as Phaser.Scene & {
+      modalOpen?: boolean;
+      subModalOpen?: boolean;
+      modalContainer?: unknown;
+      exitPromptOpen?: boolean;
+      modalElements?: unknown[];
+    };
+    return Boolean(
+      activeScene?.modalOpen
+      || activeScene?.subModalOpen
+      || activeScene?.modalContainer
+      || activeScene?.exitPromptOpen
+      || (activeScene?.modalElements?.length ?? 0) > 0
+    );
+  }
 
-    const nextPopup = pending[0];
-    if (!nextPopup) return;
-    this.achievementPopupActive = true;
-    AnimationManager.animateAchievementPopup(this, nextPopup.id, () => {
-      AchievementStore.clearPendingPopup(nextPopup.id);
-      this.achievementPopupActive = false;
-    });
+  private refreshTabCursor() {
+    const blocked = this.hasBlockingPopup();
+    if (blocked !== this.tabsBlockedByPopup) {
+      this.tabsBlockedByPopup = blocked;
+      this.tabButtons.forEach(({ hit }) => {
+        if (hit.input) hit.input.cursor = blocked ? 'not-allowed' : 'pointer';
+      });
+    }
+    const pointer = this.input.activePointer;
+    const overTab = Boolean(pointer) && this.tabButtons.some(({ hit }) => (
+      hit.active && Phaser.Geom.Rectangle.Contains(hit.getBounds(), pointer.x, pointer.y)
+    ));
+    const wantsBlockedCursor = this.tabsBlockedByPopup && overTab;
+    if (wantsBlockedCursor === this.lastTabCursor) return;
+    this.lastTabCursor = wantsBlockedCursor;
+    this.input.setDefaultCursor(wantsBlockedCursor ? 'not-allowed' : 'default');
+    this.input.setCursor(wantsBlockedCursor ? 'not-allowed' : 'default');
   }
 
   private openTab(tab: MenuTab) {
+    if (this.hasBlockingPopup()) return;
     if (tab.sceneKey === SCENE_KEYS.Dev && !DEV_MENU_AVAILABLE) return;
     AudioManager.playSfx(this, 'ui-click');
     if (this.scene.isActive(this.activeSceneKey)) {
@@ -140,6 +171,7 @@ export class MenuScene extends Phaser.Scene {
     // Keep Settings scene running - it will hide its button during actual matches
     if (!this.scene.isActive(SCENE_KEYS.Settings)) this.scene.launch(SCENE_KEYS.Settings);
     this.scene.bringToTop(SCENE_KEYS.Settings);
+    if (this.scene.isActive(SCENE_KEYS.AchievementPopup)) this.scene.bringToTop(SCENE_KEYS.AchievementPopup);
     this.refreshTabs();
 
   }

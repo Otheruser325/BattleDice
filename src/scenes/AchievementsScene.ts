@@ -3,6 +3,7 @@ import { DebugManager } from '../utils/DebugManager';
 import { PALETTE, drawPanel } from '../ui/theme';
 import { SCENE_KEYS } from './sceneKeys';
 import { AchievementStore, type AchievementId } from '../systems/AchievementStore';
+import { checkDiceCollectionAchievements } from '../data/dice';
 
 export class AchievementsScene extends Phaser.Scene {
   static readonly KEY = SCENE_KEYS.Achievements;
@@ -15,13 +16,65 @@ export class AchievementsScene extends Phaser.Scene {
   create() {
     this.debug.log('Achievements scene rendered.');
     const panel = drawPanel(this, 'ACHIEVEMENTS', 'FLEX  |  progression shell');
+    checkDiceCollectionAchievements(this);
 
     const unlocked = AchievementStore.get(this).unlocked;
     const columns: Array<{ title: string; items: Array<{ id: AchievementId; label: string }> }> = [
-      { title: 'Combat', items: [{ id: 'winner', label: 'Winner: Win your first match.' }, { id: 'veteran', label: 'Veteran: Win 10 matches.' }, { id: 'master', label: 'Master: Win 50 matches.' }, { id: 'lotta_damage', label: 'Lotta Damage: Deal over 200 damage to an enemy dice.' }, { id: 'magical_cycle', label: 'Magical Cycle: Charge a total of 100 mana on dice actives in all battles.' }, { id: 'stacked_up', label: 'Stacked Up: Have all bronze/silver/gold cards on the same type in Dice Card random mode.' }] },
-      { title: 'Progression', items: [{ id: 'getting_stronger', label: 'Getting Stronger: Bring a Dice to Class 6.' }, { id: 'augmented', label: 'Augmented: Bring a Dice to Class 11.' }, { id: 'maximum_power', label: 'Maximum Power: Bring a Dice to Class 15.' }, { id: 'darkest_hour', label: 'In Our Darkest Hour...: Obtain a Legendary Dice.' }] },
-      { title: 'Challenges', items: [{ id: 'challenger', label: 'Challenger: Win a daily challenge.' }, { id: 'problem_solver', label: 'Problem Solver: Win 10 daily challenges.' }, { id: 'demonic_torment', label: "Demonic Torment: Defeat Deucifer in Deucifer's Challenge." }, { id: 'jackpot', label: 'Jackpot: Roll a Five-of-a-kind in Fives/Combanity.' }, { id: 'hooked', label: 'Hooked: Beat the Dopamine Challenge.' }, { id: 'boss_slayer', label: 'Boss Slayer: Defeat a Tier 1 boss.' }, { id: 'boss_ripper', label: 'Boss Ripper: Defeat a Tier 5 boss.' }, { id: 'boss_hunter', label: 'Boss Hunter: Defeat a Tier 10 boss.' }] },
-      { title: 'Time/Casino', items: [{ id: 'sweatin_it', label: "Sweatin' It: Play Battle Dice for 1 hour total." }, { id: 'cant_keep_up', label: "Can't Keep Up: Play Battle Dice for 12 hours total." }, { id: 'diceaholic', label: 'Diceaholic: Play Battle Dice for 24 hours total.' }, { id: 'vegas_boy', label: 'Vegas Boy: First time playing a casino table.' }, { id: 'gambolic', label: 'Gambolic: Play 10 casino tables total.' }, { id: 'risksino', label: 'Risksino: Play 50 casino tables total.' }] }
+      {
+        title: 'Combat',
+        items: [
+          { id: 'winner', label: 'Winner: Win your first match.' },
+          { id: 'veteran', label: 'Veteran: Win 10 matches.' },
+          { id: 'master', label: 'Master: Win 50 matches.' },
+          { id: 'lotta_damage', label: 'Lotta Damage: Deal over 200 damage to an enemy dice.' },
+          { id: 'magical_cycle', label: 'Magical Cycle: Charge a total of 100 mana on dice actives in all battles.' },
+          { id: 'stacked_up', label: 'Stacked Up: Have all bronze/silver/gold cards on the same type in Dice Card random mode.' }
+        ]
+      },
+      {
+        title: 'Progression',
+        items: [
+          { id: 'getting_stronger', label: 'Getting Stronger: Bring a Dice to Class 6.' },
+          { id: 'augmented', label: 'Augmented: Bring a Dice to Class 11.' },
+          { id: 'maximum_power', label: 'Maximum Power: Bring a Dice to Class 15.' },
+          { id: 'darkest_hour', label: 'In Our Darkest Hour...: Obtain a Legendary Dice.' },
+          { id: 'dice_collector', label: 'Dice Collector: Own a total of 10 dice.' },
+          { id: 'dice_lover', label: 'Dice Lover: Own a total of 25 dice.' },
+          { id: 'endless_printing', label: 'Endless Printing: Obtain over 1,000 total dice copies, including copies spent on class-ups.' },
+          { id: 'universal_printing', label: 'Universal Printing: Obtain over 5,000 total dice copies, including copies spent on class-ups.' }
+        ]
+      },
+      {
+        title: 'Challenges',
+        items: [
+          { id: 'challenger', label: 'Challenger: Win a daily challenge.' },
+          { id: 'problem_solver', label: 'Problem Solver: Win 10 daily challenges.' },
+          { id: 'demonic_torment', label: "Demonic Torment: Defeat Deucifer in Deucifer's Challenge." },
+          { id: 'jackpot', label: 'Jackpot: Roll a Five-of-a-kind in Fives/Combanity.' },
+          { id: 'hooked', label: 'Hooked: Beat the Dopamine Challenge.' },
+          { id: 'boss_slayer', label: 'Boss Slayer: Defeat a Tier 1 boss.' },
+          { id: 'boss_ripper', label: 'Boss Ripper: Defeat a Tier 5 boss.' },
+          { id: 'boss_hunter', label: 'Boss Hunter: Defeat a Tier 10 boss.' }
+        ]
+      },
+      {
+        title: 'Time',
+        items: [
+          { id: 'sweatin_it', label: "Sweatin' It: Play Battle Dice for 1 hour total." },
+          { id: 'cant_keep_up', label: "Can't Keep Up: Play Battle Dice for 12 hours total." },
+          { id: 'diceaholic', label: 'Diceaholic: Play Battle Dice for 24 hours total.' },
+          { id: 'that_was_sweaty', label: 'That Was Sweaty: Finish a match that lasted more than 10 minutes.' }
+        ]
+      },
+      {
+        title: 'Casino',
+        items: [
+          { id: 'vegas_boy', label: 'Vegas Boy: First time playing a casino table.' },
+          { id: 'gambolic', label: 'Gambolic: Play 10 casino tables total.' },
+          { id: 'risksino', label: 'Risksino: Play 50 casino tables total.' },
+          { id: 'aced_it', label: 'Aced It: Play 250 casino tables total.' }
+        ]
+      }
     ];
 
     const allItems = columns.flatMap((col) => col.items);
@@ -32,7 +85,7 @@ export class AchievementsScene extends Phaser.Scene {
 
     const content = this.add.container(0, 0);
     const columnGap = 18;
-    const minColumnWidth = 220;
+    const minColumnWidth = 200;
     const availableWidth = panel.width - 48;
     const columnCount = Phaser.Math.Clamp(Math.floor((availableWidth + columnGap) / (minColumnWidth + columnGap)), 1, columns.length);
     const columnWidth = Math.floor((availableWidth - columnGap * (columnCount - 1)) / columnCount);

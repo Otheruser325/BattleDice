@@ -9,11 +9,13 @@
     {
       "type": "CombatStart",
       "title": "Sealed In",
-      "description": "Locks the nearest foe in chains within a 2-tile radius, preventing it from attacking until combat ends.",
+      "description": "Locks the nearest foe in chains within a {lockRange}-tile radius, preventing it from attacking until combat ends.",
       "modifiers": {
+        "hasLock": true,
         "lockRange": 2,
-        "canLockFoes": true,
-        "numLocks": 1
+        "numLocks": 1,
+        "lockSideTargeting": "foes",
+        "skillSfx": "dice_lock_skill"
       }
     }
   ],

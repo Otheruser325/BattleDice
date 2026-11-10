@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { DungeonIntroConfig } from '../systems/DungeonIntros';
 
 type FadeTarget = Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.AlphaSingle;
 
@@ -632,5 +633,129 @@ export class AnimationManager {
     });
     
     return popupContainer;
+  }
+
+  static async animateDungeonIntro(scene: Phaser.Scene, intro: DungeonIntroConfig): Promise<void> {
+    if (!scene.sys.isActive()) return;
+    const { width, height } = scene.scale;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const panelWidth = Math.min(760, width - 48);
+    const panelHeight = Math.min(330, height - 120);
+    const root = scene.add.container(0, 0).setDepth(4000).setAlpha(0);
+    const blocker = scene.add.rectangle(centerX, centerY, width, height, 0x000000, 0.001).setInteractive();
+    const backdrop = scene.add.rectangle(centerX, centerY, width, height, intro.backdropColor, 0.92);
+    const stripes = scene.add.graphics();
+    const bandWidth = Math.max(28, width * 0.035);
+    const bandGap = Math.max(30, width * 0.045);
+    const slant = height * 0.72;
+    for (let x = -slant; x < width + slant; x += bandWidth + bandGap) {
+      stripes.fillStyle(intro.stripeColor, 0.34);
+      stripes.fillPoints([
+        { x, y: 0 },
+        { x: x + bandWidth, y: 0 },
+        { x: x + bandWidth - slant, y: height },
+        { x: x - slant, y: height }
+      ], true);
+    }
+    stripes.lineStyle(2, intro.accentColor, 0.72);
+    stripes.lineBetween(0, 22, width, 22);
+    stripes.lineBetween(0, height - 22, width, height - 22);
+
+    const panel = scene.add.rectangle(centerX, centerY, panelWidth, panelHeight, intro.panelColor, 0.82)
+      .setStrokeStyle(2, intro.accentColor, 0.9);
+    const waveLabel = scene.add.text(centerX, centerY - panelHeight / 2 + 30, `DUNGEON WAVE ${intro.wave}`, {
+      fontFamily: 'Orbitron',
+      fontSize: '12px',
+      color: intro.accent
+    }).setOrigin(0.5);
+    const titleY = centerY - panelHeight * 0.14;
+    const title = scene.add.text(centerX, titleY, intro.title, {
+      fontFamily: 'Orbitron',
+      fontSize: `${Math.round(Math.max(25, Math.min(36, width * 0.045)))}px`,
+      color: intro.accent,
+      align: 'center'
+    }).setOrigin(0.5);
+    const bodyY = centerY + panelHeight * 0.17;
+    const body = scene.add.text(centerX, bodyY, intro.body, {
+      fontFamily: 'Orbitron',
+      fontSize: '16px',
+      color: '#f4f7fb',
+      align: 'center',
+      lineSpacing: 8,
+      wordWrap: { width: Math.min(650, panelWidth - 64) }
+    }).setOrigin(0.5);
+    const signSize = Math.round(Math.max(48, Math.min(82, panelHeight * 0.25)));
+    const signSpread = Math.min(panelWidth * 0.32, 230);
+    const signs = intro.signs.slice(0, 2).map((sign, index) => scene.add.text(
+      centerX + (index === 0 ? -signSpread : signSpread),
+      titleY,
+      sign,
+      {
+        fontFamily: 'Arial',
+        fontSize: `${signSize}px`,
+        color: intro.accent,
+        stroke: '#000000',
+        strokeThickness: 4
+      }
+    ).setOrigin(0.5).setShadow(0, 0, intro.accent, 22, true, true));
+
+    root.add([blocker, backdrop, stripes, panel, waveLabel, ...signs, title, body]);
+    scene.tweens.add({ targets: root, alpha: 1, duration: 200, ease: 'Sine.easeOut' });
+    stripes.setX(-70);
+    scene.tweens.add({ targets: stripes, x: 0, duration: 650, ease: 'Cubic.easeOut' });
+    panel.setScale(0.94);
+    scene.tweens.add({ targets: panel, scaleX: 1, scaleY: 1, duration: 420, ease: 'Back.easeOut' });
+    waveLabel.setAlpha(0);
+    scene.tweens.add({ targets: waveLabel, alpha: 1, duration: 260, delay: 80, ease: 'Sine.easeOut' });
+    signs.forEach((sign, index) => {
+      sign.setAlpha(0).setScale(0.55);
+      sign.y += 16;
+      scene.tweens.add({
+        targets: sign,
+        alpha: 1,
+        scaleX: 1,
+        scaleY: 1,
+        y: titleY,
+        duration: 380,
+        delay: 120 + index * 100,
+        ease: 'Back.easeOut'
+      });
+      scene.tweens.add({
+        targets: sign,
+        scaleX: 1.08,
+        scaleY: 1.08,
+        duration: 300,
+        delay: 730 + index * 100,
+        yoyo: true,
+        repeat: 2,
+        ease: 'Sine.easeInOut'
+      });
+    });
+    title.setAlpha(0);
+    title.y += 14;
+    scene.tweens.add({ targets: title, alpha: 1, y: titleY, duration: 320, delay: 220, ease: 'Cubic.easeOut' });
+    body.setAlpha(0);
+    body.y += 12;
+    scene.tweens.add({ targets: body, alpha: 1, y: bodyY, duration: 320, delay: 300, ease: 'Cubic.easeOut' });
+
+    await new Promise<void>((resolve) => {
+      scene.time.delayedCall(2600, () => {
+        if (!root.active) {
+          resolve();
+          return;
+        }
+        scene.tweens.add({
+          targets: root,
+          alpha: 0,
+          duration: 320,
+          ease: 'Sine.easeIn',
+          onComplete: () => {
+            root.destroy(true);
+            resolve();
+          }
+        });
+      });
+    });
   }
 }

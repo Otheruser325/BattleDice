@@ -4,17 +4,20 @@
   "attack": 22,
   "health": 920,
   "range": 3,
+  "attackSfx": "dice_solitude_attack",
   "rarity": "Legendary",
   "skills": [
     {
       "type": "Passive",
       "title": "Lonely Dominion",
-      "description": "When no ally is adjacent to this dice, basic attacks deal bonus damage equal to 7% of the target's max HP.",
+      "description": "When no ally is adjacent to this dice, basic attacks deal bonus damage equal to {targetMaxHpBonusRate} of the target's max HP.",
+      "classBenefits": {
+        "targetMaxHpBonusRate": [0.0, 0.002, 0.004, 0.006, 0.008, 0.01, 0.012, 0.014, 0.016, 0.018, 0.02, 0.022, 0.024, 0.026, 0.028]
+      },
       "modifiers": {
         "targetMaxHpBonusRate": 0.07,
         "checkForAdjacentAllies": true,
-        "skillSfx": "dice_solitude_skill",
-        "attackSfx": "dice_solitude_attack"
+        "skillSfx": "dice_solitude_skill"
       }
     }
   ],

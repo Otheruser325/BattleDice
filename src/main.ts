@@ -7,6 +7,7 @@ import { DiceScene } from './scenes/DiceScene';
 import { ArenaScene } from './scenes/ArenaScene';
 import { CasinoScene } from './scenes/CasinoScene';
 import { AchievementsScene } from './scenes/AchievementsScene';
+import { AchievementPopupScene } from './scenes/AchievementPopupScene';
 import { DevScene } from './scenes/DevScene';
 import { DebugManager } from './utils/DebugManager';
 import { ENABLE_DEV_MENU } from './utils/BuildFlags';
@@ -29,7 +30,8 @@ const config: Phaser.Types.Core.GameConfig = {
     AchievementsScene,
     ...(ENABLE_DEV_MENU ? [DevScene] : []),
     MenuScene,
-    SettingsScene
+    SettingsScene,
+    AchievementPopupScene
   ],
   scale: {
     mode: Phaser.Scale.FIT,

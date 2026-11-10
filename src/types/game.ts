@@ -2,7 +2,7 @@ export type DiceTypeId = string;
 export type DiceSkillType = 'Passive' | 'Active' | 'CombatStart' | 'CombatEnd' | 'OnKill' | 'OnDamaged' | 'OnDeath' | 'OnTransformed';
 export type DiceRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Mythic';
 export type DiceTargetingMode = 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
-export const DICE_STATUS_EFFECT_POOL = ['slow', 'poison', 'fracture', 'taunt', 'stun', 'berserk', 'acceleration', 'dilation'] as const;
+export const DICE_STATUS_EFFECT_POOL = ['slow', 'poison', 'fracture', 'taunt', 'stun', 'berserk', 'acceleration', 'dilation', 'disorientation'] as const;
 export type DiceStatusEffect = typeof DICE_STATUS_EFFECT_POOL[number];
 export type DiceStatusEffectDurationEffect = DiceStatusEffect;
 export type DiceStatusEffectDurationKey = `${DiceStatusEffect}Duration`;
@@ -15,17 +15,24 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   healthDelta?: number;
   attackMultiplier?: number;
   allyExtraAttacks?: number;
+  allyExtraAttacksRadius?: number;
   foeExtraAttacks?: number;
   grantAttacksToAlly?: number;
+  grantAttacksToAllyRadius?: number;
   grantAttacksToFoe?: number;
+  attackCount?: number;
   attackCountIncrease?: number;
+  projectileCount?: number;
+  projectileCountIncrease?: number;
   unlockAtClass?: number;
   statusDuration?: number;
+  skillDuration?: number;
   maxStacks?: number;
   splashDamage?: number;
   splashDamageRate?: number;
   splashDamageRatesByPip?: Record<string, number>;
   hasSplash?: boolean;
+  hasHeatwave?: boolean;
   heatwaveDamage?: number;
   heatwaveDamageRate?: number;
   heatwaveDamageRatesByPip?: Record<string, number>;
@@ -38,21 +45,25 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   poisonDamage?: number;
   poisonDamageRate?: number;
   poisonDamageRatesByPip?: Record<string, number>;
-  activeDamage?: number;
-  activeDamageRate?: number;
-  activeDamageRatesByPip?: Record<string, number>;
-  activeHeal?: number;
+  skillDamage?: number;
+  skillDamageRate?: number;
+  skillDamageRatesByPip?: Record<string, number>;
+  skillHealing?: number;
+  rapidFireCount?: number;
+  rapidFireIncrease?: number;
   onlyTargetsAllies?: boolean;
   skillTargeting?: DiceTargetingMode;
   canFireWithNoTargets?: boolean;
   meteorDamage?: number;
   hasMeteor?: boolean;
-  lavaDamage?: number;
-  lavaPoolPattern?: Array<[number, number]>;
+  meteorPoolType?: string;
+  meteorPoolPattern?: Array<[number, number]>;
+  meteorPoolDuration?: number;
   beamDamage?: number;
   hasBeam?: boolean;
   pierceBehindRange?: number;
   pierceBehindDamage?: number;
+  hasPierce?: boolean;
   hammerDamage?: number;
   hammerRadius?: number;
   canRetriggerSkill?: boolean;
@@ -109,9 +120,15 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   armorReduction?: number;
   statusEffect?: DiceStatusEffect;
   tauntRange?: number;
+  hasLock?: boolean;
   lockRange?: number;
-  canLockFoes?: boolean;
-  canLockAllies?: boolean;
+  lockSideTargeting?: 'allies' | 'foes' | 'both';
+  lockDuration?: number;
+  lockUnlockApplyStatusEffect?: boolean;
+  canLockGridTiles?: boolean;
+  onlyLockGridTiles?: boolean;
+  gridLockDuration?: number;
+  statusToOpposingHand?: boolean;
   numLocks?: number;
   teleportRange?: number;
   teleportSkillFireIndex?: number;
@@ -121,6 +138,7 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   numAttacksDamageMult?: number;
   manaGain?: number;
   allyManaGain?: number;
+  manaGainRadius?: number;
   foeManaGain?: number;
   manaSteal?: number;
   manaStealType?: 'ally' | 'enemy' | 'both';
@@ -129,6 +147,12 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   hasGrowth?: boolean;
   growthDelta?: number;
   growthChance?: number;
+  hasCardOrbit?: boolean;
+  cardOrbitCount?: number;
+  cardOrbitDamageRate?: number;
+  unleashCardOrbit?: boolean;
+  growthSuccessSfx?: string | string[];
+  growthFailedSfx?: string | string[];
   hasPlague?: boolean;
   plaguedDieType?: string;
   plaguedDieHealth?: number;
@@ -139,19 +163,15 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   nuclearPool?: string;
   nuclearPoolLifespan?: number;
   skillRangeThreshold?: number;
-  skillSfx?: string;
+  skillSfx?: string | string[];
   hitsAllFoes?: boolean;
   hitsAllAllies?: boolean;
   ricochetCount?: number;
   ricochetRange?: number;
+  hasRicochet?: boolean;
+  ricochetDropOff?: number;
   healOnAttack?: boolean;
   transformToNextForm?: boolean;
-  transformAttackDamage?: number;
-  deathDamage?: number;
-  onKillDamage?: number;
-  onHitDamage?: number;
-  combatStartDamage?: number;
-  combatEndDamage?: number;
   criticalChanceIncrease?: number;
   criticalDamageIncrease?: number;
   damageRatePerKill?: number;
@@ -162,11 +182,14 @@ export interface DiceSkillModifier extends DiceStatusEffectDurationProperties {
   revengeHits?: number;
   revengeDamage?: number;
   revengeRange?: number;
-  attackSfx?: string;
-  deuciferOddSiphonRate?: number;
-  deuciferEvenDamageRate?: number;
+  oddPipSiphonRate?: number;
+  evenPipSiphonRate?: number;
+  evenPipDamageRate?: number;
+  oddPipDamageRate?: number;
 }
 
+
+export type DiceSkillClassBenefits = Partial<Record<keyof DiceSkillModifier | 'manaNeeded', number[]>>;
 
 export interface DiceSkillDefinition {
   type: DiceSkillType;
@@ -174,6 +197,7 @@ export interface DiceSkillDefinition {
   description: string;
   manaNeeded?: number;
   modifiers?: DiceSkillModifier;
+  classBenefits?: DiceSkillClassBenefits;
   descriptionLocked?: boolean;
   disableSkill?: boolean;
 }
@@ -213,7 +237,44 @@ export interface DiceTransformStats {
   recoveryRate?: number;
   transformDuration?: number;
   symbol?: string;
+  attackSfx?: string | string[];
   skills?: DiceSkillDefinition[];
+}
+
+export type DicePoolTarget = 'foes' | 'allies' | 'both';
+
+export interface DicePoolDefinition {
+  typeId: string;
+  title: string;
+  damage: number;
+  pattern?: Array<[number, number]>;
+  duration?: number;
+  statusEffect?: DiceStatusEffect;
+  statusDuration?: number;
+  maxStacks?: number;
+  affects?: DicePoolTarget;
+  accent?: string;
+  lingerSfx?: string | string[];
+}
+
+export interface DicePoolFlags {
+  typeIds: string[];
+}
+
+export interface DicePoolInstance {
+  typeId: string;
+  title: string;
+  damage: number;
+  turns: number;
+  sourceOwnerId: DiceOwnerId;
+  sourceTypeId: DiceTypeId;
+  sourceInstanceId?: string;
+  statusEffect?: DiceStatusEffect;
+  statusDuration?: number;
+  maxStacks?: number;
+  affects: DicePoolTarget;
+  accent: number;
+  lingerSfx?: string | string[];
 }
 
 export interface DiceDefinition {
@@ -226,6 +287,7 @@ export interface DiceDefinition {
   targetingMode: DiceTargetingMode;
   rarity: DiceRarity;
   skills: DiceSkillDefinition[];
+  attackSfx?: string | string[];
   talents?: DiceTalentDefinition[];
   talentsComingSoon?: boolean;
   accent: string;

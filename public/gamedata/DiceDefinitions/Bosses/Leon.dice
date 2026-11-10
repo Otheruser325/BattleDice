@@ -12,7 +12,7 @@
       "title": "Furious Claw",
       "description": "Enemy dice 2 tiles closer to Leon will be attacked doubly, with critical chance increased to 25%.",
       "modifiers": {
-        "attackCountIncrease": 1,
+        "attackCount": 1,
         "criticalChanceIncrease": 0.2,
         "skillRangeThreshold": 2
       }
@@ -30,7 +30,7 @@
     {
       "type": "OnKill",
       "title": "Rage Or Nothing",
-      "description": "Leon gains +20% basic attack damage for each fallen foe.",
+      "description": "Leon gains +{damageRatePerKill} basic attack damage for each fallen foe.",
       "modifiers": {
         "damageRatePerKill": 0.2,
         "unlockAtClass": 6

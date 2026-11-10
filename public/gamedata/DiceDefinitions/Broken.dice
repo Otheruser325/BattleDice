@@ -13,5 +13,30 @@
     }
   ],
   "accent": "#c5a880",
-  "targetingMode": "Random"
+  "targetingMode": "Random",
+  "talents": [
+    {
+      "title": "Slugfest",
+      "description": "Basic attack damage reduced to 26. Gains {modifiers[1].title} active skill that pelts foes with pellets up to {modifiers[1].rapidFireCount} times, causing {modifiers[1].skillDamage} damage each.",
+      "classNeeded": 9,
+      "modifiers": {
+        "attackDelta": -8,
+        "skills": [
+          {
+          },
+          {
+            "type": "Active",
+            "title": "Slugfest",
+            "description": "Fires {rapidFireCount} shots at random foes for {skillDamage} damage each.",
+			"manaNeeded": 8,
+            "modifiers": {
+			  "skillDamage": 40,
+              "rapidFireCount": 8,
+              "skillSfx": "dice_broken_skill"
+            }
+          }
+        ]
+      }
+    }
+  ]
 }

@@ -9,10 +9,12 @@
     {
       "type": "CombatEnd",
       "title": "Exponential Growth",
-      "description": "Permanently gains +1 attack count for the remainder of the match.",
+      "description": "Permanently gains +{growthDelta} attack count for the remainder of the match.",
       "modifiers": {
         "hasGrowth": true,
-        "growthDelta": 1
+        "growthDelta": 1,
+        "growthSuccessSfx": ["dice_growth_success_01", "dice_growth_success_02"],
+        "growthFailedSfx": ["dice_growth_failed"]
       }
     }
   ],

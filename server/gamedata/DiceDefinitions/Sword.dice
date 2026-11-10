@@ -7,5 +7,6 @@
   "rarity": "Common",
   "skills": [],
   "accent": "#ffffff",
-  "targetingMode": "Nearest"
+  "targetingMode": "Nearest",
+  "attackSfx": ["dice_sword_attack_01", "dice_sword_attack_02", "dice_sword_attack_03"]
 }

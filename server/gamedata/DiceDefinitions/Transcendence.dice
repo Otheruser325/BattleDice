@@ -4,16 +4,16 @@
   "attack": 40,
   "health": 640,
   "range": 5,
+  "attackSfx": "dice_transcendence_attack",
   "rarity": "Legendary",
   "skills": [
     {
       "type": "Passive",
       "title": "Perpendicular Beam",
-      "description": "If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for 520 damage.",
+      "description": "If it rolls 6, transforms into The Transcendence with grid-wide range, and beam attacks consume all remaining attacks to strike through the perpendicular line through the target for {beamDamage} damage.",
       "modifiers": {
 	    "beamDamage": 520,
-        "transformPipCount": 6,
-		"attackSfx": "dice_transcendence_attack"
+        "transformPipCount": 6
       }
     }
   ],
@@ -23,11 +23,11 @@
     "accent": "#6ff6ff",
     "symbol": "✦",
     "transformDuration": 1,
+    "attackSfx": "dice_transcendence_t_attack",
     "skills": [{
       "modifiers": {
         "beamDamage": 520,
-        "hasBeam": true,
-		"attackSfx": "dice_transcendence_t_attack"
+        "hasBeam": true
       }
     }]
   }],

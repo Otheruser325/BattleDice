@@ -1,10 +1,58 @@
 import type { DiceDefinition, DiceInstanceState, DiceSkillType, DiceStatusEffect, DiceTargetingMode } from '../types/game';
 import { CHAIN_NO_TARGET_CAP, getChainTargetLimit, getPipMappedRate, resolvePipScaledDamage, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, getValidSkillDefinitions, getStatusEffectDuration, getSkillLockClass, resolveSkillExtraAttacks, type DiceSkillRuntimeMeta } from './DiceSkills';
-import { getBoardSideCombatDistance } from './CombatRange';
+import { getBoardSideCombatDistance, getGridChebyshevDistance } from './CombatRange';
 import { formatCompact } from '../utils/FormatManager';
 import { secureChance, securePick } from '../utils/RandomManager';
+import { applyClassProgression } from './ClassProgression';
+
+export const MAX_DAMAGE_REDUCTION = 0.95;
+
+export function clampDamageReduction(value: number): number {
+  const numeric = Number.isFinite(value) ? value : 0;
+  return Math.max(0, Math.min(MAX_DAMAGE_REDUCTION, numeric));
+}
+
+export function combineDamageReduction(values: Iterable<number>): number {
+  let remainingDamage = 1;
+  for (const value of values) {
+    remainingDamage *= 1 - clampDamageReduction(value);
+  }
+  return clampDamageReduction(1 - remainingDamage);
+}
+
+export function getMaxHealthHealAmount(maxHealth: number, rate: number): number {
+  const max = Number.isFinite(maxHealth) ? Math.max(0, maxHealth) : 0;
+  const normalizedRate = Number.isFinite(rate) ? Math.max(0, rate) : 0;
+  if (max <= 0 || normalizedRate <= 0) return 0;
+  return Math.max(1, Math.floor(max * normalizedRate));
+}
+
+export function resolveMaxHealthGainCurrentHealth(
+  currentHealth: number,
+  previousMaxHealth: number,
+  nextMaxHealth: number
+): number {
+  const nextMax = Number.isFinite(nextMaxHealth) ? Math.max(0, nextMaxHealth) : 0;
+  const previousMax = Number.isFinite(previousMaxHealth) ? Math.max(0, previousMaxHealth) : nextMax;
+  const current = Number.isFinite(currentHealth) ? Math.max(0, currentHealth) : previousMax;
+  return Math.min(nextMax, current + Math.max(0, nextMax - previousMax));
+}
 
 export type CombatFlowPhase = DiceSkillType | 'Attack';
+
+export function formatCombatSkillLabel(sourceName: string, skillType: DiceSkillType): string {
+  const label = skillType.replace(/([a-z])([A-Z])/g, '$1 $2');
+  return `${sourceName} (${label})`;
+}
+
+export function formatActiveSkillActionLabel(ownerName: string, dieName: string, skillTitle: string | undefined, details: string): string {
+  return `${ownerName} ${dieName} uses ${skillTitle?.trim() || 'active skill'}${details}!`;
+}
+
+export function formatRicochetAggregationLabel(ownerName: string, dieName: string, action: 'attacks' | 'heals', amount: number, critical = false): string {
+  const resource = action === 'heals' ? 'healing' : 'damage';
+  return `${ownerName} ${dieName} ${action} for ${formatCompact(amount)} total ${resource}${critical ? ' (CRITICAL)' : ''}!`;
+}
 
 export interface CombatFlowContext {
   phase: CombatFlowPhase;
@@ -80,6 +128,16 @@ export interface CombatStartManaEffect {
   foeGain: number;
   steal: number;
   stealType: 'ally' | 'enemy' | 'both';
+  radius?: number;
+}
+
+export interface CombatStartAura {
+  sourceId: string;
+  extraAttacks: number;
+  foeExtraAttacks: number;
+  radius?: number;
+  sourcePosition?: { row: number; col: number };
+  sourceFootprint?: number;
 }
 
 export interface CombatStartTauntEffect {
@@ -122,9 +180,11 @@ export interface SkillEffectResult {
   growthDelta?: number;
   missingHealRate?: number;
   grantAttacksToAlly?: number;
+  grantAttacksToAllyRadius?: number;
   grantAttacksToFoe?: number;
   specialAttackDamage?: number;
   specialAttackTarget?: DiceInstanceState;
+  healTarget?: DiceInstanceState;
   plague?: { typeId: string; healthRate: number; attackRate: number };
   revenge?: { hits: number; damage: number; range: number; mode: DiceTargetingMode };
   splashTargets?: DiceInstanceState[];
@@ -136,7 +196,7 @@ export interface SkillEffectResult {
 }
 
 export interface CombatStartResult extends SkillEffectResult {
-  combatStartAuras: { sourceId: string; extraAttacks: number; foeExtraAttacks: number }[];
+  combatStartAuras: CombatStartAura[];
   splashTargets?: DiceInstanceState[];
   splashDamageAmount?: number;
   chainTarget?: DiceInstanceState;
@@ -189,17 +249,21 @@ export interface ActiveEffectResult extends SkillEffectResult {
   splashDamageAmount?: number;
   chainTarget?: DiceInstanceState;
   chainDamageAmount?: number;
-  meteorStrike?: { damage: number; lavaDamage?: number; lavaTurns: number; meteorCount: number; meteorRandomOrientation: boolean; lavaPoolPattern?: Array<[number, number]> };
+  meteorStrike?: { damage: number; poolType?: string; poolDuration?: number; poolPattern?: Array<[number, number]>; meteorCount: number; meteorRandomOrientation: boolean };
   instakill?: { damage: number; targetIsBoss: boolean; bossDamage: number };
   spearStrike?: { damage: number; pierceDamage: number; pierceRange: number };
-  healTarget?: DiceInstanceState;
   shieldGain?: number;
   shieldTurns?: number;
   poisonTarget?: DiceInstanceState;
   poisonDamage?: number;
   poisonTurns?: number;
   directDamage?: { target: DiceInstanceState; damage: number };
+  rapidFire?: { hits: number; damage: number };
+  cardSwarm?: { hits: number; damageRate: number };
   attackCountIncrease?: number;
+  attackCountTurns?: number;
+  projectileCountIncrease?: number;
+  projectileCountTurns?: number;
   extraAttacksTurns?: number;
   armorShredTarget?: DiceInstanceState;
   armorShredRate?: number;
@@ -223,17 +287,13 @@ function applyBonusAttacks(result: SkillEffectResult, bonus: number): void {
   result.bonusAttacks = (result.bonusAttacks ?? 0) + bonus;
 }
 
-// A skill can grant extra attacks to the caster's allies (a buff) and to the opposing side (a
-// downside). Both resolve through every trigger type so an on-damaged/on-kill effect can hand out
-// attacks the same way a combat-start aura does. Outside CombatStart there is no aura collection,
-// so allyExtraAttacks/foeExtraAttacks collapse into the single-target grants alongside their
-// grantAttacksToAlly/grantAttacksToFoe counterparts.
 function applyAllyExtraAttacks(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): number {
   const { allyBonus, grantsToAlly } = resolveSkillExtraAttacks(meta);
   const total = allyBonus + grantsToAlly;
   if (total <= 0) return 0;
   applyBonusAttacks(result, total);
   result.grantAttacksToAlly = total;
+  if (grantsToAlly > 0) result.grantAttacksToAllyRadius = meta.grantAttacksToAllyRadius;
   return total;
 }
 
@@ -245,13 +305,13 @@ function applyFoeExtraAttacks(result: SkillEffectResult, meta: DiceSkillRuntimeM
   return total;
 }
 
-// CombatStart keeps allyExtraAttacks/foeExtraAttacks as die-wide auras (collected by
-// collectCombatStartAuras and applied once per side); only the explicit grants become single-target
-// handouts here. The aura total is still reported on bonusAttacks so the phase can tell the skill fired.
 function applyCombatStartGrants(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): void {
   const { allyBonus, foeBonus, grantsToAlly, grantsToFoe } = resolveSkillExtraAttacks(meta);
   if (allyBonus + foeBonus > 0) applyBonusAttacks(result, allyBonus + foeBonus);
-  if (grantsToAlly > 0) result.grantAttacksToAlly = grantsToAlly;
+  if (grantsToAlly > 0) {
+    result.grantAttacksToAlly = grantsToAlly;
+    result.grantAttacksToAllyRadius = meta.grantAttacksToAllyRadius;
+  }
   if (grantsToFoe > 0) result.grantAttacksToFoe = grantsToFoe;
 }
 
@@ -272,6 +332,24 @@ function applySummon(result: SkillEffectResult, meta: DiceSkillRuntimeMeta): voi
   result.summonCount = Math.max(1, Math.floor(meta.summonCount ?? 1));
   result.summonPattern = meta.summonPattern;
   result.summonAllowRoll = meta.allowSummonedDieToRoll;
+}
+
+function applySkillDamage(result: SkillEffectResult, meta: DiceSkillRuntimeMeta, definition: DiceDefinition, target: DiceInstanceState | undefined, pips = 1): void {
+  if (meta.skillDamage === undefined && meta.skillDamageRate === undefined && meta.skillDamageRatesByPip === undefined) return;
+  result.specialAttackDamage = resolvePipScaledDamage(
+    meta.skillDamage,
+    definition.attack,
+    meta.skillDamageRate,
+    meta.skillDamageRatesByPip,
+    pips
+  );
+  if (target) result.specialAttackTarget = target;
+}
+
+function applySkillHealing(result: SkillEffectResult, meta: DiceSkillRuntimeMeta, target: DiceInstanceState | undefined): void {
+  if (meta.skillHealing === undefined) return;
+  result.healAmount = Math.max(1, Math.ceil(meta.skillHealing));
+  if (target) result.healTarget = target;
 }
 
 export function applySkillDamageModifiers(
@@ -417,7 +495,8 @@ export function executeRevengeSkillEffects(
 
 export function getCombatStartManaEffect(
   definition: DiceDefinition,
-  classLevel: number
+  classLevel: number,
+  allyManaBonus = 0
 ): CombatStartManaEffect | undefined {
   const skill = getValidSkillDefinitions(definition).find((candidate) => {
     if (candidate.type !== 'CombatStart' || !candidate.modifiers) return false;
@@ -431,10 +510,11 @@ export function getCombatStartManaEffect(
   const meta = getRuntimeSkillMeta({ ...definition, skills: [skill] }, undefined, true);
   return {
     selfGain: Math.max(0, Math.floor(meta.manaGain ?? 0)),
-    allyGain: Math.max(0, Math.floor(meta.allyManaGain ?? 0)),
+    allyGain: Math.max(0, Math.floor((meta.allyManaGain ?? 0) + Math.max(0, allyManaBonus))),
     foeGain: Math.max(0, Math.floor(meta.foeManaGain ?? 0)),
     steal: Math.max(0, Math.floor(meta.manaSteal ?? 0)),
-    stealType: meta.manaStealType ?? 'enemy'
+    stealType: meta.manaStealType ?? 'enemy',
+    radius: meta.manaGainRadius
   };
 }
 
@@ -477,28 +557,73 @@ export function chooseInfiltratorPlacement(
   foes: DiceInstanceState[],
   occupiedTiles: Set<string>,
   gridSize: number,
-  getDistance: (from: DiceInstanceState, to: DiceInstanceState) => number
+  getDistance: (from: DiceInstanceState, to: DiceInstanceState) => number,
+  footprintForDie?: (die: DiceInstanceState) => number
 ): InfiltratorPlacement | undefined {
   const infiltrator = getInfiltratorSkillEffect(definition, classLevel);
   if (!infiltrator || !source.gridPosition || foes.length === 0) return undefined;
 
-  const furthest = [...foes]
-    .filter((foe) => foe.gridPosition)
-    .sort((a, b) => getDistance(source, b) - getDistance(source, a))[0];
-  if (!furthest?.gridPosition) return undefined;
+  const positionedFoes = foes.filter((foe): foe is DiceInstanceState & { gridPosition: { row: number; col: number } } => Boolean(foe.gridPosition));
+  if (positionedFoes.length === 0) return undefined;
+  const footprintFor = (die: DiceInstanceState) => Math.max(1, Math.floor(footprintForDie?.(die) ?? 1));
+  const cellsFor = (die: DiceInstanceState) => {
+    const footprint = footprintFor(die);
+    const cells: Array<{ row: number; col: number }> = [];
+    for (let rowOffset = 0; rowOffset < footprint; rowOffset++) {
+      for (let colOffset = 0; colOffset < footprint; colOffset++) {
+        cells.push({ row: die.gridPosition!.row + rowOffset, col: die.gridPosition!.col + colOffset });
+      }
+    }
+    return cells;
+  };
+  const farColumn = (die: DiceInstanceState) => {
+    const columns = cellsFor(die).map((cell) => cell.col);
+    return source.ownerId === 'player' ? Math.max(...columns) : Math.min(...columns);
+  };
+  const furthest = [...positionedFoes].sort((a, b) => {
+    const columnPriority = source.ownerId === 'player'
+      ? farColumn(b) - farColumn(a)
+      : farColumn(a) - farColumn(b);
+    return columnPriority || getDistance(source, b) - getDistance(source, a) || a.gridPosition.row - b.gridPosition.row;
+  })[0];
 
   const targetBoardSide: 'player' | 'enemy' = source.ownerId === 'player' ? 'enemy' : 'player';
-  const neighbors = [
-    { row: furthest.gridPosition.row - 1, col: furthest.gridPosition.col },
-    { row: furthest.gridPosition.row + 1, col: furthest.gridPosition.col },
-    { row: furthest.gridPosition.row, col: furthest.gridPosition.col - 1 },
-    { row: furthest.gridPosition.row, col: furthest.gridPosition.col + 1 }
-  ].filter((tile) => tile.row >= 0 && tile.row < gridSize && tile.col >= 0 && tile.col < gridSize && !occupiedTiles.has(`${tile.row},${tile.col}`));
+  const targetCells = cellsFor(furthest);
+  const targetCellKeys = new Set(targetCells.map((cell) => `${cell.row},${cell.col}`));
+  const neighborKeys = new Set<string>();
+  const neighbors = targetCells
+    .flatMap((cell) => [
+      { row: cell.row - 1, col: cell.col },
+      { row: cell.row + 1, col: cell.col },
+      { row: cell.row, col: cell.col - 1 },
+      { row: cell.row, col: cell.col + 1 }
+    ])
+    .filter((tile) => {
+      const key = `${tile.row},${tile.col}`;
+      if (neighborKeys.has(key)) return false;
+      if (targetCellKeys.has(key) || occupiedTiles.has(key)) return false;
+      if (tile.row < 0 || tile.row >= gridSize || tile.col < 0 || tile.col >= gridSize) return false;
+      neighborKeys.add(key);
+      return true;
+    });
 
   const teleportRange = infiltrator.teleportRange ?? definition.range;
+  const sourceFootprint = footprintFor(source);
+  const fitsAt = (tile: { row: number; col: number }) => {
+    for (let rowOffset = 0; rowOffset < sourceFootprint; rowOffset++) {
+      for (let colOffset = 0; colOffset < sourceFootprint; colOffset++) {
+        const row = tile.row + rowOffset;
+        const col = tile.col + colOffset;
+        if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) return false;
+        if (occupiedTiles.has(`${row},${col}`) || targetCellKeys.has(`${row},${col}`)) return false;
+      }
+    }
+    return true;
+  };
   let chosen: { row: number; col: number } | undefined;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const tile of neighbors) {
+    if (!fitsAt(tile)) continue;
     const proxy: DiceInstanceState = { ...source, gridPosition: tile };
     const distance = getDistance(source, proxy);
     if (teleportRange >= 0 && distance > teleportRange) continue;
@@ -545,10 +670,8 @@ export function executeOnDamagedSkillEffects(
   addStatusApplication(result, meta, definition, attacker, target, 1);
   applyGrowth(result, meta);
   applySummon(result, meta);
-  if (meta.onHitDamage !== undefined) {
-    result.specialAttackDamage = Math.max(1, meta.onHitDamage);
-    result.specialAttackTarget = attacker;
-  }
+  applySkillDamage(result, meta, definition, attacker);
+  applySkillHealing(result, meta, target);
 
   const allyBonus = applyAllyExtraAttacks(result, meta);
   if (allyBonus > 0) result.extraEffects = [`OnDamaged grants +${allyBonus} attacks to ally`];
@@ -574,10 +697,8 @@ export function executeOnDeathSkillEffects(
   addStatusApplication(result, meta, definition, attacker, defeated, 1);
   applyGrowth(result, meta);
   applySummon(result, meta);
-  if (meta.deathDamage !== undefined) {
-    result.specialAttackDamage = Math.max(1, meta.deathDamage);
-    result.specialAttackTarget = attacker;
-  }
+  applySkillDamage(result, meta, definition, attacker);
+  applySkillHealing(result, meta, defeated);
 
   const allyBonus = applyAllyExtraAttacks(result, meta);
   if (allyBonus > 0) result.extraEffects = [`OnDeath grants +${allyBonus} attacks to ally`];
@@ -585,6 +706,31 @@ export function executeOnDeathSkillEffects(
   if (foeBonus > 0) result.extraEffects = [...(result.extraEffects ?? []), `OnDeath grants +${foeBonus} attacks to the opposing side`];
 
   return result;
+}
+
+export interface ReviveStatsInput {
+  maxHealth: number;
+  baseAttack?: number;
+  healthRate?: number;
+  attackRate?: number;
+}
+
+export interface ReviveStats {
+  maxHealth: number;
+  currentHealth: number;
+  attack: number;
+}
+
+export function resolveReviveStats(input: ReviveStatsInput): ReviveStats {
+  const maxHealth = Math.max(1, Math.round(Number.isFinite(input.maxHealth) ? input.maxHealth : 1));
+  const baseAttack = Number.isFinite(input.baseAttack) ? input.baseAttack! : 1;
+  const healthRate = Number.isFinite(input.healthRate) ? Math.max(0, Math.min(1, input.healthRate!)) : 1;
+  const attackRate = Number.isFinite(input.attackRate) ? Math.max(0, Math.min(1, input.attackRate!)) : 1;
+  return {
+    maxHealth,
+    currentHealth: Math.max(1, Math.round(maxHealth * healthRate)),
+    attack: Math.max(1, Math.round(baseAttack * attackRate))
+  };
 }
 
 export function executeOnTransformedSkillEffects(
@@ -598,7 +744,8 @@ export function executeOnTransformedSkillEffects(
   addStatusApplication(result, meta, definition, transformed, transformed, 1);
   applyGrowth(result, meta);
   applySummon(result, meta);
-  if (meta.transformAttackDamage !== undefined) result.specialAttackDamage = Math.max(1, meta.transformAttackDamage);
+  applySkillDamage(result, meta, definition, undefined);
+  applySkillHealing(result, meta, transformed);
 
   const allyBonus = applyAllyExtraAttacks(result, meta);
   const foeBonus = applyFoeExtraAttacks(result, meta);
@@ -625,7 +772,8 @@ export function executeOnKillSkillEffects(
   if (!meta) return result;
   applyGrowth(result, meta);
   applySummon(result, meta);
-  if (meta.onKillDamage !== undefined) result.specialAttackDamage = Math.max(1, meta.onKillDamage);
+  applySkillDamage(result, meta, definition, undefined);
+  applySkillHealing(result, meta, attacker);
   if (meta.hasPlague === true) {
     const configuredType = meta.plaguedDieType?.trim();
     const typeId = !configuredType || configuredType === '{instanceId}' ? attacker.typeId : configuredType;
@@ -660,6 +808,60 @@ export function executeOnKillSkillEffects(
   return result;
 }
 
+export interface PlagueSpawnInput {
+  baseDefinition: DiceDefinition;
+  classLevel: number;
+  healthRate: number;
+  attackRate: number;
+  defeatedPips: number;
+  defeatedPosition?: { row: number; col: number };
+  defeatedBoardSide: 'player' | 'enemy';
+  footprint: number;
+  gridSize: number;
+  isAvailable?: (row: number, col: number) => boolean;
+}
+
+export interface PlagueSpawnResult {
+  definition: DiceDefinition;
+  maxHealth: number;
+  currentHealth: number;
+  pips: number;
+  position: { row: number; col: number };
+  boardSide: 'player' | 'enemy';
+}
+
+export function resolvePlagueSpawn(input: PlagueSpawnInput): PlagueSpawnResult | undefined {
+  const gridSize = Math.max(1, Math.floor(input.gridSize));
+  const footprint = Math.max(1, Math.min(gridSize, Math.floor(input.footprint)));
+  const classLevel = Number.isFinite(input.classLevel) ? Math.floor(input.classLevel) : 1;
+  const healthRate = Number.isFinite(input.healthRate) ? Math.max(0, Math.min(1, input.healthRate)) : 1;
+  const attackRate = Number.isFinite(input.attackRate) ? Math.max(0, input.attackRate) : 1;
+  const pips = Number.isFinite(input.defeatedPips) ? Math.max(1, Math.floor(input.defeatedPips)) : 1;
+  const position = input.defeatedPosition;
+  if (!position) return undefined;
+  const row = Math.floor(position.row);
+  const col = Math.floor(position.col);
+  if (row < 0 || col < 0 || row + footprint > gridSize || col + footprint > gridSize) return undefined;
+  if (input.isAvailable && !input.isAvailable(row, col)) return undefined;
+
+  const base = applyClassProgression(input.baseDefinition, classLevel);
+  const maxHealth = Math.max(1, Math.round(Number.isFinite(base.health) ? base.health : 1));
+  const currentHealth = Math.max(1, Math.round(maxHealth * healthRate));
+
+  return {
+    definition: {
+      ...base,
+      attack: Math.max(1, Math.round(base.attack * attackRate)),
+      health: maxHealth
+    },
+    maxHealth,
+    currentHealth,
+    pips,
+    position: { row, col },
+    boardSide: input.defeatedBoardSide
+  };
+}
+
 export function executeCombatStartSkillEffects(
   die: DiceInstanceState,
   definition: DiceDefinition,
@@ -675,16 +877,13 @@ export function executeCombatStartSkillEffects(
   addStatusApplication(result, meta, definition, die, target, pips);
   applyGrowth(result, meta);
   applySummon(result, meta);
-  if (meta.combatStartDamage !== undefined) {
-    result.specialAttackDamage = Math.max(1, meta.combatStartDamage);
-    result.specialAttackTarget = target;
-  }
+  applySkillDamage(result, meta, definition, target, pips);
+  applySkillHealing(result, meta, die);
 
   applyCombatStartGrants(result, meta);
   if (!target?.gridPosition) return result;
 
-  const splashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
-  if (meta.hasSplash === true && (meta.splashDamage !== undefined || meta.splashDamageRatesByPip !== undefined || splashRate !== undefined)) {
+  if (meta.hasSplash === true) {
     const targets = boardSideTargets.filter((candidate) => candidate.instanceId !== target.instanceId && candidate.gridPosition
       && getTargetingFootprintDistance(target, candidate, footprintForDie) <= 1);
     if (targets.length > 0) {
@@ -692,13 +891,11 @@ export function executeCombatStartSkillEffects(
       result.splashDamageAmount = resolvePipScaledDamage(meta.splashDamage, definition.attack, meta.splashDamageRate, meta.splashDamageRatesByPip, pips);
     }
   }
-  const heatwaveRate = getPipMappedRate(meta.heatwaveDamageRatesByPip, pips, meta.heatwaveDamageRate);
-  if (meta.heatwaveDamage !== undefined || heatwaveRate !== undefined || meta.heatwaveDamageRatesByPip !== undefined) {
+  if (meta.hasHeatwave === true) {
     result.heatwaveDamageAmount = resolvePipScaledDamage(meta.heatwaveDamage, definition.attack, meta.heatwaveDamageRate, meta.heatwaveDamageRatesByPip, pips);
   }
 
-  const chainRate = getPipMappedRate(meta.chainDamageRatesByPip, pips, meta.chainDamageRate);
-  if (meta.hasChain === true && (meta.chainDamage !== undefined || meta.chainDamageRatesByPip !== undefined || chainRate !== undefined)) {
+  if (meta.hasChain === true) {
     const chainRange = Math.max(1, Math.floor(
       typeof meta.chainRange === 'number' && Number.isFinite(meta.chainRange)
         ? meta.chainRange
@@ -721,35 +918,68 @@ export function executeCombatStartSkillEffects(
   return result;
 }
 
-export function collectCombatStartAuras(dice: DiceInstanceState[], getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined): { sourceId: string; extraAttacks: number; foeExtraAttacks: number }[] {
+export function collectCombatStartAuras(
+  dice: DiceInstanceState[],
+  getDefinition: (die: DiceInstanceState) => DiceDefinition | undefined,
+  getClassLevel?: (die: DiceInstanceState) => number
+): CombatStartAura[] {
   return dice
     .map((die) => {
       const definition = getDefinition(die);
       if (!definition) return null;
-      if (!getValidSkillDefinitions(definition).some((skill) => skill.type === 'CombatStart')) return null;
-      const startMeta = getRuntimeSkillMetaForTrigger(definition, 'CombatStart');
+      const classLevel = getClassLevel?.(die);
+      const combatStartSkills = getValidSkillDefinitions(definition).filter((skill) =>
+        skill.type === 'CombatStart'
+        && (classLevel === undefined || getSkillLockClass(skill) === undefined || classLevel >= getSkillLockClass(skill)!)
+      );
+      if (combatStartSkills.length === 0) return null;
+      const startMeta = getRuntimeSkillMetaForTrigger(
+        classLevel === undefined ? definition : { ...definition, skills: combatStartSkills },
+        'CombatStart'
+      );
       const extraAttacks = startMeta.allyExtraAttacks ?? 0;
       const foeExtraAttacks = startMeta.foeExtraAttacks ?? 0;
-      return extraAttacks > 0 || foeExtraAttacks > 0 ? { sourceId: die.instanceId, extraAttacks, foeExtraAttacks } : null;
+      if (extraAttacks <= 0 && foeExtraAttacks <= 0) return null;
+      const radius = startMeta.allyExtraAttacksRadius;
+      return {
+        sourceId: die.instanceId,
+        extraAttacks,
+        foeExtraAttacks,
+        radius,
+        sourcePosition: die.gridPosition ? { ...die.gridPosition } : undefined,
+        sourceFootprint: Math.max(1, Math.floor(definition.footprint ?? 1))
+      };
     })
-    .filter((aura): aura is { sourceId: string; extraAttacks: number; foeExtraAttacks: number } => aura !== null);
+    .filter((aura): aura is NonNullable<typeof aura> => aura !== null);
 }
 
 export function computeCombatStartBonus(
   die: DiceInstanceState,
-  playerAuras: { sourceId: string; extraAttacks: number }[],
-  enemyAuras: { sourceId: string; extraAttacks: number }[]
+  playerAuras: CombatStartAura[],
+  enemyAuras: CombatStartAura[],
+  footprintForDie?: (die: DiceInstanceState) => number
 ): number {
   const auras = die.ownerId === 'player' ? playerAuras : enemyAuras;
-  return auras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.extraAttacks), 0);
+  return auras.reduce((sum, aura) => {
+    if (aura.sourceId === die.instanceId) return sum;
+    if (aura.radius === undefined) return sum + aura.extraAttacks;
+    if (!aura.sourcePosition) return sum;
+    const distance = getGridChebyshevDistance(
+      { gridPosition: aura.sourcePosition },
+      die,
+      aura.sourceFootprint ?? 1,
+      footprintForDie?.(die) ?? 1
+    );
+    return distance <= aura.radius ? sum + aura.extraAttacks : sum;
+  }, 0);
 }
 
 // A foeExtraAttacks combat-start aura buffs the caster's opponents: it lands on this die when the
 // aura came from the opposing side, mirroring the ally aura on the same die.
 export function computeCombatStartFoeBonus(
   die: DiceInstanceState,
-  playerAuras: { sourceId: string; foeExtraAttacks: number }[],
-  enemyAuras: { sourceId: string; foeExtraAttacks: number }[]
+  playerAuras: CombatStartAura[],
+  enemyAuras: CombatStartAura[]
 ): number {
   const opposingAuras = die.ownerId === 'player' ? enemyAuras : playerAuras;
   return opposingAuras.reduce((sum, aura) => sum + (aura.sourceId === die.instanceId ? 0 : aura.foeExtraAttacks), 0);
@@ -763,9 +993,11 @@ export function executeCombatEndSkillEffects(
   const result: CombatEndResult = {};
   const meta = getUnlockedSkillMeta(definition, classLevel, 'CombatEnd');
   if (!meta) return result;
+  if (meta.statusToOpposingHand !== true) addStatusApplication(result, meta, definition, die, die, 1);
   applyGrowth(result, meta);
   applySummon(result, meta);
-  if (meta.combatEndDamage !== undefined) result.specialAttackDamage = Math.max(1, meta.combatEndDamage);
+  applySkillDamage(result, meta, definition, undefined);
+  applySkillHealing(result, meta, die);
 
   applyAllyExtraAttacks(result, meta);
   applyFoeExtraAttacks(result, meta);
@@ -796,9 +1028,7 @@ export function executePassiveSkillEffects(
   if (!target?.gridPosition) return result;
   addStatusApplication(result, meta, definition, attacker, target, pips);
 
-  const splashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
-  const hasSplashMapping = meta.splashDamageRatesByPip !== undefined;
-  if (meta.hasSplash === true && (meta.splashDamage !== undefined || hasSplashMapping || splashRate !== undefined)) {
+  if (meta.hasSplash === true) {
     const splashTargets = boardSideTargets.filter((die) =>
       die.instanceId !== target.instanceId
       && die.gridPosition
@@ -810,9 +1040,7 @@ export function executePassiveSkillEffects(
     }
   }
 
-  const chainRate = getPipMappedRate(meta.chainDamageRatesByPip, pips, meta.chainDamageRate);
-  const hasChainMapping = meta.chainDamageRatesByPip !== undefined;
-  if (meta.hasChain === true && (meta.chainDamage !== undefined || hasChainMapping || chainRate !== undefined)) {
+  if (meta.hasChain === true) {
     const chainRange = Math.max(1, Math.floor(
       typeof meta.chainRange === 'number' && Number.isFinite(meta.chainRange)
         ? meta.chainRange
@@ -833,19 +1061,19 @@ export function executePassiveSkillEffects(
     }
   }
 
-  const heatwaveRate = getPipMappedRate(meta.heatwaveDamageRatesByPip, pips, meta.heatwaveDamageRate);
-  if (meta.heatwaveDamage !== undefined || meta.heatwaveDamageRatesByPip !== undefined || heatwaveRate !== undefined) {
+  if (meta.hasHeatwave === true) {
     result.heatwaveDamageAmount = resolvePipScaledDamage(meta.heatwaveDamage, definition.attack, meta.heatwaveDamageRate, meta.heatwaveDamageRatesByPip, pips);
   }
 
-  if (meta.pierceBehindRange && attacker.gridPosition) {
+  if (meta.hasPierce === true && attacker.gridPosition) {
+    const pierceRange = Math.max(1, Math.floor(meta.pierceBehindRange ?? 1));
     const pierceTargets: DiceInstanceState[] = [];
     const attackerBoardSide = attacker.ownerId === 'player' ? 0 : 4;
     const rowStep = Math.sign(target.gridPosition.row - attacker.gridPosition.row);
     const colStep = attackerBoardSide === 0 ? 1 : -1;
     const targetFootprint = Math.max(1, Math.floor(footprintForDie?.(target) ?? 1));
     const hitIds = new Set<string>();
-    for (let i = targetFootprint; i < targetFootprint + meta.pierceBehindRange; i++) {
+    for (let i = targetFootprint; i < targetFootprint + pierceRange; i++) {
       const row = target.gridPosition.row + rowStep * i;
       const col = target.gridPosition.col + colStep * i;
       const hit = boardSideTargets.find((die) =>
@@ -863,7 +1091,7 @@ export function executePassiveSkillEffects(
     }
   }
 
-  if ((meta.attackCountIncrease ?? 0) > 0 && meta.skillRangeThreshold !== undefined) {
+  if ((meta.attackCount ?? 0) > 0 && meta.skillRangeThreshold !== undefined) {
     result.leonFuriousClaw = true;
   }
 
@@ -894,17 +1122,27 @@ export function executeActiveSkillEffects(
   applyGrowth(result, meta);
   applySummon(result, meta);
 
-  const activeSplashRate = getPipMappedRate(meta.splashDamageRatesByPip, pips, meta.splashDamageRate);
-  if (meta.hasSplash === true && (meta.splashDamage !== undefined || meta.splashDamageRatesByPip !== undefined || activeSplashRate !== undefined)) {
+  if (meta.unleashCardOrbit === true) {
+    const orbitMeta = getRuntimeSkillMeta(definition, activeSlot?.skillIndex);
+    const hits = Math.max(0, Math.floor(orbitMeta.cardOrbitCount ?? 0));
+    if (orbitMeta.hasCardOrbit === true && hits > 0) {
+      result.cardSwarm = {
+        hits,
+        damageRate: Math.max(0.01, orbitMeta.cardOrbitDamageRate ?? 1)
+      };
+    }
+    return result;
+  }
+
+  if (meta.hasSplash === true) {
     result.activeSplashDamageAmount = resolvePipScaledDamage(meta.splashDamage, definition.attack, meta.splashDamageRate, meta.splashDamageRatesByPip, pips);
   }
 
-  const activeHeatwaveRate = getPipMappedRate(meta.heatwaveDamageRatesByPip, pips, meta.heatwaveDamageRate);
-  if (meta.heatwaveDamage !== undefined || meta.heatwaveDamageRatesByPip !== undefined || activeHeatwaveRate !== undefined) {
+  if (meta.hasHeatwave === true) {
     result.heatwaveDamageAmount = resolvePipScaledDamage(meta.heatwaveDamage, definition.attack, meta.heatwaveDamageRate, meta.heatwaveDamageRatesByPip, pips);
   }
 
-  if (meta.hasChain === true && (meta.chainDamage !== undefined || meta.chainDamageRatesByPip !== undefined || meta.chainDamageRate !== undefined)) {
+  if (meta.hasChain === true) {
     const chainTarget = target && !target.isDestroyed ? target : undefined;
     if (chainTarget) {
       result.chainTarget = chainTarget;
@@ -921,11 +1159,11 @@ export function executeActiveSkillEffects(
     if (currentMana >= meteorManaNeeded) {
       result.meteorStrike = {
         damage: meta.meteorDamage ?? 60,
-        lavaDamage: meta.lavaDamage,
-        lavaTurns: meta.activeDurationTurns ?? 3,
+        poolType: meta.meteorPoolType,
+        poolDuration: meta.meteorPoolDuration,
+        poolPattern: meta.meteorPoolPattern,
         meteorCount: Math.max(1, Math.floor(meta.meteorCount ?? 1)),
-        meteorRandomOrientation: meta.meteorRandomOrientation ?? false,
-        lavaPoolPattern: meta.lavaPoolPattern
+        meteorRandomOrientation: meta.meteorRandomOrientation ?? false
       };
       return result;
     }
@@ -956,12 +1194,12 @@ export function executeActiveSkillEffects(
     return result;
   }
 
-  if (meta.pierceBehindDamage !== undefined) {
+  if (meta.hasPierce === true) {
     if (canCastActive && target) {
       result.spearStrike = {
-        damage: meta.activeDamage ?? 104,
-        pierceDamage: meta.pierceBehindDamage ?? 208,
-        pierceRange: meta.pierceBehindRange ?? 1
+        damage: meta.skillDamage ?? definition.attack,
+        pierceDamage: meta.pierceBehindDamage ?? definition.attack,
+        pierceRange: Math.max(1, Math.floor(meta.pierceBehindRange ?? 1))
       };
     } else if (manaNeeded > 0) {
       result.needsMana = true;
@@ -969,10 +1207,10 @@ export function executeActiveSkillEffects(
     return result;
   }
 
-  if (meta.activeHeal !== undefined) {
+  if (meta.skillHealing !== undefined) {
     if (canCastActive && target) {
       result.healTarget = target;
-      result.healAmount = Math.max(1, Math.ceil(meta.activeHeal));
+      result.healAmount = Math.max(1, Math.ceil(meta.skillHealing));
     } else if (manaNeeded > 0) {
       result.needsMana = true;
     }
@@ -998,20 +1236,34 @@ export function executeActiveSkillEffects(
 
   result.statusEffect = meta.activeStatusEffect;
 
-  if ((meta.activeDamage !== undefined || meta.activeDamageRate !== undefined || meta.activeDamageRatesByPip !== undefined)
-    && meta.pierceBehindDamage === undefined && meta.meteorDamage === undefined && !meta.instakill
+  if ((meta.rapidFireCount ?? 0) > 0) {
+    const rapidFireIncrease = getRuntimeSkillMeta(definition, activeSlot?.skillIndex).rapidFireIncrease ?? 0;
+    result.rapidFire = {
+      hits: Math.max(1, Math.floor((meta.rapidFireCount ?? 1) + rapidFireIncrease)),
+      damage: resolvePipScaledDamage(meta.skillDamage, definition.attack, meta.skillDamageRate, meta.skillDamageRatesByPip, pips)
+    };
+    return result;
+  }
+
+  if ((meta.skillDamage !== undefined || meta.skillDamageRate !== undefined || meta.skillDamageRatesByPip !== undefined)
+    && meta.meteorDamage === undefined && !meta.instakill
     && (target !== undefined || meta.hitsAllFoes === true || meta.hitsAllAllies === true)) {
     result.directDamage = {
       target: target ?? attacker,
-      damage: resolvePipScaledDamage(meta.activeDamage, definition.attack, meta.activeDamageRate, meta.activeDamageRatesByPip, pips)
+      damage: resolvePipScaledDamage(meta.skillDamage, definition.attack, meta.skillDamageRate, meta.skillDamageRatesByPip, pips)
     };
     result.hitsAllFoes = meta.hitsAllFoes;
     result.hitsAllAllies = meta.hitsAllAllies;
   }
 
-  if ((meta.attackCountIncrease ?? 0) > 0 && meta.activeDurationTurns !== undefined) {
+  if ((meta.projectileCountIncrease ?? 0) > 0 && (meta.skillDuration ?? 0) > 0) {
+    result.projectileCountIncrease = meta.projectileCountIncrease;
+    result.projectileCountTurns = meta.skillDuration;
+  }
+
+  if ((meta.attackCountIncrease ?? 0) > 0 && (meta.skillDuration ?? 0) > 0) {
     result.attackCountIncrease = meta.attackCountIncrease;
-    result.extraAttacksTurns = meta.activeDurationTurns;
+    result.attackCountTurns = meta.skillDuration;
   }
 
   const allyBonus = applyAllyExtraAttacks(result, meta);

@@ -19,7 +19,10 @@
     {
       "type": "Passive",
       "title": "Execution Rhythm",
-      "description": "The next 2 basic attacks deal 100% more damage.",
+      "description": "The next {numAttacksBoosted} basic attacks deal 100% more damage.",
+      "classBenefits": {
+        "numAttacksBoosted": [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3]
+      },
       "modifiers": {
         "numAttacksBoosted": 2,
         "numAttacksDamageMult": 2

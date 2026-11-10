@@ -2,16 +2,17 @@
   "typeId": "Light",
   "title": "Light Dice",
   "attack": 14,
-  "health": 500,
+  "health": 540,
   "range": 3,
   "rarity": "Rare",
   "skills": [
     {
       "type": "CombatStart",
       "title": "Radiant Rally",
-      "description": "Adds +1 attack count to all other friendly dice (resets on combat end).",
+      "description": "Adds +{allyExtraAttacks} attack count to other friendly dice adjacent to it (resets on combat end).",
       "modifiers": {
         "allyExtraAttacks": 1,
+        "allyExtraAttacksRadius": 1,
         "skillSfx": "dice_light_skill"
       }
     }
@@ -24,14 +25,14 @@
       "description": "Reduces health by 20% and can additionally buff a random ally with 2 attack counts instead of 1 at the start of combat.",
       "classNeeded": 9,
       "modifiers": {
-        "healthDelta": -100,
+        "healthDelta": -108,
         "skills": [
           {
           },
           {
             "type": "CombatStart",
             "title": "Heaven's Gift",
-            "description": "A random other ally gains +1 attack count (resets on combat end).",
+            "description": "A random other ally gains +{grantAttacksToAlly} attack count (resets on combat end).",
             "modifiers": {
               "grantAttacksToAlly": 1,
               "skillSfx": "dice_light_skill"

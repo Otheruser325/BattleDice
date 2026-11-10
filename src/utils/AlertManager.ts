@@ -113,6 +113,10 @@ export class AlertManager {
     });
   }
 
+  static isOpen(): boolean {
+    return this.container !== null;
+  }
+
   static hide() {
     if (this.scene && this.escHandler) {
       this.scene.input.keyboard?.off('keydown-ESC', this.escHandler);

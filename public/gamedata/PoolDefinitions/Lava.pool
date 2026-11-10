@@ -1,0 +1,16 @@
+{
+  "typeId": "Lava",
+  "title": "Lava",
+  "damage": 50,
+  "duration": 3,
+  "pattern": [
+    [0, 0],
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1]
+  ],
+  "affects": "foes",
+  "lingerSfx": "dice_fire_skill",
+  "accent": "#ff4500"
+}

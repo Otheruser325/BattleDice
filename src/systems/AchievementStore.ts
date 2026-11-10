@@ -27,7 +27,13 @@ export type AchievementId =
   | 'boss_ripper'
   | 'boss_hunter'
   | 'hooked'
-  | 'stacked_up';
+  | 'stacked_up'
+  | 'dice_collector'
+  | 'dice_lover'
+  | 'endless_printing'
+  | 'universal_printing'
+  | 'that_was_sweaty'
+  | 'aced_it';
 
 export interface AchievementState {
   wins: number;

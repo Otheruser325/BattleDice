@@ -10,7 +10,10 @@
     {
       "type": "CombatStart",
       "title": "Mana Manipulator",
-      "description": "Steals 1 mana from all enemy charging actives.",
+      "description": "Steals {manaSteal} mana from all enemy charging actives.",
+      "classBenefits": {
+        "manaSteal": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2]
+      },
       "modifiers": {
         "manaSteal": 1,
         "manaStealType": "enemy"
@@ -19,17 +22,20 @@
     {
       "type": "Active",
       "title": "Spell Strike",
-      "description": "Summons 3 magic meteors on random opposing-board tiles, causing 200 damage in plus patterns. Leaves lava on each epicentre for 4 turns. Foes standing on lava take 100 damage at combat start.",
+      "description": "Summons {meteorCount} magic meteors on random opposing-board tiles, causing {meteorDamage} damage in plus patterns. Leaves lava on each epicentre for {meteorPoolDuration} turns. Foes standing in lava take damage at combat start.",
+      "classBenefits": {
+        "meteorPoolDuration": [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3]
+      },
       "manaNeeded": 12,
       "modifiers": {
         "hasMeteor": true,
         "meteorDamage": 200,
         "meteorCount": 3,
         "meteorRandomOrientation": true,
-        "lavaDamage": 100,
-        "statusDuration": 4,
+        "meteorPoolType": "MagicianLava",
+        "meteorPoolDuration": 4,
         "skillSfx": "dice_meteor_skill",
-        "lavaPoolPattern": [
+        "meteorPoolPattern": [
           [
             0,
             0
@@ -46,7 +52,8 @@
         "summonType": "Wizard",
         "summonCount": 1,
         "allowSummonedDieToRoll": true,
-        "unlockAtClass": 6
+        "unlockAtClass": 6,
+        "skillSfx": ["dice_growth_success_01", "dice_growth_success_02"]
       }
     }
   ],

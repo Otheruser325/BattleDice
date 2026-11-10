@@ -9,9 +9,10 @@
     {
       "type": "CombatStart",
       "title": "Radiant Rally",
-      "description": "Adds +1 attack count to all other friendly dice (resets on combat end).",
+      "description": "Adds +{allyExtraAttacks} attack count to other friendly dice adjacent to it (resets on combat end).",
       "modifiers": {
         "allyExtraAttacks": 1,
+        "allyExtraAttacksRadius": 1,
         "skillSfx": "dice_light_skill"
       }
     }
@@ -31,7 +32,7 @@
           {
             "type": "CombatStart",
             "title": "Heaven's Gift",
-            "description": "A random other ally gains +1 attack count (resets on combat end).",
+            "description": "A random other ally gains +{grantAttacksToAlly} attack count (resets on combat end).",
             "modifiers": {
               "grantAttacksToAlly": 1,
               "skillSfx": "dice_light_skill"

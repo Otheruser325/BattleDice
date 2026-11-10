@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Loaded Odds",
-      "description": "Deals random damage from 7 to 77 to a foe.",
+      "description": "Deals {damageRange} random damage to a foe.",
       "modifiers": {
         "attackDelta": 0,
         "damageRange": [

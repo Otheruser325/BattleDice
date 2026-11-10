@@ -9,10 +9,10 @@
     {
       "type": "Active",
       "title": "Restorative Pulse",
-      "description": "Heals the weakest ally for 200 HP.",
+      "description": "Heals the weakest ally for {skillHealing} HP.",
       "manaNeeded": 6,
       "modifiers": {
-        "activeHeal": 200,
+        "skillHealing": 200,
         "onlyTargetsAllies": true,
         "skillTargeting": "Weakest",
         "skillSfx": "dice_heal_skill"

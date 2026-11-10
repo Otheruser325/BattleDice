@@ -1,0 +1,12 @@
+{
+  "typeId": "MagicianLava",
+  "title": "Magician Lava",
+  "damage": 100,
+  "duration": 4,
+  "pattern": [
+    [0, 0]
+  ],
+  "affects": "foes",
+  "lingerSfx": "dice_meteor_skill",
+  "accent": "#b073ff"
+}

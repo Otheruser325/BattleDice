@@ -139,7 +139,7 @@ export class ShopScene extends Phaser.Scene {
 
           const shopState = getShopState(this);
           
-          if (offer.isFreebie && shopState.claimedFreebieIds.includes(offer.id)) {
+          if (this.isDailyFreebieClaimed(shopState, offer)) {
             AlertManager.toast(this, { type: 'warning', message: 'This freebie has already been claimed.' });
             return;
           }
@@ -148,7 +148,6 @@ export class ShopScene extends Phaser.Scene {
           if (offerIdx < 0) return;
           const targetOffer = shopState.offers[offerIdx];
           if (targetOffer.purchased && !this.isInfiniteCurrencyOffer(offer)) return;
-          if (offer.isFreebie && shopState.claimedFreebieIds.includes(offer.id)) return;
           if (offer.isFreebie && !offer.isCoinOffer && (!offer.typeId || !canReceiveUsefulCopies(this, offer.typeId))) return;
 
           const firstTokenPurchase = this.isFirstDiceTokenPurchase(shopState, offer);
@@ -289,7 +288,11 @@ export class ShopScene extends Phaser.Scene {
   }
 
   private isInfiniteCurrencyOffer(offer: ShopOffer): boolean {
-    return Boolean(offer.isDiceTokenOffer || offer.isCasinoChipOffer);
+    return Boolean(!offer.isFreebie && (offer.isDiceTokenOffer || offer.isCasinoChipOffer));
+  }
+
+  private isDailyFreebieClaimed(shopState: ShopState, offer: ShopOffer): boolean {
+    return Boolean(offer.isFreebie && (shopState.freebieClaimedThisSession || shopState.claimedFreebieIds.includes(offer.id)));
   }
 
   private isClaimableDiceCopyFreebie(offer: ShopOffer): boolean {
@@ -337,7 +340,7 @@ export class ShopScene extends Phaser.Scene {
     const objs: Phaser.GameObjects.GameObject[] = [];
     const isClaimed = offer.purchased;
     const shopState = getShopState(this);
-    const isFrebieClaimed = offer.isFreebie && shopState.claimedFreebieIds.includes(offer.id);
+    const isFrebieClaimed = this.isDailyFreebieClaimed(shopState, offer);
     const isInfiniteOffer = this.isInfiniteCurrencyOffer(offer);
     const effectivelyClaimed = !isInfiniteOffer && (isClaimed || isFrebieClaimed);
     const canAfford = offer.isFreebie ? true : (offer.diceTokenCost !== undefined ? getDiceTokens(this) >= offer.diceTokenCost : getDiamonds(this) >= offer.diamondCost);

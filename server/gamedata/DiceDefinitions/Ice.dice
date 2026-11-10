@@ -8,13 +8,13 @@
     {
       "type": "Active",
       "title": "Chill Lock",
-      "description": "Deals 32 damage and immediately reduces the target's current attack count by 1 for 2 turns.",
+      "description": "Deals {skillDamage} damage and immediately reduces the target's current attack count by 1 for {statusDuration} turns.",
       "manaNeeded": 5,
       "modifiers": {
         "attackDelta": -1,
         "statusDuration": 2,
         "maxStacks": 3,
-        "activeDamage": 32,
+        "skillDamage": 32,
         "statusEffect": "slow",
         "skillSfx": "dice_ice_skill"
       }
