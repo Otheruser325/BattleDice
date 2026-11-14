@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import type { ChestType } from './CasinoComboTypes';
 import { getInstallRecord, readIntegrityChecked, updateInstallRecord, writeIntegrityChecked } from '../utils/SecureStorage';
 
@@ -21,6 +21,10 @@ const DEFAULT_CHESTS: Record<ChestType, number> = { Bronze: 0, Silver: 0, Gold: 
 const STARTER_CHIPS = 30;
 const DEFAULT_PROGRESS: CasinoProgress = { chips: STARTER_CHIPS, chests: DEFAULT_CHESTS, fivesHand: null, fivesGauge: 0 };
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 function resolveStarterChips(parsed: Partial<CasinoProgress> | undefined): number {
   if (typeof parsed?.chips === 'number') return parsed.chips;
   return getInstallRecord()?.starterChipsPersisted ? 0 : STARTER_CHIPS;
@@ -31,14 +35,14 @@ function normalizeFivesHand(value: unknown): FivesHandState | null {
   const hand = value as Partial<FivesHandState>;
   if (!Array.isArray(hand.dice) || !Array.isArray(hand.locks)) return null;
 
-  const dice = hand.dice.slice(0, 5).map((pip) => Phaser.Math.Clamp(Math.floor(Number(pip) || 1), 1, 6));
+  const dice = hand.dice.slice(0, 5).map((pip) => clamp(Math.floor(Number(pip) || 1), 1, 6));
   const locks = hand.locks.slice(0, 5).map(Boolean);
   if (dice.length !== 5 || locks.length !== 5) return null;
 
   return {
     dice,
     locks,
-    rollsLeft: Phaser.Math.Clamp(Math.floor(Number(hand.rollsLeft) || 0), 0, 3),
+    rollsLeft: clamp(Math.floor(Number(hand.rollsLeft) || 0), 0, 3),
     tableActive: Boolean(hand.tableActive)
   };
 }
@@ -48,7 +52,7 @@ function normalizeProgress(value: Partial<CasinoProgress> | null | undefined): C
     chips: Math.max(0, Math.floor(Number(value?.chips ?? 0) || 0)),
     chests: { ...DEFAULT_CHESTS, ...(value?.chests ?? {}) },
     fivesHand: normalizeFivesHand(value?.fivesHand),
-    fivesGauge: Phaser.Math.Clamp(Math.floor(Number(value?.fivesGauge ?? DEFAULT_PROGRESS.fivesGauge) || 0), 0, 1000)
+    fivesGauge: clamp(Math.floor(Number(value?.fivesGauge ?? DEFAULT_PROGRESS.fivesGauge) || 0), 0, 1000)
   };
 }
 

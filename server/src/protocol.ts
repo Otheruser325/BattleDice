@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import type { DiceCard } from './combat/dice-cards.js';
 import type { ClientBattleState, LoadoutEntry, MatchRules, OwnerId } from './combat/types.js';
 
 export const ARENA_ROOM_ID = 'arena';
@@ -9,9 +10,11 @@ export const LOBBY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export const TOPICS = {
   matchmakingJoin: 'arena:matchmaking:join',
+  matchmakingCancel: 'arena:matchmaking:cancel',
   matchmakingState: 'arena:matchmaking:state',
   multiplayerCreate: 'arena:multiplayer:create',
   multiplayerJoin: 'arena:multiplayer:join',
+  multiplayerLeave: 'arena:multiplayer:leave',
   multiplayerState: 'arena:multiplayer:state',
   turnSync: 'arena:turn:sync',
   turnState: 'arena:turn:state'
@@ -19,8 +22,10 @@ export const TOPICS = {
 
 export type ClientTopic =
   | 'arena:matchmaking:join'
+  | 'arena:matchmaking:cancel'
   | 'arena:multiplayer:create'
   | 'arena:multiplayer:join'
+  | 'arena:multiplayer:leave'
   | 'arena:turn:sync';
 
 export type ServerTopic =
@@ -51,6 +56,8 @@ export interface TurnDie {
 export interface TurnSyncRequest {
   turn: number;
   dice: TurnDie[];
+  diceCardKey?: string;
+  requestId?: string;
 }
 
 export interface MatchSetupPayload {
@@ -62,16 +69,20 @@ export interface MatchSetupPayload {
   phase: 'placement' | 'combat' | 'complete';
   turn: number;
   deadlineAt: number;
+  selfReady: boolean;
   state: ClientBattleState;
   pips: Record<string, number>;
   record: string[];
   result?: 'victory' | 'defeat' | 'draw';
   classLevels: Record<string, number>;
   talentIndices: Record<string, number | null>;
+  diceCards?: Record<OwnerId, DiceCard[]>;
+  diceCardOffer?: DiceCard[];
+  diceCardPicksUsed?: number;
 }
 
 export interface ServerEvent {
-  status?: 'queued' | 'lobby' | 'matched' | 'failed' | 'disconnected';
+  status?: 'queued' | 'lobby' | 'matched' | 'failed' | 'disconnected' | 'idle';
   message?: string;
   lobbyCode?: string;
   roomId?: string;
@@ -82,6 +93,8 @@ export interface ServerEvent {
 export interface TurnEvent {
   accepted: boolean;
   status: 'accepted' | 'waiting' | 'resolved' | 'rejected' | 'failed';
+  requestId?: string;
+  selfReady?: boolean;
   message?: string;
   matchId?: string;
   phase?: 'placement' | 'combat' | 'complete';
@@ -93,6 +106,9 @@ export interface TurnEvent {
   pips?: Record<string, number>;
   classLevels?: Record<string, number>;
   talentIndices?: Record<string, number | null>;
+  diceCards?: Record<OwnerId, DiceCard[]>;
+  diceCardOffer?: DiceCard[];
+  diceCardPicksUsed?: number;
   events?: string[];
 }
 
@@ -102,6 +118,8 @@ export type ValidationResult<T> =
 
 const TYPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 const INSTANCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,79}$/;
+const DICE_CARD_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 :_-]{0,99}$/;
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 const LOBBY_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/;
 const GRID_LIMIT = 5;
 const MAX_TURN = 1_000_000;
@@ -169,6 +187,9 @@ function readRules(raw: Record<string, unknown>): ValidationResult<MatchRules> {
   if (typeof source.useLevelling !== 'boolean' || typeof source.randomMode !== 'boolean') {
     return fail('Invalid match rules.');
   }
+  if (source.randomizeLoadout !== undefined && typeof source.randomizeLoadout !== 'boolean') {
+    return fail('Invalid loadout randomisation setting.');
+  }
   if (typeof source.turnLimit !== 'number' || !Number.isInteger(source.turnLimit)) {
     return fail('Invalid turn limit.');
   }
@@ -180,7 +201,8 @@ function readRules(raw: Record<string, unknown>): ValidationResult<MatchRules> {
     value: {
       useLevelling: source.useLevelling,
       turnLimit: source.turnLimit,
-      randomMode: source.randomMode
+      randomMode: source.randomMode,
+      randomizeLoadout: source.randomizeLoadout === true
     }
   };
 }
@@ -313,11 +335,33 @@ export function parseTurnSync(payload: Uint8Array): ValidationResult<TurnSyncReq
     dice.push({ ownerId: 'player', instanceId, typeId, gridPosition: { row, col } });
   }
 
-  return { ok: true, value: { turn: raw.turn, dice } };
+  const rawDiceCardKey = raw.diceCardKey;
+  if (
+    rawDiceCardKey !== undefined
+    && (typeof rawDiceCardKey !== 'string' || !DICE_CARD_KEY_PATTERN.test(rawDiceCardKey))
+  ) {
+    return fail('Invalid Dice Card selection.');
+  }
+
+  const rawRequestId = raw.requestId;
+  if (rawRequestId !== undefined && (typeof rawRequestId !== 'string' || !REQUEST_ID_PATTERN.test(rawRequestId))) {
+    return fail('Invalid turn request ID.');
+  }
+
+  return {
+    ok: true,
+    value: {
+      turn: raw.turn,
+      dice,
+      ...(typeof rawDiceCardKey === 'string' ? { diceCardKey: rawDiceCardKey } : {}),
+      ...(typeof rawRequestId === 'string' ? { requestId: rawRequestId } : {})
+    }
+  };
 }
 
 export function rulesMatch(left: MatchRules, right: MatchRules): boolean {
   return left.useLevelling === right.useLevelling
     && left.turnLimit === right.turnLimit
-    && left.randomMode === right.randomMode;
+    && left.randomMode === right.randomMode
+    && (left.randomizeLoadout === true) === (right.randomizeLoadout === true);
 }

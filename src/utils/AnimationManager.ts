@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
 import type { DungeonIntroConfig } from '../systems/DungeonIntros';
+import { scaleAnimationDuration } from '../systems/CombatPacing';
 
 type FadeTarget = Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.AlphaSingle;
 
 export class AnimationManager {
+  private static readonly hammerQueues = new WeakMap<Phaser.Scene, Promise<void>>();
+
   static fadeIn(
     scene: Phaser.Scene,
     targets: FadeTarget | FadeTarget[],
@@ -135,7 +138,19 @@ export class AnimationManager {
     });
   }
 
-  static async animateJudgmentHammer(scene: Phaser.Scene, x: number, y: number, duration = 250): Promise<void> {
+  static animateJudgmentHammer(scene: Phaser.Scene, x: number, y: number, duration = 250, speedMultiplier = 1): Promise<void> {
+    const previous = this.hammerQueues.get(scene) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.playJudgmentHammer(scene, x, y, duration, speedMultiplier));
+    const tail = run.catch(() => undefined);
+    this.hammerQueues.set(scene, tail);
+    void tail.then(() => {
+      if (this.hammerQueues.get(scene) === tail) this.hammerQueues.delete(scene);
+    });
+    return run;
+  }
+
+  private static async playJudgmentHammer(scene: Phaser.Scene, x: number, y: number, duration: number, speedMultiplier: number): Promise<void> {
+    if (!scene.sys.isActive()) return;
     const impact = scene.add.graphics().setDepth(260).setAlpha(0);
     impact.lineStyle(3, 0xff4d4d, 0.95);
     impact.strokeCircle(x, y, 64 * 1.35);
@@ -151,10 +166,25 @@ export class AnimationManager {
     hammer.strokeRoundedRect(-34, -16, 68, 32, 7);
 
     await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (destroyHammer: boolean) => {
+        if (settled) return;
+        settled = true;
+        scene.events.off('shutdown', onSceneEnd);
+        scene.events.off('destroy', onSceneEnd);
+        if (destroyHammer && hammer.active) hammer.destroy();
+        resolve();
+      };
+      const onSceneEnd = () => {
+        if (impact.active) impact.destroy();
+        finish(true);
+      };
+      scene.events.once('shutdown', onSceneEnd);
+      scene.events.once('destroy', onSceneEnd);
       scene.tweens.add({
         targets: hammer,
         y,
-        duration,
+        duration: scaleAnimationDuration(duration, speedMultiplier),
         ease: 'Quad.easeIn',
         onComplete: () => {
           impact.setAlpha(1);
@@ -162,17 +192,124 @@ export class AnimationManager {
             targets: impact,
             alpha: 0,
             scale: 1.18,
-            duration: 140,
+            duration: scaleAnimationDuration(140, speedMultiplier),
             onComplete: () => impact.destroy()
           });
-          hammer.destroy();
-          resolve();
+          finish(true);
         }
       });
     });
   }
 
-  static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind' | 'physical', tintOrOptions?: number | { tint?: number; animated?: boolean; duration?: number }) {
+  static animateAttackBeam(
+    scene: Phaser.Scene,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    color: number,
+    speedMultiplier = 1
+  ) {
+    const graphics = scene.add.graphics();
+    graphics.lineStyle(3, color, 0.82);
+    graphics.strokeLineShape(new Phaser.Geom.Line(fromX, fromY, toX, toY));
+    scene.tweens.add({
+      targets: graphics,
+      alpha: 0,
+      duration: scaleAnimationDuration(400, speedMultiplier),
+      onComplete: () => graphics.destroy()
+    });
+  }
+
+  static animateMeteorImpact(scene: Phaser.Scene, x: number, y: number, tileSize: number, speedMultiplier = 1) {
+    const meteor = scene.add.circle(x - 110, y - 140, 8, 0xff8f4d, 0.95).setDepth(2000);
+    const trail = scene.add.graphics().setDepth(1999);
+    scene.tweens.add({
+      targets: meteor,
+      x,
+      y,
+      duration: scaleAnimationDuration(900, speedMultiplier),
+      ease: 'Cubic.In',
+      onUpdate: () => {
+        trail.clear();
+        trail.lineStyle(3, 0xffd08a, 0.65);
+        trail.strokeLineShape(new Phaser.Geom.Line(meteor.x - 32, meteor.y - 26, meteor.x, meteor.y));
+      },
+      onComplete: () => {
+        trail.destroy();
+        meteor.destroy();
+        const burst = scene.add.circle(x, y, 10, 0xffb366, 0.65).setDepth(2001);
+        const plus = scene.add.graphics().setDepth(2002);
+        plus.lineStyle(5, 0xffd08a, 0.78);
+        plus.lineBetween(x - tileSize * 0.58, y, x + tileSize * 0.58, y);
+        plus.lineBetween(x, y - tileSize * 0.58, x, y + tileSize * 0.58);
+        scene.tweens.add({ targets: burst, scale: 3.2, alpha: 0, duration: scaleAnimationDuration(220, speedMultiplier), onComplete: () => burst.destroy() });
+        scene.tweens.add({ targets: plus, alpha: 0, duration: scaleAnimationDuration(260, speedMultiplier), onComplete: () => plus.destroy() });
+      }
+    });
+  }
+
+  static animateNuclearMissile(scene: Phaser.Scene, x: number, y: number, tileSize: number, speedMultiplier = 1) {
+    const reticle = scene.add.circle(x, y, tileSize * 0.42, 0xff3b30, 0.1)
+      .setStrokeStyle(2, 0xff6b5a, 0.9)
+      .setDepth(1998);
+    scene.tweens.add({
+      targets: reticle,
+      scale: 1.3,
+      alpha: 0.18,
+      duration: scaleAnimationDuration(420, speedMultiplier),
+      yoyo: true,
+      repeat: 1
+    });
+
+    const missile = scene.add.container(x + tileSize * 1.8, y - tileSize * 4.5).setDepth(2000);
+    const body = scene.add.graphics();
+    body.fillStyle(0xe8eef4, 1);
+    body.fillRect(-6, -18, 12, 36);
+    body.fillStyle(0xff3b30, 1);
+    body.fillTriangle(0, 28, -8, 8, 8, 8);
+    body.fillStyle(0x8d99ae, 1);
+    body.fillTriangle(-6, -14, -18, -24, -6, -24);
+    body.fillTriangle(6, -14, 18, -24, 6, -24);
+    body.fillStyle(0xffa14d, 0.95);
+    body.fillRect(-4, 20, 8, 9);
+    missile.add(body);
+
+    const trail = scene.add.graphics().setDepth(1999);
+    scene.tweens.add({
+      targets: missile,
+      x,
+      y,
+      duration: scaleAnimationDuration(760, speedMultiplier),
+      ease: 'Cubic.In',
+      onUpdate: () => {
+        trail.clear();
+        trail.lineStyle(6, 0xffa14d, 0.38);
+        trail.lineBetween(missile.x + 15, missile.y - 34, missile.x, missile.y + 10);
+        trail.lineStyle(2, 0xfff3c4, 0.7);
+        trail.lineBetween(missile.x + 11, missile.y - 22, missile.x + 2, missile.y + 4);
+      },
+      onComplete: () => {
+        reticle.destroy();
+        trail.destroy();
+        missile.destroy();
+        const flash = scene.add.circle(x, y, tileSize * 0.55, 0xfff3c4, 0.95).setDepth(2001);
+        const shockwave = scene.add.circle(x, y, tileSize * 0.32, 0xff3b30, 0)
+          .setStrokeStyle(4, 0xff6b5a, 0.85)
+          .setDepth(2001);
+        const cloud = scene.add.container(x, y).setDepth(2002);
+        const stem = scene.add.rectangle(0, -8, 10, 30, 0xffa14d, 0.72);
+        const cap = scene.add.circle(0, -30, 22, 0xff5a36, 0.58);
+        const crown = scene.add.circle(10, -42, 13, 0xffc16a, 0.48);
+        cloud.add([stem, cap, crown]);
+        scene.tweens.add({ targets: flash, scale: 2.8, alpha: 0, duration: scaleAnimationDuration(240, speedMultiplier), onComplete: () => flash.destroy() });
+        scene.tweens.add({ targets: shockwave, scale: 2.3, alpha: 0, duration: scaleAnimationDuration(380, speedMultiplier), onComplete: () => shockwave.destroy() });
+        scene.tweens.add({ targets: cloud, y: y - 28, alpha: 0, scale: 1.35, duration: scaleAnimationDuration(520, speedMultiplier), delay: scaleAnimationDuration(80, speedMultiplier), onComplete: () => cloud.destroy() });
+      }
+    });
+  }
+
+  static animateElementalSkill(scene: Phaser.Scene, x: number, y: number, kind: 'ice' | 'fire' | 'electric' | 'poison' | 'wind' | 'physical', tintOrOptions?: number | { tint?: number; animated?: boolean; duration?: number }, speedMultiplier = 1) {
     const options = typeof tintOrOptions === 'number' ? { tint: tintOrOptions } : (tintOrOptions ?? {});
     const g = scene.add.graphics().setDepth(255);
     const color = options.tint ?? ({ ice: 0x8fd5ff, fire: 0xff8a4c, electric: 0xfff176, poison: 0x74d66f, wind: 0x9fe7d9, physical: 0xe8eef4 } as const)[kind];
@@ -210,14 +347,14 @@ export class AnimationManager {
     }
 
     if (options.animated === false) {
-      scene.time.delayedCall(options.duration ?? 320, () => g.destroy());
+      scene.time.delayedCall(scaleAnimationDuration(options.duration ?? 320, speedMultiplier), () => g.destroy());
       return;
     }
 
-    scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: options.duration ?? 320, onComplete: () => g.destroy() });
+    scene.tweens.add({ targets: g, alpha: 0, scale: 1.25, duration: scaleAnimationDuration(options.duration ?? 320, speedMultiplier), onComplete: () => g.destroy() });
   }
   
-  static animateDrizzleRain(scene: Phaser.Scene, x: number, y: number, tint = 0x6fb7ff) {
+  static animateDrizzleRain(scene: Phaser.Scene, x: number, y: number, tint = 0x6fb7ff, speedMultiplier = 1) {
     const rain = scene.add.graphics().setDepth(264).setPosition(x, y - 34);
     rain.lineStyle(2, tint, 0.78);
     const drops = [-24, -16, -7, 3, 13, 23];
@@ -239,7 +376,7 @@ export class AnimationManager {
       targets: rain,
       y: y + 8,
       alpha: 0,
-      duration: 280,
+      duration: scaleAnimationDuration(280, speedMultiplier),
       ease: 'Cubic.easeIn',
       onComplete: finish
     });
@@ -247,14 +384,15 @@ export class AnimationManager {
       targets: splash,
       alpha: 0.9,
       scale: 1.25,
-      duration: 110,
-      delay: 170,
+      duration: scaleAnimationDuration(110, speedMultiplier),
+      delay: scaleAnimationDuration(170, speedMultiplier),
       yoyo: true,
       onComplete: finish
     });
   }
 
-  static animateDoubleSwipe(scene: Phaser.Scene, x: number, y: number, color: number, duration = 280) {
+  static animateDoubleSwipe(scene: Phaser.Scene, x: number, y: number, color: number, duration = 280, speedMultiplier = 1) {
+    const scaledDuration = scaleAnimationDuration(duration, speedMultiplier);
     const leftSlash = scene.add.graphics().setDepth(266).setPosition(x, y);
     const rightSlash = scene.add.graphics().setDepth(266).setPosition(x, y);
     const glow = scene.add.graphics().setDepth(265).setPosition(x, y);
@@ -275,34 +413,34 @@ export class AnimationManager {
       targets: leftSlash,
       alpha: 1,
       scaleX: 1.12,
-      duration: duration * 0.42,
+      duration: scaledDuration * 0.42,
       ease: 'Cubic.easeOut',
       onComplete: () => {
-        scene.tweens.add({ targets: leftSlash, alpha: 0, duration: duration * 0.38, onComplete: () => leftSlash.destroy() });
+        scene.tweens.add({ targets: leftSlash, alpha: 0, duration: scaledDuration * 0.38, onComplete: () => leftSlash.destroy() });
       }
     });
     scene.tweens.add({
       targets: rightSlash,
       alpha: 1,
       scaleX: 1.12,
-      duration: duration * 0.42,
-      delay: duration * 0.25,
+      duration: scaledDuration * 0.42,
+      delay: scaledDuration * 0.25,
       ease: 'Cubic.easeOut',
       onComplete: () => {
-        scene.tweens.add({ targets: rightSlash, alpha: 0, duration: duration * 0.38, onComplete: () => rightSlash.destroy() });
+        scene.tweens.add({ targets: rightSlash, alpha: 0, duration: scaledDuration * 0.38, onComplete: () => rightSlash.destroy() });
       }
     });
     scene.tweens.add({
       targets: glow,
       alpha: 0,
       scale: 1.35,
-      duration,
+      duration: scaledDuration,
       ease: 'Quad.easeOut',
       onComplete: () => glow.destroy()
     });
   }
 
-  static animateFracture(scene: Phaser.Scene, x: number, y: number) {
+  static animateFracture(scene: Phaser.Scene, x: number, y: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(260);
     g.fillStyle(0xff4da6, 0.22);
     g.fillRoundedRect(x - 23, y - 23, 46, 46, 12);
@@ -315,10 +453,10 @@ export class AnimationManager {
     g.lineTo(x - 5, y + 3);
     g.lineTo(x + 4, y + 20);
     g.strokePath();
-    scene.time.delayedCall(800, () => g.destroy());
+    scene.time.delayedCall(scaleAnimationDuration(800, speedMultiplier), () => g.destroy());
   }
 
-  static animateSoulHarvest(scene: Phaser.Scene, fromX: number, fromY: number, toX: number, toY: number, enemySide = false) {
+  static animateSoulHarvest(scene: Phaser.Scene, fromX: number, fromY: number, toX: number, toY: number, enemySide = false, speedMultiplier = 1) {
     const color = enemySide ? 0xff5b5b : 0x5ab7ff;
     const soul = scene.add.graphics().setDepth(270);
     soul.fillStyle(color, 0.88);
@@ -333,7 +471,7 @@ export class AnimationManager {
       y: toY,
       scaleX: 0.55,
       scaleY: 0.55,
-      duration: 620,
+      duration: scaleAnimationDuration(620, speedMultiplier),
       ease: 'Sine.easeInOut',
       onUpdate: () => {
         trail.clear();
@@ -344,14 +482,14 @@ export class AnimationManager {
         const burst = scene.add.graphics().setDepth(271);
         burst.lineStyle(2, color, 0.9);
         burst.strokeCircle(toX, toY, 12);
-        scene.tweens.add({ targets: burst, alpha: 0, scale: 1.8, duration: 260, onComplete: () => burst.destroy() });
+        scene.tweens.add({ targets: burst, alpha: 0, scale: 1.8, duration: scaleAnimationDuration(260, speedMultiplier), onComplete: () => burst.destroy() });
         trail.destroy();
         soul.destroy();
       }
     });
   }
   
-  static animateGrowthTurn(scene: Phaser.Scene, x: number, y: number, color: number, success = true) {
+  static animateGrowthTurn(scene: Phaser.Scene, x: number, y: number, color: number, success = true, speedMultiplier = 1) {
     if (success) {
       const arrow = scene.add.graphics().setDepth(262).setPosition(x, y);
       arrow.lineStyle(4, color, 0.95);
@@ -363,7 +501,7 @@ export class AnimationManager {
       scene.tweens.add({
         targets: arrow,
         angle: 360,
-        duration: 900,
+        duration: scaleAnimationDuration(900, speedMultiplier),
         ease: 'Sine.easeInOut',
         onComplete: () => arrow.destroy()
       });
@@ -386,13 +524,14 @@ export class AnimationManager {
       targets: burst,
       alpha: 0,
       scale: 1.45,
-      duration: 420,
+      duration: scaleAnimationDuration(420, speedMultiplier),
       ease: 'Back.easeOut',
       onComplete: () => burst.destroy()
     });
   }
 
-  static animateElectricChain(scene: Phaser.Scene, fromX: number, fromY: number, toX: number, toY: number, duration = 220) {
+  static animateElectricChain(scene: Phaser.Scene, fromX: number, fromY: number, toX: number, toY: number, duration = 220, speedMultiplier = 1) {
+    const scaledDuration = scaleAnimationDuration(duration, speedMultiplier);
     const chain = scene.add.graphics().setDepth(264);
     const glow = scene.add.graphics().setDepth(263);
     const progress = { value: 0 };
@@ -431,14 +570,14 @@ export class AnimationManager {
     scene.tweens.add({
         targets: progress,
         value: 1,
-        duration,
+        duration: scaledDuration,
         ease: 'Cubic.easeOut',
         onUpdate: redraw,
         onComplete: () => {
           scene.tweens.add({
             targets: [chain, glow],
             alpha: 0,
-            duration: 100,
+            duration: scaleAnimationDuration(100, speedMultiplier),
             onComplete: () => {
               chain.destroy();
               glow.destroy();
@@ -448,7 +587,7 @@ export class AnimationManager {
       });
   }
 
-  static animateHeatwave(scene: Phaser.Scene, x: number, y: number) {
+  static animateHeatwave(scene: Phaser.Scene, x: number, y: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(258);
     g.fillStyle(0xff6a2a, 0.24);
     g.fillCircle(x, y, 18);
@@ -459,18 +598,18 @@ export class AnimationManager {
       g.fillStyle(i % 2 === 0 ? 0xffb347 : 0xff5c2a, 0.72);
       g.fillTriangle(x, y, tipX - Math.sin(angle) * 7, tipY + Math.cos(angle) * 7, tipX + Math.sin(angle) * 7, tipY - Math.cos(angle) * 7);
     }
-    scene.tweens.add({ targets: g, alpha: 0, scale: 1.55, duration: 360, ease: 'Quad.easeOut', onComplete: () => g.destroy() });
+    scene.tweens.add({ targets: g, alpha: 0, scale: 1.55, duration: scaleAnimationDuration(360, speedMultiplier), ease: 'Quad.easeOut', onComplete: () => g.destroy() });
   }
 
-  static animateSkullRevive(scene: Phaser.Scene, x: number, y: number) {
+  static animateSkullRevive(scene: Phaser.Scene, x: number, y: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(260);
     g.lineStyle(3, 0xd8e4e8, 0.9);
     g.strokeLineShape(new Phaser.Geom.Line(x - 14, y + 14, x + 14, y - 14));
     g.strokeLineShape(new Phaser.Geom.Line(x - 14, y - 14, x + 14, y + 14));
-    scene.tweens.add({ targets: g, y: y - 8, alpha: 0, duration: 500, onComplete: () => g.destroy() });
+    scene.tweens.add({ targets: g, y: y - 8, alpha: 0, duration: scaleAnimationDuration(500, speedMultiplier), onComplete: () => g.destroy() });
   }
 
-  static animateTransform(scene: Phaser.Scene, x: number, y: number, color: number, symbol?: string) {
+  static animateTransform(scene: Phaser.Scene, x: number, y: number, color: number, symbol?: string, speedMultiplier = 1) {
     const burst = scene.add.graphics().setDepth(260);
     burst.lineStyle(3, color, 0.95);
     burst.strokeCircle(x, y, 20);
@@ -491,7 +630,7 @@ export class AnimationManager {
       targets: label ? [burst, label] : [burst],
       alpha: 0,
       scale: 1.8,
-      duration: 500,
+      duration: scaleAnimationDuration(500, speedMultiplier),
       ease: 'Quad.easeOut',
       onComplete: () => {
         burst.destroy();
@@ -500,7 +639,7 @@ export class AnimationManager {
     });
   }
 
-  static animateBatteryCharge(scene: Phaser.Scene, x: number, y: number, color: number) {
+  static animateBatteryCharge(scene: Phaser.Scene, x: number, y: number, color: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(320).setAlpha(0);
     g.fillStyle(color, 0.4);
     g.fillCircle(x, y, 10);
@@ -509,62 +648,62 @@ export class AnimationManager {
       alpha: 0.95,
       scaleX: 2.2,
       scaleY: 2.2,
-      duration: 250,
+      duration: scaleAnimationDuration(250, speedMultiplier),
       yoyo: true,
       onComplete: () => g.destroy()
     });
   }
 
-  static animateLightCombatStart(scene: Phaser.Scene, x: number, y: number, upArrows: number) {
+  static animateLightCombatStart(scene: Phaser.Scene, x: number, y: number, upArrows: number, speedMultiplier = 1) {
     const sparkle = scene.add.graphics().setDepth(320).setAlpha(0);
     sparkle.lineStyle(2, 0xffe066, 0.95);
     sparkle.strokeCircle(x, y, 12);
     sparkle.lineStyle(1, 0xfff4b0, 0.9);
     sparkle.strokeCircle(x, y, 20);
-    scene.tweens.add({ targets: sparkle, alpha: 1, scale: 1.3, duration: 750, yoyo: true, onComplete: () => sparkle.destroy() });
+    scene.tweens.add({ targets: sparkle, alpha: 1, scale: 1.3, duration: scaleAnimationDuration(750, speedMultiplier), yoyo: true, onComplete: () => sparkle.destroy() });
 
     for (let i = 0; i < Math.max(1, upArrows); i += 1) {
       const t = scene.add.text(x - 10 + i * 8, y + 10, '↑', { fontFamily: 'Orbitron', fontSize: '14px', color: '#ffe066' }).setOrigin(0.5).setDepth(321);
-      scene.tweens.add({ targets: t, y: y - 24 - i * 2, alpha: 0, duration: 1500, onComplete: () => t.destroy() });
+      scene.tweens.add({ targets: t, y: y - 24 - i * 2, alpha: 0, duration: scaleAnimationDuration(1500, speedMultiplier), onComplete: () => t.destroy() });
     }
   }
 
-  static animateTimeActive(scene: Phaser.Scene, x: number, y: number) {
+  static animateTimeActive(scene: Phaser.Scene, x: number, y: number, speedMultiplier = 1) {
     const t = scene.add.text(x, y - 20, '⏰', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setDepth(260);
     const r = scene.add.graphics().setDepth(259);
     r.lineStyle(2, 0x8fd5ff, 0.95);
     r.strokeCircle(x, y, 16);
-    scene.tweens.add({ targets: [t, r], alpha: 0, y: y - 30, duration: 450, onComplete: () => { t.destroy(); r.destroy(); } });
+    scene.tweens.add({ targets: [t, r], alpha: 0, y: y - 30, duration: scaleAnimationDuration(450, speedMultiplier), onComplete: () => { t.destroy(); r.destroy(); } });
   }
 
-  static animateHealingPulse(scene: Phaser.Scene, x: number, y: number) {
+  static animateHealingPulse(scene: Phaser.Scene, x: number, y: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(260);
     g.lineStyle(3, 0x8ff0b8, 0.95);
     g.strokeCircle(x, y, 14);
     g.lineStyle(2, 0xd2ffe5, 0.9);
     g.strokeCircle(x, y, 24);
-    scene.tweens.add({ targets: g, alpha: 0, scale: 1.8, duration: 320, onComplete: () => g.destroy() });
+    scene.tweens.add({ targets: g, alpha: 0, scale: 1.8, duration: scaleAnimationDuration(320, speedMultiplier), onComplete: () => g.destroy() });
   }
 
-  static animateHealingBeam(scene: Phaser.Scene, ax: number, ay: number, tx: number, ty: number) {
+  static animateHealingBeam(scene: Phaser.Scene, ax: number, ay: number, tx: number, ty: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(259);
     g.lineStyle(4, 0x8ff0b8, 0.8);
     g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
     g.lineStyle(9, 0xd2ffe5, 0.22);
     g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
-    scene.tweens.add({ targets: g, alpha: 0, duration: 300, onComplete: () => g.destroy() });
+    scene.tweens.add({ targets: g, alpha: 0, duration: scaleAnimationDuration(300, speedMultiplier), onComplete: () => g.destroy() });
   }
 
-  static animateSpearStrike(scene: Phaser.Scene, ax: number, ay: number, tx: number, ty: number) {
+  static animateSpearStrike(scene: Phaser.Scene, ax: number, ay: number, tx: number, ty: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(260);
     g.lineStyle(8, 0x8fd5ff, 0.95);
     g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
     g.lineStyle(14, 0xc8f0ff, 0.35);
     g.strokeLineShape(new Phaser.Geom.Line(ax, ay, tx, ty));
-    scene.tweens.add({ targets: g, alpha: 0, duration: 280, onComplete: () => g.destroy() });
+    scene.tweens.add({ targets: g, alpha: 0, duration: scaleAnimationDuration(280, speedMultiplier), onComplete: () => g.destroy() });
   }
 
-  static animateTranscendenceBeamFx(scene: Phaser.Scene, attackerX: number, attackerY: number, targetGridX: number, rowY: number, targetX: number, targetY: number, boardWidth: number) {
+  static animateTranscendenceBeamFx(scene: Phaser.Scene, attackerX: number, attackerY: number, targetGridX: number, rowY: number, targetX: number, targetY: number, boardWidth: number, speedMultiplier = 1) {
     const g = scene.add.graphics().setDepth(260);
     g.lineStyle(5, 0x6ff6ff, 0.94);
     g.strokeLineShape(new Phaser.Geom.Line(attackerX, attackerY, targetX, targetY));
@@ -572,7 +711,7 @@ export class AnimationManager {
     g.strokeLineShape(new Phaser.Geom.Line(targetGridX, rowY, targetGridX + boardWidth, rowY));
     g.lineStyle(13, 0xcffcff, 0.22);
     g.strokeLineShape(new Phaser.Geom.Line(targetGridX, rowY, targetGridX + boardWidth, rowY));
-    scene.tweens.add({ targets: g, alpha: 0, scale: 1.04, duration: 520, onComplete: () => g.destroy() });
+    scene.tweens.add({ targets: g, alpha: 0, scale: 1.04, duration: scaleAnimationDuration(520, speedMultiplier), onComplete: () => g.destroy() });
   }
 
   static animateAchievementPopup(scene: Phaser.Scene, achievementId: string, onComplete?: () => void) {

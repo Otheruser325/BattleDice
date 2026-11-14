@@ -8,3 +8,9 @@ export function getCombatTimeSpeedMultiplier(remainingMs: number): number {
   if (remainingMs <= COMBAT_DOUBLE_SPEED_REMAINING_MS) return 2;
   return 1;
 }
+
+export function scaleAnimationDuration(durationMs: number, speedMultiplier: number): number {
+  const duration = Number.isFinite(durationMs) ? Math.max(1, durationMs) : 1;
+  const speed = Number.isFinite(speedMultiplier) ? Math.min(16, Math.max(0.25, speedMultiplier)) : 1;
+  return Math.max(1, Math.round(duration / speed));
+}

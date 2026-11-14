@@ -1,6 +1,7 @@
 import type { DiceCatalog } from './catalog.js';
 import { buildCombatDefinition, getClassMultiplier } from './progression.js';
 import { diceCatalog } from './catalog.js';
+import { getDiceCardFireSupportBonus, getDiceCardFountainRate, getDiceCardGiantHunterBonus, getDiceCardManaPotionGain, getDiceCardOffenseMultiplier, getDiceCardReduction, isBelowLegendaryRarity, resolveDiceCardMaxHealth } from './dice-cards.js';
 import type {
   BattlePosition,
   ClientBattleState,
@@ -20,6 +21,8 @@ import type {
 const GRID_SIZE = 5;
 const MAX_ACTIONS = 600;
 const MAX_EVENTS = 400;
+const MAX_COMBAT_DICE = 100;
+const MAX_DICE_PER_SIDE = 25;
 const BASE_CRITICAL_CHANCE = 0.05;
 const CHAIN_NO_TARGET_CAP = -1;
 const combatRuntime = new WeakMap<CombatState, { catalog: DiceCatalog; rules: MatchRules }>();
@@ -645,6 +648,14 @@ function effectiveDefinition(
   };
 }
 
+export function getCombatFootprint(
+  state: CombatState,
+  definitions: Map<string, DiceDefinition>,
+  die: CombatDie
+): number {
+  return footprintFor(effectiveDefinition(state, definitions, die));
+}
+
 function living(state: CombatState, ownerId: OwnerId): CombatDie[] {
   return state.dice.filter((die) => die.ownerId === ownerId && !die.isDestroyed);
 }
@@ -826,7 +837,8 @@ function selectWeakestFoeIgnoringRange(
 }
 
 function rangeOf(state: CombatState, definitions: Map<string, DiceDefinition>, die: CombatDie): number {
-  return Math.max(1, effectiveDefinition(state, definitions, die).range);
+  const definition = effectiveDefinition(state, definitions, die);
+  return Math.max(1, Math.floor(definition.range));
 }
 
 function pickRandom<T>(items: T[], random: RandomSource): T | undefined {
@@ -862,12 +874,14 @@ function selectTarget(
   mode: string,
   allies = false,
   damagedOnly = false,
-  random: RandomSource
+  random: RandomSource,
+  excludedInstanceIds?: ReadonlySet<string>
 ): CombatDie | undefined {
   const owner = allies ? attacker.ownerId : otherOwner(attacker.ownerId);
   const maxRange = allies ? rangeOf(state, definitions, attacker) : rangeOf(state, definitions, attacker);
   let candidates = boardDice(state, owner)
     .filter((die) => die.instanceId !== attacker.instanceId || allies)
+    .filter((die) => !excludedInstanceIds?.has(die.instanceId))
     .filter((die) => !damagedOnly || die.currentHealth < die.maxHealth)
     .map((die) => ({ die, distance: allies
         ? footprintColumnDistance(state, definitions, attacker, die)
@@ -891,18 +905,21 @@ function selectTarget(
 function selectHealTarget(
   state: CombatState,
   definitions: Map<string, DiceDefinition>,
-  attacker: CombatDie
+  attacker: CombatDie,
+  preferOthers = false
 ): CombatDie | undefined {
   const maxRange = rangeOf(state, definitions, attacker);
-  return boardDice(state, attacker.ownerId)
+  const candidates = boardDice(state, attacker.ownerId)
     .filter((die) => die.currentHealth < die.maxHealth)
     .map((die) => ({ die, distance: footprintColumnDistance(state, definitions, attacker, die) }))
-    .filter(({ distance }) => distance <= maxRange)
-    .sort((left, right) => (
-      (left.die.currentHealth / left.die.maxHealth) - (right.die.currentHealth / right.die.maxHealth)
-      || left.die.currentHealth - right.die.currentHealth
-      || left.die.instanceId.localeCompare(right.die.instanceId)
-    ))[0]?.die;
+    .filter(({ distance }) => distance <= maxRange);
+  const allyCandidates = candidates.filter(({ die }) => die.instanceId !== attacker.instanceId);
+  const pool = preferOthers && allyCandidates.length > 0 ? allyCandidates : candidates;
+  return pool.sort((left, right) => (
+    (left.die.currentHealth / left.die.maxHealth) - (right.die.currentHealth / right.die.maxHealth)
+    || left.die.currentHealth - right.die.currentHealth
+    || left.die.instanceId.localeCompare(right.die.instanceId)
+  ))[0]?.die;
 }
 
 function selectTargetInRange(
@@ -992,7 +1009,7 @@ function chainTargetsFor(
 
 function activeSkillRequiresTarget(modifiers: SkillModifiers): boolean {
   if (booleanMod(modifiers, 'canFireWithNoTargets')) return false;
-  if (booleanMod(modifiers, 'activeOnlyTargetsAllies') || booleanMod(modifiers, 'onlyTargetsAllies') || hasPierceEffect(modifiers) || booleanMod(modifiers, 'instakill')) return true;
+      if (numberMod(modifiers, 'skillHealing') !== undefined || booleanMod(modifiers, 'activeOnlyTargetsAllies') || booleanMod(modifiers, 'onlyTargetsAllies') || hasPierceEffect(modifiers) || booleanMod(modifiers, 'instakill')) return true;
   if (booleanMod(modifiers, 'hitsAllFoes') || booleanMod(modifiers, 'hitsAllAllies')) return false;
   if (hasSplashEffect(modifiers) || hasChainEffect(modifiers) || hasHeatwaveEffect(modifiers)) return true;
   return numberMod(modifiers, 'skillDamage') !== undefined
@@ -1164,20 +1181,32 @@ export function createCombatSetup(
       definitions.set(created.die.instanceId, created.definition);
     });
   }
-  return {
-    state: {
-      turn: 1,
-      combatPhase: 'idle',
-      dice,
-      reviveCounts: {},
-      lockedBy: {},
-      lockTurns: {},
-      lockStatus: {},
-      gridLocks: { player: {}, enemy: {} },
-      pools: []
-    },
-    definitions
+  const state: CombatState = {
+    turn: 1,
+    combatPhase: 'idle',
+    dice,
+    reviveCounts: {},
+    lockedBy: {},
+    lockTurns: {},
+    lockStatus: {},
+    gridLocks: { player: {}, enemy: {} },
+    pools: [],
+    diceCards: { player: [], enemy: [] }
   };
+  if (rules.randomMode && rules.randomModifier === 'Duality') {
+    for (const die of [...state.dice]) {
+      const copy: CombatDie = {
+        ...die,
+        instanceId: `${die.instanceId}:dual`,
+        zone: 'hand',
+        gridPosition: undefined
+      };
+      state.dice.push(copy);
+      const definition = definitions.get(die.instanceId);
+      if (definition) definitions.set(copy.instanceId, definition);
+    }
+  }
+  return { state, definitions };
 }
 
 export function rollPips(state: CombatState, seed: string, turn: number): Record<string, number> {
@@ -1209,8 +1238,7 @@ export function toClientState(
       const boardSide = boardSideOf(die);
       let gridPosition = die.gridPosition;
       if (gridPosition && mirror) {
-        const definition = getDefinition(state, definitions, die);
-        const footprint = footprintFor(definition);
+        const footprint = footprintFor(effectiveDefinition(state, definitions, die));
         gridPosition = {
           row: gridPosition.row,
           col: GRID_SIZE - footprint - gridPosition.col
@@ -1234,7 +1262,7 @@ export function toClientState(
     reviveCounts: revealOpponent
       ? { ...state.reviveCounts }
       : Object.fromEntries(Object.entries(state.reviveCounts).filter(([instanceId]) => visibleDice.some((die) => die.instanceId === instanceId))),
-    pools: state.pools.map((pool) => {
+    pools: (revealOpponent ? state.pools : state.pools.filter((pool) => pool.ownerId === viewer)).map((pool) => {
       const boardSide = mirror ? otherOwner(pool.ownerId) : pool.ownerId;
       return {
         typeId: pool.typeId,
@@ -1438,6 +1466,8 @@ function applySkillDamageModifiers(
     const distanceRate = numberMod(modifiers, 'distanceDamageBonusRatePerTile');
     if (distanceRate !== undefined) adjusted = Math.floor(adjusted * (1 + distanceRate * distance));
   }
+  const targetBoss = effectiveDefinition(state, definitions, target).isBoss === true;
+  adjusted += getDiceCardGiantHunterBonus(state, attacker.ownerId, target.maxHealth, targetBoss ? 0.25 : 1);
   return Math.max(1, Math.floor(adjusted));
 }
 
@@ -1500,12 +1530,22 @@ function dealDamage(
   rawDamage: number,
   events: CombatEvent[],
   random: RandomSource,
-  options: { critical?: boolean; allowCritical?: boolean; sourceLabel?: string; chainDepth?: number; suppressEvent?: boolean; ignoreShield?: boolean } = {}
-): { dealt: number; absorbed: number; defeated: boolean; critical: boolean } {
-  if (target.isDestroyed) return { dealt: 0, absorbed: 0, defeated: false, critical: false };
+  options: { critical?: boolean; allowCritical?: boolean; sourceLabel?: string; chainDepth?: number; suppressEvent?: boolean; ignoreShield?: boolean; applyCardOffense?: boolean } = {}
+): { dealt: number; absorbed: number; appliedDealt: number; defeated: boolean; critical: boolean } {
+  if (target.isDestroyed) return { dealt: 0, absorbed: 0, appliedDealt: 0, defeated: false, critical: false };
   const critical = options.allowCritical !== false
     && (options.critical === true || (attacker ? random() < criticalChance(state, definitions, attacker, target) : false));
   let damage = Math.max(1, Math.floor(rawDamage));
+  if (attacker && options.applyCardOffense !== false) {
+    const cardMultiplier = getDiceCardOffenseMultiplier(state, attacker, effectiveDefinition(state, definitions, attacker));
+    if (cardMultiplier !== 1) damage = Math.max(1, Math.floor(damage * cardMultiplier));
+  }
+  const cardReduction = getDiceCardReduction(state, target);
+  if (cardReduction > 0) damage = Math.max(1, Math.floor(damage * (1 - cardReduction)));
+  const combanityMultiplier = Math.max(0, attacker?.combanityMultiplier ?? 1);
+  if (combanityMultiplier !== 1) damage = Math.max(1, Math.floor(damage * combanityMultiplier));
+  const combanityReduction = clamp(target.combanityReduction ?? 0, 0, 0.9);
+  if (combanityReduction > 0) damage = Math.max(1, Math.floor(damage * (1 - combanityReduction)));
   if (critical && attacker) damage = Math.floor(damage * criticalMultiplier(state, definitions, attacker, target));
   if (target.fractureRate > 0) damage = Math.floor(damage * (1 + target.fractureRate));
   const absorbed = options.ignoreShield ? 0 : Math.min(target.shieldHp, damage);
@@ -1513,9 +1553,10 @@ function dealDamage(
   damage -= absorbed;
   const previousHealth = target.currentHealth;
   target.currentHealth = Math.max(0, target.currentHealth - damage);
+  const appliedDealt = Math.max(0, previousHealth - target.currentHealth);
   const onDamagedDamage = damage > 0 ? damage : absorbed;
   if (!options.suppressEvent) {
-    addEvent(events, 'damage', `${effectiveDefinition(state, definitions, target).title} takes ${damage}${options.sourceLabel ? ` ${options.sourceLabel}` : ''} damage${absorbed > 0 ? ` (${absorbed} absorbed)` : ''}${critical ? ' (CRITICAL)' : ''}.`, {
+    addEvent(events, 'damage', `${effectiveDefinition(state, definitions, target).title} takes ${damage}${options.sourceLabel ? ` ${options.sourceLabel}` : ''}${formatCriticalSuffix(critical)} damage${absorbed > 0 ? ` (${absorbed} absorbed)` : ''}.`, {
       ownerId: target.ownerId,
       sourceId: attacker?.instanceId,
       targetId: target.instanceId,
@@ -1532,7 +1573,7 @@ function dealDamage(
   if (target.currentHealth <= 0) {
     handleDefeat(state, definitions, attacker, target, events, random, options.chainDepth ?? 0);
   }
-  return { dealt: damage, absorbed, defeated: target.isDestroyed, critical };
+  return { dealt: damage, absorbed, appliedDealt, defeated: target.isDestroyed, critical };
 }
 
 function nuclearDimensions(value: unknown): { rows: number; cols: number } {
@@ -1553,8 +1594,12 @@ function nuclearDimensions(value: unknown): { rows: number; cols: number } {
 
 type SkillDamageHistoryStyle = 'combatStart' | 'combatEnd' | 'onKill' | 'onDeath' | 'onHit' | 'onTransformed';
 
+function formatCriticalSuffix(critical: boolean | undefined): string {
+  return critical ? ' (CRITICAL)' : '';
+}
+
 function formatSkillDamageFeedback(hit: { dealt: number; absorbed: number; critical: boolean }): string {
-  return `${hit.dealt}${hit.absorbed > 0 ? ` (shield absorbed ${hit.absorbed} damage!)` : ''}${hit.critical ? ' (CRITICAL)' : ''}`;
+  return `${hit.dealt}${formatCriticalSuffix(hit.critical)}${hit.absorbed > 0 ? ` (shield absorbed ${hit.absorbed} damage!)` : ''}`;
 }
 
 function ordinalLabel(value: number): string {
@@ -1607,21 +1652,24 @@ function applyHeatwaveDamage(
   const attackerName = effectiveDefinition(state, definitions, attacker).title;
   if (hits.length === 1) {
     const entry = hits[0]!;
-    addEvent(events, 'damage', `${attackerName} scorches ${effectiveDefinition(state, definitions, entry.target).title} nearby for ${entry.dealt} damage!`, {
+    addEvent(events, 'damage', `${attackerName} scorches ${effectiveDefinition(state, definitions, entry.target).title} nearby for ${entry.dealt}${formatCriticalSuffix(entry.critical)} damage!`, {
       ownerId: entry.target.ownerId,
       sourceId: attacker.instanceId,
       targetId: entry.target.instanceId,
-      amount: entry.dealt
+      amount: entry.dealt,
+      critical: entry.critical
     });
     return;
   }
   const victimText = hits.map(({ target, dealt }) => `${effectiveDefinition(state, definitions, target).title} (damage: ${dealt})`);
   const victimList = `${victimText.slice(0, -1).join(', ')}${victimText.length > 2 ? ',' : ''} and ${victimText[victimText.length - 1] ?? ''}`;
   const totalDamage = hits.reduce((sum, hit) => sum + hit.dealt, 0);
-  addEvent(events, 'damage', `${attackerName} scorches ${victimList} for ${totalDamage} total damage!`, {
+  const anyCritical = hits.some((hit) => hit.critical);
+  addEvent(events, 'damage', `${attackerName} scorches ${victimList} for ${totalDamage}${formatCriticalSuffix(anyCritical)} total damage!`, {
     ownerId: attacker.ownerId,
     sourceId: attacker.instanceId,
-    amount: totalDamage
+    amount: totalDamage,
+    critical: anyCritical
   });
 }
 
@@ -1795,11 +1843,13 @@ function triggerNuclear(
   const origin = { row: position.row, col: GRID_SIZE - 1 - position.col };
   const top = origin.row - Math.floor(rows / 2);
   const left = origin.col - Math.floor(cols / 2);
+  let anyCritical = false;
   for (const victim of boardDice(state, otherOwner(source.ownerId))) {
     if (!cellsFor(victim, effectiveDefinition(state, definitions, victim)).some((cell) => (
       cell.row >= top && cell.row < top + rows && cell.col >= left && cell.col < left + cols
     ))) continue;
-    dealDamage(state, definitions, source, victim, damage, events, random, { allowCritical: false });
+    const hit = dealDamage(state, definitions, source, victim, damage, events, random);
+    anyCritical = anyCritical || hit.critical;
   }
   const poolType = stringMod(modifiers, 'nuclearPool');
   if (poolType) {
@@ -1810,9 +1860,11 @@ function triggerNuclear(
       }
     }
   }
-  addEvent(events, 'skill', `${definition.title} detonates a nuclear strike on the opposite board for ${damage} damage.`, {
+  addEvent(events, 'skill', `${definition.title} detonates a nuclear strike on the opposite board for ${damage}${formatCriticalSuffix(anyCritical)} damage.`, {
     ownerId: source.ownerId,
-    sourceId: source.instanceId
+    sourceId: source.instanceId,
+    amount: damage,
+    critical: anyCritical
   });
 }
 
@@ -1868,13 +1920,21 @@ function applyPlague(
     growth: 0,
     boostedAttacks: 0
   };
-  if (!defeatedPosition) return;
+  if (!defeatedPosition || state.dice.length >= MAX_COMBAT_DICE || living(state, source.ownerId).length >= MAX_DICE_PER_SIDE) return;
   const footprint = footprintFor(definition);
   if (defeatedPosition.row < 0 || defeatedPosition.col < 0
     || defeatedPosition.row + footprint > GRID_SIZE
     || defeatedPosition.col + footprint > GRID_SIZE) return;
+  const occupied = new Set<string>();
+  for (const die of state.dice) {
+    if (die.zone !== 'board' || die.isDestroyed || !die.gridPosition) continue;
+    occupy(die, effectiveDefinition(state, definitions, die), die.gridPosition, occupied);
+  }
+  if (footprintHitsLockedTile(definition, defeatedPosition, gridLockedCells(state, source.ownerId))) return;
+  if (!canPlace(spawned, definition, defeatedPosition, occupied)) return;
   spawned.gridPosition = { row: defeatedPosition.row, col: defeatedPosition.col };
   if (defeatedBoardSide !== source.ownerId) spawned.mana['infiltrated'] = 1;
+  occupy(spawned, definition, defeatedPosition, occupied);
   state.dice.push(spawned);
   definitions.set(instanceId, definition);
   addEvent(events, 'summon', `${effectiveDefinition(state, definitions, source).title} spreads the plague, raising ${definition.title}.`, {
@@ -2042,13 +2102,14 @@ function handleDefeat(
   if (missingHeal !== undefined) {
     const missing = Math.max(0, attacker.maxHealth - attacker.currentHealth);
     const critical = random() < BASE_CRITICAL_CHANCE;
-    const healed = Math.min(missing, Math.floor(Math.ceil(missing * missingHeal) * (critical ? 2 : 1)));
+    const displayed = Math.floor(Math.ceil(missing * missingHeal) * (critical ? 2 : 1));
+    const healed = Math.min(missing, displayed);
     if (healed > 0) {
       attacker.currentHealth = Math.min(attacker.maxHealth, attacker.currentHealth + healed);
-      addEvent(events, 'heal', `${attackerDefinition.title} heals ${healed} health${critical ? ' (CRITICAL)' : ''}.`, {
+      addEvent(events, 'heal', `${attackerDefinition.title} heals ${displayed}${formatCriticalSuffix(critical)} health.`, {
         ownerId: attacker.ownerId,
         sourceId: attacker.instanceId,
-        amount: healed,
+        amount: displayed,
         critical
       });
     }
@@ -2153,20 +2214,27 @@ function heal(
   amount: number,
   events: CombatEvent[],
   random: RandomSource
-): number {
-  if (target.isDestroyed) return 0;
+): { displayed: number; critical: boolean } {
+  if (target.isDestroyed) return { displayed: 0, critical: false };
   const critical = random() < BASE_CRITICAL_CHANCE;
-  const healed = Math.min(Math.floor(amount * (critical ? 2 : 1)), Math.max(0, target.maxHealth - target.currentHealth));
-  if (healed <= 0) return 0;
+  const cardMultiplier = getDiceCardOffenseMultiplier(state, source, effectiveDefinition(state, definitions, source));
+  const scaledAmount = cardMultiplier === 1 ? amount : Math.max(1, amount * cardMultiplier);
+  const displayed = Math.floor(scaledAmount * (critical ? 2 : 1));
+  const healed = Math.min(displayed, Math.max(0, target.maxHealth - target.currentHealth));
+  if (healed <= 0) return { displayed: 0, critical: false };
   target.currentHealth += healed;
-  addEvent(events, 'heal', `${effectiveDefinition(state, definitions, source).title} heals ${effectiveDefinition(state, definitions, target).title} for ${healed}${critical ? ' (CRITICAL)' : ''}.`, {
+  const sourceTitle = effectiveDefinition(state, definitions, source).title;
+  const targetLabel = source.instanceId === target.instanceId
+    ? 'itself'
+    : effectiveDefinition(state, definitions, target).title;
+  addEvent(events, 'heal', `${sourceTitle} heals ${targetLabel} for ${displayed}${formatCriticalSuffix(critical)} health.`, {
     ownerId: target.ownerId,
     sourceId: source.instanceId,
     targetId: target.instanceId,
-    amount: healed,
+    amount: displayed,
     critical
   });
-  return healed;
+  return { displayed, critical };
 }
 
 function normalizeSummonPattern(value: unknown): Array<[number, number]> | undefined {
@@ -2189,18 +2257,26 @@ function captureSouls(
   for (const conjurer of [...state.dice]) {
     if (conjurer.isDestroyed || conjurer.instanceId === defeated.instanceId) continue;
     const definition = effectiveDefinition(state, definitions, conjurer);
-    if (!hasUnlockedBooleanModifier(definition, 'canConjureSouls', conjurer.classLevel)) continue;
-    const conjureType = firstStringModifier(definition, 'conjureType') ?? 'ally';
+        const baseDefinition = getDefinition(state, definitions, conjurer);
+    if (!hasUnlockedBooleanModifier(baseDefinition, 'canConjureSouls', conjurer.classLevel)) continue;
+    if (conjurer.transformIndex !== undefined && conjurer.transformTurns === undefined) continue;
+    const conjureType = firstStringModifier(baseDefinition, 'conjureType') ?? 'ally';
     const matches = conjureType === 'both'
       || (conjureType === 'ally' && conjurer.ownerId === defeated.ownerId)
       || (conjureType === 'enemy' && conjurer.ownerId !== defeated.ownerId);
     if (!matches) continue;
     const currentSouls = conjurer.mana['souls'] ?? 0;
-    const maxSouls = firstNumberModifier(definition, 'maxSouls');
-    if (!hasUnlockedBooleanModifier(definition, 'noMaxSouls', conjurer.classLevel) && maxSouls !== undefined && currentSouls >= maxSouls) continue;
+    const maxSouls = firstNumberModifier(baseDefinition, 'maxSouls');
+    const transformSouls = firstNumberModifier(baseDefinition, 'transformSoulCount');
+    if (!hasUnlockedBooleanModifier(baseDefinition, 'noMaxSouls', conjurer.classLevel) && maxSouls !== undefined && currentSouls >= maxSouls) {
+      if (transformSouls !== undefined && currentSouls >= transformSouls && conjurer.transformIndex !== undefined) {
+        refreshTransformDuration(state, definitions, conjurer);
+      }
+      continue;
+    }
     const souls = currentSouls + 1;
     conjurer.mana['souls'] = souls;
-    const boostRate = firstNumberModifier(definition, 'soulBoostPercent');
+    const boostRate = firstNumberModifier(baseDefinition, 'soulBoostPercent');
     if (boostRate !== undefined && boostRate > 0) {
       const baseHealth = conjurer.mana['soulBaseHealth'] ?? conjurer.maxHealth;
       conjurer.mana['soulBaseHealth'] = baseHealth;
@@ -2213,9 +2289,9 @@ function captureSouls(
       sourceId: conjurer.instanceId,
       targetId: defeated.instanceId
     });
-    const transformSouls = firstNumberModifier(definition, 'transformSoulCount');
-    if (transformSouls !== undefined && souls >= transformSouls && conjurer.transformIndex === undefined) {
-      transformDie(state, definitions, conjurer, events, random);
+    if (transformSouls !== undefined && souls >= transformSouls) {
+      if (conjurer.transformIndex === undefined) transformDie(state, definitions, conjurer, events, random);
+      else refreshTransformDuration(state, definitions, conjurer);
     }
   }
 }
@@ -2293,6 +2369,7 @@ function summon(
     occupy(die, effectiveDefinition(state, definitions, die), die.gridPosition, occupied);
   }
   for (let index = 0; index < count; index += 1) {
+    if (state.dice.length >= MAX_COMBAT_DICE || living(state, source.ownerId).length >= MAX_DICE_PER_SIDE) break;
     const classLevel = Math.max(1, source.classLevel);
     const definition = buildCombatDefinition(base, classLevel, null, rules.useLevelling);
     const instanceId = `${source.ownerId === 'player' ? 'a' : 'b'}-summon-${state.dice.length + index + 1}`;
@@ -2426,11 +2503,12 @@ function applyRangeThresholdFuriousClaw(
   const distance = attackDistanceBetween(state, definitions, attacker, target);
   if (!isRangeThresholdSatisfied(skill.modifiers, distance, definition.range)) return;
   const hit = dealDamage(state, definitions, attacker, target, Math.max(1, definition.attack), events, random);
-  addEvent(events, 'skill', `${definition.title}'s ${skill.title} strikes ${effectiveDefinition(state, definitions, target).title} for ${hit.dealt} damage.`, {
+  addEvent(events, 'skill', `${definition.title}'s ${skill.title} strikes ${effectiveDefinition(state, definitions, target).title} for ${hit.dealt}${formatCriticalSuffix(hit.critical)} damage.`, {
     ownerId: attacker.ownerId,
     sourceId: attacker.instanceId,
     targetId: target.instanceId,
-    amount: hit.dealt
+    amount: hit.dealt,
+    critical: hit.critical
   });
 }
 
@@ -2444,10 +2522,10 @@ function applyRicochet(
   baseAmount: number,
   events: CombatEvent[],
   random: RandomSource
-): void {
-  if (!hasRicochetEffect(modifiers)) return;
+): boolean {
+  if (!hasRicochetEffect(modifiers)) return false;
   const count = Math.max(0, Math.floor(numberMod(modifiers, 'ricochetCount') ?? 1));
-  if (count <= 0) return;
+  if (count <= 0) return false;
   const range = Math.max(1, Math.floor(numberMod(modifiers, 'ricochetRange') ?? 2));
   const rawDropOff = numberMod(modifiers, 'ricochetDropOff');
   const dropOff = rawDropOff === undefined ? 1 : clamp(rawDropOff, 0, 1);
@@ -2467,14 +2545,17 @@ function applyRicochet(
     ))
     .slice(0, count);
   let amount = baseAmount;
+  let anyCritical = false;
   for (const { die } of candidates) {
     amount = Math.max(1, Math.floor(amount * dropOff));
     if (healing) {
       heal(state, definitions, attacker, die, amount, events, random);
     } else {
-      dealDamage(state, definitions, attacker, die, amount, events, random, { allowCritical: false });
+      const hit = dealDamage(state, definitions, attacker, die, amount, events, random);
+      anyCritical = anyCritical || hit.critical;
     }
   }
+  return anyCritical;
 }
 
 function addMana(
@@ -2646,6 +2727,7 @@ function fireActive(
       ));
       const damage = resolveSkillDamage(definition, modifiers, attacker.pips, definition.attack);
       let totalDamage = 0;
+      let anyCritical = false;
       for (let shot = 0; shot < hits; shot += 1) {
         const victim = pickRandom(
           boardDice(state, otherOwner(attacker.ownerId)).filter((die) => !die.isDestroyed),
@@ -2662,11 +2744,13 @@ function fireActive(
           random
         );
         totalDamage += hit.dealt;
+        anyCritical = anyCritical || hit.critical;
       }
-      addEvent(events, 'skill', `${definition.title} fires ${hits} shots for ${totalDamage} total damage.`, {
+      addEvent(events, 'skill', `${definition.title} fires ${hits} shots for ${totalDamage}${formatCriticalSuffix(anyCritical)} total damage.`, {
         ownerId: attacker.ownerId,
         sourceId: attacker.instanceId,
-        amount: totalDamage
+        amount: totalDamage,
+        critical: anyCritical
       });
       return modifiers.consumeAttack === false || numberMod(modifiers, 'consumeAttack') === 0 ? 'free' : 'fired';
     }
@@ -2866,12 +2950,92 @@ function fireActive(
   return 'none';
 }
 
+function availableTransformIndices(definition: DiceDefinition): number[] {
+  const stages = definition.transformStats;
+  if (!stages?.[0] || Object.keys(stages[0]).length === 0) return [];
+  const available: number[] = [];
+  for (let index = 0; index < stages.length; index += 1) {
+    const stats = stages[index];
+    if (!stats || Object.keys(stats).length === 0) break;
+    if (definition.transformFlags?.[0] && !definition.transformFlags[index]) break;
+    available.push(index);
+  }
+  return available;
+}
+
+function transformPipRequirements(definition: DiceDefinition): Array<number | undefined> | undefined {
+  for (const modifiers of allModifiers(definition)) {
+    const value = modifiers.transformPipRequirements;
+    if (!Array.isArray(value)) continue;
+    return value.map((entry) => (
+      typeof entry === 'number' && Number.isInteger(entry) && entry >= 1 && entry <= 6 ? entry : undefined
+    ));
+  }
+  return undefined;
+}
+
+function transformPipTriggerMatches(
+  definition: DiceDefinition,
+  pips: number,
+  transformIndex?: number
+): boolean {
+  const skills = transformIndex === undefined
+    ? definition.skills
+    : (definition.transformStats?.[transformIndex]?.skills ?? []);
+  const modifiers = skills.flatMap((skill) => skill?.modifiers ? [skill.modifiers] : []);
+  const odd = modifiers.some((entry) => booleanMod(entry, 'transformOnOddPip'));
+  const even = modifiers.some((entry) => booleanMod(entry, 'transformOnEvenPip'));
+  if (odd || even) return (odd && pips % 2 === 1) || (even && pips % 2 === 0);
+  if (transformIndex !== undefined) return transformPipTriggerMatches(definition, pips);
+  return false;
+}
+
+function nextPipTransformIndex(definition: DiceDefinition, pips: number, currentIndex?: number): number | undefined {
+  const available = availableTransformIndices(definition);
+  if (available.length === 0 || pips < 1 || pips > 6) return undefined;
+  const nextIndex = currentIndex === undefined ? available[0] : available.find((index) => index > currentIndex);
+  if (nextIndex === undefined) return undefined;
+  const requirements = transformPipRequirements(definition);
+  if (requirements) return requirements[nextIndex] === pips ? nextIndex : undefined;
+  const pipCount = firstNumberModifier(definition, 'transformPipCount');
+  if (pipCount !== undefined) return pipCount === pips ? nextIndex : undefined;
+  return transformPipTriggerMatches(definition, pips, currentIndex) ? nextIndex : undefined;
+}
+
+function currentPipTransformMatches(definition: DiceDefinition, pips: number, transformIndex: number): boolean {
+  const requirements = transformPipRequirements(definition);
+  if (requirements) return requirements[transformIndex] === pips;
+  const pipCount = firstNumberModifier(definition, 'transformPipCount');
+  if (pipCount !== undefined) return pipCount === pips;
+  return transformPipTriggerMatches(definition, pips, transformIndex)
+    || transformPipTriggerMatches(definition, pips);
+}
+
+function refreshTransformDuration(
+  state: CombatState,
+  definitions: Map<string, DiceDefinition>,
+  die: CombatDie
+): void {
+  if (die.transformIndex === undefined) return;
+  const stats = getDefinition(state, definitions, die).transformStats?.[die.transformIndex];
+  if (stats?.transformDuration !== undefined && Number.isFinite(stats.transformDuration) && stats.transformDuration >= 0) {
+    die.transformTurns = Math.floor(stats.transformDuration);
+  } else {
+    delete die.transformTurns;
+  }
+}
+
 function expireTransform(state: CombatState, definitions: Map<string, DiceDefinition>, die: CombatDie): void {
   delete die.transformTurns;
   if (die.transformIndex === undefined) return;
   die.transformIndex = undefined;
   const base = getDefinition(state, definitions, die);
-  die.maxHealth = Math.max(1, base.health);
+  die.maxHealth = resolveDiceCardMaxHealth(
+    base.health,
+    state.diceCards?.[die.ownerId] ?? [],
+    die.typeId,
+    isBelowLegendaryRarity(base.rarity)
+  );
   die.currentHealth = Math.min(die.currentHealth, die.maxHealth);
 }
 
@@ -2885,7 +3049,10 @@ function transformDie(
   const definition = getDefinition(state, definitions, die);
   const nextIndex = (die.transformIndex ?? -1) + 1;
   const stats = definition.transformStats?.[nextIndex];
-  if (!stats) return;
+  if (!stats) {
+    refreshTransformDuration(state, definitions, die);
+    return;
+  }
   die.transformIndex = nextIndex;
   if (stats.transformDuration !== undefined && Number.isFinite(stats.transformDuration) && stats.transformDuration >= 0) {
     die.transformTurns = Math.floor(stats.transformDuration);
@@ -2893,10 +3060,15 @@ function transformDie(
     delete die.transformTurns;
   }
   const transformed = transformDefinition(definition, die);
-  die.maxHealth = transformed.health;
+  die.maxHealth = resolveDiceCardMaxHealth(
+    transformed.health,
+    state.diceCards?.[die.ownerId] ?? [],
+    die.typeId,
+    isBelowLegendaryRarity(transformed.rarity)
+  );
   die.currentHealth = Math.max(1, Math.min(
-    die.currentHealth + Math.floor(transformed.health * (stats.recoveryRate ?? 0)),
-    transformed.health
+    die.currentHealth + Math.floor(die.maxHealth * (stats.recoveryRate ?? 0)),
+    die.maxHealth
   ));
   addEvent(events, 'skill', `${definition.title} transforms into ${stats.title ?? 'its next form'}.`, {
     ownerId: die.ownerId,
@@ -2932,17 +3104,15 @@ function maybeTransformFromPip(
   random: RandomSource
 ): void {
   const definition = getDefinition(state, definitions, die);
-  if (die.transformIndex !== undefined) return;
-  const modifiers = allModifiers(definition);
-  const pipTransform = modifiers
-    .map((entry) => numberMod(entry, 'transformPipCount'))
-    .find((value) => value !== undefined);
-  const odd = modifiers.some((entry) => booleanMod(entry, 'transformOnOddPip'));
-  const even = modifiers.some((entry) => booleanMod(entry, 'transformOnEvenPip'));
-  const shouldTransform = (pipTransform !== undefined && die.pips === pipTransform)
-    || (odd && die.pips % 2 === 1)
-    || (even && die.pips % 2 === 0);
-  if (shouldTransform) transformDie(state, definitions, die, events, random);
+  if (!definition.transformStats?.length) return;
+  const nextIndex = nextPipTransformIndex(definition, die.pips, die.transformIndex);
+  if (nextIndex !== undefined && nextIndex !== die.transformIndex) {
+    transformDie(state, definitions, die, events, random);
+    return;
+  }
+  if (die.transformIndex !== undefined && currentPipTransformMatches(definition, die.pips, die.transformIndex)) {
+    refreshTransformDuration(state, definitions, die);
+  }
 }
 
 function applyInfiltratorPlacements(
@@ -3170,20 +3340,27 @@ function basicAttack(
     const eventIndex = events.length;
     let healedTotal = 0;
     let hits = 0;
+    let anyCritical = false;
+    let healTargetLabel = effectiveDefinition(state, definitions, target).title;
     for (let projectile = 0; projectile < projectiles; projectile += 1) {
       const healTarget = selectHealTarget(state, definitions, attacker) ?? target;
-      const healed = heal(state, definitions, attacker, healTarget, definition.attack, events, random);
-      if (healed <= 0) break;
-      healedTotal += healed;
+      healTargetLabel = healTarget.instanceId === attacker.instanceId
+        ? 'itself'
+        : effectiveDefinition(state, definitions, healTarget).title;
+      const healResult = heal(state, definitions, attacker, healTarget, definition.attack, events, random);
+      if (healResult.displayed <= 0) break;
+      healedTotal += healResult.displayed;
+      anyCritical = anyCritical || healResult.critical;
       hits += 1;
       applyRicochet(state, definitions, attacker, healTarget, modifiers, true, definition.attack, events, random);
     }
     if (healedTotal > 0 && !attacker.isDestroyed) addMana(attacker, definition);
-    insertEvent(events, eventIndex, 'attack', `${definition.title} heals ${effectiveDefinition(state, definitions, target).title}${hits > 1 ? ` ${hits} times` : ''} for ${healedTotal} health.`, {
+    insertEvent(events, eventIndex, 'attack', `${definition.title} heals ${healTargetLabel}${hits > 1 ? ` ${hits} times` : ''} for ${healedTotal}${formatCriticalSuffix(anyCritical)} health.`, {
       ownerId: attacker.ownerId,
       sourceId: attacker.instanceId,
       targetId: target.instanceId,
-      amount: healedTotal
+      amount: healedTotal,
+      critical: anyCritical
     });
     return;
   }
@@ -3193,36 +3370,176 @@ function basicAttack(
   const boostMultiplier = boosted ? Math.max(2, attacker.mana['boostedAttackMultiplier'] ?? 2) : 1;
   let dealt = 0;
   let absorbed = 0;
+  let anyCritical = false;
+  let ricochetBase = 1;
+  let ricochetPrimaryCritical = false;
   const evenPip = attacker.pips % 2 === 0;
   const pipDamageRate = numberMod(modifiers, evenPip ? 'evenPipDamageRate' : 'oddPipDamageRate') ?? 0;
   const pipSiphonRate = numberMod(modifiers, evenPip ? 'evenPipSiphonRate' : 'oddPipSiphonRate') ?? 0;
+  const acquireTarget = projectiles > 2 && skillsOfType(definition, 'Passive').some((skill) =>
+    skillUnlocked(skill, attacker.classLevel) && skill.modifiers?.['acquireTarget'] === true
+  );
+  const targetingMode = definition.targetingMode ?? 'Nearest';
+  const acquiredTargetIds = new Set<string>();
+  let projectileTarget = target;
   const eventIndex = events.length;
-  for (let projectile = 0; projectile < projectiles && !target.isDestroyed; projectile += 1) {
+  for (let projectile = 0; projectile < projectiles; projectile += 1) {
+    if (!acquireTarget && target.isDestroyed) break;
+    if (acquireTarget && projectile > 0) {
+      let nextTarget = selectTarget(state, definitions, attacker, targetingMode, false, false, random, acquiredTargetIds);
+      if (!nextTarget) {
+        acquiredTargetIds.clear();
+        nextTarget = selectTarget(state, definitions, attacker, targetingMode, false, false, random);
+      }
+      if (!nextTarget) break;
+      projectileTarget = nextTarget;
+    }
+    if (projectileTarget.isDestroyed) {
+      if (acquireTarget) continue;
+      break;
+    }
+    if (acquireTarget) acquiredTargetIds.add(projectileTarget.instanceId);
+    const giantHunterTarget = effectiveDefinition(state, definitions, projectileTarget).isBoss === true ? 0.25 : 1;
     const base = definition.attack
-      + targetCurrentHealthBonus(state, definitions, attacker, target)
+      + targetCurrentHealthBonus(state, definitions, attacker, projectileTarget)
       + statusBonusDamage(state, definitions, attacker, definition.attack)
+      + getDiceCardGiantHunterBonus(state, attacker.ownerId, projectileTarget.maxHealth, giantHunterTarget)
       + (attacker.mana['killDamageBonus'] ?? 0);
-    const scaled = Math.max(1, Math.floor(base * damageMultiplier(state, definitions, attacker, target) * boostMultiplier * (1 + Math.max(0, pipDamageRate))));
-    const hit = dealDamage(state, definitions, attacker, target, scaled, events, random);
+    const scaled = Math.max(1, Math.floor(base * damageMultiplier(state, definitions, attacker, projectileTarget) * boostMultiplier * (1 + Math.max(0, pipDamageRate))));
+    const hit = dealDamage(state, definitions, attacker, projectileTarget, scaled, events, random);
     dealt += hit.dealt;
     absorbed += hit.absorbed;
-    if (pipSiphonRate > 0 && hit.dealt > 0 && !attacker.isDestroyed) {
-      heal(state, definitions, attacker, attacker, Math.floor(hit.dealt * pipSiphonRate), events, random);
+    anyCritical = anyCritical || hit.critical;
+    if (projectile === 0) {
+      ricochetBase = scaled;
+      ricochetPrimaryCritical = hit.critical;
     }
-    if (!target.isDestroyed) applyPassiveOnHit(state, definitions, attacker, target, events, random);
-    if (target.isDestroyed) break;
+    if (pipSiphonRate > 0 && hit.appliedDealt > 0 && !attacker.isDestroyed) {
+      heal(state, definitions, attacker, attacker, Math.floor(hit.appliedDealt * pipSiphonRate), events, random);
+    }
+    if (!projectileTarget.isDestroyed) applyPassiveOnHit(state, definitions, attacker, projectileTarget, events, random);
+    if (projectileTarget.isDestroyed && !acquireTarget) break;
   }
   if (dealt > 0 && !attacker.isDestroyed) {
     addMana(attacker, definition);
-    applyRicochet(state, definitions, attacker, target, modifiers, false, definition.attack, events, random);
+    const ricochetBaseDamage = ricochetPrimaryCritical
+      ? Math.floor(ricochetBase * criticalMultiplier(state, definitions, attacker, target))
+      : ricochetBase;
+    anyCritical = applyRicochet(state, definitions, attacker, target, modifiers, false, ricochetBaseDamage, events, random) || anyCritical;
   }
   const shieldFeedback = absorbed > 0 ? ` (shield absorbed ${absorbed} damage)` : '';
-  insertEvent(events, eventIndex, 'attack', `${definition.title} ${options.strikeFirst ? 'strikes' : 'attacks'} ${effectiveDefinition(state, definitions, target).title}${options.strikeFirst ? ' first' : ''}${projectiles > 1 ? ` ${projectiles} times` : ''} for ${dealt} damage${shieldFeedback}${boosted ? ' with a boosted strike' : ''}.`, {
+  insertEvent(events, eventIndex, 'attack', `${definition.title} ${options.strikeFirst ? 'strikes' : 'attacks'} ${effectiveDefinition(state, definitions, target).title}${options.strikeFirst ? ' first' : ''}${projectiles > 1 ? ` ${projectiles} times` : ''} for ${dealt}${formatCriticalSuffix(anyCritical)} damage${shieldFeedback}${boosted ? ' with a boosted strike' : ''}.`, {
     ownerId: attacker.ownerId,
     sourceId: attacker.instanceId,
     targetId: target.instanceId,
     amount: dealt
   });
+}
+
+function combanityBonus(state: CombatState, ownerId: OwnerId): { multiplier: number; reduction: number; label: string } {
+  const values = state.dice
+    .filter((die) => die.ownerId === ownerId && !die.isDestroyed && (die.zone === 'board' || die.zone === 'hand'))
+    .map((die) => die.pips)
+    .sort((left, right) => left - right);
+  const counts = new Map<number, number>();
+  values.forEach((pip) => counts.set(pip, (counts.get(pip) ?? 0) + 1));
+  const groups = [...counts.values()].sort((left, right) => right - left);
+  const key = [...new Set(values)].join(',');
+  const smallStraight = key.includes('1,2,3,4') || key.includes('2,3,4,5') || key.includes('3,4,5,6');
+  const largeStraight = key === '1,2,3,4,5' || key === '2,3,4,5,6';
+  if ((groups[0] ?? 0) >= 5) return { multiplier: 6, reduction: 1, label: 'Five-of-a-kind' };
+  if ((groups[0] ?? 0) >= 4) return { multiplier: 4, reduction: 0.5, label: 'Four-of-a-kind' };
+  if ((groups[0] ?? 0) >= 3 && (groups[1] ?? 0) >= 2) return { multiplier: 3, reduction: 0.35, label: 'Full House' };
+  if (largeStraight) return { multiplier: 2, reduction: 0.25, label: 'Large Straight' };
+  if (smallStraight) return { multiplier: 1.5, reduction: 0.2, label: 'Small Straight' };
+  if ((groups[0] ?? 0) >= 3) return { multiplier: 2, reduction: 0, label: 'Three-of-a-kind' };
+  if ((groups[0] ?? 0) >= 2 && (groups[1] ?? 0) >= 2) return { multiplier: 1.5, reduction: 0, label: 'Two Pair' };
+  if ((groups[0] ?? 0) >= 2) return { multiplier: 1.2, reduction: 0, label: 'Pair' };
+  return { multiplier: 1, reduction: 0, label: 'Classic' };
+}
+
+function applyCombanity(state: CombatState, events: CombatEvent[]): void {
+  const player = combanityBonus(state, 'player');
+  const enemy = combanityBonus(state, 'enemy');
+  for (const die of state.dice) {
+    if (die.isDestroyed) continue;
+    const bonus = die.ownerId === 'player' ? player : enemy;
+    die.combanityMultiplier = bonus.multiplier;
+    die.combanityReduction = clamp(bonus.reduction, 0, 0.9);
+  }
+  addEvent(events, 'info', `Combanity: Player one rolled ${player.label} (${player.multiplier}x), Player two rolled ${enemy.label} (${enemy.multiplier}x).`, {});
+}
+
+function applyNecromancy(
+  state: CombatState,
+  definitions: Map<string, DiceDefinition>,
+  events: CombatEvent[],
+  random: RandomSource,
+  catalog: DiceCatalog,
+  rules: MatchRules
+): void {
+  for (const ownerId of ['player', 'enemy'] as OwnerId[]) {
+    if (state.dice.length >= MAX_COMBAT_DICE || living(state, ownerId).length >= MAX_DICE_PER_SIDE) continue;
+    const destroyed = state.dice.filter((die) => die.ownerId === ownerId && die.isDestroyed);
+    const revived = pickRandom(destroyed, random);
+    if (revived) {
+      const definition = definitions.get(revived.instanceId);
+      const maxHealth = Math.max(1, Math.floor(revived.maxHealth), definition?.health ?? 0);
+      revived.isDestroyed = false;
+      revived.maxHealth = maxHealth;
+      revived.currentHealth = maxHealth;
+      revived.zone = 'hand';
+      revived.gridPosition = undefined;
+      revived.attacksRemaining = 0;
+      revived.hasFinishedAttacking = true;
+      addEvent(events, 'revive', `${definition?.title ?? revived.typeId} rises again through Necromancy.`, {
+        ownerId,
+        targetId: revived.instanceId
+      });
+      continue;
+    }
+    const eligibleTypes = catalog.typeIds().filter((typeId) => {
+      const candidate = catalog.get(typeId);
+      return Boolean(candidate && !candidate.isBoss && !catalog.isExclusive(typeId));
+    });
+    const base = catalog.get(pickRandom(eligibleTypes, random) ?? '');
+    if (!base) continue;
+    const classLevel = Math.max(1, ...state.dice
+      .filter((die) => die.ownerId === ownerId)
+      .map((die) => die.classLevel));
+    const definition = buildCombatDefinition(base, classLevel, null, rules.useLevelling);
+    const instanceId = `${ownerId === 'player' ? 'a' : 'b'}-necro-${state.turn}-${state.dice.length + 1}`;
+    const maxHealth = Math.max(1, Math.floor(definition.health));
+    state.dice.push({
+      instanceId,
+      typeId: base.typeId,
+      classLevel,
+      ownerId,
+      zone: 'hand',
+      maxHealth,
+      currentHealth: maxHealth,
+      isDestroyed: false,
+      hasFinishedAttacking: true,
+      attacksRemaining: 0,
+      pips: 1,
+      mana: {},
+      shieldHp: 0,
+      shieldTurns: 0,
+      attackDelta: 0,
+      attackDeltaTurns: 0,
+      stunTurns: 0,
+      tauntTurns: 0,
+      fractureRate: 0,
+      fractureTurns: 0,
+      growth: 0,
+      boostedAttacks: 0
+    });
+    definitions.set(instanceId, definition);
+    addEvent(events, 'summon', `${definition.title} is raised through Necromancy.`, {
+      ownerId,
+      targetId: instanceId
+    });
+  }
 }
 
 function startCombat(
@@ -3234,6 +3551,7 @@ function startCombat(
   rules: MatchRules
 ): void {
   applyInfiltratorPlacements(state, definitions, events);
+  if (rules.randomMode && rules.randomModifier === 'Combanity') applyCombanity(state, events);
   for (const die of state.dice) {
     if (die.shieldHp <= 0) die.shieldTurns = 0;
     else if (die.shieldTurns <= 0) die.shieldHp = 0;
@@ -3288,7 +3606,7 @@ function startCombat(
   for (const die of state.dice) {
     if (die.zone !== 'board' || die.isDestroyed) continue;
     const definition = effectiveDefinition(state, definitions, die);
-    die.attacksRemaining = Math.max(1, die.pips + die.attackDelta + die.growth);
+    die.attacksRemaining = Math.max(0, die.pips + die.attackDelta + die.growth + getDiceCardFireSupportBonus(state, die));
     die.hasFinishedAttacking = false;
     for (const aura of auras.get(die.ownerId) ?? []) {
       if (aura.sourceId === die.instanceId) continue;
@@ -3442,6 +3760,11 @@ function startCombat(
       });
     }
   }
+  for (const die of state.dice) {
+    if (die.zone !== 'board' || die.isDestroyed) continue;
+    const gain = getDiceCardManaPotionGain(state, die.ownerId);
+    if (gain > 0) addMana(die, effectiveDefinition(state, definitions, die), gain);
+  }
   addEvent(events, 'round', `Round ${state.turn} begins.`, {});
 }
 
@@ -3495,7 +3818,7 @@ function tickEndOfRound(
         ownerId: first?.sourceOwnerId ?? die.ownerId,
         typeId: first?.sourceTypeId ?? die.typeId
       };
-      dealDamage(state, definitions, sourceProxy, die, Math.max(1, amount), events, random);
+      dealDamage(state, definitions, sourceProxy, die, Math.max(1, amount), events, random, { applyCardOffense: false });
       die.poisonStacks = activePoisonStacks(die)
         .map((stack) => ({ ...stack, turns: stack.turns - 1 }))
         .filter((stack) => stack.turns > 0);
@@ -3577,6 +3900,22 @@ function tickEndOfRound(
     die.hasFinishedAttacking = true;
     delete die.mana['infiltrated'];
   }
+  for (const die of state.dice) {
+    if (die.isDestroyed) continue;
+    const rate = getDiceCardFountainRate(state, die.ownerId);
+    if (rate <= 0) continue;
+    const amount = Math.max(0, Math.min(
+      die.maxHealth - die.currentHealth,
+      Math.max(1, Math.floor(die.maxHealth * rate))
+    ));
+    if (amount <= 0) continue;
+    die.currentHealth += amount;
+    addEvent(events, 'heal', `${effectiveDefinition(state, definitions, die).title} rejuvenates ${amount} health from Fountain of Love.`, {
+      ownerId: die.ownerId,
+      targetId: die.instanceId,
+      amount
+    });
+  }
   for (const pending of pendingHandStatuses) {
     const targetOwner = otherOwner(pending.source.ownerId);
     const target = pickRandom(
@@ -3650,7 +3989,7 @@ export function resolveCombat(
   state.combatPhase = 'attacking';
   for (const die of state.dice) {
     if (die.zone === 'board' && !die.isDestroyed) {
-      die.attacksRemaining = Math.max(1, die.pips);
+      die.attacksRemaining = Math.max(0, die.pips);
       die.hasFinishedAttacking = false;
     }
   }
@@ -3673,9 +4012,16 @@ export function resolveCombat(
       continue;
     }
     const healingAttack = hasUnlockedBooleanModifier(definition, 'healOnAttack', attacker.classLevel);
-    const readyActive = activeSkills(definition, attacker.classLevel).find((skill, index) => (
+    const readyActiveCandidate = activeSkills(definition, attacker.classLevel).find((skill, index) => (
       (attacker.mana[activeManaKey(skill, index)] ?? 0) >= Math.max(1, skill.manaNeeded ?? 1)
     ));
+    const activeHealing = readyActiveCandidate
+      ? numberMod(readyActiveCandidate.modifiers, 'skillHealing') !== undefined
+      : false;
+    const activeHealTarget = activeHealing
+      ? selectHealTarget(state, definitions, attacker, true)
+      : undefined;
+    const readyActive = activeHealing && !activeHealTarget ? undefined : readyActiveCandidate;
     const targetMode = readyActive
       ? stringMod(readyActive.modifiers, 'activeSkillTargeting')
         ?? stringMod(readyActive.modifiers, 'skillTargeting')
@@ -3686,15 +4032,17 @@ export function resolveCombat(
       : false;
     const target = healingAttack
       ? selectHealTarget(state, definitions, attacker)
-      : selectTarget(
-        state,
-        definitions,
-        attacker,
-        targetMode,
-        readyActiveAlliesOnly,
-        false,
-        random
-      );
+      : activeHealing && activeHealTarget
+        ? activeHealTarget
+        : selectTarget(
+          state,
+          definitions,
+          attacker,
+          targetMode,
+          readyActiveAlliesOnly,
+          false,
+          random
+        );
     if (attacker.mana['strikeFirst'] === 1) {
       attacker.mana['strikeFirst'] = 0;
       if (target) basicAttack(state, definitions, attacker, target, events, random, { strikeFirst: true });
@@ -3702,7 +4050,9 @@ export function resolveCombat(
       attacker.hasFinishedAttacking = attacker.attacksRemaining === 0;
       continue;
     }
-    const activeResult = fireActive(state, definitions, attacker, target, events, random, catalog, rules);
+    const activeResult = activeHealing && !activeHealTarget
+      ? 'none'
+      : fireActive(state, definitions, attacker, target, events, random, catalog, rules);
     if (activeResult !== 'none') {
       if (activeResult === 'fired') {
         attacker.attacksRemaining = Math.max(0, attacker.attacksRemaining - 1);
@@ -3762,6 +4112,9 @@ export function resolveCombat(
   }
 
   tickEndOfRound(state, definitions, events, random, catalog, rules);
+  if (rules.randomMode && rules.randomModifier === 'Necromancy') {
+    applyNecromancy(state, definitions, events, random, catalog, rules);
+  }
   return { state, events };
 }
 

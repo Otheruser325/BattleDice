@@ -64,6 +64,24 @@ test('rejects missing or malformed rules', () => {
   assert.equal(invalidRules.ok, false);
 });
 
+test('accepts random mode and loadout randomisation in PvP rules', () => {
+  const result = parseJoinRequest(payload({
+    ...join,
+    rules: { ...join.rules, randomMode: true, randomizeLoadout: true }
+  }), 'matchmaking');
+  assert.equal(result.ok, true);
+  assert.equal(result.value.rules.randomMode, true);
+  assert.equal(result.value.rules.randomizeLoadout, true);
+});
+
+test('rejects a malformed loadout randomisation flag', () => {
+  const result = parseJoinRequest(payload({
+    ...join,
+    rules: { ...join.rules, randomizeLoadout: 'yes' }
+  }), 'matchmaking');
+  assert.equal(result.ok, false);
+});
+
 test('normalizes only the client lobby alphabet', () => {
   assert.equal(normalizeLobbyCode('ab cdef'), null);
   assert.equal(normalizeLobbyCode('abcd2f'), 'ABCD2F');
@@ -89,6 +107,45 @@ test('accepts a valid turn envelope', () => {
   assert.equal(result.ok, true);
   assert.equal(result.value.dice.length, 1);
   assert.equal(result.value.dice[0].instanceId, 'a-1');
+});
+
+test('accepts and echoes a turn request ID while rejecting malformed IDs', () => {
+  const accepted = parseTurnSync(payload({
+    turn: 1,
+    requestId: 'req_abc12345',
+    dice: [{ ownerId: 'player', instanceId: 'a-1', typeId: 'Fire', gridPosition: { row: 0, col: 0 } }]
+  }));
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.value.requestId, 'req_abc12345');
+
+  for (const requestId of ['short', 'bad id with spaces', 42]) {
+    assert.equal(parseTurnSync(payload({
+      turn: 1,
+      requestId,
+      dice: [{ ownerId: 'player', instanceId: 'a-1', typeId: 'Fire', gridPosition: { row: 0, col: 0 } }]
+    })).ok, false);
+  }
+});
+
+test('accepts a Dice Card selection on the turn envelope and rejects malformed keys', () => {
+  const accepted = parseTurnSync(payload({
+    turn: 2,
+    dice: [{ ownerId: 'player', instanceId: 'a-1', typeId: 'Fire', gridPosition: { row: 0, col: 0 } }],
+    diceCardKey: 'Spotlight:Gold'
+  }));
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.value.diceCardKey, 'Spotlight:Gold');
+
+  assert.equal(parseTurnSync(payload({
+    turn: 2,
+    dice: [{ ownerId: 'player', instanceId: 'a-1', typeId: 'Fire', gridPosition: { row: 0, col: 0 } }],
+    diceCardKey: 'bad\nkey'
+  })).ok, false);
+  assert.equal(parseTurnSync(payload({
+    turn: 2,
+    dice: [{ ownerId: 'player', instanceId: 'a-1', typeId: 'Fire', gridPosition: { row: 0, col: 0 } }],
+    diceCardKey: 42
+  })).ok, false);
 });
 
 test('rejects turn submissions for the opponent or without an instance id', () => {

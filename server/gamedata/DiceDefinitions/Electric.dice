@@ -2,7 +2,7 @@
   "typeId": "Electric",
   "title": "Electric Dice",
   "attack": 24,
-  "health": 720,
+  "health": 750,
   "range": 4,
   "skills": [
     {
@@ -10,7 +10,7 @@
       "title": "Chain Spark",
       "description": "Attacks chain onto another foe on the target's board within {chainRange} tiles for {chainDamage} bonus damage.",
       "modifiers": {
-        "chainDamage": 16,
+        "chainDamage": 18,
         "hasChain": true,
         "chainRange": 2,
         "chainTargets": 1,
@@ -31,6 +31,7 @@
           {
             "description": "Attacks chain on many possible nearby foes on the target's board for {chainDamage} bonus damage.",
             "modifiers": {
+			  "chainDamage": 14,
               "chainRange": 1,
               "chainTargets": -1
             }

@@ -1,22 +1,44 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
-import { applyClassProgression, applyStatModifiers, applyTransformStats, BOSS_CLASS_STAT_MULTIPLIER, CLASS_UP_STAT_MULTIPLIER, getBossClassMultiplier, getClassBenefitValue, getClassScaledSkillDescription, getClassScaledTalentDescription, resolvePoolDamage } from '../src/systems/ClassProgression';
-import { DUNGEON_BOSSES, DUNGEON_MINI_BOSSES, DUNGEON_BOSS_BERSERK_SKILL_MULTIPLIER, DUNGEON_CARRYOVER_DICE_CAP, DUNGEON_CARRYOVER_MANA_CAP, DUNGEON_CARRYOVER_STAT_CAP, DUNGEON_CARRYOVER_STACK_CAP, DUNGEON_FIRST_EVENT_KEY, DUNGEON_MAX_CLASS_LEVEL, DUNGEON_MODIFIERS, DUNGEON_REWARD_WAVES, canGrantDungeonCopyAmount, canUseDungeonCards, isLegacyDiceCardMode, getDungeonDifficulty, getDungeonEliteDieSides, getDungeonEliteSkillMultiplier, getDungeonEnemyCriticalChance, getDungeonEventWindow, getDungeonModifier, getDungeonMusicEffects, getDungeonNextWaveTurn, getDungeonStageReward, getDungeonSpeedMultiplier, getDungeonWaveSpec, normalizeDungeonCarryover, normalizeDungeonCopyAmount, pickDungeonCopyTypeId, resolveDungeonCarryoverInstanceIds, resolveDungeonWaveLoadout } from '../src/systems/DungeonEvent';
-import { normalizeDungeonRun, saveDungeonRun } from '../src/systems/DungeonStore';
+import { applyClassProgression, applyStatModifiers, applyTransformStats, BOSS_CLASS_STAT_MULTIPLIER, CLASS_UP_STAT_MULTIPLIER, getBossClassMultiplier, getClassBenefitValue, getClassMultiplier, getClassScaledSkillDescription, getClassScaledTalentDescription, resolvePoolDamage } from '../src/systems/ClassProgression';
+import { DUNGEON_BOSSES, DUNGEON_MINI_BOSSES, DUNGEON_BOSS_BERSERK_SKILL_MULTIPLIER, DUNGEON_CARRYOVER_DICE_CAP, DUNGEON_CARRYOVER_MANA_CAP, DUNGEON_CARRYOVER_STAT_CAP, DUNGEON_CARRYOVER_STACK_CAP, DUNGEON_CARRYOVER_TURNS_CAP, DUNGEON_FIRST_EVENT_KEY, DUNGEON_MAX_CLASS_LEVEL, DUNGEON_MODIFIERS, DUNGEON_REWARD_WAVES, canGrantDungeonCopyAmount, canUseDungeonCards, isLegacyDiceCardMode, getDungeonDifficulty, getDungeonEliteDieSides, getDungeonEliteSkillMultiplier, getDungeonEnemyCriticalChance, getDungeonEventWindow, getDungeonModifier, getDungeonMusicEffects, getDungeonNextWaveTurn, getDungeonStageReward, getDungeonSpeedMultiplier, getDungeonWaveSpec, normalizeDungeonCarryover, normalizeDungeonCopyAmount, pickDungeonCopyTypeId, resolveDungeonCarryoverInstanceIds, resolveDungeonWaveLoadout } from '../src/systems/DungeonEvent';
+import { getBasicAttackProjectileCount, getExecutionRhythmBoost } from '../src/systems/CombatSkills';
+import { DUNGEON_ENEMY_DUPLICATE_COPY_CAP, DUNGEON_ENEMY_DUPLICATE_START_WAVE, createDungeonSeededRng, pickDungeonEnemyTypeIds, rollDungeonSeededInt } from '../src/systems/DungeonEvent';
+import { drawDungeonScopeMarks } from '../src/systems/DungeonCards';
+import { applyDungeonCardSpendRefund, beginDungeonCardSpend, clearDungeonCardSpend, discardDungeonRunCache, getDungeonCardSpend, getDungeonRun, markDungeonCardSpendDebited, normalizeDungeonRun, resolveDungeonCardSpendRefund, resolveDungeonCardWalletRefund, saveDungeonRun, type DungeonCardSpend } from '../src/systems/DungeonStore';
+import { initializeSecureStorage } from '../src/utils/SecureStorage';
+import { getDiamonds, setDiamonds } from '../src/data/dice';
 import { getHardDailyEnemyClassLevel, getSeededDailyIndex, getSeededDailyRange, getTopProfileDice } from '../src/systems/DailyChallenges';
-import { getDungeonResultTransition } from '../src/systems/DungeonRunFlow';
+import { getDungeonQuitRewardWave, getDungeonResultTransition } from '../src/systems/DungeonRunFlow';
 import { applyDiceTalent, areTalentsSuppressedForChallenge } from '../src/systems/DiceTalents';
 import { normalizeDiceCopyCount } from '../src/data/dice';
 import { DUNGEON_INTRO_WAVES, getDungeonIntroForWave } from '../src/systems/DungeonIntros';
-import { COMBAT_TIME_LIMIT_MS, getCombatTimeSpeedMultiplier } from '../src/systems/CombatPacing';
-import { canOfferDiceCards, rollDiceCards } from '../src/systems/DiceCards';
-import { applyDungeonCardStats, canShuffleDungeonCards, DUNGEON_CARD_MAX_STACKS, DUNGEON_SLUGFEST_SKILL, canAddDungeonCard, createDungeonCard, createDungeonCardState, ensureDungeonScopeMarks, getDungeonCardDamageMultiplier, getDungeonCardEffects, getDungeonCardKillsRequired, getDungeonCardMaxStacks, getDungeonCardPresentation, getDungeonCardRarityRoll, getDungeonCardShuffleCost, getDungeonCardStackCount, normalizeDungeonCardState, pickDungeonCard, registerDungeonCardKills, removeDungeonCardHealth, resolveDungeonCardHealthAdjustment, resolveDungeonCarryoverAttack, resolveDungeonCarryoverHealth, rollDungeonCardChoices } from '../src/systems/DungeonCards';
+import { COMBAT_TIME_LIMIT_MS, getCombatTimeSpeedMultiplier, scaleAnimationDuration } from '../src/systems/CombatPacing';
+import { canOfferDiceCards, DICE_CARD_KINDS, DICE_CARD_OFFER_TURNS, DICE_CARD_RARITY_FALLBACKS, DICE_CARD_VALUES, getDiceCardInfo, getDiceCardMagnitude, getDiceCardRuntimeContribution, isDiceCardTypeUpgradeKey, resolveDiceCardMaxHealth, rollDiceCards, type DiceCard } from '../src/systems/DiceCards';
+import { formatTurnWaveLabel, getDicePreviewScrollMetrics } from '../src/systems/ArenaHud';
+import {
+  DICE_CARD_KINDS as SERVER_DICE_CARD_KINDS,
+  DICE_CARD_OFFER_TURNS as SERVER_DICE_CARD_OFFER_TURNS,
+  DICE_CARD_RARITY_FALLBACKS as SERVER_DICE_CARD_RARITY_FALLBACKS,
+  DICE_CARD_VALUES as SERVER_DICE_CARD_VALUES,
+  getDiceCardMagnitude as getServerDiceCardMagnitude,
+  resolveDiceCardMaxHealth as resolveServerDiceCardMaxHealth
+} from '../server/src/combat/dice-cards';
+import { applyDungeonCardStats, canShuffleDungeonCards, DUNGEON_CARD_KINDS, DUNGEON_CARD_MAX_STACKS, DUNGEON_MARKED_IN_SKILL, DUNGEON_SLUGFEST_SKILL, canAddDungeonCard, resolveIgnitionDamage, createDungeonCard, createDungeonCardState, dungeonCardsConflict, ensureDungeonScopeMarks, getDungeonCardDamageMultiplier, getDungeonCardDescription, getDungeonCardEffects, getDungeonCardKillsRequired, getDungeonCardMaxStacks, getDungeonCardNonUniqueDrawRarityRoll, getDungeonCardPresentation, getDungeonCardRarityRoll, getDungeonCardRarities, getDungeonCardShuffleCost, getDungeonCardStackCount, getDungeonCardUniqueDrawRarityRoll, isDungeonCardUniqueDraw, normalizeDungeonCardState, pickDungeonCard, registerDungeonCardKills, removeDungeonCardHealth, resolveDungeonCardHealthAdjustment, resolveDungeonCarryoverAttack, resolveDungeonCarryoverHealth, rollDungeonCardChoices } from '../src/systems/DungeonCards';
 import { findAttackTarget, getTerminalBattleOwner } from '../src/systems/BattleState';
-import { getCombatDistance } from '../src/systems/CombatRange';
-import { getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger } from '../src/systems/DiceSkills';
-import { chooseInfiltratorPlacement, clampDamageReduction, collectCombatStartAuras, combineDamageReduction, computeCombatStartBonus, executeActiveSkillEffects, executeRevengeSkillEffects, formatActiveSkillActionLabel, formatCombatSkillLabel, formatRicochetAggregationLabel, getCombatStartManaEffect, getMaxHealthHealAmount, resolveMaxHealthGainCurrentHealth, MAX_DAMAGE_REDUCTION, resolvePlagueSpawn, resolveReviveStats } from '../src/systems/CombatSkills';
+import { getCombatDistance, getCoveredEnemyColumns, getCoveredEnemyTileCount, getDisplayedRangeCoverage, getFootprintAdjustedRange } from '../src/systems/CombatRange';
+import { addScopeStack, getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, resolveScopeShotDamage } from '../src/systems/DiceSkills';
+import { TransformState, type TransformStateHost } from '../src/systems/TransformState';
+import { chooseInfiltratorPlacement, clampDamageReduction, collectCombatStartAuras, combineDamageReduction, computeCombatStartBonus, executeActiveSkillEffects, executeRevengeSkillEffects, formatActiveSkillActionLabel, formatCombatAmount, formatCombatHealingActionLabel, formatCombatSkillLabel, formatCombatSkillTypeLabel, formatRicochetAggregationLabel, getCombatStartManaEffect, getMaxHealthHealAmount, resolveCombatEndHealAmount, resolveHealingFeedback, resolveMaxHealthGainCurrentHealth, MAX_DAMAGE_REDUCTION, resolvePlagueSpawn, resolveReviveStats } from '../src/systems/CombatSkills';
+import { SecureShuffleBag } from '../src/utils/RandomManager';
+import { DICE_STATUS_EFFECT_POOL } from '../src/types/game';
+import { StatusEffectStore, type StatusEffectHooks, type StatusEffectTick } from '../src/systems/StatusEffects';
+import { BOSSFIGHT_BOSSES, BOSSFIGHT_BOSS_METADATA, BOSSFIGHT_MENU_STATE_KEY, BOSSFIGHT_PROGRESS_KEY, MAX_BOSSFIGHT_LEVEL, getBossMusicKey, getBossfightMenuState, getBossfightProgress, getBossfightRewards, normalizeBossfightProgress, saveBossfightMenuState, type BossMusicBoss } from '../src/systems/BossStore';
+import { CHALLENGE_RANDOM_MODIFIERS, CHALLENGE_REWARD_CLAIMS_KEY, CHALLENGE_STATUS_KEY, canChallengeBeMarkedFailed, getChallengeClaimKey, getChallengeEnemyConfig, getChallengeRandomModifier, getChallengeReward, getChallengeStartConfig, getChallengeStatus, getChallengeStatusLabel, getChallengeUIConfig, getDailyChallengeKey, getDailyLoadoutMode, getDailySeededIndex, getDailySeededModifier, getDailySeededRange, getDailyUsesRandomClassUps, isHardDaily } from '../src/systems/ChallengeStore';
 import type { DiceDefinition, DiceInstanceState, DicePoolDefinition, DiceSkillDefinition, MatchBattleState } from '../src/types/game';
+import './arch-refactor.test';
+import './session-stores.test';
 
 const zombie: DiceDefinition = {
   typeId: 'Zombie',
@@ -84,6 +106,8 @@ test('combat skill labels use the source die and formatted trigger type', () => 
   assert.equal(formatCombatSkillLabel('Meteor', 'OnKill'), 'Meteor (On Kill)');
   assert.equal(formatCombatSkillLabel('Zombie', 'OnDeath'), 'Zombie (On Death)');
   assert.equal(formatCombatSkillLabel('Time', 'OnTransformed'), 'Time (On Transformed)');
+  assert.equal(formatCombatSkillTypeLabel('Active'), 'Active');
+  assert.equal(formatCombatSkillTypeLabel('CombatStart'), 'Combat Start');
 });
 
 test('active skill action labels tolerate missing titles and preserve details', () => {
@@ -94,6 +118,21 @@ test('active skill action labels tolerate missing titles and preserve details', 
   assert.equal(
     formatActiveSkillActionLabel('Player', 'Shield', undefined, ''),
     'Player Shield uses active skill!'
+  );
+});
+
+test('self-targeted healing labels display itself', () => {
+  assert.equal(
+    formatCombatHealingActionLabel('Active', 'Healing Dice', true),
+    'Active heals itself'
+  );
+  assert.equal(
+    formatCombatHealingActionLabel('Active', 'Allied Dice'),
+    'Active heals Allied Dice'
+  );
+  assert.equal(
+    formatCombatHealingActionLabel(undefined, 'Druid', true),
+    'Heals itself'
   );
 });
 
@@ -677,6 +716,35 @@ test('Dungeon carryover normalization clamps hostile values and later waves requ
   }));
 });
 
+test('Dungeon carryover retains positive attack-count and per-die buffs for the next wave panel', () => {
+  const carryover = normalizeDungeonCarryover({
+    turn: 6,
+    dice: [{
+      instanceId: 'player-Fire-1',
+      typeId: 'Fire',
+      currentHealth: 80,
+      maxHealth: 100,
+      isDestroyed: false,
+      mana: 3,
+      activeMana: [],
+      statuses: {
+        slow: { delta: 2, turns: 3, stacks: [{ delta: 1, turns: 3 }, { delta: 1, turns: 2 }] }
+      },
+      attackCountBuff: { extra: 1, turns: 2 },
+      basicAttackDamage: 7,
+      manaPausedTurns: 2
+    }]
+  });
+
+  assert.ok(carryover);
+  const die = carryover.dice[0]!;
+  assert.equal(die.statuses.slow?.delta, 2);
+  assert.equal(die.statuses.slow?.stacks?.length, 2);
+  assert.equal(die.attackCountBuff?.extra, 1);
+  assert.equal(die.basicAttackDamage, 7);
+  assert.equal(die.manaPausedTurns, 2);
+});
+
 test('Dungeon carryover drops orphaned summon parents', () => {
   const parent = {
     instanceId: 'player-Fire-1',
@@ -714,6 +782,46 @@ test('Dungeon carryover drops orphaned summon parents', () => {
   assert.equal(selfParented.dice[0]?.summonedByInstanceId, undefined);
 });
 
+test('Dungeon carryover keeps linked summon children without requiring their parent in the next loadout', () => {
+  const carryover = normalizeDungeonCarryover({
+    turn: 1,
+    dice: [
+      {
+        instanceId: 'player-Zombie-9',
+        typeId: 'Zombie',
+        classLevel: 1,
+        currentHealth: 100,
+        maxHealth: 100,
+        isDestroyed: true,
+        mana: 0,
+        activeMana: [] as Array<[string, number]>,
+        statuses: {}
+      },
+      {
+        instanceId: 'player-Zombie-plague-1',
+        typeId: 'Zombie',
+        classLevel: 1,
+        currentHealth: 30,
+        maxHealth: 100,
+        isDestroyed: false,
+        mana: 0,
+        activeMana: [] as Array<[string, number]>,
+        statuses: {},
+        summonedByInstanceId: 'player-Zombie-9'
+      }
+    ]
+  });
+  assert.ok(carryover);
+  assert.equal(carryover.dice[1]?.summonedByInstanceId, 'player-Zombie-9');
+  const allowed = resolveDungeonCarryoverInstanceIds(
+    carryover,
+    [{ instanceId: 'player-Fire-1', typeId: 'Fire' }],
+    'Classic'
+  );
+  assert.equal(allowed.has('player-Zombie-plague-1'), true);
+  assert.equal(allowed.has('player-Zombie-9'), false);
+});
+
 test('Dungeon save reports storage failure while retaining the in-memory run', () => {
   const entries = new Map<string, unknown>();
   const scene = {
@@ -732,6 +840,512 @@ test('Dungeon save reports storage failure while retaining the in-memory run', (
   });
   assert.equal(saved, false);
   assert.ok(entries.has('arena:dungeonRun'));
+  discardDungeonRunCache(scene);
+  assert.equal(entries.has('arena:dungeonRun'), false);
+});
+
+test('Dungeon Card spend is not cached when its escrow cannot be persisted', () => {
+  const entries = new Map<string, unknown>();
+  const scene = {
+    registry: {
+      set: (key: string, value: unknown) => entries.set(key, value),
+      get: (key: string) => entries.get(key),
+      remove: (key: string) => entries.delete(key)
+    }
+  } as unknown as Parameters<typeof beginDungeonCardSpend>[0];
+  const spend = beginDungeonCardSpend(scene, {
+    eventKey: '2026-11-03',
+    wave: 4,
+    turn: 2,
+    cost: 15,
+    shufflesUsed: 2
+  });
+  assert.equal(spend, null);
+  assert.equal(entries.has('arena:dungeonCardSpend'), false);
+});
+
+test('Dungeon Card escrow debit, run save, refund, and resume reconciliation survive storage failures', async () => {
+  await initializeSecureStorage();
+  const values = new Map<string, string>();
+  let dropWrites = false;
+  const storage: Storage = {
+    get length() { return values.size; },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => Array.from(values.keys())[index] ?? null,
+    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => { if (!dropWrites) values.set(key, String(value)); }
+  };
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+
+  try {
+    const entries = new Map<string, unknown>();
+    const scene = {
+      registry: {
+        set: (key: string, value: unknown) => entries.set(key, value),
+        get: (key: string) => entries.get(key),
+        remove: (key: string) => entries.delete(key)
+      }
+    } as unknown as Parameters<typeof beginDungeonCardSpend>[0];
+    const eventKey = '2026-11-03';
+
+    // A dropped escrow write must not produce a cached charge.
+    dropWrites = true;
+    assert.equal(beginDungeonCardSpend(scene, {
+      eventKey, wave: 4, turn: 2, cost: 15, shufflesUsed: 2, walletBefore: 100, walletAfter: 85
+    }), null);
+    assert.equal(entries.has('arena:dungeonCardSpend'), false);
+
+    dropWrites = false;
+    const spend = beginDungeonCardSpend(scene, {
+      eventKey, wave: 4, turn: 2, cost: 15, shufflesUsed: 2, walletBefore: 100, walletAfter: 85
+    });
+    assert.ok(spend);
+    dropWrites = true;
+    assert.equal(markDungeonCardSpendDebited(scene, spend), null);
+    assert.notEqual(getDungeonCardSpend(scene)?.debited, true);
+    dropWrites = false;
+    const debited = markDungeonCardSpendDebited(scene, spend);
+    assert.ok(debited);
+    assert.equal(debited?.debited, true);
+
+    // A failed run save must not leave a resume proof behind.
+    const carryover = normalizeDungeonCarryover({
+      turn: 1,
+      dice: [{
+        instanceId: 'player-Fire-1',
+        typeId: 'Fire',
+        currentHealth: 10,
+        maxHealth: 10,
+        isDestroyed: false,
+        mana: 0,
+        activeMana: [],
+        statuses: {}
+      }],
+      dungeonCards: {
+        cards: [], killsTowardNext: 0, cardsPicked: 0, pendingDraws: 0,
+        shufflesUsed: 1, lastShuffleTurn: 1
+      }
+    });
+    assert.ok(carryover);
+    dropWrites = true;
+    assert.equal(saveDungeonRun(scene, {
+      eventKey, wave: 2, carryover,
+      config: { randomMode: false, randomizeLoadout: false, useLevelling: true },
+      savedAt: 1
+    }), false);
+    discardDungeonRunCache(scene);
+    assert.equal(getDungeonRun(scene), null);
+
+    // The escrow is still recoverable from storage and the missing proof refunds it.
+    entries.delete('arena:dungeonCardSpend');
+    const restoredSpend = getDungeonCardSpend(scene);
+    assert.ok(restoredSpend);
+    assert.equal(restoredSpend?.debited, true);
+    assert.equal(resolveDungeonCardSpendRefund({
+      spend: restoredSpend, eventKey, wave: 2, savedShufflesUsed: 0
+    }), 15);
+    assert.equal(resolveDungeonCardSpendRefund({
+      spend: restoredSpend, eventKey, wave: 2, savedShufflesUsed: 1
+    }), 15);
+    assert.equal(resolveDungeonCardSpendRefund({
+      spend: restoredSpend, eventKey, wave: 2, savedShufflesUsed: 2
+    }), 0);
+
+    // A failed wallet write keeps the escrow available for a later retry.
+    dropWrites = true;
+    const failedRefund = applyDungeonCardSpendRefund({
+      spend: restoredSpend,
+      eventKey,
+      wave: 2,
+      savedShufflesUsed: 0,
+      currentDiamonds: 85,
+      persistRefund: (next) => setDiamonds(scene, next)
+    });
+    assert.deepEqual(failedRefund, { refunded: 0, pending: true, clear: false });
+    assert.equal(getDungeonCardSpend(scene)?.debited, true);
+
+    // A verified wallet write settles the refund and only then clears the escrow.
+    dropWrites = false;
+    let persistedRefund = 0;
+    const refund = applyDungeonCardSpendRefund({
+      spend: restoredSpend,
+      eventKey,
+      wave: 2,
+      savedShufflesUsed: 0,
+      currentDiamonds: 85,
+      persistRefund: (next) => {
+        persistedRefund = next;
+        return setDiamonds(scene, next);
+      }
+    });
+    assert.deepEqual(refund, { refunded: 15, pending: false, clear: true });
+    assert.equal(persistedRefund, 100);
+    assert.equal(getDiamonds(scene), 100);
+    clearDungeonCardSpend(scene);
+    assert.equal(getDungeonCardSpend(scene), null);
+
+    // A saved run that already records the shuffle is proof to keep the charge.
+    const committedCarryover = normalizeDungeonCarryover({
+      turn: 1,
+      dice: carryover.dice,
+      dungeonCards: {
+        cards: [], killsTowardNext: 0, cardsPicked: 0, pendingDraws: 0,
+        shufflesUsed: 2, lastShuffleTurn: 2
+      }
+    });
+    assert.ok(committedCarryover);
+    assert.equal(saveDungeonRun(scene, {
+      eventKey, wave: 2, carryover: committedCarryover,
+      config: { randomMode: false, randomizeLoadout: false, useLevelling: true },
+      savedAt: 2
+    }), true);
+    const savedRun = getDungeonRun(scene);
+    const savedShuffles = savedRun?.carryover?.dungeonCards?.shufflesUsed;
+    assert.equal(savedShuffles, 2);
+    assert.equal(resolveDungeonCardSpendRefund({
+      spend: restoredSpend,
+      eventKey,
+      wave: 2,
+      savedShufflesUsed: savedShuffles ?? 0
+    }), 0);
+  } finally {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
+});
+
+test('Client fixes stay wired through their shared pipelines and turn snapshots', () => {
+  const arena = readFileSync('src/scenes/ArenaScene.ts', 'utf8');
+  const animation = readFileSync('src/utils/AnimationManager.ts', 'utf8');
+  const audio = readFileSync('src/utils/AudioManager.ts', 'utf8');
+  const skills = readFileSync('src/systems/CombatSkills.ts', 'utf8');
+  const dungeonStore = readFileSync('src/systems/DungeonStore.ts', 'utf8');
+
+  // Arrayed SFX must rotate through one non-repeating bag, not play every file at once.
+  assert.ok(audio.includes('SecureShuffleBag<string>'));
+  assert.ok(audio.includes('const key = bag.pick(available);'));
+
+  // Phaser effect ownership and pacing stay in AnimationManager.
+  assert.ok(animation.includes('hammerQueues'));
+  assert.ok(animation.indexOf('scaleAnimationDuration(') >= 0);
+  for (const call of [
+    'AnimationManager.animateAttackBeam(',
+    'AnimationManager.animateMeteorImpact(',
+    'AnimationManager.animateNuclearMissile(',
+    'AnimationManager.animateJudgmentHammer('
+  ]) {
+    assert.ok(arena.includes(call), `${call} should remain routed through AnimationManager`);
+  }
+
+  // Critical values must use the one formatting pipeline.
+  assert.ok(skills.includes('export function formatCombatAmount('));
+  assert.ok(arena.includes('formatCombatAmount('));
+  assert.ok(!arena.includes('criticalSuffix'));
+  assert.ok(arena.includes('this.showHealText(target, healing.total'));
+  assert.ok(arena.includes('this.summonedByInstance.set(instanceId, attacker.instanceId);'));
+
+  // Ricochet details report every affected die and never repeat the primary heal.
+  assert.ok(arena.includes('Ricochet damages'));
+  assert.ok(!arena.includes('Ricochet hit '));
+  assert.ok(arena.includes('this.combatActionDetails.push(...ricochet.details);'));
+  assert.ok(arena.includes('this.combatActionDetails.push(...healDetails);'));
+  assert.ok(arena.includes('if (!isPrimary && healResult.healed > 0)'));
+
+  // A shuffled draft persists its exact offer and the turn it must resume on.
+  assert.ok(arena.includes('draftOffer: nextChoices'));
+  assert.ok(arena.includes('resumeTurn'));
+
+  // Dungeon escrow writes are verified and refund settlement is shared with tests.
+  assert.ok(dungeonStore.includes('writeVerified('));
+  assert.ok(dungeonStore.includes('export function applyDungeonCardSpendRefund('));
+  assert.ok(arena.includes('applyDungeonCardSpendRefund('));
+
+  // Lobby creation stays async and failed attempts return to the create dialog.
+  assert.ok(arena.includes('private async queueArenaMultiplayer('));
+  const lobbyStart = arena.indexOf('private async queueArenaMultiplayer(');
+  const lobbyEnd = arena.indexOf('private closeMultiplayerLobbyWaitOnFailure(');
+  assert.ok(lobbyStart >= 0 && lobbyEnd > lobbyStart);
+  const lobby = arena.slice(lobbyStart, lobbyEnd);
+  assert.ok(lobby.includes('await this.multiplayer.queue('));
+  assert.ok(lobby.includes('this.closeMultiplayerLobbyWaitOnFailure(options);'));
+  assert.ok(!arena.includes('START LOCAL PREVIEW'));
+  const createStart = arena.indexOf("createButton.on('pointerdown'");
+  const createEnd = arena.indexOf('elements.push(createButton, createLabel)', createStart);
+  assert.ok(createStart >= 0 && createEnd > createStart);
+  const create = arena.slice(createStart, createEnd);
+  assert.ok(create.includes('if (!this.multiplayer.configured)'));
+  assert.ok(create.indexOf('if (!this.multiplayer.configured)') < create.indexOf('this.openMultiplayerLobbyWaitModal()'));
+
+  // Dungeon checkpoints happen once per completed turn, not on every enemy kill.
+  const killStart = arena.indexOf('private recordDungeonCardKill(');
+  const killEnd = arena.indexOf('private setupGridDropZones(', killStart);
+  assert.ok(killStart >= 0 && killEnd > killStart);
+  assert.ok(!arena.slice(killStart, killEnd).includes('persistDungeonRunProgress'));
+  assert.ok(arena.includes('const completedTurn = this.gameState.turn;'));
+  assert.ok(arena.includes('this.persistDungeonTurnSnapshot(completedTurn);'));
+  assert.ok(arena.includes('completedTurn = Math.max(1, this.gameState.turn - 1)'));
+
+  // Restored enemies register their class, attack, and definition like players do.
+  const enemyStart = arena.indexOf('private applyDungeonEnemyCarryover(');
+  const enemyEnd = arena.indexOf('private applyDungeonStatuses(', enemyStart);
+  assert.ok(enemyStart >= 0 && enemyEnd > enemyStart);
+  const enemy = arena.slice(enemyStart, enemyEnd);
+  assert.ok(enemy.includes('this.instanceDefinitionOverrides.set(die.instanceId'));
+  assert.ok(enemy.includes('health: Math.max(1, Math.floor(saved.maxHealth))'));
+  assert.ok(enemy.includes('saved.attack !== undefined'));
+  assert.ok(enemy.includes('this.enemyClassLevels.set(`${die.typeId}:${die.instanceId}`, savedClassLevel);'));
+});
+
+test('Dungeon first-strike attacks inherit projectile and rapid-fire shots', () => {
+  assert.equal(getBasicAttackProjectileCount({}), 1);
+  assert.equal(getBasicAttackProjectileCount({ timedProjectiles: 3 }), 3);
+  assert.equal(getBasicAttackProjectileCount({
+    timedProjectiles: 2,
+    passiveProjectiles: 1,
+    dungeonCardProjectiles: 2,
+    rapidFireIncrease: 1
+  }), 6);
+  assert.equal(getBasicAttackProjectileCount({ timedProjectiles: 0, rapidFireIncrease: -3 }), 1);
+  assert.deepEqual(getExecutionRhythmBoost({ remaining: 2, damageMultiplier: 2 }), { multiplier: 2, consume: true });
+  assert.deepEqual(getExecutionRhythmBoost({ remaining: 1 }), { multiplier: 2, consume: true });
+  assert.deepEqual(getExecutionRhythmBoost({ remaining: 0, damageMultiplier: 5 }), { multiplier: 1, consume: false });
+  assert.deepEqual(getExecutionRhythmBoost({ remaining: Number.NaN, damageMultiplier: 5 }), { multiplier: 1, consume: false });
+});
+
+test('Dungeon enemy loadouts are seeded per wave and duplicate past wave 20', () => {
+  const pool = ['Fire', 'Ice', 'Wind', 'Electric', 'Time', 'Battery'];
+  const input = {
+    eventKey: '2026-11-03',
+    wave: 12,
+    count: 5,
+    poolTypeIds: pool,
+    bossTypeId: null,
+    miniBossTypeId: null
+  };
+  const first = pickDungeonEnemyTypeIds(input);
+  assert.deepEqual(pickDungeonEnemyTypeIds(input), first);
+  assert.equal(first.length, 5);
+  assert.equal(new Set(first).size, first.length);
+  assert.equal(first.every((typeId) => pool.includes(typeId)), true);
+
+  const bossWave = pickDungeonEnemyTypeIds({ ...input, wave: 10, count: 4, bossTypeId: 'Magician' });
+  assert.equal(bossWave[0], 'Magician');
+  assert.equal(bossWave.length, 4);
+  assert.equal(new Set(bossWave.slice(1)).size, 3);
+
+  const miniBossWave = pickDungeonEnemyTypeIds({ ...input, wave: 15, count: 4, miniBossTypeId: 'Imp' });
+  assert.equal(miniBossWave[0], 'Imp');
+
+  const uniqueWave = pickDungeonEnemyTypeIds({ ...input, wave: DUNGEON_ENEMY_DUPLICATE_START_WAVE, count: 6, poolTypeIds: ['Fire', 'Ice'] });
+  assert.equal(uniqueWave.length, 2);
+  const duplicateWave = pickDungeonEnemyTypeIds({ ...input, wave: DUNGEON_ENEMY_DUPLICATE_START_WAVE + 1, count: 6, poolTypeIds: ['Fire', 'Ice'] });
+  assert.equal(duplicateWave.length, 6);
+  assert.equal(new Set(duplicateWave).size, 2);
+  const copies = duplicateWave.reduce<Record<string, number>>((counts, typeId) => ({
+    ...counts,
+    [typeId]: (counts[typeId] ?? 0) + 1
+  }), {});
+  assert.equal(Object.values(copies).every((count) => count <= DUNGEON_ENEMY_DUPLICATE_COPY_CAP), true);
+  assert.deepEqual(pickDungeonEnemyTypeIds({ ...input, wave: DUNGEON_ENEMY_DUPLICATE_START_WAVE + 1, count: 6, poolTypeIds: ['Fire', 'Ice'] }), duplicateWave);
+});
+
+test('Dungeon seeded placement and pip rolls replay from the wave seed', () => {
+  const placementSeed = '2026-11-03:dungeon-enemy-placement:7:v1';
+  const rollSequence = (seed: string) => {
+    const rng = createDungeonSeededRng(seed);
+    return Array.from({ length: 24 }, () => rollDungeonSeededInt(rng, 0, 4));
+  };
+  const placements = rollSequence(placementSeed);
+  assert.deepEqual(rollSequence(placementSeed), placements);
+  assert.equal(placements.every((roll) => Number.isInteger(roll) && roll >= 0 && roll <= 4), true);
+
+  const pipRows = Array.from({ length: 20 }, () => rollDungeonSeededInt(createDungeonSeededRng('2026-11-03:dungeon-enemy-pips:7:1:v1'), 1, 6));
+  assert.equal(pipRows.every((roll) => roll >= 1 && roll <= 6), true);
+  assert.equal(rollDungeonSeededInt(() => 1, 2, 5), 5);
+  assert.equal(rollDungeonSeededInt(() => 0, 2, 5), 2);
+  assert.equal(rollDungeonSeededInt(() => Number.NaN, 2, 5), 2);
+  assert.equal(rollDungeonSeededInt(() => 0.5, 5, 2), 4);
+});
+
+test('Dungeon Card drafts do not offer conflicting unique variants', () => {
+  const feelRare = createDungeonCard('Feel The Gale', 'Rare', 'Wind');
+  const feelLegendary = createDungeonCard('Feel The Gale', 'Legendary', 'Wind');
+  assert.equal(dungeonCardsConflict(feelRare, feelLegendary), true);
+  const bodyRare = createDungeonCard('Dice Body Shifter', 'Rare', 'Fire');
+  const bodyEpic = createDungeonCard('Dice Body Shifter', 'Epic', 'Fire');
+  const bodyIce = createDungeonCard('Dice Body Shifter', 'Epic', 'Ice');
+  assert.equal(dungeonCardsConflict(bodyRare, bodyEpic), true);
+  assert.equal(dungeonCardsConflict(bodyRare, bodyIce), false);
+  assert.equal(dungeonCardsConflict(
+    createDungeonCard('Dice Armor', 'Common', 'Fire'),
+    createDungeonCard('Dice Armor', 'Rare', 'Fire')
+  ), false);
+
+  let state = createDungeonCardState();
+  DUNGEON_CARD_KINDS.forEach((kind) => {
+    if (kind === 'Feel The Gale' || kind === 'Dice Body Shifter') return;
+    getDungeonCardRarities(kind).forEach((rarity) => {
+      const card = createDungeonCard(kind, rarity, 'Wind');
+      while (canAddDungeonCard(state, card)) state = pickDungeonCard(state, card);
+    });
+  });
+  const choices = rollDungeonCardChoices(
+    state,
+    { typeIds: ['Wind'], activeSkillTypeIds: ['Wind'] },
+    3,
+    createDungeonSeededRng('draft-unique-conflict:v1')
+  );
+  choices.forEach((card, index) => {
+    choices.slice(index + 1).forEach((other) => assert.equal(dungeonCardsConflict(card, other), false));
+  });
+  assert.ok(choices.length <= 2);
+});
+
+test('Dungeon Card offers and scope marks replay from the persisted draft seed', () => {
+  const state = createDungeonCardState();
+  const context = { typeIds: ['Fire', 'Ice', 'Wind'], activeSkillTypeIds: ['Fire'] };
+  const offers = rollDungeonCardChoices(state, context, 3, createDungeonSeededRng('dungeon-card-offer:event:4:0:0:v1'));
+  const replay = rollDungeonCardChoices(state, context, 3, createDungeonSeededRng('dungeon-card-offer:event:4:0:0:v1'));
+  assert.deepEqual(offers.map((card) => card.key), replay.map((card) => card.key));
+  assert.equal(offers.length, 3);
+  const shuffled = rollDungeonCardChoices(state, context, 3, createDungeonSeededRng('dungeon-card-offer:event:4:0:1:v1'));
+  assert.notDeepEqual(offers.map((card) => card.key), shuffled.map((card) => card.key));
+
+  const marks = drawDungeonScopeMarks(3, createDungeonSeededRng('dungeon-scope-marks:event:4:1:0:v1'));
+  const markReplay = drawDungeonScopeMarks(3, createDungeonSeededRng('dungeon-scope-marks:event:4:1:0:v1'));
+  assert.deepEqual(marks, markReplay);
+  assert.equal(new Set(marks).size, 3);
+  assert.notDeepEqual(marks, drawDungeonScopeMarks(3, createDungeonSeededRng('dungeon-scope-marks:event:5:1:0:v1')));
+});
+
+test('Dungeon Card shuffle spend is refunded when the saved run cannot prove it', () => {
+  const spend: DungeonCardSpend = { eventKey: '2026-11-03', wave: 4, turn: 2, cost: 15, shufflesUsed: 2 };
+  assert.equal(resolveDungeonCardSpendRefund({ spend, eventKey: '2026-11-03', wave: 4, savedShufflesUsed: 1 }), 15);
+  assert.equal(resolveDungeonCardSpendRefund({ spend, eventKey: '2026-11-03', wave: 4, savedShufflesUsed: 2 }), 0);
+  assert.equal(resolveDungeonCardSpendRefund({ spend, eventKey: '2026-11-03', wave: 5, savedShufflesUsed: 0 }), 15);
+  assert.equal(resolveDungeonCardSpendRefund({ spend, eventKey: '2026-11-03', wave: 5, savedShufflesUsed: 2 }), 0);
+  assert.equal(resolveDungeonCardSpendRefund({ spend, eventKey: '2026-11-04', wave: 4, savedShufflesUsed: 2 }), 15);
+  assert.equal(resolveDungeonCardSpendRefund({ spend: null, eventKey: '2026-11-03', wave: 4, savedShufflesUsed: 0 }), 0);
+  assert.equal(resolveDungeonCardSpendRefund({ spend, eventKey: '2026-11-03', wave: 4, savedShufflesUsed: Number.NaN }), 15);
+
+  const savedCards = normalizeDungeonCardState({ shufflesUsed: 2, lastShuffleTurn: 2 });
+  assert.equal(savedCards.shufflesUsed, 2);
+  assert.equal(savedCards.lastShuffleTurn, 2);
+});
+
+test('Dungeon Card draft offers and the exact resume turn survive a refresh', () => {
+  const offer = [
+    createDungeonCard('Dice Health', 'Common', 'Fire'),
+    createDungeonCard('Dice Attack', 'Rare', 'Ice'),
+    createDungeonCard('Dice Armor', 'Epic', 'Wind')
+  ];
+  const state = normalizeDungeonCardState({
+    shufflesUsed: 1,
+    lastShuffleTurn: 1,
+    draftOffer: offer
+  });
+  assert.deepEqual(state.draftOffer?.map((card) => card.key), offer.map((card) => card.key));
+  assert.equal(canShuffleDungeonCards(state, 1), false);
+
+  const carryover = normalizeDungeonCarryover({
+    turn: 1,
+    resumeTurn: 1,
+    dice: [{
+      instanceId: 'player-Fire-1',
+      typeId: 'Fire',
+      currentHealth: 10,
+      maxHealth: 10,
+      isDestroyed: false,
+      mana: 0,
+      activeMana: [],
+      statuses: {}
+    }],
+    dungeonCards: state
+  });
+  assert.equal(carryover?.resumeTurn, 1);
+  assert.equal(canShuffleDungeonCards(carryover!.dungeonCards!, carryover!.resumeTurn!), false);
+});
+
+test('Dungeon Card refunds only restore Diamonds that were actually debited', () => {
+  const spend: DungeonCardSpend = {
+    eventKey: '2026-11-03',
+    wave: 4,
+    turn: 2,
+    cost: 15,
+    shufflesUsed: 2,
+    walletBefore: 100,
+    walletAfter: 85
+  };
+  assert.equal(resolveDungeonCardWalletRefund(spend, 100), 0);
+  assert.equal(resolveDungeonCardWalletRefund(spend, 85), 15);
+  assert.equal(resolveDungeonCardWalletRefund(spend, 90), 10);
+  assert.equal(resolveDungeonCardWalletRefund({ ...spend, debited: true }, 250), 15);
+  assert.equal(resolveDungeonCardWalletRefund({ ...spend, walletBefore: undefined, walletAfter: undefined }, 0), 15);
+  assert.equal(resolveDungeonCardWalletRefund(null, 100), 0);
+});
+
+test('Arrayed SFX candidates rotate without repeats and keep every file eligible', () => {
+  const keys = ['dice_reverse_merge_01', 'dice_reverse_merge_02', 'dice_reverse_merge_03'];
+  const bag = new SecureShuffleBag<string>();
+  const firstCycle = Array.from({ length: keys.length }, () => bag.pick(keys));
+  assert.deepEqual(new Set(firstCycle), new Set(keys));
+  assert.equal(new Set(firstCycle).size, keys.length);
+
+  const secondCycle = Array.from({ length: keys.length }, () => bag.pick(keys));
+  assert.deepEqual(new Set(secondCycle), new Set(keys));
+  assert.notEqual(secondCycle[0], firstCycle[firstCycle.length - 1]);
+
+  const narrowed = ['dice_reverse_merge_01', 'dice_reverse_merge_02'];
+  for (let index = 0; index < 12; index++) assert.ok(narrowed.includes(bag.pick(narrowed)!));
+  assert.equal(bag.pick([]), undefined);
+});
+
+test('Combat log amounts share one critical pipeline', () => {
+  assert.equal(formatCombatAmount(1234, false), '1,234');
+  assert.equal(formatCombatAmount(1234, true), '1,234 (CRITICAL)');
+  assert.equal(formatCombatAmount(1234, false, 'damage'), '1,234 damage');
+  assert.equal(formatCombatAmount(1234, true, 'damage'), '1,234 damage (CRITICAL)');
+  assert.equal(formatCombatAmount(Number.NaN, true), '0 (CRITICAL)');
+  assert.deepEqual(resolveHealingFeedback(1000, 250, 900), { total: 900, applied: 750 });
+  assert.deepEqual(resolveHealingFeedback(1000, 1000, 500), { total: 500, applied: 0 });
+  assert.deepEqual(resolveHealingFeedback(1000, 250, Number.NaN), { total: 0, applied: 0 });
+  assert.equal(scaleAnimationDuration(900, 1), 900);
+  assert.equal(scaleAnimationDuration(900, 4), 225);
+  assert.equal(scaleAnimationDuration(900, 8), 113);
+  assert.equal(scaleAnimationDuration(900, Number.NaN), 900);
+  assert.equal(scaleAnimationDuration(0, 4), 1);
+});
+
+test('Dungeon run save keeps the fixed loadout and card shuffle state across resume', () => {
+  const run = normalizeDungeonRun({
+    eventKey: '2026-11-03',
+    wave: 3,
+    carryover: {
+      turn: 4,
+      dice: [{
+        instanceId: 'player-Fire-1',
+        typeId: 'Fire',
+        currentHealth: 10,
+        maxHealth: 10,
+        isDestroyed: false,
+        mana: 0,
+        activeMana: [],
+        statuses: {}
+      }],
+      dungeonCards: normalizeDungeonCardState({ shufflesUsed: 1, lastShuffleTurn: 4, pendingDraws: 2, cardsPicked: 3 })
+    },
+    config: { randomMode: true, randomizeLoadout: false, useLevelling: true },
+    loadout: [{ typeId: 'Fire', classLevel: 3, talentIndex: null }, { typeId: 'Ice', classLevel: 2, talentIndex: 1 }],
+    savedAt: 5
+  });
+  assert.ok(run);
+  assert.deepEqual(run.loadout, [{ typeId: 'Fire', classLevel: 3, talentIndex: null }, { typeId: 'Ice', classLevel: 2, talentIndex: 1 }]);
+  assert.equal(run.carryover?.dungeonCards?.shufflesUsed, 1);
+  assert.equal(run.carryover?.dungeonCards?.lastShuffleTurn, 4);
+  assert.equal(run.carryover?.dungeonCards?.pendingDraws, 2);
+  assert.equal(normalizeDungeonRun(run)?.loadout?.length, 2);
 });
 
 test('Dungeon two-wave save, resume, carryover, and result flow', () => {
@@ -799,6 +1413,12 @@ test('Dungeon two-wave save, resume, carryover, and result flow', () => {
   assert.equal(completed.rewardWave, 50);
   assert.equal(completed.nextWave, null);
   assert.equal(completed.clearRun, true);
+
+  assert.equal(getDungeonQuitRewardWave(4), null);
+  assert.equal(getDungeonQuitRewardWave(5), 5);
+  assert.equal(getDungeonQuitRewardWave(6), null);
+  assert.equal(getDungeonQuitRewardWave(10), 10);
+  assert.equal(getDungeonQuitRewardWave(50), 50);
 });
 
 test('pool damage follows the caster class-up curve and hardens malformed values', () => {
@@ -878,6 +1498,7 @@ test('Dungeon wave carryover advances the turn and keeps card, growth, and summo
       mana: 2,
       activeMana: [],
       statuses: {},
+      attackCountEffectSeen: { positive: true, negative: true },
       growthDelta: 3,
       basicAttackDamage: 50,
       attackCountBuff: { extra: 2, turns: 3 },
@@ -885,6 +1506,7 @@ test('Dungeon wave carryover advances the turn and keeps card, growth, and summo
       manaPausedTurns: 2,
       reviveCount: 2,
       soulCount: 4,
+      scopeStacks: 3,
       attack: 777,
       transformIndex: 0,
       transformDuration: 2
@@ -915,12 +1537,14 @@ test('Dungeon wave carryover advances the turn and keeps card, growth, and summo
   assert.equal(getDungeonNextWaveTurn(carryover.turn), 8);
   assert.equal(carryover.dice.length, 2);
   assert.equal(carryover.dice[0]?.growthDelta, 3);
+  assert.deepEqual(carryover.dice[0]?.attackCountEffectSeen, { positive: true, negative: true });
   assert.equal(carryover.dice[0]?.basicAttackDamage, 50);
   assert.deepEqual(carryover.dice[0]?.attackCountBuff, { extra: 2, turns: 3 });
   assert.deepEqual(carryover.dice[0]?.projectileCountBuff, { count: 2, turns: 4 });
   assert.equal(carryover.dice[0]?.manaPausedTurns, 2);
   assert.equal(carryover.dice[0]?.reviveCount, 2);
   assert.equal(carryover.dice[0]?.soulCount, 4);
+  assert.equal(carryover.dice[0]?.scopeStacks, 3);
   assert.equal(carryover.dice[0]?.attack, 777);
   assert.equal(Object.prototype.hasOwnProperty.call(carryover.dice[0], 'transformIndex'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(carryover.dice[0], 'transformDuration'), false);
@@ -933,6 +1557,40 @@ test('Dungeon wave carryover advances the turn and keeps card, growth, and summo
   assert.equal(carryover.dungeonCards?.lastShuffleTurn, 7);
   assert.equal(normalizeDungeonCarryover(null), null);
   assert.equal(normalizeDungeonCarryover({ turn: 1, dice: [] }), null);
+});
+
+test('Hibernation is a carryover status and remains in the shared status pool', () => {
+  assert.ok(DICE_STATUS_EFFECT_POOL.includes('hibernation'));
+  const carryover = normalizeDungeonCarryover({
+    turn: 1,
+    dice: [{
+      instanceId: 'player-Fire-1',
+      typeId: 'Fire',
+      currentHealth: 10,
+      maxHealth: 10,
+      isDestroyed: false,
+      mana: 0,
+      activeMana: [],
+      statuses: { hibernation: 2 }
+    }]
+  });
+  assert.ok(carryover);
+  assert.equal(carryover.dice[0]?.statuses.hibernation, 2);
+
+  const clamped = normalizeDungeonCarryover({
+    turn: 1,
+    dice: [{
+      instanceId: 'player-Fire-2',
+      typeId: 'Fire',
+      currentHealth: 10,
+      maxHealth: 10,
+      isDestroyed: false,
+      mana: 0,
+      activeMana: [],
+      statuses: { hibernation: 1e15 }
+    }]
+  });
+  assert.equal(clamped?.dice[0]?.statuses.hibernation, DUNGEON_CARRYOVER_TURNS_CAP);
 });
 
 test('Dungeon carryover keeps permanent transforms and drops timed ones', () => {
@@ -954,6 +1612,70 @@ test('Dungeon carryover keeps permanent transforms and drops timed ones', () => 
   assert.equal(Object.prototype.hasOwnProperty.call(timed?.dice[0], 'transformDuration'), false);
 });
 
+test('Dice Card max health survives a timed transform expiry', () => {
+  const cards: DiceCard[] = [
+    { key: 'Fire Upgrade:Silver', title: 'Fire Upgrade', rarity: 'Silver', kind: 'Type Upgrade', typeId: 'Fire' },
+    { key: 'Straight Face:Gold', title: 'Straight Face', rarity: 'Gold', kind: 'Straight Face' }
+  ];
+
+  assert.equal(resolveDiceCardMaxHealth(100, cards, 'Fire', true), 244);
+  assert.equal(resolveDiceCardMaxHealth(100, cards, 'Ice', true), 140);
+  assert.equal(resolveDiceCardMaxHealth(100, cards, 'Fire', false), 175);
+  assert.equal(resolveDiceCardMaxHealth(Number.NaN, [], 'Fire', true), 1);
+});
+
+test('Dice Cards own their presentation copy and runtime values', () => {
+  const upgrade = getDiceCardInfo('Fire Upgrade:Gold', (typeId) => `${typeId} Dice`);
+  assert.equal(upgrade.title, 'Fire Upgrade');
+  assert.equal(upgrade.icon, '⚅');
+  assert.match(upgrade.desc, /Fire gets \+100% basic\+skill damage and max HP/);
+
+  const mana = getDiceCardInfo('Mana Potion:Silver');
+  assert.match(mana.desc, /\+2 mana/);
+
+  const fountain = getDiceCardInfo('Fountain of Love:Bronze');
+  assert.match(fountain.desc, /10% of their max HP/);
+
+  assert.equal(isDiceCardTypeUpgradeKey('Fire Upgrade:Gold'), true);
+  assert.equal(isDiceCardTypeUpgradeKey('Fountain of Love:Gold'), false);
+  assert.equal(getDiceCardInfo('Unknown:Silver').desc, '');
+
+  const goldFireSupport = getDiceCardRuntimeContribution({ key: 'Fire Support:Gold', title: 'Fire Support', rarity: 'Gold', kind: 'Fire Support' });
+  assert.equal(goldFireSupport.fireSupportAttacks, DICE_CARD_VALUES.fireSupportAttacks[3]);
+
+  const goldOdd = getDiceCardRuntimeContribution({ key: 'Odd Investment:Gold', title: 'Odd Investment', rarity: 'Gold', kind: 'Odd Investment' });
+  assert.equal(goldOdd.oddInvestmentDamage, DICE_CARD_VALUES.investmentDamage[3]);
+  assert.equal(goldOdd.oddInvestmentReduction, DICE_CARD_VALUES.investmentReduction[3]);
+  assert.equal(goldOdd.evenInvestmentDamage, 0);
+
+  const upgradeContribution = getDiceCardRuntimeContribution({ key: 'Fire Upgrade:Gold', title: 'Fire Upgrade', rarity: 'Gold', kind: 'Type Upgrade', typeId: 'Fire' });
+  assert.equal(upgradeContribution.typeUpgradeRate, DICE_CARD_VALUES.typeUpgradeRate[3]);
+
+  for (const kind of DICE_CARD_KINDS) {
+    const contribution = getDiceCardRuntimeContribution({ key: `${kind}:Gold`, title: kind, rarity: 'Gold', kind });
+    assert.ok(Object.values(contribution).some((value) => value > 0), `${kind} should expose a runtime value`);
+  }
+});
+
+test('Arena HUD embeds wave text in the turn label and scrolls past twenty dice', () => {
+  assert.equal(formatTurnWaveLabel(3, -1, 4, 20), 'TURN 3 - WAVE 4/20');
+  assert.equal(formatTurnWaveLabel(2, 10, 5, 20), 'TURN 2/10 - WAVE 5/20');
+  assert.equal(formatTurnWaveLabel(7, -1), 'TURN 7');
+  assert.equal(formatTurnWaveLabel(Number.NaN, Number.NaN, Number.NaN, 20), 'TURN 1');
+
+  const twenty = getDicePreviewScrollMetrics(20);
+  assert.equal(twenty.maxScroll, 0);
+  assert.equal(twenty.viewportHeight, 320);
+
+  const twentyOne = getDicePreviewScrollMetrics(21);
+  assert.equal(twentyOne.maxScroll, 16);
+  assert.equal(twentyOne.viewportHeight, 320);
+  assert.equal(twentyOne.contentHeight, 336);
+
+  assert.equal(getDicePreviewScrollMetrics(45, 999).scrollOffset, 400);
+  assert.equal(getDicePreviewScrollMetrics(-3).maxScroll, 0);
+});
+
 test('Dungeon Cards stand down only for the legacy Dice Card random mode', () => {
   assert.equal(canUseDungeonCards('Classic'), true);
   assert.equal(canUseDungeonCards('DiceCard'), false);
@@ -973,6 +1695,147 @@ test('Dungeon Cards use the weighted rarity bands', () => {
   assert.equal(getDungeonCardRarityRoll(() => 0.9749), 'Epic');
   assert.equal(getDungeonCardRarityRoll(() => 0.975), 'Legendary');
   assert.equal(getDungeonCardRarityRoll(() => 1), 'Legendary');
+});
+
+test('Dungeon Cards bottom-deck shuffled offers and boost every tenth draw', () => {
+  assert.equal(isDungeonCardUniqueDraw({ ...createDungeonCardState(), cardsPicked: 8 }), false);
+  assert.equal(isDungeonCardUniqueDraw({ ...createDungeonCardState(), cardsPicked: 9 }), true);
+  assert.equal(isDungeonCardUniqueDraw({ ...createDungeonCardState(), cardsPicked: 19 }), true);
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 0), 'Common');
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 0.1999), 'Common');
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 0.2), 'Rare');
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 0.5999), 'Rare');
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 0.6), 'Epic');
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 0.8999), 'Epic');
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 0.9), 'Legendary');
+  assert.equal(getDungeonCardUniqueDrawRarityRoll(() => 1), 'Legendary');
+  assert.equal(getDungeonCardNonUniqueDrawRarityRoll(() => 0), 'Rare');
+  assert.equal(getDungeonCardNonUniqueDrawRarityRoll(() => 0.5999), 'Rare');
+  assert.equal(getDungeonCardNonUniqueDrawRarityRoll(() => 0.6), 'Epic');
+  assert.equal(getDungeonCardNonUniqueDrawRarityRoll(() => 0.8999), 'Epic');
+  assert.equal(getDungeonCardNonUniqueDrawRarityRoll(() => 0.9), 'Legendary');
+  assert.equal(getDungeonCardNonUniqueDrawRarityRoll(() => 1), 'Legendary');
+
+  const state = createDungeonCardState();
+  const context = { typeIds: ['Sniper'], activeSkillTypeIds: [] };
+  const initial = rollDungeonCardChoices(state, context, 3, createDungeonSeededRng('dungeon-bottom-deck:initial'));
+  const bottomDeck = new Set(initial.map((card) => card.key));
+  const shuffled = rollDungeonCardChoices(
+    state,
+    { ...context, bottomDeckKeys: bottomDeck },
+    3,
+    createDungeonSeededRng('dungeon-bottom-deck:shuffled')
+  );
+  assert.ok(initial.length > 0);
+  assert.equal(shuffled.some((card) => bottomDeck.has(card.key)), false);
+
+  const tenth = rollDungeonCardChoices({ ...state, cardsPicked: 9 }, { typeIds: ['Gamble'], activeSkillTypeIds: [] }, 3, () => 0);
+  assert.ok(tenth.length > 0);
+  assert.ok(tenth.some((card) => getDungeonCardMaxStacks(card) === 1));
+
+  const commonUnique = rollDungeonCardChoices(
+    { ...state, cardsPicked: 9 },
+    { typeIds: ['Gamble'], activeSkillTypeIds: [] },
+    1,
+    () => 0
+  );
+  assert.equal(commonUnique[0]?.kind, 'Card Swarm');
+  assert.equal(commonUnique[0]?.rarity, 'Common');
+  assert.equal(getDungeonCardMaxStacks(commonUnique[0]!), 1);
+
+  const commonFallback = rollDungeonCardChoices(
+    { ...state, cardsPicked: 9 },
+    { typeIds: ['Sniper'], activeSkillTypeIds: [] },
+    1,
+    () => 0
+  );
+  assert.equal(commonFallback[0]?.rarity, 'Rare');
+  assert.notEqual(getDungeonCardMaxStacks(commonFallback[0]!), 1);
+
+  const ownedBodyShifter = pickDungeonCard(
+    createDungeonCardState(),
+    createDungeonCard('Dice Body Shifter', 'Epic', 'Test')
+  );
+  const legendaryFallback = rollDungeonCardChoices(
+    { ...ownedBodyShifter, cardsPicked: 9 },
+    { typeIds: ['Test'], activeSkillTypeIds: [] },
+    1,
+    () => 0.95
+  );
+  assert.equal(legendaryFallback[0]?.rarity, 'Legendary');
+  assert.notEqual(getDungeonCardMaxStacks(legendaryFallback[0]!), 1);
+});
+
+test('Dungeon carryover retains the wounded enemy board for mid-wave resumes', () => {
+  const player = {
+    instanceId: 'player-Fire-1',
+    typeId: 'Fire',
+    currentHealth: 100,
+    maxHealth: 100,
+    isDestroyed: false,
+    mana: 0,
+    activeMana: [] as Array<[string, number]>,
+    statuses: {}
+  };
+  const carryover = normalizeDungeonCarryover({
+    turn: 3,
+    dice: [player],
+    enemyDice: [
+      {
+        instanceId: 'enemy-Ice-1',
+        typeId: 'Ice',
+        classLevel: 4,
+        currentHealth: 25,
+        maxHealth: 80,
+        isDestroyed: false,
+        zone: 'board',
+        gridPosition: { row: 1, col: 3 },
+        attack: 42,
+        statuses: { poison: { stacks: [{ damage: 4, turns: 2 }] } },
+        attackCountBuff: { extra: 1, turns: 2 },
+        reviveCount: 1
+      },
+      {
+        instanceId: 'enemy-Wind-1',
+        typeId: 'Wind',
+        currentHealth: 0,
+        maxHealth: 60,
+        isDestroyed: true,
+        zone: 'board',
+        gridPosition: { row: 2, col: 2 }
+      }
+    ]
+  });
+  assert.ok(carryover);
+  assert.equal(carryover.enemyDice?.length, 2);
+  assert.deepEqual(carryover.enemyDice?.[0]?.gridPosition, { row: 1, col: 3 });
+  assert.equal(carryover.enemyDice?.[0]?.zone, 'board');
+  assert.equal(carryover.enemyDice?.[0]?.classLevel, 4);
+  assert.equal(carryover.enemyDice?.[0]?.currentHealth, 25);
+  assert.equal(carryover.enemyDice?.[0]?.attack, 42);
+  assert.equal(carryover.enemyDice?.[0]?.statuses?.poison?.stacks[0]?.damage, 4);
+  assert.equal(carryover.enemyDice?.[0]?.attackCountBuff?.extra, 1);
+  assert.equal(carryover.enemyDice?.[1]?.isDestroyed, true);
+  assert.equal(carryover.enemyDice?.[1]?.zone, 'eliminated');
+  assert.equal(carryover.enemyDice?.[1]?.gridPosition, undefined);
+  assert.equal(carryover.enemyDice?.[1]?.currentHealth, 0);
+
+  const invalidPosition = normalizeDungeonCarryover({
+    turn: 3,
+    dice: [player],
+    enemyDice: [{
+      instanceId: 'enemy-Fire-1',
+      typeId: 'Fire',
+      currentHealth: 10,
+      maxHealth: 10,
+      isDestroyed: false,
+      zone: 'board',
+      gridPosition: { row: 9, col: 0 }
+    }]
+  });
+  assert.ok(invalidPosition);
+  assert.equal(invalidPosition.enemyDice?.[0]?.gridPosition, undefined);
+  assert.equal(invalidPosition.enemyDice?.[0]?.zone, 'hand');
 });
 
 test('Dungeon Cards stack additively to three copies and body shifters are unique per die type', () => {
@@ -1027,6 +1890,318 @@ test('Dungeon Card attack stays a single outgoing-damage multiplier', () => {
     ),
     'Deals 150 damage.'
   );
+});
+
+test('Dice-exclusive dungeon cards enforce type, rarity, and uniqueness rules', () => {
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Triple Strike', 'Epic', 'Meteor')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Triple Strike', 'Legendary', 'Meteor')), false);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Triple Strike', 'Epic', 'Fire')), false);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Hot Tub', 'Rare', 'Meteor')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Holy Gifting', 'Rare', 'Light')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Modified Electric', 'Epic', 'Electric')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Undead Fitting', 'Legendary', 'Zombie')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Soul Fest', 'Epic', 'Soul')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard("Reaper's Grace", 'Rare', 'Death')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Mighty Wind', 'Epic', 'Wind')), true);
+  assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Arctic Blizzard', 'Legendary', 'Ice')), true);
+
+  const undeadState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Undead Fitting', 'Common', 'Zombie'));
+  assert.equal(canAddDungeonCard(undeadState, createDungeonCard('Undead Fitting', 'Rare', 'Zombie')), false);
+  assert.equal(dungeonCardsConflict(
+    createDungeonCard('Soul Fest', 'Common', 'Soul'),
+    createDungeonCard('Soul Fest', 'Epic', 'Soul')
+  ), false);
+  assert.equal(dungeonCardsConflict(
+    createDungeonCard("Reaper's Grace", 'Common', 'Death'),
+    createDungeonCard("Reaper's Grace", 'Rare', 'Death')
+  ), false);
+  assert.equal(getDungeonCardMaxStacks(createDungeonCard('Soul Fest', 'Common', 'Soul')), DUNGEON_CARD_MAX_STACKS);
+  assert.equal(getDungeonCardMaxStacks(createDungeonCard("Reaper's Grace", 'Rare', 'Death')), DUNGEON_CARD_MAX_STACKS);
+});
+
+test('Dice-exclusive dungeon cards apply their skill overlays and runtime values', () => {
+  let meteorState = createDungeonCardState();
+  meteorState = pickDungeonCard(meteorState, createDungeonCard('Triple Strike', 'Epic', 'Meteor'));
+  meteorState = pickDungeonCard(meteorState, createDungeonCard('Hot Tub', 'Rare', 'Meteor'));
+  const meteorEffects = getDungeonCardEffects(meteorState, 'Meteor');
+  assert.equal(meteorEffects.ignitionRate, 0.05);
+  const meteor: DiceDefinition = {
+    typeId: 'Meteor', title: 'Meteor Dice', attack: 20, health: 640, range: 5,
+    rarity: 'Epic', targetingMode: 'Nearest', accent: '#ff7a35',
+    skills: [{ type: 'Active', title: 'Meteor Strike', description: '', manaNeeded: 7, modifiers: { hasMeteor: true, meteorCount: 1, meteorDamage: 120, meteorPoolType: 'Lava', meteorPoolDuration: 3 } }]
+  };
+  const meteorDefinition = applyDungeonCardStats(meteor, meteorEffects);
+  assert.equal(meteorDefinition.skills[0]?.modifiers?.meteorCount, 3);
+  assert.equal(meteorDefinition.skills[0]?.modifiers?.meteorRandomOrientation, true);
+  assert.equal(meteorDefinition.skills[0]?.manaNeeded, 7);
+
+  const lightState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Holy Gifting', 'Rare', 'Light'));
+  const light: DiceDefinition = {
+    typeId: 'Light', title: 'Light Dice', attack: 14, health: 540, range: 3,
+    rarity: 'Rare', targetingMode: 'Nearest', accent: '#f9e27d',
+    skills: [{ type: 'CombatStart', title: 'Radiant Rally', description: '', modifiers: { allyExtraAttacks: 1 } }]
+  };
+  assert.equal(applyDungeonCardStats(light, getDungeonCardEffects(lightState, 'Light')).skills[0]?.modifiers?.grantAttacksToAlly, 1);
+
+  const electricState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Modified Electric', 'Epic', 'Electric'));
+  const electric: DiceDefinition = {
+    typeId: 'Electric', title: 'Electric Dice', attack: 24, health: 750, range: 4,
+    rarity: 'Common', targetingMode: 'Nearest', accent: '#ffd76d',
+    skills: [{ type: 'Passive', title: 'Chain Spark', description: '', modifiers: { hasChain: true, chainDamage: 18, chainRange: 2, chainTargets: 1 } }]
+  };
+  const electricDefinition = applyDungeonCardStats(electric, getDungeonCardEffects(electricState, 'Electric'));
+  assert.equal(electricDefinition.skills[0]?.modifiers?.chainTargets, -1);
+  assert.equal(electricDefinition.skills[0]?.modifiers?.chainRange, 1);
+  assert.equal(electricDefinition.skills[0]?.modifiers?.chainDamage, 18);
+
+  const deathState = pickDungeonCard(createDungeonCardState(), createDungeonCard("Reaper's Grace", 'Rare', 'Death'));
+  const death: DiceDefinition = {
+    typeId: 'Death', title: 'Death Dice', attack: 24, health: 640, range: 4,
+    rarity: 'Epic', targetingMode: 'Nearest', accent: '#000000', skills: [],
+    transformStats: [{ title: 'Instakill Form', skills: [{ type: 'Active', title: "Reaper's Touch", description: '', manaNeeded: 12, modifiers: { instakill: true } }] }]
+  };
+  const deathEffects = getDungeonCardEffects(deathState, 'Death');
+  const deathDefinition = applyDungeonCardStats(applyTransformStats(death, 0), deathEffects);
+  assert.equal(deathDefinition.skills[0]?.manaNeeded, 10);
+  assert.equal(applyDungeonCardStats(deathDefinition, deathEffects).skills[0]?.manaNeeded, 10);
+  let stackedDeathState = createDungeonCardState();
+  stackedDeathState = pickDungeonCard(stackedDeathState, createDungeonCard("Reaper's Grace", 'Common', 'Death'));
+  stackedDeathState = pickDungeonCard(stackedDeathState, createDungeonCard("Reaper's Grace", 'Rare', 'Death'));
+  assert.equal(applyDungeonCardStats(applyTransformStats(death, 0), getDungeonCardEffects(stackedDeathState, 'Death')).skills[0]?.manaNeeded, 9);
+
+  const windState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Mighty Wind', 'Epic', 'Wind'));
+  const wind: DiceDefinition = {
+    typeId: 'Wind', title: 'Wind Dice', attack: 22, health: 480, range: 6,
+    rarity: 'Common', targetingMode: 'Nearest', accent: '#78e6a8',
+    skills: [{ type: 'Active', title: 'Gale Tempo', description: '', manaNeeded: 10, modifiers: { projectileCountIncrease: 1, skillDuration: 2, disableManaGain: true } }]
+  };
+  const windDefinition = applyDungeonCardStats(wind, getDungeonCardEffects(windState, 'Wind'));
+  assert.equal(windDefinition.skills[0]?.modifiers?.projectileCountIncrease, 2);
+  assert.equal(windDefinition.skills[0]?.manaNeeded, 10);
+  assert.equal(
+    getDungeonCardDescription(createDungeonCard('Mighty Wind', 'Epic', 'Wind'), 'Wind Dice'),
+    'Gale Tempo now shoots three times as many attacks instead of twice as many.'
+  );
+
+  const iceState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Arctic Blizzard', 'Legendary', 'Ice'));
+  const ice: DiceDefinition = {
+    typeId: 'Ice', title: 'Ice Dice', attack: 16, health: 720, range: 5,
+    rarity: 'Common', targetingMode: 'Nearest', accent: '#8fd5ff',
+    skills: [{ type: 'Active', title: 'Chill Lock', description: '', manaNeeded: 6, modifiers: { attackDelta: -1, statusDuration: 3, maxStacks: 3, skillDamage: 32, statusEffect: 'slow' } }]
+  };
+  const iceDefinition = applyDungeonCardStats(ice, getDungeonCardEffects(iceState, 'Ice'));
+  assert.equal(iceDefinition.skills[0]?.modifiers?.hitsAllFoes, true);
+
+  const soulState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Soul Fest', 'Epic', 'Soul'));
+  assert.equal(getDungeonCardEffects(soulState, 'Soul').soulBonusMultiplier, 1.5);
+  const zombieState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Undead Fitting', 'Epic', 'Zombie'));
+  assert.equal(getDungeonCardEffects(zombieState, 'Zombie').undeadHealthRate, 0.75);
+
+  const attacker: DiceInstanceState = {
+    instanceId: 'player-Ice-1', typeId: 'Ice', ownerId: 'player', zone: 'board',
+    maxHealth: 720, currentHealth: 720, isDestroyed: false, hasFinishedAttacking: false,
+    attacksRemaining: 1, gridPosition: { row: 0, col: 1 }
+  };
+  const target: DiceInstanceState = {
+    instanceId: 'enemy-Fire-1', typeId: 'Fire', ownerId: 'enemy', zone: 'board',
+    maxHealth: 500, currentHealth: 500, isDestroyed: false, hasFinishedAttacking: false,
+    attacksRemaining: 1, gridPosition: { row: 0, col: 3 }
+  };
+  const active = executeActiveSkillEffects(attacker, iceDefinition, 1, target, 6, { key: 'Chill Lock:0', title: 'Chill Lock', manaNeeded: 6, skillIndex: 0 });
+  assert.equal(active.hitsAllFoes, true);
+  assert.equal(active.statusApplications?.[0]?.allFoes, true);
+  const allFoesWithoutTarget = executeActiveSkillEffects(attacker, iceDefinition, 1, undefined, 6, { key: 'Chill Lock:0', title: 'Chill Lock', manaNeeded: 6, skillIndex: 0 });
+  assert.equal(allFoesWithoutTarget.hitsAllFoes, true);
+  assert.equal(allFoesWithoutTarget.statusApplications?.[0]?.allFoes, true);
+  assert.equal(resolveIgnitionDamage(1000, 0.05, false), 50);
+  assert.equal(resolveIgnitionDamage(1000, 0.05, true), 12);
+});
+
+test('Dungeon Card skill descriptions reflect modified behavior', () => {
+  const makeDie = (typeId: string, skill: DiceSkillDefinition): DiceDefinition => ({
+    typeId, title: `${typeId} Dice`, attack: 10, health: 100, range: 4, rarity: 'Common', targetingMode: 'Nearest', skills: [skill]
+  });
+
+  let meteorState = createDungeonCardState();
+  meteorState = pickDungeonCard(meteorState, createDungeonCard('Triple Strike', 'Epic', 'Meteor'));
+  meteorState = pickDungeonCard(meteorState, createDungeonCard('Hot Tub', 'Rare', 'Meteor'));
+  const meteorEffects = getDungeonCardEffects(meteorState, 'Meteor');
+  const meteorSkill: DiceSkillDefinition = {
+    type: 'Active', title: 'Meteor Strike', description: 'Base meteor text.', manaNeeded: 7,
+    modifiers: { hasMeteor: true, meteorCount: 1, meteorDamage: 120, meteorPoolType: 'Lava', meteorPoolDuration: 3 }
+  };
+  const meteor = makeDie('Meteor', meteorSkill);
+  const meteorDefinition = applyDungeonCardStats(meteor, meteorEffects);
+  const meteorText = getClassScaledSkillDescription(meteorDefinition, meteorDefinition.skills[0], 1, undefined, {
+    poolDefinitions: { Lava: { typeId: 'Lava', title: 'Lava', damage: 50 } }
+  });
+  assert.match(meteorText, /Throws 3 striking meteors at random tiles/);
+  assert.match(meteorText, /Lava pools also apply Ignition: 5% of maximum HP as damage at the end of each turn for 3 turns/);
+  assert.match(meteorText, /75% less effective against bosses/);
+  assert.equal(applyDungeonCardStats(meteorDefinition, meteorEffects).skills[0]?.description, meteorDefinition.skills[0]?.description);
+
+  const hotTubState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Hot Tub', 'Rare', 'Meteor'));
+  const hotTubDefinition = applyDungeonCardStats(meteor, getDungeonCardEffects(hotTubState, 'Meteor'));
+  assert.match(getClassScaledSkillDescription(hotTubDefinition, hotTubDefinition.skills[0]), /Throws a striking meteor.*apply Ignition/);
+
+  const lightState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Holy Gifting', 'Rare', 'Light'));
+  const lightSkill: DiceSkillDefinition = {
+    type: 'CombatStart', title: 'Radiant Rally', description: 'Adds +{allyExtraAttacks} attack count to adjacent allies.',
+    modifiers: { allyExtraAttacks: 1, allyExtraAttacksRadius: 1 }
+  };
+  const lightDefinition = applyDungeonCardStats(makeDie('Light', lightSkill), getDungeonCardEffects(lightState, 'Light'));
+  assert.match(getClassScaledSkillDescription(lightDefinition, lightDefinition.skills[0]), /Also grants a random other ally \+1 attack count/);
+
+  const electricState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Modified Electric', 'Epic', 'Electric'));
+  const electricSkill: DiceSkillDefinition = {
+    type: 'Passive', title: 'Chain Spark', description: 'Base chain text.',
+    modifiers: { hasChain: true, chainDamage: 18, chainRange: 2, chainTargets: 1 }
+  };
+  const electricDefinition = applyDungeonCardStats(makeDie('Electric', electricSkill), getDungeonCardEffects(electricState, 'Electric'));
+  const electricText = getClassScaledSkillDescription(electricDefinition, electricDefinition.skills[0]);
+  assert.match(electricText, /any number of nearby foes/);
+  assert.match(electricText, /within 1 tile/);
+  assert.match(electricText, /18 bonus damage/);
+
+  const zombieState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Undead Fitting', 'Epic', 'Zombie'));
+  const zombieSkill: DiceSkillDefinition = {
+    type: 'OnKill', title: 'Zombie Pandemic', description: 'Turns a defeated enemy into an allied Zombie Die with {plaguedDieHealth} of its maximum HP.',
+    modifiers: { hasPlague: true, plaguedDieType: 'Zombie', plaguedDieHealth: 0.3 }
+  };
+  const zombieDefinition = applyDungeonCardStats(makeDie('Zombie', zombieSkill), getDungeonCardEffects(zombieState, 'Zombie'));
+  assert.match(getClassScaledSkillDescription(zombieDefinition, zombieDefinition.skills[0]), /75% of its maximum HP/);
+
+  const soulState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Soul Fest', 'Epic', 'Soul'));
+  const soulSkill: DiceSkillDefinition = {
+    type: 'Passive', title: 'Soul Harvest', description: 'Conjures defeated ally souls. {diceDefinitions[Soul].title} gains +{soulBoostPercent} damage and health for each soul conjured.',
+    modifiers: { canConjureSouls: true, conjureType: 'ally', noMaxSouls: true, soulBoostPercent: 0.2 }
+  };
+  const soul = makeDie('Soul', soulSkill);
+  const soulDefinition = applyDungeonCardStats(soul, getDungeonCardEffects(soulState, 'Soul'));
+  const soulText = getClassScaledSkillDescription(soulDefinition, soulDefinition.skills[0], 1, undefined, { diceDefinitions: { Soul: soul } });
+  assert.match(soulText, /gains \+30% damage and health/);
+  assert.doesNotMatch(soulText, /more effective/);
+
+  const deathState = pickDungeonCard(createDungeonCardState(), createDungeonCard("Reaper's Grace", 'Rare', 'Death'));
+  const deathSkill: DiceSkillDefinition = {
+    type: 'Active', title: "Reaper's Touch", description: 'Instantly kills a target.', manaNeeded: 12,
+    modifiers: { instakill: true, bossDamageRate: 10 }
+  };
+  const deathDefinition = applyDungeonCardStats(makeDie('Death', deathSkill), getDungeonCardEffects(deathState, 'Death'));
+  assert.match(getClassScaledSkillDescription(deathDefinition, deathDefinition.skills[0]), /costs 2 less mana to charge/);
+
+  const windState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Mighty Wind', 'Epic', 'Wind'));
+  const windSkill: DiceSkillDefinition = {
+    type: 'Active', title: 'Gale Tempo', description: 'Shoots twice as many attacks for {skillDuration} turns.', manaNeeded: 10,
+    modifiers: { projectileCountIncrease: 1, skillDuration: 2, disableManaGain: true }
+  };
+  const windDefinition = applyDungeonCardStats(makeDie('Wind', windSkill), getDungeonCardEffects(windState, 'Wind'));
+  assert.equal(
+    getClassScaledSkillDescription(windDefinition, windDefinition.skills[0]),
+    'Shoots three times as many attacks for 2 turns without spending an attack, then cannot gain mana again until the effect ends.'
+  );
+
+  const iceState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Arctic Blizzard', 'Legendary', 'Ice'));
+  const iceSkill: DiceSkillDefinition = {
+    type: 'Active', title: 'Chill Lock', description: 'Deals damage to one target.', manaNeeded: 6,
+    modifiers: { attackDelta: -1, statusDuration: 3, maxStacks: 3, skillDamage: 32, statusEffect: 'slow' }
+  };
+  const iceDefinition = applyDungeonCardStats(makeDie('Ice', iceSkill), getDungeonCardEffects(iceState, 'Ice'));
+  const iceText = getClassScaledSkillDescription(iceDefinition, iceDefinition.skills[0]);
+  assert.match(iceText, /Deals 32 damage to every foe/);
+  assert.match(iceText, /1 for 3 turns/);
+
+  const growthState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Mega Growth', 'Legendary', 'Growth'));
+  const growthSkill: DiceSkillDefinition = {
+    type: 'CombatEnd', title: 'Exponential Growth', description: 'Permanently gains +{growthDelta} attack count for the remainder of the match.',
+    modifiers: { hasGrowth: true, growthDelta: 1 }
+  };
+  const growthDefinition = applyDungeonCardStats(makeDie('Growth', growthSkill), getDungeonCardEffects(growthState, 'Growth'));
+  assert.match(getClassScaledSkillDescription(growthDefinition, growthDefinition.skills[0]), /\+2 attack count/);
+
+  const acidState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Acid Rain', 'Epic', 'Drizzle'));
+  const acidSkill: DiceSkillDefinition = {
+    type: 'Active', title: 'Heavy Rain', description: 'Makes drizzle appear on all enemy dice, causing {skillDamage} damage.', manaNeeded: 3,
+    modifiers: { skillDamage: 50, hitsAllFoes: true }
+  };
+  const acidDefinition = applyDungeonCardStats(makeDie('Drizzle', acidSkill), getDungeonCardEffects(acidState, 'Drizzle'));
+  assert.match(getClassScaledSkillDescription(acidDefinition, acidDefinition.skills[0]), /poisoned for 2 turns/);
+
+  const ascendanceState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Ascendance', 'Epic', 'Transcendence'));
+  const ascendanceSkill: DiceSkillDefinition = {
+    type: 'Passive', title: 'Perpendicular Beam', description: 'If it rolls 6, transforms into The Transcendence.',
+    modifiers: { transformPipCount: 6 }
+  };
+  const ascendanceDefinition = applyDungeonCardStats(makeDie('Transcendence', ascendanceSkill), getDungeonCardEffects(ascendanceState, 'Transcendence'));
+  assert.match(getClassScaledSkillDescription(ascendanceDefinition, ascendanceDefinition.skills[0]), /The Transcendence lasts 1 additional turn/);
+
+  const rampageState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Rampage', 'Legendary', 'Berserk'));
+  const rampageSkill: DiceSkillDefinition = {
+    type: 'Passive', title: 'Blood Frenzy', description: 'Below {berserkThresholdRate} HP, deals 150% more damage.',
+    modifiers: { berserkThresholdRate: 0.3, berserkDamageMultiplier: 2.5 }
+  };
+  const rampageDefinition = applyDungeonCardStats(makeDie('Berserk', rampageSkill), getDungeonCardEffects(rampageState, 'Berserk'));
+  assert.match(getClassScaledSkillDescription(rampageDefinition, rampageDefinition.skills[0]), /splash damage equal to 100% of the attack/);
+
+  const batteryState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Infinite Cycling', 'Legendary', 'Battery'));
+  const batterySkill: DiceSkillDefinition = {
+    type: 'CombatStart', title: 'Quick Charge', description: 'All friendly charging active skills gain +{allyManaGain} mana.',
+    modifiers: { allyManaGain: 1 }
+  };
+  const batteryDefinition = applyDungeonCardStats(makeDie('Battery', batterySkill), getDungeonCardEffects(batteryState, 'Battery'));
+  assert.match(getClassScaledSkillDescription(batteryDefinition, batteryDefinition.skills[0]), /additional mana to all allies/);
+  let stackedBatteryState = batteryState;
+  stackedBatteryState = pickDungeonCard(stackedBatteryState, createDungeonCard('Infinite Cycling', 'Rare', 'Battery'));
+  const stackedBatteryDefinition = applyDungeonCardStats(batteryDefinition, getDungeonCardEffects(stackedBatteryState, 'Battery'));
+  const stackedBatteryText = getClassScaledSkillDescription(stackedBatteryDefinition, stackedBatteryDefinition.skills[0]);
+  assert.match(stackedBatteryText, /\+3 additional mana to all allies/);
+  assert.doesNotMatch(stackedBatteryText, /\+2 additional mana to all allies/);
+
+  const galeState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Feel The Gale', 'Rare', 'Wind'));
+  const galeSkill: DiceSkillDefinition = {
+    type: 'Active', title: 'Gale Tempo', description: 'Shoots twice as many attacks for {skillDuration} turns.', manaNeeded: 10,
+    modifiers: { projectileCountIncrease: 1, skillDuration: 2, disableManaGain: true }
+  };
+  const galeDefinition = applyDungeonCardStats(makeDie('Wind', galeSkill), getDungeonCardEffects(galeState, 'Wind'));
+  assert.match(getClassScaledSkillDescription(galeDefinition, galeDefinition.skills[0]), /for 3 turns/);
+
+  const timeUpState = pickDungeonCard(createDungeonCardState(), createDungeonCard("Time's Up", 'Legendary', 'Time'));
+  const timeUpSkill: DiceSkillDefinition = {
+    type: 'Passive', title: 'Temporal Acceleration', description: 'Ally dice matching this die\'s rolled pip count gain +{pipMatchAllyAttackDelta} attack count until the next turn.',
+    modifiers: { pipMatchAllyAttackDelta: 1 }
+  };
+  const timeUpDefinition = applyDungeonCardStats(makeDie('Time', timeUpSkill), getDungeonCardEffects(timeUpState, 'Time'));
+  assert.match(getClassScaledSkillDescription(timeUpDefinition, timeUpDefinition.skills[0]), /gain \+3 attack counts/);
+
+  const timeDownState = pickDungeonCard(createDungeonCardState(), createDungeonCard("Time's Down", 'Legendary', 'Time'));
+  const timeDownSkill: DiceSkillDefinition = {
+    type: 'Passive', title: 'Temporal Dilation', description: 'Enemy dice matching this die\'s rolled pip count gain {pipMatchFoeAttackDelta} attack count until the next turn.',
+    modifiers: { pipMatchFoeAttackDelta: -1 }
+  };
+  const timeDownDefinition = applyDungeonCardStats(makeDie('Time', timeDownSkill), getDungeonCardEffects(timeDownState, 'Time'));
+  assert.match(getClassScaledSkillDescription(timeDownDefinition, timeDownDefinition.skills[0]), /lose 3 attack counts/);
+});
+
+test('Dungeon carryover preserves Ignition stacks', () => {
+  const carryover = normalizeDungeonCarryover({
+    turn: 3,
+    dice: [{
+      instanceId: 'player-Fire-1', typeId: 'Fire', currentHealth: 100, maxHealth: 100,
+      isDestroyed: false, mana: 0, activeMana: [],
+      statuses: {
+        ignition: {
+          stacks: [
+            { rate: 0.05, turns: 3, sourceInstanceId: 'player-Meteor-1', sourceOwnerId: 'player', sourceTypeId: 'Meteor' },
+            { rate: 0.1, turns: 1 },
+            { rate: 'bad', turns: 2 }
+          ]
+        }
+      }
+    }]
+  });
+  assert.equal(carryover?.dice[0]?.statuses.ignition?.stacks.length, 2);
+  assert.equal(carryover?.dice[0]?.statuses.ignition?.stacks[0]?.rate, 0.05);
+  assert.equal(carryover?.dice[0]?.statuses.ignition?.stacks[1]?.turns, 1);
 });
 
 test('Dungeon Card health applies once when a die transforms', () => {
@@ -1332,6 +2507,7 @@ test('Dungeon exclusive cards enforce type, rarity, and unique rules', () => {
   assert.equal(marked.scopeMarks.length, 3);
   assert.equal(new Set(marked.scopeMarks).size, 3);
   assert.equal(ensureDungeonScopeMarks(marked, () => 0.9), marked);
+  assert.deepEqual(normalizeDungeonCardState(JSON.parse(JSON.stringify(marked))).scopeMarks, marked.scopeMarks);
 
   const brokenBeyond = createDungeonCard('Broken Beyond', 'Epic', 'Broken');
   assert.equal(canAddDungeonCard(state, createDungeonCard('Broken Beyond', 'Epic', 'Fire')), false);
@@ -1371,6 +2547,14 @@ test('Dungeon exclusive cards enforce type, rarity, and unique rules', () => {
   assert.equal(armorValue('Epic'), 0.4);
   assert.equal(armorValue('Legendary'), 0.5);
 
+  let stackedArmor = createDungeonCardState();
+  stackedArmor = pickDungeonCard(stackedArmor, createDungeonCard('Dice Armor', 'Common', 'Armor'));
+  stackedArmor = pickDungeonCard(stackedArmor, createDungeonCard('Dice Armor', 'Rare', 'Armor'));
+  stackedArmor = pickDungeonCard(stackedArmor, createDungeonCard('Dice Armor', 'Legendary', 'Armor'));
+  const combinedArmor = getDungeonCardEffects(stackedArmor, 'Armor').armorReduction;
+  assert.ok(Math.abs(combinedArmor - (1 - 0.8 * 0.7 * 0.5)) < 1e-9);
+  assert.ok(Math.abs(combineDamageReduction([combinedArmor, 0.5]) - 0.86) < 1e-9);
+
   let state = createDungeonCardState();
   state.pendingDraws = 99;
   state = pickDungeonCard(state, createDungeonCard('Infinite Cycling', 'Legendary', 'Battery'));
@@ -1381,13 +2565,15 @@ test('Dungeon exclusive cards enforce type, rarity, and unique rules', () => {
 
   state = pickDungeonCard(state, createDungeonCard('Gunned Down', 'Legendary', 'Sniper'));
   const scope = getDungeonCardEffects(state, 'Sniper');
-  assert.equal(scope.scopeShotChance, 0.25);
-  assert.equal(scope.scopeDamageMultiplier, 10);
-  assert.equal(scope.grantedSkills.find((skill) => skill.title === 'Marked In')?.type, 'Passive');
-  assert.equal(scope.grantedSkills.find((skill) => skill.title === 'Scope Stack')?.type, 'OnKill');
-  state.scopeStacks = 2;
-  assert.equal(getDungeonCardEffects(state, 'Sniper').scopeDamageMultiplier, 14);
-  assert.equal(getDungeonCardEffects(state, 'Sniper').scopeDamageBonus, 0.4);
+  const markedIn = scope.grantedSkills.find((skill) => skill.title === 'Marked In');
+  assert.equal(markedIn?.title, DUNGEON_MARKED_IN_SKILL.title);
+  assert.equal(markedIn?.type, 'Passive');
+  assert.equal(markedIn?.modifiers?.hasScope, true);
+  assert.equal(markedIn?.modifiers?.scopeChance, 0.25);
+  assert.equal(markedIn?.modifiers?.scopeDamageMult, 10);
+  assert.equal(markedIn?.modifiers?.scopeDamageIncreasePerStack, 0.2);
+  assert.equal(markedIn?.modifiers?.maxScopeStacks, 99);
+  assert.equal(scope.grantedSkills.some((skill) => skill.title === 'Scope Stack'), false);
 });
 
 test('New dungeon exclusive cards expose their effects and granted skills', () => {
@@ -1442,6 +2628,83 @@ test('New dungeon exclusive cards expose their effects and granted skills', () =
   assert.equal(canAddDungeonCard(createDungeonCardState(), createDungeonCard('Rampage', 'Legendary', 'Fire')), false);
 });
 
+test('Scope and acquireTarget metadata resolve from passive skills only', () => {
+  const definition = {
+    typeId: 'Sniper',
+    title: 'Sniper Dice',
+    attack: 20,
+    health: 500,
+    range: 5,
+    targetingMode: 'Nearest' as const,
+    rarity: 'Common' as const,
+    skills: [{
+      type: 'Passive' as const,
+      title: 'Marked In',
+      description: 'Scope test',
+      modifiers: {
+        hasScope: true,
+        acquireTarget: true,
+        scopeDamageIncreasePerStack: 0.2,
+        maxScopeStacks: 5
+      }
+    }]
+  };
+  const meta = getRuntimeSkillMeta(definition);
+  assert.equal(meta.hasScope, true);
+  assert.equal(meta.acquireTarget, true);
+  assert.equal(meta.scopeChance, 1);
+  assert.equal(meta.scopeDamageMult, 10);
+  assert.equal(meta.scopeDamageIncreasePerStack, 0.2);
+  assert.equal(meta.maxScopeStacks, 5);
+
+  const activeMeta = getRuntimeSkillMeta({
+    ...definition,
+    skills: [{ type: 'Active', title: 'Scope Active', description: 'Scope test', modifiers: { hasScope: true, acquireTarget: true } }]
+  });
+  assert.equal(activeMeta.hasScope, false);
+  assert.equal(activeMeta.acquireTarget, false);
+
+  assert.equal(resolveScopeShotDamage({ basicDamage: 40, scopeDamageMult: 2.5 }), 100);
+  assert.equal(resolveScopeShotDamage({ basicDamage: 40 }), 400);
+  assert.equal(resolveScopeShotDamage({ basicDamage: 40, scopeDamageMult: 0 }), 40);
+  assert.equal(resolveScopeShotDamage({ basicDamage: 40, scopeDamage: 150 }), 150);
+  assert.equal(resolveScopeShotDamage({ basicDamage: 40, scopeDamageMult: 2.5, scopeStacks: 2, scopeDamageIncreasePerStack: 0.2 }), 140);
+  assert.equal(resolveScopeShotDamage({ basicDamage: 40, scopeDamage: 150, scopeStacks: 2, scopeDamageIncreasePerStack: 0.2 }), 210);
+  assert.equal(addScopeStack(4, 5), 5);
+  assert.equal(addScopeStack(4, undefined), 5);
+  assert.equal(addScopeStack(0, 0), 0);
+});
+
+test('Exclusive card overlays follow renamed talents and remove configured penalties', () => {
+  const definition = {
+    typeId: 'Meteor',
+    title: 'Meteor Dice',
+    attack: 20,
+    health: 500,
+    range: 5,
+    targetingMode: 'Nearest' as const,
+    rarity: 'Common' as const,
+    skills: [
+      { type: 'Active' as const, title: 'Meteor Strike', manaNeeded: 12, description: '', modifiers: { meteorCount: 1 } },
+      { type: 'Passive' as const, title: 'Gale Tempo', manaNeeded: 15, description: '', modifiers: { projectileCountIncrease: 1, skillDuration: 2 } },
+      { type: 'Passive' as const, title: 'Chain Spark', description: '', modifiers: { chainDamage: 14, chainTargets: 1, chainRange: 2 } }
+    ]
+  };
+  const meteorState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Triple Strike', 'Epic', 'Meteor'));
+  const windState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Mighty Wind', 'Epic', 'Wind'));
+  const electricState = pickDungeonCard(createDungeonCardState(), createDungeonCard('Modified Electric', 'Epic', 'Electric'));
+  const tripleStrike = applyDungeonCardStats(definition, getDungeonCardEffects(meteorState, 'Meteor')).skills.find((skill) => skill.title === 'Meteor Strike');
+  const mightyWind = applyDungeonCardStats(definition, getDungeonCardEffects(windState, 'Wind')).skills.find((skill) => skill.title === 'Gale Tempo');
+  const modifiedElectric = applyDungeonCardStats(definition, getDungeonCardEffects(electricState, 'Electric')).skills.find((skill) => skill.title === 'Chain Spark');
+  assert.equal(tripleStrike?.manaNeeded, 7);
+  assert.equal(tripleStrike?.modifiers?.meteorCount, 3);
+  assert.equal(mightyWind?.manaNeeded, 10);
+  assert.equal(mightyWind?.modifiers?.projectileCountIncrease, 2);
+  assert.equal(modifiedElectric?.modifiers?.chainDamage, 18);
+  assert.equal(modifiedElectric?.modifiers?.chainTargets, -1);
+  assert.equal(modifiedElectric?.modifiers?.chainRange, 1);
+});
+
 test('Dungeon card presentation is registered with the card definitions', () => {
   const armor = createDungeonCard('Dice Armor', 'Epic', 'Armor');
   const armorPresentation = getDungeonCardPresentation(armor, 'Armor', 2);
@@ -1454,20 +2717,60 @@ test('Dungeon card presentation is registered with the card definitions', () => 
   assert.match(armorPresentation.description, /40% damage reduction/);
   assert.match(armorPresentation.tooltip, /2 CARDS/);
 
+  const infiniteCycling = createDungeonCard('Infinite Cycling', 'Rare', 'Battery');
+  const infinitePresentation = getDungeonCardPresentation(infiniteCycling, 'Battery', 1);
+  assert.equal(infinitePresentation.unique, false);
+  assert.equal(infinitePresentation.stackLabel, '1 CARD');
+
   const gunnedDown = createDungeonCard('Gunned Down', 'Legendary', 'Sniper');
   const gunnedPresentation = getDungeonCardPresentation(gunnedDown, 'Sniper', 1);
   assert.equal(gunnedPresentation.cardCount, 1);
   assert.equal(gunnedPresentation.stackLabel, 'UNIQUE • 1 CARD');
   assert.equal(gunnedPresentation.unique, true);
+  assert.match(gunnedPresentation.description, /Adds 3 scope marks/);
   assert.match(gunnedPresentation.description, /25% chance/);
-  assert.match(gunnedPresentation.description, /Marked In/);
-  assert.match(gunnedPresentation.description, /Scope Stack/);
+  assert.match(gunnedPresentation.description, /10x of Sniper's basic attack damage/);
+  assert.doesNotMatch(gunnedPresentation.description, /Marked In/);
+  assert.doesNotMatch(gunnedPresentation.description, /Scope Stack/);
 
   const cardSwarm = createDungeonCard('Card Swarm', 'Legendary', 'Gamble');
   const swarmPresentation = getDungeonCardPresentation(cardSwarm, 'Gamble', 1);
   assert.match(swarmPresentation.description, /6 orbiting cards/);
   assert.match(swarmPresentation.description, /150%/);
-  assert.match(swarmPresentation.description, /9 mana/);
+  assert.doesNotMatch(swarmPresentation.description, /9 mana/);
+
+  const brokenBeyond = createDungeonCard('Broken Beyond', 'Epic', 'Broken');
+  const brokenPresentation = getDungeonCardPresentation(brokenBeyond, 'Broken', 1);
+  assert.match(brokenPresentation.description, /Slugfest/);
+  assert.match(brokenPresentation.description, /8 quick successive shots/);
+  assert.match(brokenPresentation.description, /60 damage/);
+  assert.match(brokenPresentation.description, /Mana needed: 8/);
+
+  const megaGrowth = createDungeonCard('Mega Growth', 'Legendary', 'Growth');
+  const megaPresentation = getDungeonCardPresentation(megaGrowth, 'Growth', 1);
+  assert.match(megaPresentation.description, /Growth upgrades in attack counts/);
+  assert.match(megaPresentation.description, /instead of the usual 1/);
+
+  const acidRain = createDungeonCard('Acid Rain', 'Epic', 'Drizzle');
+  const acidPresentation = getDungeonCardPresentation(acidRain, 'Drizzle', 1);
+  assert.match(acidPresentation.description, /Heavy Rain also poisons all caught enemy dice/);
+
+  const rampage = createDungeonCard('Rampage', 'Legendary', 'Berserk');
+  const rampagePresentation = getDungeonCardPresentation(rampage, 'Berserk', 1);
+  assert.match(rampagePresentation.description, /Berserk additionally deals splash damage equal to its basic attack/);
+
+  const projectileCount = createDungeonCard('Dice Projectile Count', 'Rare', 'Fire');
+  const projectilePresentation = getDungeonCardPresentation(projectileCount, 'Fire', 1);
+  assert.match(projectilePresentation.description, /projectile/);
+  assert.match(projectilePresentation.description, /each basic attack from your Fire/);
+
+  const attackCount = createDungeonCard('Dice Attack Count', 'Rare', 'Fire');
+  const attackPresentation = getDungeonCardPresentation(attackCount, 'Fire', 1);
+  assert.match(attackPresentation.description, /attacks your Fire can make each combat/);
+
+  const bodyShifter = createDungeonCard('Dice Body Shifter', 'Rare', 'Fire');
+  const bodyPresentation = getDungeonCardPresentation(bodyShifter, 'Fire', 1);
+  assert.match(bodyPresentation.description, /dice body into a D/);
 
   const regen = createDungeonCard('Dice Regen', 'Rare', 'Fire');
   const regenPresentation = getDungeonCardPresentation(regen, 'Fire', 1);
@@ -1508,7 +2811,7 @@ test('Dungeon talent suppression is scoped to dungeon runs', () => {
   }
 });
 
-test('Combat-end healing scales from max health', () => {
+test('Combat-end healing scales from max health without critical healing', () => {
   assert.equal(getMaxHealthHealAmount(1000, 0.1), 100);
   assert.equal(getMaxHealthHealAmount(1000, 0.25), 250);
   assert.equal(getMaxHealthHealAmount(500, 0.05), 25);
@@ -1517,6 +2820,12 @@ test('Combat-end healing scales from max health', () => {
   assert.equal(getMaxHealthHealAmount(1000, 0), 0);
   assert.equal(getMaxHealthHealAmount(Number.NaN, 0.1), 0);
   assert.equal(getMaxHealthHealAmount(1000, Number.NaN), 0);
+  assert.equal(resolveCombatEndHealAmount(1000, 900, 0.1), 100);
+  assert.equal(resolveCombatEndHealAmount(1000, 980, 0.1), 20);
+  assert.equal(resolveCombatEndHealAmount(1000, 1000, 0.1), 0);
+  assert.equal(resolveCombatEndHealAmount(Number.NaN, 100, 0.1), 0);
+  assert.equal(resolveCombatEndHealAmount(1000, Number.NaN, 0.1), 100);
+  assert.equal(resolveCombatEndHealAmount(1000, 900, Number.NaN), 0);
 });
 
 test('Soul max-health scaling preserves missing health', () => {
@@ -1545,6 +2854,17 @@ test('Slugfest uses rapidFireCount to fire eight 60-damage shots', () => {
     getDungeonCardEffects(brokenCardState, 'Broken')
   );
   assert.ok(brokenWithCard.skills.some((skill) => skill.title === 'Slugfest' && skill.manaNeeded === 8));
+  const classThreeCard = applyDungeonCardStats(
+    { ...broken, skills: [] },
+    getDungeonCardEffects(brokenCardState, 'Broken'),
+    3
+  );
+  const classThreeSlugfest = classThreeCard.skills.find((skill) => skill.title === 'Slugfest');
+  assert.equal(classThreeSlugfest?.modifiers?.skillDamage, Math.round(60 * getClassMultiplier(3)));
+  assert.equal(
+    getClassScaledSkillDescription(classThreeCard, classThreeSlugfest),
+    `Fires 8 shots onto random foes, causing ${Math.round(60 * getClassMultiplier(3))} damage each.`
+  );
 
   const attacker: DiceInstanceState = {
     instanceId: 'slugfest-test',
@@ -1688,6 +3008,22 @@ test('Dungeon Card state replaces malformed cards and preserves valid progress',
   assert.equal(state.killsTowardNext, 6);
   assert.equal(state.pendingDraws, 2);
   assert.equal(state.shufflesUsed, 4);
+});
+
+test('PvP Dice Card rules stay in parity with PvE', () => {
+  assert.deepEqual(SERVER_DICE_CARD_VALUES, DICE_CARD_VALUES);
+  assert.deepEqual(SERVER_DICE_CARD_KINDS, DICE_CARD_KINDS);
+  assert.deepEqual(SERVER_DICE_CARD_OFFER_TURNS, DICE_CARD_OFFER_TURNS);
+  assert.deepEqual(SERVER_DICE_CARD_RARITY_FALLBACKS, DICE_CARD_RARITY_FALLBACKS);
+  (['Bronze', 'Silver', 'Gold'] as const).forEach((rarity) => {
+    assert.equal(getServerDiceCardMagnitude(rarity), getDiceCardMagnitude(rarity));
+  });
+  const cards: DiceCard[] = [
+    { key: 'Fire Upgrade:Gold', title: 'Fire Upgrade', rarity: 'Gold', kind: 'Type Upgrade', typeId: 'Fire' },
+    { key: 'Straight Face:Silver', title: 'Straight Face', rarity: 'Silver', kind: 'Straight Face' }
+  ];
+  assert.equal(resolveServerDiceCardMaxHealth(100, cards, 'Fire', true), resolveDiceCardMaxHealth(100, cards, 'Fire', true));
+  assert.equal(resolveServerDiceCardMaxHealth(100, cards, 'Ice', false), resolveDiceCardMaxHealth(100, cards, 'Ice', false));
 });
 
 test('Dungeon card offers resume from the persisted pick count after a wave turn jump', () => {
@@ -1872,9 +3208,9 @@ test('Dungeon carryover sanitizes nested status effects', () => {
 });
 
 test('Ricochet aggregation labels report totals without a single-target die', () => {
-  assert.equal(formatRicochetAggregationLabel('Your', 'Wind Dice', 'attacks', 1234), 'Your Wind Dice attacks for 1,234 total damage!');
-  assert.equal(formatRicochetAggregationLabel('Enemy', 'Healing Dice', 'heals', 2500, true), 'Enemy Healing Dice heals for 2,500 total healing (CRITICAL)!');
-  assert.equal(formatRicochetAggregationLabel('Your', 'Armor Dice', 'attacks', Number.NaN), 'Your Armor Dice attacks for 0 total damage!');
+  assert.equal(formatRicochetAggregationLabel('Your', 'Wind Dice', 'attacks', 1234), 'Your Wind Dice attacks for 1,234 total damage');
+  assert.equal(formatRicochetAggregationLabel('Enemy', 'Healing Dice', 'heals', 2500, true), 'Enemy Healing Dice heals for 2,500 total healing (CRITICAL)');
+  assert.equal(formatRicochetAggregationLabel('Your', 'Armor Dice', 'attacks', Number.NaN), 'Your Armor Dice attacks for 0 total damage');
 });
 
 test('Dice Card pool includes Straight Face and Royal Obedience', () => {
@@ -2382,6 +3718,20 @@ test('description placeholders resolve root stats, dice names, and pool damage',
     { diceDefinitions: { Soul: soul }, poolDefinitions: { Lava: lava }, classLevel: 2 }
   );
   assert.equal(description, 'Soul Dice hits for 18. Lava deals 55.');
+
+  const buffedDescription = getClassScaledSkillDescription(
+    meteor,
+    {
+      type: 'Active',
+      title: 'Test',
+      description: '{diceDefinitions[Soul].title} hits for {attack}. Lava deals {poolDefinitions[meteorPoolType].damage}.',
+      modifiers: { meteorPoolType: 'Lava' }
+    },
+    1.5,
+    undefined,
+    { diceDefinitions: { Soul: soul }, poolDefinitions: { Lava: lava }, classLevel: 2 }
+  );
+  assert.equal(buffedDescription, 'Soul Dice hits for 18. Lava deals 82.');
 });
 
 test('radius metadata is exposed by combat-start and mana metas', () => {
@@ -2559,6 +3909,34 @@ test('targeting and infiltration account for multi-tile footprints', () => {
   assert.equal(['0,0', '0,1', '1,0', '1,1'].includes(tileKey), false);
 });
 
+test('range coverage measures large attackers from their closest footprint cell', () => {
+  const makeDie = (overrides: Partial<DiceInstanceState> & Pick<DiceInstanceState, 'instanceId' | 'typeId' | 'ownerId'>): DiceInstanceState => ({
+    zone: 'board',
+    maxHealth: 100,
+    currentHealth: 100,
+    isDestroyed: false,
+    hasFinishedAttacking: true,
+    attacksRemaining: 0,
+    ...overrides
+  });
+  const large = makeDie({ instanceId: 'player-Boss-1', typeId: 'Boss', ownerId: 'player', gridPosition: { row: 2, col: 3 } });
+  const normal = makeDie({ instanceId: 'player-Normal-1', typeId: 'Normal', ownerId: 'player', gridPosition: { row: 2, col: 3 } });
+  const footprintFor = (die: DiceInstanceState) => die.instanceId === large.instanceId ? 2 : 1;
+
+  assert.deepEqual(getCoveredEnemyColumns(normal, 1), []);
+  assert.deepEqual(getCoveredEnemyColumns(large, 1), []);
+  assert.deepEqual(getCoveredEnemyColumns(large, 1, footprintFor), [0]);
+  assert.equal(getCoveredEnemyTileCount(large, 1, footprintFor), 5);
+  assert.deepEqual(getDisplayedRangeCoverage(large, 1, footprintFor), { columns: [0], tileCount: 5 });
+});
+
+test('multi-tile dice keep the range allowed by their range stat', () => {
+  assert.equal(getFootprintAdjustedRange(4, 1), 4);
+  assert.equal(getFootprintAdjustedRange(4, 2), 4);
+  assert.equal(getFootprintAdjustedRange(4, 3), 4);
+  assert.equal(getFootprintAdjustedRange(0, 2), 1);
+});
+
 test('Nearest targeting measures from the closest footprint cell', () => {
   const makeDie = (overrides: Partial<DiceInstanceState> & Pick<DiceInstanceState, 'instanceId' | 'typeId' | 'ownerId'>): DiceInstanceState => ({
     zone: 'board',
@@ -2611,4 +3989,561 @@ test('damage reduction compounds multiplicatively across sources', () => {
   assert.ok(Math.abs(combineDamageReduction([0.3, 0.4]) - 0.58) < 1e-9);
   assert.equal(combineDamageReduction([0.95, 0.95]), 0.95);
   assert.equal(combineDamageReduction([Number.NaN, 0.5]), 0.5);
+});
+
+function makeStatusDie(instanceId: string, ownerId: 'player' | 'enemy', overrides: Partial<DiceInstanceState> = {}): DiceInstanceState {
+  return {
+    instanceId,
+    typeId: 'Zombie' as DiceInstanceState['typeId'],
+    ownerId,
+    zone: 'board',
+    maxHealth: 100,
+    currentHealth: 100,
+    isDestroyed: false,
+    hasFinishedAttacking: false,
+    attacksRemaining: 1,
+    ...overrides
+  };
+}
+
+function makeStatusHooks(dice: DiceInstanceState[], overrides: Partial<StatusEffectHooks> = {}): StatusEffectHooks & {
+  ticks: StatusEffectTick[];
+  animations: Array<{ animation: string; targetId: string }>;
+  applied: Array<{ effect: string; targetId: string }>;
+  attackDeltas: Array<{ targetId: string; delta: number }>;
+  attackLosses: Array<{ targetId: string; amount: number }>;
+} {
+  const ticks: StatusEffectTick[] = [];
+  const animations: Array<{ animation: string; targetId: string }> = [];
+  const applied: Array<{ effect: string; targetId: string }> = [];
+  const attackDeltas: Array<{ targetId: string; delta: number }> = [];
+  const attackLosses: Array<{ targetId: string; amount: number }> = [];
+  const hooks: StatusEffectHooks & {
+    ticks: StatusEffectTick[];
+    animations: Array<{ animation: string; targetId: string }>;
+    applied: Array<{ effect: string; targetId: string }>;
+    attackDeltas: Array<{ targetId: string; delta: number }>;
+    attackLosses: Array<{ targetId: string; amount: number }>;
+  } = {
+    ticks,
+    animations,
+    applied,
+    attackDeltas,
+    attackLosses,
+    getLiveDie: (instanceId) => dice.find((die) => die.instanceId === instanceId && !die.isDestroyed),
+    getSourceDie: (instanceId) => dice.find((die) => die.instanceId === instanceId),
+    getBoardFoes: (ownerId) => dice.filter((die) => die.ownerId !== ownerId && die.zone === 'board' && !die.isDestroyed),
+    getDuration: (rawDuration) => Math.max(1, Math.floor(rawDuration)),
+    getDamageMultiplier: (source) => source.instanceId === 'source' ? 2 : 1,
+    animate: (animation, _source, target) => animations.push({ animation, targetId: target.instanceId }),
+    onApplied: (_source, target, effect) => applied.push({ effect, targetId: target.instanceId }),
+    onAttackDelta: (target, delta) => attackDeltas.push({ targetId: target.instanceId, delta }),
+    onAttackCountLoss: (target, amount) => attackLosses.push({ targetId: target.instanceId, amount }),
+    resolveIgnitionDamage: (target, rate, isBoss) => Math.floor(target.maxHealth * rate * (isBoss ? 0.5 : 1)),
+    isBoss: (target) => target.instanceId === 'boss',
+    runTick: async (tick) => { ticks.push(tick); },
+    ...overrides
+  };
+  return hooks;
+}
+
+test('StatusEffectStore applies every effect shape and expands all-foe applications', () => {
+  const source = makeStatusDie('source', 'player', { attacksRemaining: 4 });
+  const foeA = makeStatusDie('foe-a', 'enemy');
+  const foeB = makeStatusDie('foe-b', 'enemy');
+  const store = new StatusEffectStore();
+  const hooks = makeStatusHooks([source, foeA, foeB]);
+
+  store.apply([
+    { source, target: foeA, effect: 'poison', duration: 2, damage: 5, allFoes: true },
+    { source, target: foeA, effect: 'ignition', duration: 2, rate: 0.5 },
+    { source, target: foeA, effect: 'slow', duration: 2, delta: -1, maxStacks: 2 },
+    { source, target: foeA, effect: 'slow', duration: 2, delta: -1, maxStacks: 2 },
+    { source, target: foeA, effect: 'fracture', duration: 2, rate: 0.25 },
+    { source, target: foeA, effect: 'stun', duration: 2 },
+    { source, target: foeA, effect: 'hibernation', duration: 3 },
+    { source, target: foeA, effect: 'taunt', duration: 2 },
+    { source, target: foeA, effect: 'disorientation', duration: 1 }
+  ], hooks);
+  store.setTimeStatuses('foe-a', [
+    { effect: 'acceleration', turns: 2, sourceInstanceId: 'source' },
+    { effect: 'dilation', turns: 1, sourceInstanceId: 'source' }
+  ]);
+
+  assert.deepEqual(store.getPoisonSummary('foe-a'), {
+    damage: 10,
+    turns: 2,
+    stacks: 1,
+    stackDetails: [{ damage: 10, turns: 2 }]
+  });
+  assert.deepEqual(store.getPoisonSummary('foe-b'), {
+    damage: 10,
+    turns: 2,
+    stacks: 1,
+    stackDetails: [{ damage: 10, turns: 2 }]
+  });
+  assert.equal(store.getSlowSummary('foe-a')?.delta, -2);
+  assert.equal(store.getSlowSummary('foe-a')?.stacks, 2);
+  assert.equal(store.getStatusStackCount('foe-a', 'poison'), 1);
+  assert.equal(store.getStatusStackCount('foe-a', 'slow'), 2);
+  assert.equal(store.getStatusStackCount('foe-a', 'stun'), 1);
+  assert.equal(store.getStatusStackCount('foe-a', 'acceleration'), 1);
+  assert.equal(store.getStatusStackCount('foe-a', 'dilation'), 1);
+  assert.deepEqual(store.getStatusEffects('foe-a'), [
+    'slow', 'poison', 'ignition', 'taunt', 'fracture', 'stun', 'hibernation', 'acceleration', 'dilation', 'disorientation'
+  ]);
+  assert.ok(hooks.animations.some((entry) => entry.animation === 'poison' && entry.targetId === 'foe-b'));
+  assert.ok(hooks.animations.some((entry) => entry.animation === 'fire' && entry.targetId === 'foe-a'));
+  assert.deepEqual(hooks.attackDeltas, [
+    { targetId: 'foe-a', delta: -1 },
+    { targetId: 'foe-a', delta: -1 }
+  ]);
+  assert.deepEqual(hooks.attackLosses, [{ targetId: 'foe-a', amount: 2 }]);
+  assert.equal(hooks.applied.filter((entry) => entry.targetId === 'foe-a').length, 9);
+  assert.match(store.getSummaryLines('foe-a').join('\n'), /Slow x2: -1 attack/);
+  assert.match(store.getSummaryLines('foe-a').join('\n'), /Poison: 10\/turn/);
+
+  store.apply([{ source, target: foeB, effect: 'slow', duration: 1, delta: 1 }], hooks);
+  assert.equal(store.getStatusStackCount('foe-b', 'slow'), 1);
+  assert.equal(store.getStatusEffects('foe-b').includes('slow'), false);
+});
+
+test('StatusEffectStore decay and turn consumption clear expired state', () => {
+  const store = new StatusEffectStore();
+  const die = makeStatusDie('die', 'enemy');
+  const hooks = makeStatusHooks([die]);
+  store.apply([
+    { source: die, target: die, effect: 'slow', duration: 1, delta: -1 },
+    { source: die, target: die, effect: 'taunt', duration: 2 },
+    { source: die, target: die, effect: 'stun', duration: 2 },
+    { source: die, target: die, effect: 'hibernation', duration: 1 },
+    { source: die, target: die, effect: 'disorientation', duration: 1 }
+  ], hooks);
+  store.setTimeStatuses('die', [{ effect: 'acceleration', turns: 1, sourceInstanceId: 'die' }]);
+
+  store.decayRoundStatuses();
+
+  assert.equal(store.slowByInstance.has('die'), false);
+  assert.equal(store.tauntByInstance.get('die')?.turns, 1);
+  assert.equal(store.timeStatusByInstance.has('die'), false);
+  assert.equal(store.consumeStunTurn('die'), true);
+  assert.equal(store.getStunTurns('die'), 1);
+  assert.equal(store.consumeStunTurn('die'), true);
+  assert.equal(store.getStunTurns('die'), 0);
+  assert.equal(store.consumeHibernationTurn('die'), true);
+  assert.equal(store.getHibernationTurns('die'), 0);
+  assert.equal(store.consumeDisorientationTurn('die'), true);
+  assert.equal(store.disorientationByInstance.has('die'), false);
+  assert.equal(store.consumeDisorientationTurn('die'), false);
+});
+
+test('StatusEffectStore ticks poison and ignition with resolved sources', async () => {
+  const source = makeStatusDie('source', 'player');
+  const target = makeStatusDie('boss', 'enemy', { maxHealth: 100 });
+  const store = new StatusEffectStore();
+  const hooks = makeStatusHooks([source, target]);
+  store.apply([
+    { source, target, effect: 'poison', duration: 2, damage: 10 },
+    { source, target, effect: 'ignition', duration: 1, rate: 0.5 }
+  ], hooks);
+
+  await store.tickPoison(hooks);
+  await store.tickIgnition(hooks);
+
+  assert.equal(hooks.ticks.length, 2);
+  assert.equal(hooks.ticks[0]?.effect, 'poison');
+  assert.equal(hooks.ticks[0]?.amount, 20);
+  assert.equal(hooks.ticks[0]?.source.instanceId, 'source');
+  assert.equal(hooks.ticks[1]?.effect, 'ignition');
+  assert.equal(hooks.ticks[1]?.amount, 25);
+  assert.equal(hooks.ticks[1]?.bossReduced, true);
+  assert.equal(store.getPoisonSummary('boss')?.turns, 1);
+  assert.equal(store.getIgnitionSummary('boss'), undefined);
+
+  await store.tickPoison(hooks);
+  assert.equal(store.getPoisonSummary('boss'), undefined);
+  assert.equal(hooks.ticks.length, 3);
+
+  source.isDestroyed = true;
+  store.apply([{ source, target, effect: 'poison', duration: 1, damage: 5 }], hooks);
+  await store.tickPoison(hooks);
+  assert.equal(hooks.ticks[3]?.source.instanceId, 'source');
+  assert.equal(hooks.ticks[3]?.source.isDestroyed, true);
+});
+
+test('StatusEffectStore capture and restore copy carryover without sharing stacks', () => {
+  const source = makeStatusDie('source', 'player');
+  const target = makeStatusDie('target', 'enemy');
+  const store = new StatusEffectStore();
+  const hooks = makeStatusHooks([source, target]);
+  store.apply([
+    { source, target, effect: 'poison', duration: 2, damage: 10 },
+    { source, target, effect: 'ignition', duration: 2, rate: 0.25 },
+    { source, target, effect: 'slow', duration: 2, delta: -1 },
+    { source, target, effect: 'fracture', duration: 2, rate: 0.1 },
+    { source, target, effect: 'stun', duration: 1 },
+    { source, target, effect: 'hibernation', duration: 1 },
+    { source, target, effect: 'disorientation', duration: 1 }
+  ], hooks);
+  store.poisonByInstance.get('target')?.stacks.push({ damage: 99, turns: 0 });
+
+  const captured = store.capture('target');
+  assert.equal(captured.poison?.stacks.length, 1);
+  assert.equal(captured.fracture?.rate, 0.1);
+  assert.equal(captured.stun, 1);
+  assert.equal(captured.hibernation, 1);
+  assert.equal(captured.disorientation, 1);
+
+  store.clear();
+  store.restore('target', captured);
+  assert.equal(store.getPoisonSummary('target')?.damage, 20);
+  assert.equal(store.getIgnitionSummary('target')?.rate, 0.25);
+  assert.equal(store.getSlowSummary('target')?.delta, -1);
+  assert.equal(store.fractureByInstance.get('target')?.rate, 0.1);
+  assert.equal(store.getStunTurns('target'), 1);
+  assert.equal(store.getHibernationTurns('target'), 1);
+  assert.equal(store.disorientationByInstance.get('target'), 1);
+
+  captured.poison?.stacks[0] && (captured.poison.stacks[0].damage = 1);
+  assert.equal(store.getPoisonSummary('target')?.damage, 20);
+});
+
+function makeBossScene(progress: unknown): { scene: Parameters<typeof getBossfightProgress>[0]; registry: Map<string, unknown> } {
+  const registry = new Map<string, unknown>();
+  registry.set(BOSSFIGHT_PROGRESS_KEY, progress);
+  const scene = {
+    registry: {
+      get: (key: string) => registry.get(key),
+      set: (key: string, value: unknown) => registry.set(key, value)
+    }
+  } as unknown as Parameters<typeof getBossfightProgress>[0];
+  return { scene, registry };
+}
+
+test('BossStore normalizes progress and persists the selected menu state', () => {
+  const normalized = normalizeBossfightProgress({
+    unlockedLevels: { Magician: 99, Leon: 0, Basilisk: -4, Silence: Number.NaN },
+    rewardClaims: ['Magician:1', 42 as unknown as string, 'Leon:2']
+  });
+  assert.deepEqual(normalized.unlockedLevels, { Magician: 15, Leon: 1, Basilisk: 1, Silence: 1 });
+  assert.deepEqual(normalized.rewardClaims, ['Magician:1', 'Leon:2']);
+
+  const { scene, registry } = makeBossScene({
+    unlockedLevels: { Magician: 4, Leon: 4, Basilisk: 2, Silence: 1 },
+    rewardClaims: []
+  });
+  assert.equal(getBossfightProgress(scene).unlockedLevels.Magician, 4);
+  assert.equal(registry.get(BOSSFIGHT_PROGRESS_KEY) !== undefined, true);
+
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); }
+  };
+  values.set(BOSSFIGHT_MENU_STATE_KEY, JSON.stringify({ boss: 'Leon', level: 99 }));
+  const legacyMenu = getBossfightMenuState(scene, storage);
+  assert.equal(legacyMenu.boss, 'Leon');
+  assert.equal(legacyMenu.level, 4);
+  assert.deepEqual(legacyMenu.levels, { Magician: 1, Leon: 4, Basilisk: 1, Silence: 1 });
+  saveBossfightMenuState('Basilisk', 7, storage, legacyMenu.levels);
+  assert.deepEqual(JSON.parse(values.get(BOSSFIGHT_MENU_STATE_KEY) ?? '{}'), {
+    boss: 'Basilisk',
+    level: 7,
+    levels: { Magician: 1, Leon: 4, Basilisk: 7, Silence: 1 }
+  });
+
+  const perBossLevels = { Magician: 5, Leon: 2, Basilisk: 3, Silence: 1 };
+  saveBossfightMenuState('Leon', 2, storage, perBossLevels);
+  saveBossfightMenuState('Magician', 5, storage, perBossLevels);
+  assert.deepEqual(JSON.parse(values.get(BOSSFIGHT_MENU_STATE_KEY) ?? '{}'), {
+    boss: 'Magician',
+    level: 5,
+    levels: { Magician: 5, Leon: 2, Basilisk: 3, Silence: 1 }
+  });
+});
+
+test('BossStore exposes bounded rewards and complete boss metadata', () => {
+  assert.equal(MAX_BOSSFIGHT_LEVEL, 15);
+  assert.deepEqual(getBossfightRewards(1), { tokens: 2000, chips: 10 });
+  assert.deepEqual(getBossfightRewards(15), { tokens: 16000, chips: 80 });
+  assert.deepEqual(getBossfightRewards(99), { tokens: 16000, chips: 80 });
+  assert.deepEqual(getBossfightRewards(-5), { tokens: 2000, chips: 10 });
+  assert.deepEqual(BOSSFIGHT_BOSSES, ['Magician', 'Leon', 'Basilisk', 'Silence']);
+  BOSSFIGHT_BOSSES.forEach((boss) => {
+    const metadata = BOSSFIGHT_BOSS_METADATA[boss];
+    assert.equal(metadata.typeId, boss);
+    assert.equal(metadata.label, boss.toUpperCase());
+    assert.match(metadata.color, /^#[0-9a-f]{6}$/i);
+  });
+});
+
+test('BossStore resolves music keys without importing the scene audio manager', () => {
+  const keys = {
+    deuciferMusic: 'deucifer',
+    magicianMusic: 'magician',
+    leonMusic: 'leon',
+    basiliskMusic: 'basilisk',
+    silenceMusic: 'silence',
+    arenaMusic: 'arena'
+  };
+  assert.equal(getBossMusicKey('Deucifer', keys), 'deucifer');
+  assert.equal(getBossMusicKey('Imp', keys), 'deucifer');
+  assert.equal(getBossMusicKey('Magician', keys), 'magician');
+  assert.equal(getBossMusicKey('Wizard', keys), 'magician');
+  assert.equal(getBossMusicKey('Leon', keys), 'leon');
+  assert.equal(getBossMusicKey('Basilisk', keys), 'basilisk');
+  assert.equal(getBossMusicKey('Silence', keys), 'silence');
+  assert.equal(getBossMusicKey('Unknown' as BossMusicBoss, keys), 'arena');
+});
+
+test('StatusEffectStore applies taunt effects from any source phase and replaces stale taunts', () => {
+  const source = makeStatusDie('passive-source', 'player');
+  const target = makeStatusDie('target', 'enemy');
+  const store = new StatusEffectStore();
+  const applied: string[] = [];
+
+  store.applyTaunt('other-target', 'old-source', 1);
+  store.applyTauntEffects([source], () => [{ target, duration: 2 }], {
+    onApplied: (appliedSource, appliedTarget, effect, duration) => {
+      applied.push(`${appliedSource.instanceId}:${appliedTarget.instanceId}:${effect}:${duration}`);
+    }
+  });
+
+  assert.deepEqual(store.getTaunt('target'), { sourceId: 'passive-source', turns: 2 });
+  assert.equal(store.getTaunt('other-target'), undefined);
+  assert.deepEqual(applied, ['passive-source:target:taunt:2']);
+});
+
+function makeChallengeScene(
+  statuses: Record<string, unknown> = {},
+  rewardClaims: unknown = []
+): { scene: Parameters<typeof getChallengeStatus>[0]; registry: Map<string, unknown> } {
+  const registry = new Map<string, unknown>();
+  registry.set(CHALLENGE_STATUS_KEY, statuses);
+  registry.set(CHALLENGE_REWARD_CLAIMS_KEY, rewardClaims);
+  const scene = {
+    registry: {
+      get: (key: string) => registry.get(key),
+      set: (key: string, value: unknown) => registry.set(key, value)
+    }
+  } as unknown as Parameters<typeof getChallengeStatus>[0];
+  return { scene, registry };
+}
+
+test('ChallengeStore keeps daily seeds, rewards, and challenge configs stable', () => {
+  assert.equal(getDailyChallengeKey(new Date('2026-11-12T23:59:59.000Z')), '2026-11-12');
+  assert.equal(isHardDaily('2026-11-12'), true);
+  assert.equal(isHardDaily('2026-11-13'), false);
+  assert.equal(getDailySeededModifier('2026-11-12'), getDailySeededModifier('2026-11-12'));
+  assert.equal(CHALLENGE_RANDOM_MODIFIERS.includes(getDailySeededModifier('2026-11-12')), true);
+  assert.deepEqual(
+    [...CHALLENGE_RANDOM_MODIFIERS].sort(),
+    ['Classic', 'Combanity', 'DiceCard', 'Duality', 'Necromancy'].sort()
+  );
+  assert.equal(getDailySeededIndex('2026-11-12', 'loadout', 10), getSeededDailyIndex('2026-11-12', 'loadout', 10));
+  assert.equal(getDailySeededRange('2026-11-12', 'range', 3, 8) >= 3, true);
+  assert.equal(getDailySeededRange('2026-11-12', 'range', 3, 8) <= 8, true);
+  assert.equal(['mirror', 'player-vs-enemy', 'random-vs-random'].includes(getDailyLoadoutMode('2026-11-12')), true);
+  assert.equal(typeof getDailyUsesRandomClassUps('2026-11-12'), 'boolean');
+
+  assert.deepEqual(getChallengeReward('daily', false), { tokens: 800, chips: 10 });
+  assert.deepEqual(getChallengeReward('daily', true), { tokens: 2400, chips: 30 });
+  assert.deepEqual(getChallengeReward('deucifer'), { tokens: 7500, chips: 50 });
+  assert.deepEqual(getChallengeReward('dopamine'), { tokens: 2500, chips: 20 });
+
+  const daily = getChallengeStartConfig('daily', true, '2026-11-12');
+  assert.equal(daily.difficulty, 'Nightmare');
+  assert.equal(daily.turnLimit, 10);
+  assert.equal(daily.randomMode, true);
+  assert.equal(daily.randomizeLoadoutAndClassUps, getDailyUsesRandomClassUps('2026-11-12'));
+  assert.deepEqual(getChallengeStartConfig('deucifer', false), {
+    difficulty: 'Nightmare',
+    turnLimit: 10,
+    randomMode: false,
+    randomizeLoadoutAndClassUps: false,
+    activeRandomModifier: undefined,
+    enemyTypeIds: ['Poison', 'Solitude', 'Judgment', 'Skull', 'Death'],
+    enemyClassLevel: 11
+  });
+  assert.deepEqual(getChallengeEnemyConfig('dopamine'), {
+    typeIds: ['Healing', 'Light', 'Battery', 'Meteor', 'Wind'],
+    classLevel: 7
+  });
+  assert.equal(getChallengeRandomModifier('daily', '2026-11-12'), getDailySeededModifier('2026-11-12'));
+  assert.equal(getChallengeRandomModifier('dopamine'), 'DiceCard');
+  assert.equal(getChallengeRandomModifier('deucifer'), undefined);
+
+  const dailyCard = getChallengeUIConfig('daily', true, '2026-11-12');
+  assert.equal(dailyCard.title, 'Daily Challenge ☠ HARD!');
+  assert.deepEqual(dailyCard.reward, { tokens: 2400, chips: 30 });
+  assert.equal(getChallengeUIConfig('dopamine', false).title, 'Dopamine Challenge');
+  assert.equal(getChallengeUIConfig('deucifer', false).summary, 'Nightmare Deucifer\nClassic • 10 Turns');
+});
+
+test('ChallengeStore normalizes statuses and claims while preserving failure rules', () => {
+  const dailyKey = '2026-11-12';
+  const { scene, registry } = makeChallengeScene({
+    [getChallengeClaimKey('daily', dailyKey)]: 'failed',
+    deucifer: 'completed',
+    dopamine: 'started',
+    invalid: 'unknown'
+  }, ['deucifer']);
+
+  assert.equal(getChallengeStatus(scene, 'daily', dailyKey), 'failed');
+  assert.equal(getChallengeStatus(scene, 'deucifer'), 'completed');
+  assert.equal(getChallengeStatus(scene, 'dopamine'), 'started');
+  assert.equal(getChallengeStatusLabel('not-started'), 'NOT STARTED');
+  assert.equal(getChallengeStatusLabel('completed'), 'COMPLETED');
+  assert.equal(registry.get(CHALLENGE_STATUS_KEY) && Object.keys(registry.get(CHALLENGE_STATUS_KEY) as object).includes('invalid'), false);
+  assert.equal(canChallengeBeMarkedFailed(scene, 'deucifer'), false);
+  assert.equal(canChallengeBeMarkedFailed(scene, 'dopamine'), true);
+  assert.equal(canChallengeBeMarkedFailed(scene, 'daily', dailyKey), true);
+});
+
+test('timed soul transformations refresh at the soul cap', () => {
+  const baseDefinition = {
+    typeId: 'Death',
+    title: 'Death Dice',
+    attack: 24,
+    health: 640,
+    range: 4,
+    rarity: 'Epic' as const,
+    targetingMode: 'Nearest' as const,
+    accent: '#000000',
+    skills: [{
+      type: 'Passive' as const,
+      title: 'Death Incarnate',
+      description: 'Transforms after capturing a soul.',
+      modifiers: { canConjureSouls: true, conjureType: 'ally' as const, maxSouls: 1, transformSoulCount: 1 }
+    }],
+    transformStats: [{
+      title: 'Death Dice — Instakill Form',
+      transformDuration: 1,
+      skills: [{
+        type: 'Active' as const,
+        title: "Reaper's Touch",
+        description: 'Instantly kills a target.',
+        manaNeeded: 12,
+        modifiers: { instakill: true }
+      }]
+    }],
+    transformFlags: ['instakillForm']
+  } satisfies DiceDefinition;
+  let die: DiceInstanceState = {
+    instanceId: 'player-Death-1',
+    typeId: 'Death',
+    ownerId: 'player',
+    zone: 'board',
+    maxHealth: 640,
+    currentHealth: 640,
+    isDestroyed: false,
+    hasFinishedAttacking: false,
+    attacksRemaining: 0
+  };
+  let activeDefinition = baseDefinition;
+  const host: TransformStateHost = {
+    getDefinitionForInstance: () => activeDefinition,
+    getBaseDefinitionForInstance: () => baseDefinition,
+    getCombatBaseDefinition: () => baseDefinition,
+    getClassLevel: () => 1,
+    applyDungeonCardDefinitionForOwner: (definition) => definition,
+    getDiceCardMaxHealthForDefinition: (definition) => definition.health,
+    getTransformDurationBonus: () => 1,
+    getDie: () => die,
+    updateDie: (_instanceId, update) => {
+      die = update(die);
+      return die;
+    },
+    setDefinitionOverride: (_instanceId, definition) => { activeDefinition = definition; },
+    resetActiveMana: () => undefined,
+    writeCombatLog: () => undefined,
+    applyOnTransformedSkillEffects: () => undefined,
+    animateTransformEffect: () => undefined,
+    getCombatDieName: () => 'Death'
+  };
+  const transforms = new TransformState(host);
+
+  transforms.transformFromSoulCap(die);
+  assert.equal(transforms.getIndex(die.instanceId), 0);
+
+  transforms.tickDurations();
+  transforms.transformFromSoulCap(die);
+  transforms.tickDurations();
+  assert.equal(transforms.getIndex(die.instanceId), 0);
+
+  transforms.tickDurations();
+  assert.equal(transforms.getIndex(die.instanceId), undefined);
+});
+
+test('timed pip transformations refresh before de-transforming', () => {
+  const baseDefinition = {
+    typeId: 'Transcendence',
+    title: 'Transcendence Dice',
+    attack: 40,
+    health: 640,
+    range: 5,
+    rarity: 'Legendary' as const,
+    targetingMode: 'Nearest' as const,
+    accent: '#7099d6',
+    skills: [{
+      type: 'Passive' as const,
+      title: 'Perpendicular Beam',
+      description: 'If it rolls 6, transforms into The Transcendence.',
+      modifiers: { transformPipCount: 6 }
+    }],
+    transformStats: [{
+      title: 'The Transcendence',
+      range: 9,
+      transformDuration: 1,
+      skills: []
+    }],
+    transformFlags: ['transcendentForm']
+  } satisfies DiceDefinition;
+  let die: DiceInstanceState = {
+    instanceId: 'player-Transcendence-1',
+    typeId: 'Transcendence',
+    ownerId: 'player',
+    zone: 'hand',
+    maxHealth: 640,
+    currentHealth: 640,
+    isDestroyed: false,
+    hasFinishedAttacking: false,
+    attacksRemaining: 0
+  };
+  let activeDefinition = baseDefinition;
+  const host: TransformStateHost = {
+    getDefinitionForInstance: () => activeDefinition,
+    getBaseDefinitionForInstance: () => baseDefinition,
+    getCombatBaseDefinition: () => baseDefinition,
+    getClassLevel: () => 1,
+    applyDungeonCardDefinitionForOwner: (definition) => definition,
+    getDiceCardMaxHealthForDefinition: (definition) => definition.health,
+    getTransformDurationBonus: () => 1,
+    getDie: () => die,
+    updateDie: (_instanceId, update) => {
+      die = update(die);
+      return die;
+    },
+    setDefinitionOverride: (_instanceId, definition) => { activeDefinition = definition; },
+    resetActiveMana: () => undefined,
+    writeCombatLog: () => undefined,
+    applyOnTransformedSkillEffects: () => undefined,
+    animateTransformEffect: () => undefined,
+    getCombatDieName: () => 'Transcendence'
+  };
+  const transforms = new TransformState(host);
+
+  transforms.tryAdvancePipTriggeredTransform(die, 6);
+  assert.equal(transforms.getIndex(die.instanceId), 0);
+  assert.equal(die.maxHealth, 640);
+
+  transforms.tickDurations();
+  transforms.clearPipTriggers();
+  transforms.tryAdvancePipTriggeredTransform(die, 6);
+  transforms.tickDurations();
+  assert.equal(transforms.getIndex(die.instanceId), 0);
+  assert.equal(die.maxHealth, 640);
+
+  transforms.tickDurations();
+  assert.equal(transforms.getIndex(die.instanceId), undefined);
 });

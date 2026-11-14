@@ -74,11 +74,17 @@ test('rejected boards do not mutate the authoritative state', () => {
   assert.deepEqual(setup.state, before);
 });
 
-test('placement snapshots redact the opponent board and pips', () => {
+test('placement snapshots redact the opponent board, pips, and pools', () => {
   const setup = makeSetup();
+  setup.state.pools = [
+    { typeId: 'Lava', title: 'Lava', row: 0, col: 0, damage: 5, turns: 2, ownerId: 'player', sourceTypeId: 'Meteor', affects: 'foes' },
+    { typeId: 'Ice', title: 'Ice', row: 0, col: 0, damage: 5, turns: 2, ownerId: 'enemy', sourceTypeId: 'Meteor', affects: 'foes' }
+  ];
   const own = toClientState(setup.state, setup.definitions, 'player', false);
   assert.equal(own.dice.length, 5);
   assert.ok(own.dice.every((die) => die.ownerId === 'player'));
+  assert.equal(own.pools.length, 1);
+  assert.equal(own.pools[0].typeId, 'Lava');
   assert.deepEqual(Object.keys(getPipMap(setup.state, 'player', false)).sort(), own.dice.map((die) => die.instanceId).sort());
 
   const enemy = toClientState(setup.state, setup.definitions, 'enemy', false);
@@ -113,4 +119,56 @@ test('server combat eventually declares a winner or draw within the turn limit',
     }
   }
   assert.ok(result === 'victory' || result === 'defeat' || result === 'draw');
+});
+
+test('Duality duplicates both sides with usable definitions', () => {
+  const setup = createCombatSetup(loadout, loadout, diceCatalog, {
+    ...rules,
+    randomMode: true,
+    randomModifier: 'Duality'
+  });
+  assert.equal(setup.state.dice.filter((die) => die.ownerId === 'player').length, 10);
+  assert.equal(setup.state.dice.filter((die) => die.ownerId === 'enemy').length, 10);
+  assert.equal(setup.definitions.size, 20);
+  assert.ok(setup.state.dice.every((die) => setup.definitions.has(die.instanceId)));
+});
+
+test('Combanity assigns roll-combo damage and reduction before combat', () => {
+  const setup = createCombatSetup(loadout, loadout, diceCatalog, {
+    ...rules,
+    randomMode: true,
+    randomModifier: 'Combanity'
+  });
+  rollPips(setup.state, seed, 1);
+  autoPlaceBoard(setup.state, setup.definitions, 'player', seed, 1);
+  autoPlaceBoard(setup.state, setup.definitions, 'enemy', seed, 1);
+  const resolution = resolveCombat(setup.state, setup.definitions, {
+    ...rules,
+    randomMode: true,
+    randomModifier: 'Combanity'
+  }, seed, diceCatalog);
+  assert.ok(resolution.events.some((event) => event.text.startsWith('Combanity:')));
+  assert.ok(resolution.state.dice.every((die) => typeof die.combanityMultiplier === 'number'));
+});
+
+test('Necromancy revives or raises a die after a non-terminal round', () => {
+  const setup = createCombatSetup(loadout, loadout, diceCatalog, {
+    ...rules,
+    randomMode: true,
+    randomModifier: 'Necromancy'
+  });
+  rollPips(setup.state, seed, 1);
+  autoPlaceBoard(setup.state, setup.definitions, 'player', seed, 1);
+  autoPlaceBoard(setup.state, setup.definitions, 'enemy', seed, 1);
+  const fallen = setup.state.dice.find((die) => die.ownerId === 'player' && !die.isDestroyed);
+  assert.ok(fallen);
+  fallen.isDestroyed = true;
+  fallen.currentHealth = 0;
+  const resolution = resolveCombat(setup.state, setup.definitions, {
+    ...rules,
+    randomMode: true,
+    randomModifier: 'Necromancy'
+  }, seed, diceCatalog);
+  assert.equal(resolution.result, undefined);
+  assert.ok(resolution.events.some((event) => event.kind === 'revive' || event.kind === 'summon'));
 });

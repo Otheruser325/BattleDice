@@ -80,10 +80,12 @@ export interface DungeonStageReward {
 
 export interface DungeonCarryoverStatuses {
   poison?: { stacks: Array<{ damage: number; turns: number; sourceInstanceId?: string; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> };
+  ignition?: { stacks: Array<{ rate: number; turns: number; sourceInstanceId?: string; sourceOwnerId?: 'player' | 'enemy'; sourceTypeId?: string }> };
   slow?: { delta: number; turns: number; stacks?: Array<{ delta: number; turns: number }> };
   time?: Array<{ effect: 'acceleration' | 'dilation'; turns: number; sourceInstanceId: string }>;
   fracture?: { rate: number; turns: number };
   stun?: number;
+  hibernation?: number;
   disorientation?: number;
   shield?: { hp: number; turns: number };
 }
@@ -99,6 +101,7 @@ export interface DungeonCarryoverDie {
   mana: number;
   activeMana: Array<[string, number]>;
   statuses: DungeonCarryoverStatuses;
+  attackCountEffectSeen?: { positive?: boolean; negative?: boolean };
   attackCountBuff?: { extra: number; turns: number };
   projectileCountBuff?: { count: number; turns: number };
   manaPausedTurns?: number;
@@ -106,14 +109,37 @@ export interface DungeonCarryoverDie {
   basicAttackDamage?: number;
   reviveCount?: number;
   soulCount?: number;
+  scopeStacks?: number;
   attack?: number;
   transformIndex?: number;
   summonedByInstanceId?: string;
 }
 
+export interface DungeonCarryoverEnemyDie {
+  instanceId: string;
+  typeId: string;
+  classLevel?: number;
+  currentHealth: number;
+  maxHealth: number;
+  isDestroyed: boolean;
+  zone?: 'hand' | 'board' | 'eliminated';
+  gridPosition?: { row: number; col: number };
+  statuses?: DungeonCarryoverStatuses;
+  mana?: number;
+  activeMana?: Array<[string, number]>;
+  attackCountEffectSeen?: { positive?: boolean; negative?: boolean };
+  attackCountBuff?: { extra: number; turns: number };
+  projectileCountBuff?: { count: number; turns: number };
+  manaPausedTurns?: number;
+  reviveCount?: number;
+  attack?: number;
+}
+
 export interface DungeonCarryover {
   turn: number;
+  resumeTurn?: number;
   dice: DungeonCarryoverDie[];
+  enemyDice?: DungeonCarryoverEnemyDie[];
   diceCards?: DiceCard[];
   diceCardPicksUsed?: number;
   dungeonCards?: DungeonCardState;
@@ -279,6 +305,19 @@ function isDungeonRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function normalizeDungeonAttackCountEffectSeen(
+  value: unknown
+): { positive?: boolean; negative?: boolean } | undefined {
+  if (!isDungeonRecord(value)) return undefined;
+  const positive = value.positive === true;
+  const negative = value.negative === true;
+  if (!positive && !negative) return undefined;
+  return {
+    ...(positive ? { positive: true } : {}),
+    ...(negative ? { negative: true } : {})
+  };
+}
+
 function normalizeDungeonActiveMana(value: unknown): Array<[string, number]> {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
@@ -317,6 +356,33 @@ function normalizeDungeonStatuses(value: unknown): DungeonCarryoverStatuses {
       });
     }
     if (stacks.length > 0) statuses.poison = { stacks };
+  }
+
+  const ignition = isDungeonRecord(value.ignition) ? value.ignition : undefined;
+  if (Array.isArray(ignition?.stacks)) {
+    const stacks: NonNullable<DungeonCarryoverStatuses['ignition']>['stacks'] = [];
+    for (const entry of ignition.stacks) {
+      if (!isDungeonRecord(entry)) continue;
+      const rate = normalizeDungeonNumber(entry.rate);
+      const turns = normalizeDungeonPositiveInteger(entry.turns, DUNGEON_CARRYOVER_TURNS_CAP);
+      if (rate === undefined || rate <= 0 || turns === undefined) continue;
+      if (stacks.length >= DUNGEON_CARRYOVER_STACK_CAP) break;
+      const sourceOwnerId = entry.sourceOwnerId === 'player' || entry.sourceOwnerId === 'enemy'
+        ? entry.sourceOwnerId
+        : undefined;
+      stacks.push({
+        rate: Math.min(1, rate),
+        turns,
+        ...(typeof entry.sourceInstanceId === 'string' && entry.sourceInstanceId.length > 0
+          ? { sourceInstanceId: entry.sourceInstanceId }
+          : {}),
+        ...(sourceOwnerId ? { sourceOwnerId } : {}),
+        ...(typeof entry.sourceTypeId === 'string' && entry.sourceTypeId.length > 0
+          ? { sourceTypeId: entry.sourceTypeId }
+          : {})
+      });
+    }
+    if (stacks.length > 0) statuses.ignition = { stacks };
   }
 
   const slow = isDungeonRecord(value.slow) ? value.slow : undefined;
@@ -364,6 +430,8 @@ function normalizeDungeonStatuses(value: unknown): DungeonCarryoverStatuses {
 
   const stun = normalizeDungeonPositiveInteger(value.stun, DUNGEON_CARRYOVER_TURNS_CAP);
   if (stun !== undefined) statuses.stun = stun;
+  const hibernation = normalizeDungeonPositiveInteger(value.hibernation, DUNGEON_CARRYOVER_TURNS_CAP);
+  if (hibernation !== undefined) statuses.hibernation = hibernation;
   const disorientation = normalizeDungeonPositiveInteger(value.disorientation, DUNGEON_CARRYOVER_TURNS_CAP);
   if (disorientation !== undefined) statuses.disorientation = disorientation;
 
@@ -376,6 +444,79 @@ function normalizeDungeonStatuses(value: unknown): DungeonCarryoverStatuses {
   return statuses;
 }
 
+function normalizeDungeonEnemyGridPosition(value: unknown): { row: number; col: number } | undefined {
+  if (!isDungeonRecord(value)) return undefined;
+  const rawRow = normalizeDungeonNumber(value.row);
+  const rawCol = normalizeDungeonNumber(value.col);
+  if (rawRow === undefined || rawCol === undefined) return undefined;
+  const row = Math.floor(rawRow);
+  const col = Math.floor(rawCol);
+  if (row !== rawRow || col !== rawCol || row < 0 || col < 0 || row > 4 || col > 4) return undefined;
+  return { row, col };
+}
+
+function normalizeDungeonEnemyDice(value: unknown): DungeonCarryoverEnemyDie[] {
+  if (!Array.isArray(value)) return [];
+  const enemies: DungeonCarryoverEnemyDie[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (!isDungeonRecord(entry)) continue;
+    const instanceId = typeof entry.instanceId === 'string' ? entry.instanceId : '';
+    const typeId = typeof entry.typeId === 'string' ? entry.typeId : '';
+    if (!instanceId || !typeId || seen.has(instanceId)) continue;
+    const maxHealth = Math.max(1, normalizeDungeonStat(entry.maxHealth, 0) ?? 0);
+    const rawCurrentHealth = normalizeDungeonStat(entry.currentHealth, 0);
+    const destroyed = entry.isDestroyed === true
+      || entry.zone === 'eliminated'
+      || (rawCurrentHealth !== undefined && rawCurrentHealth <= 0);
+    const currentHealth = destroyed
+      ? 0
+      : rawCurrentHealth === undefined
+        ? maxHealth
+        : Math.min(maxHealth, rawCurrentHealth);
+    const gridPosition = destroyed ? undefined : normalizeDungeonEnemyGridPosition(entry.gridPosition);
+    const zone: DungeonCarryoverEnemyDie['zone'] = destroyed ? 'eliminated' : gridPosition ? 'board' : 'hand';
+    const statuses = normalizeDungeonStatuses(entry.statuses);
+    const attackCountEffectSeen = normalizeDungeonAttackCountEffectSeen(entry.attackCountEffectSeen);
+    const attackCountBuff = isDungeonRecord(entry.attackCountBuff) ? entry.attackCountBuff : undefined;
+    const projectileCountBuff = isDungeonRecord(entry.projectileCountBuff) ? entry.projectileCountBuff : undefined;
+    const reviveCount = normalizeDungeonInteger(entry.reviveCount, 0, DUNGEON_CARRYOVER_COUNT_CAP);
+    const attack = normalizeDungeonStat(entry.attack, 1);
+    enemies.push({
+      instanceId,
+      typeId,
+      classLevel: normalizeDungeonInteger(entry.classLevel, 1, DUNGEON_MAX_CLASS_LEVEL) ?? 1,
+      currentHealth,
+      maxHealth,
+      isDestroyed: destroyed,
+      zone,
+      ...(gridPosition ? { gridPosition } : {}),
+      ...(Object.keys(statuses).length > 0 ? { statuses } : {}),
+      mana: normalizeDungeonInteger(entry.mana, 0, DUNGEON_CARRYOVER_MANA_CAP) ?? 0,
+      activeMana: normalizeDungeonActiveMana(entry.activeMana),
+      ...(attackCountEffectSeen ? { attackCountEffectSeen } : {}),
+      ...(attackCountBuff
+        && Number.isFinite(Number(attackCountBuff.extra)) && Number(attackCountBuff.extra) > 0
+        && Number.isFinite(Number(attackCountBuff.turns)) && Number(attackCountBuff.turns) > 0
+        ? { attackCountBuff: { extra: Math.min(DUNGEON_CARRYOVER_COUNT_CAP, Math.max(1, Math.floor(Number(attackCountBuff.extra)))), turns: Math.min(DUNGEON_CARRYOVER_TURNS_CAP, Math.max(1, Math.floor(Number(attackCountBuff.turns)))) } }
+        : {}),
+      ...(projectileCountBuff
+        && Number.isFinite(Number(projectileCountBuff.count)) && Number(projectileCountBuff.count) > 1
+        && Number.isFinite(Number(projectileCountBuff.turns)) && Number(projectileCountBuff.turns) > 0
+        ? { projectileCountBuff: { count: Math.min(DUNGEON_CARRYOVER_COUNT_CAP, Math.max(2, Math.floor(Number(projectileCountBuff.count)))), turns: Math.min(DUNGEON_CARRYOVER_TURNS_CAP, Math.max(1, Math.floor(Number(projectileCountBuff.turns)))) } }
+        : {}),
+      ...(Number.isFinite(Number(entry.manaPausedTurns)) && Number(entry.manaPausedTurns) > 0
+        ? { manaPausedTurns: Math.min(DUNGEON_CARRYOVER_TURNS_CAP, Math.max(1, Math.floor(Number(entry.manaPausedTurns)))) }
+        : {}),
+      ...(reviveCount !== undefined && reviveCount > 0 ? { reviveCount } : {}),
+      ...(attack !== undefined ? { attack } : {})
+    });
+    seen.add(instanceId);
+    if (enemies.length >= DUNGEON_CARRYOVER_DICE_CAP) break;
+  }
+  return enemies;
+}
+
 export function normalizeDungeonCarryover(value: unknown): DungeonCarryover | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = value as Partial<DungeonCarryover>;
@@ -386,9 +527,12 @@ export function normalizeDungeonCarryover(value: unknown): DungeonCarryover | nu
   if (dice.length === 0) return null;
   const diceIds = new Set(dice.map((die) => die.instanceId));
   const rawTurn = Number(candidate.turn);
+  const rawResumeTurn = Number(candidate.resumeTurn);
+  const resumeTurn = normalizeDungeonInteger(rawResumeTurn, 1, DUNGEON_CARRYOVER_TURN_CAP);
   const rawPicks = Number(candidate.diceCardPicksUsed);
   return {
     turn: normalizeDungeonInteger(rawTurn, 1, DUNGEON_CARRYOVER_TURN_CAP) ?? 1,
+    ...(resumeTurn !== undefined ? { resumeTurn } : {}),
     dice: dice.map((die) => {
       const maxHealth = normalizeDungeonStat(die.maxHealth, 0) ?? 0;
       const rawCurrentHealth = normalizeDungeonStat(die.currentHealth, 0);
@@ -402,6 +546,8 @@ export function normalizeDungeonCarryover(value: unknown): DungeonCarryover | nu
       const hadTimedTransform = normalizedDie.transformDuration !== undefined;
       delete normalizedDie.transformDuration;
       delete normalizedDie.summonedByInstanceId;
+      delete normalizedDie.attackCountEffectSeen;
+      const attackCountEffectSeen = normalizeDungeonAttackCountEffectSeen(die.attackCountEffectSeen);
       const rawTransformIndex = Number(normalizedDie.transformIndex);
       if (hadTimedTransform || !Number.isInteger(rawTransformIndex) || rawTransformIndex < 0 || rawTransformIndex > DUNGEON_CARRYOVER_TRANSFORM_CAP) delete normalizedDie.transformIndex;
       else normalizedDie.transformIndex = rawTransformIndex;
@@ -420,6 +566,7 @@ export function normalizeDungeonCarryover(value: unknown): DungeonCarryover | nu
       mana: normalizeDungeonInteger(die.mana, 0, DUNGEON_CARRYOVER_MANA_CAP) ?? 0,
       activeMana: normalizeDungeonActiveMana(die.activeMana),
       statuses: normalizeDungeonStatuses(die.statuses),
+      ...(attackCountEffectSeen ? { attackCountEffectSeen } : {}),
       growthDelta: Number.isFinite(growthDelta)
         ? Math.max(-DUNGEON_CARRYOVER_STAT_CAP, Math.min(DUNGEON_CARRYOVER_STAT_CAP, Math.floor(growthDelta)))
         : 0,
@@ -443,6 +590,9 @@ export function normalizeDungeonCarryover(value: unknown): DungeonCarryover | nu
       ...(Number.isFinite(Number(die.soulCount)) && Number(die.soulCount) > 0
         ? { soulCount: Math.min(DUNGEON_CARRYOVER_COUNT_CAP, Math.max(1, Math.floor(Number(die.soulCount)))) }
         : {}),
+      ...(Number.isFinite(Number(die.scopeStacks)) && Number(die.scopeStacks) > 0
+        ? { scopeStacks: Math.min(DUNGEON_CARRYOVER_COUNT_CAP, Math.max(1, Math.floor(Number(die.scopeStacks)))) }
+        : {}),
       ...(normalizeDungeonStat(die.attack, 1) !== undefined
         ? { attack: normalizeDungeonStat(die.attack, 1)! }
         : {}),
@@ -454,6 +604,7 @@ export function normalizeDungeonCarryover(value: unknown): DungeonCarryover | nu
         : {})
       };
     }),
+    enemyDice: normalizeDungeonEnemyDice(candidate.enemyDice),
     diceCards: normalizeDiceCardCarryover(candidate.diceCards),
     diceCardPicksUsed: normalizeDungeonInteger(rawPicks, 0, DUNGEON_CARRYOVER_PICKS_CAP) ?? 0,
     dungeonCards: normalizeDungeonCardState(candidate.dungeonCards)
@@ -466,6 +617,7 @@ export function resolveDungeonCarryoverInstanceIds(
   modifier: DungeonModifier
 ): Set<string> {
   const initialById = new Map(initialDice.map((die) => [die.instanceId, die] as const));
+  const savedIds = new Set(carryover.dice.map((die) => die.instanceId));
   const allowed = new Set<string>();
 
   carryover.dice.forEach((saved) => {
@@ -490,7 +642,7 @@ export function resolveDungeonCarryoverInstanceIds(
     added = false;
     carryover.dice.forEach((saved) => {
       if (allowed.has(saved.instanceId) || !saved.summonedByInstanceId) return;
-      if (!allowed.has(saved.summonedByInstanceId)) return;
+      if (!savedIds.has(saved.summonedByInstanceId)) return;
       allowed.add(saved.instanceId);
       added = true;
     });
@@ -508,6 +660,8 @@ function hashValue(input: string): number {
   return hash >>> 0;
 }
 
+// The legacy Dice Card random mode runs its own card draft, so Dungeon Cards stand down there. Classic is the
+// no-modifier Random Mode roll and every other modifier leaves the dungeon-native draft active.
 export function isLegacyDiceCardMode(modifier: DungeonModifier): boolean {
   return modifier === 'DiceCard';
 }
@@ -722,4 +876,64 @@ export function canGrantDungeonCopyAmount(amount: number, remaining: number, own
   if (!Number.isFinite(remaining) || copyAmount <= 0) return false;
   const required = Math.max(0, copyAmount - (owned ? 0 : 1));
   return remaining + 1e-9 >= required;
+}
+
+export const DUNGEON_ENEMY_DUPLICATE_START_WAVE = 20;
+export const DUNGEON_ENEMY_DUPLICATE_COPY_CAP = 3;
+
+// Dungeon waves are event-seeded: enemy loadouts and card drafts must replay identically after a refresh,
+// otherwise reloading a saved run rerolls the encounter.
+export function createDungeonSeededRng(seed: string): () => number {
+  let state = hashValue(`${seed}:v1`) || 0x9e3779b9;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 0x1_0000_0000;
+  };
+}
+
+export interface DungeonEnemyLoadoutInput {
+  eventKey: string;
+  wave: number;
+  count: number;
+  poolTypeIds: readonly string[];
+  bossTypeId?: string | null;
+  miniBossTypeId?: string | null;
+}
+
+export function rollDungeonSeededInt(rng: () => number, min: number, max: number): number {
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  const roll = Math.max(0, Math.min(0.999999, Number(rng()) || 0));
+  return Math.min(high, low + Math.floor(roll * (high - low + 1)));
+}
+
+export function pickDungeonEnemyTypeIds(input: DungeonEnemyLoadoutInput): string[] {
+  const boundedWave = Math.max(1, Math.min(DUNGEON_MAX_WAVES, Math.floor(Number(input.wave) || 1)));
+  const count = Math.max(1, Math.floor(Number(input.count) || 1));
+  const bossTypeId = typeof input.bossTypeId === 'string' && input.bossTypeId.length > 0 ? input.bossTypeId : null;
+  const miniBossTypeId = typeof input.miniBossTypeId === 'string' && input.miniBossTypeId.length > 0 ? input.miniBossTypeId : null;
+  const reserved = new Set([bossTypeId, miniBossTypeId].filter((typeId): typeId is string => typeId !== null));
+  const pool = [...new Set(input.poolTypeIds.filter((typeId) =>
+    typeof typeId === 'string' && typeId.length > 0 && !reserved.has(typeId)
+  ))].sort();
+  const rng = createDungeonSeededRng(`${input.eventKey}:dungeon-enemy-loadout:${boundedWave}:v1`);
+  const selected: string[] = [];
+  const leaderTypeId = bossTypeId ?? miniBossTypeId;
+  if (leaderTypeId) selected.push(leaderTypeId);
+  const allowDuplicates = boundedWave > DUNGEON_ENEMY_DUPLICATE_START_WAVE;
+  const copies = new Map<string, number>();
+  while (selected.length < count && pool.length > 0) {
+    const candidates = pool.filter((typeId) => {
+      const used = copies.get(typeId) ?? 0;
+      return allowDuplicates ? used < DUNGEON_ENEMY_DUPLICATE_COPY_CAP : used === 0;
+    });
+    if (candidates.length === 0) break;
+    const typeId = candidates[Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))]!;
+    selected.push(typeId);
+    copies.set(typeId, (copies.get(typeId) ?? 0) + 1);
+  }
+  return selected;
 }

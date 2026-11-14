@@ -2,7 +2,7 @@
   "typeId": "BrokenGrowth",
   "title": "Broken Growth Dice",
   "attack": 30,
-  "health": 700,
+  "health": 720,
   "range": 4,
   "rarity": "Epic",
   "skills": [
@@ -13,7 +13,7 @@
       "modifiers": {
         "hasGrowth": true,
         "growthDelta": 1,
-        "growthChance": 0.5,
+        "growthChance": 0.6,
         "growthSuccessSfx": ["dice_growth_success_01", "dice_growth_success_02"],
         "growthFailedSfx": ["dice_growth_failed"]
       }

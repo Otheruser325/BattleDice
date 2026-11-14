@@ -70,6 +70,7 @@ export const serverConfig = Object.freeze({
   guestIdentityTtlSeconds: readInteger('GUEST_IDENTITY_TTL_SECONDS', 2_592_000, 3600, 31_536_000),
   identityRequestsPerMinute: readInteger('IDENTITY_REQUESTS_PER_MINUTE', 20, 1, 300),
   maxActors: readInteger('MAX_ACTORS', 512, 2, 5000),
+  maxActorsPerAddress: readInteger('MAX_ACTORS_PER_ADDRESS', 4, 1, 100),
   maxQueue: readInteger('MAX_QUEUE', 200, 1, 5000),
   maxLobbies: readInteger('MAX_LOBBIES', 100, 1, 5000),
   maxMatches: readInteger('MAX_MATCHES', 100, 1, 5000),

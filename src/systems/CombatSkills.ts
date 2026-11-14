@@ -4,6 +4,7 @@ import { getBoardSideCombatDistance, getGridChebyshevDistance } from './CombatRa
 import { formatCompact } from '../utils/FormatManager';
 import { secureChance, securePick } from '../utils/RandomManager';
 import { applyClassProgression } from './ClassProgression';
+import type { StatusEffectApplication } from './StatusEffects';
 
 export const MAX_DAMAGE_REDUCTION = 0.95;
 
@@ -27,6 +28,24 @@ export function getMaxHealthHealAmount(maxHealth: number, rate: number): number 
   return Math.max(1, Math.floor(max * normalizedRate));
 }
 
+export function resolveCombatEndHealAmount(maxHealth: number, currentHealth: number, rate: number): number {
+  const max = Number.isFinite(maxHealth) ? Math.max(0, maxHealth) : 0;
+  const current = Number.isFinite(currentHealth) ? Math.max(0, Math.min(max, currentHealth)) : 0;
+  const missing = Math.max(0, max - current);
+  return Math.min(getMaxHealthHealAmount(max, rate), missing);
+}
+
+export function resolveHealingFeedback(
+  maxHealth: number,
+  currentHealth: number,
+  amount: number
+): { total: number; applied: number } {
+  const max = Number.isFinite(maxHealth) ? Math.max(0, maxHealth) : 0;
+  const current = Number.isFinite(currentHealth) ? Math.max(0, Math.min(max, currentHealth)) : 0;
+  const total = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+  return { total, applied: Math.min(total, Math.max(0, max - current)) };
+}
+
 export function resolveMaxHealthGainCurrentHealth(
   currentHealth: number,
   previousMaxHealth: number,
@@ -40,18 +59,44 @@ export function resolveMaxHealthGainCurrentHealth(
 
 export type CombatFlowPhase = DiceSkillType | 'Attack';
 
-export function formatCombatSkillLabel(sourceName: string, skillType: DiceSkillType): string {
+export function formatCombatSkillTypeLabel(skillType: DiceSkillType): string {
   const label = skillType.replace(/([a-z])([A-Z])/g, '$1 $2');
-  return `${sourceName} (${label})`;
+  return label;
+}
+
+export function formatCombatSkillLabel(sourceName: string, skillType: DiceSkillType): string {
+  return `${sourceName} (${formatCombatSkillTypeLabel(skillType)})`;
 }
 
 export function formatActiveSkillActionLabel(ownerName: string, dieName: string, skillTitle: string | undefined, details: string): string {
   return `${ownerName} ${dieName} uses ${skillTitle?.trim() || 'active skill'}${details}!`;
 }
 
+export function formatCombatHealingActionLabel(
+  skillType: DiceSkillType | undefined,
+  targetName: string,
+  selfTarget = false
+): string {
+  const targetLabel = selfTarget ? 'itself' : targetName;
+  return skillType
+    ? `${formatCombatSkillTypeLabel(skillType)} heals ${targetLabel}`
+    : `Heals ${targetLabel}`;
+}
+
+export function formatCriticalSuffix(critical: boolean | undefined): string {
+  return critical ? ' (CRITICAL)' : '';
+}
+
+export function formatCombatAmount(amount: number, critical: boolean | undefined, resource?: string): string {
+  const label = resource?.trim();
+  return label
+    ? `${formatCompact(amount)} ${label}${formatCriticalSuffix(critical)}`
+    : `${formatCompact(amount)}${formatCriticalSuffix(critical)}`;
+}
+
 export function formatRicochetAggregationLabel(ownerName: string, dieName: string, action: 'attacks' | 'heals', amount: number, critical = false): string {
   const resource = action === 'heals' ? 'healing' : 'damage';
-  return `${ownerName} ${dieName} ${action} for ${formatCompact(amount)} total ${resource}${critical ? ' (CRITICAL)' : ''}!`;
+  return `${ownerName} ${dieName} ${action} for ${formatCombatAmount(amount, critical, `total ${resource}`)}`;
 }
 
 export interface CombatFlowContext {
@@ -153,17 +198,6 @@ export interface InfiltratorSkillEffect {
 export interface InfiltratorPlacement {
   tile: { row: number; col: number };
   targetBoardSide: 'player' | 'enemy';
-}
-
-export interface StatusEffectApplication {
-  source: DiceInstanceState;
-  target: DiceInstanceState;
-  effect: DiceStatusEffect;
-  duration: number;
-  damage?: number;
-  delta?: number;
-  rate?: number;
-  maxStacks?: number;
 }
 
 export interface SkillEffectResult {
@@ -429,7 +463,13 @@ function addStatusApplication(
   target: DiceInstanceState | undefined,
   pips: number
 ): void {
-  if (!target || target.isDestroyed) return;
+  const allFoesTarget: DiceInstanceState = {
+    ...source,
+    instanceId: `${source.instanceId}:all-foes`,
+    ownerId: source.ownerId === 'player' ? 'enemy' : 'player'
+  };
+  const applicationTarget = target ?? (meta.hitsAllFoes === true ? allFoesTarget : undefined);
+  if (!applicationTarget || applicationTarget.isDestroyed) return;
   const effect = meta.activeStatusEffect ?? meta.statusEffects?.find(Boolean);
   if (!effect) return;
   const triggerDuration = meta.activeDurationTurns > 0 ? meta.activeDurationTurns : undefined;
@@ -439,13 +479,14 @@ function addStatusApplication(
     : undefined;
   result.statusApplications = [...(result.statusApplications ?? []), {
     source,
-    target,
+    target: applicationTarget,
     effect,
     duration,
     damage: poisonDamage,
     delta: meta.activeAttackDelta !== 0 ? meta.activeAttackDelta : meta.attackDelta,
     rate: meta.armorShredRate,
-    maxStacks: meta.activeMaxStacks ?? meta.maxStacks
+    maxStacks: meta.activeMaxStacks ?? meta.maxStacks,
+    allFoes: meta.hitsAllFoes === true
   }];
 }
 
@@ -548,6 +589,38 @@ export function getInfiltratorSkillEffect(
 export function canSkillStrikeFirst(definition: DiceDefinition, classLevel: number): boolean {
   const skill = getValidSkillDefinitions(definition).find((candidate) => candidate.modifiers?.strikeFirst === true);
   return Boolean(skill && (getSkillLockClass(skill) === undefined || classLevel >= getSkillLockClass(skill)!));
+}
+
+export interface BasicAttackProjectileInput {
+  timedProjectiles?: number;
+  passiveProjectiles?: number;
+  dungeonCardProjectiles?: number;
+  rapidFireIncrease?: number;
+}
+
+export function getBasicAttackProjectileCount(input: BasicAttackProjectileInput): number {
+  const extra = (value: number | undefined) =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  const timed = typeof input.timedProjectiles === 'number' && Number.isFinite(input.timedProjectiles)
+    ? Math.max(1, Math.floor(input.timedProjectiles))
+    : 1;
+  return Math.max(1, timed + extra(input.passiveProjectiles) + extra(input.dungeonCardProjectiles) + extra(input.rapidFireIncrease));
+}
+
+export interface ExecutionRhythmBoost {
+  multiplier: number;
+  consume: boolean;
+}
+
+export function getExecutionRhythmBoost(input: { remaining?: number; damageMultiplier?: number }): ExecutionRhythmBoost {
+  const remaining = typeof input.remaining === 'number' && Number.isFinite(input.remaining)
+    ? Math.max(0, Math.floor(input.remaining))
+    : 0;
+  if (remaining <= 0) return { multiplier: 1, consume: false };
+  const configured = typeof input.damageMultiplier === 'number' && Number.isFinite(input.damageMultiplier)
+    ? input.damageMultiplier
+    : 2;
+  return { multiplier: Math.max(1, configured), consume: true };
 }
 
 export function chooseInfiltratorPlacement(

@@ -130,6 +130,13 @@ export interface DiceSkillRuntimeMeta extends DiceStatusEffectDurationProperties
   attackCountIncrease?: number;
   projectileCount?: number;
   projectileCountIncrease?: number;
+  acquireTarget?: boolean;
+  hasScope?: boolean;
+  scopeChance?: number;
+  scopeDamage?: number;
+  scopeDamageMult?: number;
+  scopeDamageIncreasePerStack?: number;
+  maxScopeStacks?: number;
   skillDuration?: number;
   unlockAtClass?: number;
   numAttacksBoosted?: number;
@@ -419,6 +426,40 @@ export function resolvePipScaledDamage(
   return Math.max(1, Math.ceil(baseDamage * effectiveRate));
 }
 
+export interface ScopeShotDamageInput {
+  basicDamage: number;
+  scopeDamage?: number;
+  scopeDamageMult?: number;
+  scopeDamageIncreasePerStack?: number;
+  scopeStacks?: number;
+}
+
+export function resolveScopeShotDamage(input: ScopeShotDamageInput): number {
+  const basicDamage = Number.isFinite(input.basicDamage) ? Math.max(1, input.basicDamage) : 1;
+  const fixedDamage = typeof input.scopeDamage === 'number' && Number.isFinite(input.scopeDamage) && input.scopeDamage > 0
+    ? input.scopeDamage
+    : undefined;
+  const multiplier = input.scopeDamageMult === undefined
+    ? 10
+    : typeof input.scopeDamageMult === 'number' && Number.isFinite(input.scopeDamageMult) && input.scopeDamageMult > 0
+      ? input.scopeDamageMult
+      : 1;
+  const baseDamage = fixedDamage ?? basicDamage * multiplier;
+  const perStack = typeof input.scopeDamageIncreasePerStack === 'number' && Number.isFinite(input.scopeDamageIncreasePerStack)
+    ? Math.max(0, input.scopeDamageIncreasePerStack)
+    : 0;
+  const stacks = typeof input.scopeStacks === 'number' && Number.isFinite(input.scopeStacks)
+    ? Math.max(0, Math.floor(input.scopeStacks))
+    : 0;
+  return Math.max(1, Math.floor(baseDamage * (1 + stacks * perStack)));
+}
+
+export function addScopeStack(currentStacks: number, maxStacks?: number): number {
+  const current = Number.isFinite(currentStacks) ? Math.max(0, Math.floor(currentStacks)) : 0;
+  if (typeof maxStacks !== 'number' || !Number.isFinite(maxStacks)) return current + 1;
+  return Math.min(Math.max(0, Math.floor(maxStacks)), current + 1);
+}
+
 export function getSkillLockClass(skill: DiceSkillDefinition | undefined | null): number | undefined {
   const value = getValidSkillModifier(skill?.modifiers)?.unlockAtClass;
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 15
@@ -586,6 +627,24 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
   const cardOrbitDamageRate = typeof rawCardOrbitDamageRate === 'number' && Number.isFinite(rawCardOrbitDamageRate)
     ? Math.max(0, rawCardOrbitDamageRate)
     : 0;
+  const acquireTarget = passiveModifiers.some((modifier) => (modifier as { acquireTarget?: boolean }).acquireTarget === true);
+  const scopeModifier = passiveModifiers.find((modifier) => (modifier as { hasScope?: boolean }).hasScope === true);
+  const hasScope = scopeModifier !== undefined;
+  const rateValue = (key: 'scopeChance' | 'scopeDamage' | 'scopeDamageMult' | 'scopeDamageIncreasePerStack' | 'maxScopeStacks') => {
+    const value = scopeModifier ? (scopeModifier as Record<string, unknown>)[key] : undefined;
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  };
+  const scopeChance = hasScope ? Math.max(0, Math.min(1, rateValue('scopeChance') ?? 1)) : 0;
+  const scopeDamage = (() => {
+    const value = rateValue('scopeDamage');
+    return value !== undefined && value > 0 ? value : undefined;
+  })();
+  const scopeDamageMult = hasScope ? (rateValue('scopeDamageMult') ?? 10) : undefined;
+  const scopeDamageIncreasePerStack = hasScope ? Math.max(0, rateValue('scopeDamageIncreasePerStack') ?? 0) : 0;
+  const maxScopeStacks = (() => {
+    const value = rateValue('maxScopeStacks');
+    return hasScope && value !== undefined ? Math.max(0, Math.floor(value)) : undefined;
+  })();
   const unleashCardOrbit = activeModifiers?.unleashCardOrbit === true;
   const sumModifier = (key: 'pipMatchAllyAttackDelta' | 'pipMatchFoeAttackDelta') => {
     const sum = allModifiers.reduce((total, modifier) => total + ((modifier as Record<typeof key, number | undefined>)[key] ?? 0), 0);
@@ -817,6 +876,13 @@ export function getRuntimeSkillMeta(definition: DiceDefinition | undefined, acti
     attackCountIncrease: maxAttackCountIncrease,
     projectileCount: passiveProjectileCount,
     projectileCountIncrease: maxProjectileCountIncrease,
+    acquireTarget,
+    hasScope,
+    scopeChance,
+    scopeDamage,
+    scopeDamageMult,
+    scopeDamageIncreasePerStack,
+    maxScopeStacks,
     hasCardOrbit: cardOrbitModifier !== undefined,
     cardOrbitCount,
     cardOrbitDamageRate,

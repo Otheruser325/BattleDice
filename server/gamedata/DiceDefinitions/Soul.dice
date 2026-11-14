@@ -2,7 +2,7 @@
   "typeId": "Soul",
   "title": "Soul Dice",
   "attack": 20,
-  "health": 640,
+  "health": 600,
   "range": 6,
   "rarity": "Legendary",
   "skills": [

@@ -44,6 +44,7 @@
     "targetingMode": "Nearest",
     "accent": "#9b6a3a",
     "recoveryRate": 1,
+	"attackSfx": "dice_druid_bear_attack",
     "skills": [
       {
         "type": "OnTransformed",

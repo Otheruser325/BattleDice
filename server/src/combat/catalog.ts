@@ -91,15 +91,19 @@ function normalizePoolDefinition(raw: unknown, expectedPoolType: string): PoolDe
 export class DiceCatalog {
   private readonly definitions = new Map<string, DiceDefinition>();
   private readonly pools = new Map<string, PoolDefinition>();
+  private readonly exclusive = new Set<string>();
 
   constructor(directory = DATA_DIRECTORY) {
     const flags = readJson<DiceFlags>(path.join(directory, 'Flags.json'));
     if (!Array.isArray(flags.fetchableTypeIds)) throw new Error('Dice catalog flags are malformed.');
 
+    const exclusiveEntriesList = exclusiveEntries(flags);
+    const exclusiveTypeIds = new Set(exclusiveEntriesList.map((entry) => entry.typeId));
     const entries = [
       ...flags.fetchableTypeIds.map((typeId) => ({ typeId, relativePath: `${typeId}.dice` })),
-      ...exclusiveEntries(flags)
+      ...exclusiveEntriesList
     ];
+    for (const typeId of exclusiveTypeIds) this.exclusive.add(typeId);
     for (const entry of entries) {
       const typeId = normalizeTypeId(entry.typeId);
       if (!typeId) continue;
@@ -135,6 +139,10 @@ export class DiceCatalog {
 
   has(typeId: string): boolean {
     return this.definitions.has(typeId);
+  }
+
+  isExclusive(typeId: string): boolean {
+    return this.exclusive.has(typeId);
   }
 
   typeIds(): string[] {

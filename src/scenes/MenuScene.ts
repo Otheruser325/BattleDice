@@ -114,7 +114,6 @@ export class MenuScene extends Phaser.Scene {
       this.cursorRefreshTimer?.destroy();
       this.cursorRefreshTimer = null;
       this.input.setDefaultCursor('default');
-      this.input.setCursor('default');
     });
   }
 
@@ -152,7 +151,7 @@ export class MenuScene extends Phaser.Scene {
     if (wantsBlockedCursor === this.lastTabCursor) return;
     this.lastTabCursor = wantsBlockedCursor;
     this.input.setDefaultCursor(wantsBlockedCursor ? 'not-allowed' : 'default');
-    this.input.setCursor(wantsBlockedCursor ? 'not-allowed' : 'default');
+    this.game.canvas.style.cursor = wantsBlockedCursor ? 'not-allowed' : 'default';
   }
 
   private openTab(tab: MenuTab) {

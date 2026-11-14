@@ -6,7 +6,7 @@ import type {
 } from '../types/game';
 import { getRuntimeSkillMeta, getRuntimeSkillMetaForTrigger, resolveDamage } from './DiceSkills';
 import { resolveReviveStats } from './CombatSkills';
-import { getCombatDistance } from './CombatRange';
+import { getCombatDistance, getFootprintAdjustedRange } from './CombatRange';
 import { secureChance, securePick } from '../utils/RandomManager';
 
 export type { MatchBattleState };
@@ -347,10 +347,11 @@ export function findAttackTarget(
   const mode = getRuntimeSkillMeta(attackerDef).targetingMode ?? 'Nearest';
 
   const footprintForDie = (die: DiceInstanceState) => definitions.get(die.typeId)?.footprint ?? 1;
+  const attackRange = getFootprintAdjustedRange(attackerDef.range, footprintForDie(attacker));
 
   const reachable = enemyDice
     .map((die) => ({ die, distance: getCombatDistance(attacker, die, footprintForDie) }))
-    .filter(({ distance }) => distance <= Math.max(1, attackerDef.range));
+    .filter(({ distance }) => distance <= attackRange);
 
   if (reachable.length === 0) return undefined;
 

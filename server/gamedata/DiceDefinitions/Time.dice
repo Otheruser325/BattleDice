@@ -9,7 +9,7 @@
     {
       "type": "Passive",
       "title": "Temporal Acceleration",
-      "description": "Ally dice matching this die's rolled pip count gain +1 attack count until the next turn.",
+      "description": "Ally dice matching this die's rolled pip count gain +{pipMatchAllyAttackDelta} attack count until the next turn.",
       "modifiers": {
         "pipMatchAllyAttackDelta": 1,
         "skillSfx": "dice_time_skill"
@@ -18,7 +18,7 @@
     {
       "type": "Passive",
       "title": "Temporal Dilation",
-      "description": "Enemy dice matching this die's rolled pip count gain -1 attack count until the next turn.",
+      "description": "Enemy dice matching this die's rolled pip count gain {pipMatchFoeAttackDelta} attack count until the next turn.",
       "modifiers": {
         "pipMatchFoeAttackDelta": -1,
         "skillSfx": "dice_time_skill"
@@ -41,6 +41,7 @@
             }
           },
           {
+            "description": "Enemy dice matching this die's rolled pip count lose 2 attack counts instead of the usual 1 until the next turn.",
             "modifiers": {
               "pipMatchFoeAttackDelta": -2
             }

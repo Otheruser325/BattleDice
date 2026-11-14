@@ -1,4 +1,7 @@
+import type { DiceCard } from './dice-cards.js';
+
 export type OwnerId = 'player' | 'enemy';
+export type RandomModeModifier = 'Classic' | 'Combanity' | 'Duality' | 'Necromancy' | 'DiceCard';
 export type DiceZone = 'hand' | 'board' | 'eliminated';
 export type TargetingMode = 'Nearest' | 'Furthest' | 'Strongest' | 'Weakest' | 'Random';
 export type SkillType =
@@ -164,6 +167,8 @@ export interface CombatDie {
   boostedAttacks: number;
   transformIndex?: number;
   transformTurns?: number;
+  combanityMultiplier?: number;
+  combanityReduction?: number;
 }
 
 export interface CombatState {
@@ -176,6 +181,7 @@ export interface CombatState {
   lockStatus?: Record<string, { effect: StatusEffect; turns: number; attackDelta?: number }>;
   gridLocks: Record<OwnerId, Record<string, number>>;
   pools: CombatPool[];
+  diceCards?: Record<OwnerId, DiceCard[]>;
 }
 
 export interface ClientBattleDie {
@@ -237,4 +243,6 @@ export interface MatchRules {
   useLevelling: boolean;
   turnLimit: number;
   randomMode: boolean;
+  randomizeLoadout?: boolean;
+  randomModifier?: RandomModeModifier;
 }

@@ -108,9 +108,9 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function fromHex(value: string): Uint8Array | undefined {
+function fromHex(value: string): Uint8Array<ArrayBuffer> | undefined {
   if (value.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(value)) return undefined;
-  const bytes = new Uint8Array(value.length / 2);
+  const bytes = new Uint8Array(new ArrayBuffer(value.length / 2));
   for (let i = 0; i < bytes.length; i += 1) {
     bytes[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16);
   }

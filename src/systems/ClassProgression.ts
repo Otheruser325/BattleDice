@@ -20,11 +20,11 @@ export function resolveStatValue(value: number | undefined, fallback: number): n
 }
 
 export function scaleStatValue(base: number | undefined, fallback: number, multiplier: number | undefined): number {
-  return Math.max(1, Math.round(resolveStatValue(base, fallback) * resolveStatMultiplier(multiplier)));
+  return Math.max(1, Math.round(resolveStatValue(base, resolveStatValue(fallback, 1)) * resolveStatMultiplier(multiplier)));
 }
 
 export function applyStatModifiers(base: number | undefined, fallback: number, delta: number | undefined, multiplier: number | undefined): number {
-  const resolvedBase = resolveStatValue(base, fallback);
+  const resolvedBase = resolveStatValue(base, resolveStatValue(fallback, 1));
   const resolvedDelta = typeof delta === 'number' && Number.isFinite(delta) ? delta : 0;
   return Math.max(1, Math.round((resolvedBase + resolvedDelta) * resolveStatMultiplier(multiplier)));
 }
@@ -71,6 +71,8 @@ const PERCENT_MODIFIER_KEYS = new Set<string>([
   'criticalDamageIncrease',
   'damageRatePerKill',
   'growthChance',
+  'scopeChance',
+  'scopeDamageIncreasePerStack',
   'plaguedDieHealth',
   'reviveHealth',
   'reviveAttack',
@@ -176,7 +178,11 @@ function getModifier(skill: DiceSkillDefinition | undefined): DiceSkillModifier 
 }
 
 function getCombinedModifiers(definition: DiceDefinition): DiceSkillModifier {
-  return definition.skills.reduce((acc, skill) => ({ ...acc, ...(skill.modifiers ?? {}) }), {} as DiceSkillModifier);
+  return getDefinitionSkills(definition).reduce((acc, skill) => (
+    skill && typeof skill === 'object'
+      ? { ...acc, ...(skill.modifiers ?? {}) }
+      : acc
+  ), {} as DiceSkillModifier);
 }
 
 export function getClassBenefitValue(series: number[] | undefined, classLevel: number): number | undefined {
@@ -355,7 +361,8 @@ function resolveDescriptionPlaceholder(
     let catalogValue = getPathValue(source, path);
     if (catalogValue === undefined || catalogValue === null) return undefined;
     if (scope === 'poolDefinitions' && path === 'damage' && typeof catalogValue === 'number') {
-      catalogValue = resolvePoolDamage(catalogValue, context?.classLevel ?? 1, context?.isBoss ?? definition.isBoss === true);
+      const poolDamage = resolvePoolDamage(catalogValue, context?.classLevel ?? 1, context?.isBoss ?? definition.isBoss === true);
+      catalogValue = Math.max(1, Math.floor(poolDamage * Math.max(1, skillDamageMultiplier)));
     }
     return typeof catalogValue === 'string'
       ? catalogValue
@@ -389,16 +396,17 @@ function renderSkillDescription(
 
 export function getClassScaledSkillDescription(
   definition: DiceDefinition,
-  skill: DiceSkillDefinition | undefined = definition.skills[0],
+  skill?: DiceSkillDefinition,
   skillDamageMultiplier = 1,
   sourceModifiers?: DiceSkillModifier,
   context?: SkillDescriptionContext
 ): string {
-  const description = skill?.description ?? '';
-  if (skill?.descriptionLocked === true && !description.includes('{')) return description;
+  const resolvedSkill = skill ?? getDefinitionSkills(definition)[0] ?? undefined;
+  const description = resolvedSkill?.description ?? '';
+  if (resolvedSkill?.descriptionLocked === true && !description.includes('{')) return description;
   const modifiers = {
     ...(sourceModifiers ?? {}),
-    ...getModifier(skill)
+    ...getModifier(resolvedSkill)
   } as DiceSkillModifier;
   return renderSkillDescription(description, definition, modifiers, skillDamageMultiplier, context);
 }
@@ -454,6 +462,7 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     ? BOSS_CLASS_STAT_MULTIPLIER ** (boundedClassLevel - 1)
     : CLASS_UP_STAT_MULTIPLIER ** (boundedClassLevel - 1);
   const scaleSkill = (skill: DiceSkillDefinition): DiceSkillDefinition => {
+    if (!skill || typeof skill !== 'object') return skill;
     if (!skill.modifiers) return skill;
     const modifiers = scaleSkillDamageModifiers(skill.modifiers, multiplier);
     applyClassBenefits(skill, boundedClassLevel, modifiers);
@@ -465,7 +474,9 @@ export function applyClassProgression(definition: DiceDefinition, classLevel: nu
     };
   };
 
-  const skills = definition.skills.map(scaleSkill);
+  const skills = getDefinitionSkills(definition)
+    .map((skill) => (skill && typeof skill === 'object' ? scaleSkill(skill) : skill))
+    .filter((skill): skill is DiceSkillDefinition => Boolean(skill && typeof skill === 'object'));
 
   return {
     ...definition,
@@ -493,11 +504,17 @@ export interface ClassProgressionPreview {
 }
 
 export function getClassMultiplier(classLevel: number): number {
-  return CLASS_UP_STAT_MULTIPLIER ** Math.max(0, Math.min(MAX_CLASS_LEVEL, classLevel) - 1);
+  const boundedClassLevel = Number.isFinite(classLevel)
+    ? Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(classLevel)))
+    : 1;
+  return CLASS_UP_STAT_MULTIPLIER ** (boundedClassLevel - 1);
 }
 
 export function getBossClassMultiplier(classLevel: number): number {
-  return BOSS_CLASS_STAT_MULTIPLIER ** Math.max(0, Math.floor(classLevel) - 1);
+  const boundedClassLevel = Number.isFinite(classLevel)
+    ? Math.max(1, Math.floor(classLevel))
+    : 1;
+  return BOSS_CLASS_STAT_MULTIPLIER ** (boundedClassLevel - 1);
 }
 
 export function resolvePoolDamage(baseDamage: number | undefined, classLevel: number, isBoss: boolean): number {

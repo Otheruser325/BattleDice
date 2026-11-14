@@ -1,7 +1,7 @@
 {
   "typeId": "Meteor",
   "title": "Meteor Dice",
-  "attack": 18,
+  "attack": 20,
   "health": 640,
   "range": 5,
   "rarity": "Epic",
@@ -55,7 +55,7 @@
           {
             "title": "Triple Strike",
             "description": "Throws {meteorCount} striking meteors at random tiles on the opposing board, causing {meteorDamage} damage in a plus pattern. Drops lava pools on the hit tile and adjacent tiles in a plus pattern for {meteorPoolDuration} turns. Foes standing in lava take {poolDefinitions[meteorPoolType].damage} damage at the start of combat.",
-            "manaNeeded": 10,
+            "manaNeeded": 12,
             "modifiers": {
               "meteorCount": 3,
               "meteorRandomOrientation": true

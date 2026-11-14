@@ -2,17 +2,21 @@ import { WSClient } from '@rivalis/browser';
 import { BUILD_ENV } from '../utils/BuildEnv';
 import { DebugManager } from '../utils/DebugManager';
 import type { MatchBattleState } from '../types/game';
+import type { DiceCard } from './DiceCards';
+import type { DungeonModifier } from './DungeonEvent';
 
 export type ArenaMultiplayerTopic =
   | 'arena:matchmaking:join'
+  | 'arena:matchmaking:cancel'
   | 'arena:matchmaking:state'
   | 'arena:multiplayer:create'
   | 'arena:multiplayer:join'
+  | 'arena:multiplayer:leave'
   | 'arena:multiplayer:state'
   | 'arena:turn:sync'
   | 'arena:turn:state';
 
-type ConnectionState = 'disabled' | 'connecting' | 'connected' | 'queued' | 'lobby' | 'matched' | 'disconnected' | 'failed';
+type ConnectionState = 'disabled' | 'connecting' | 'connected' | 'queued' | 'lobby' | 'matched' | 'idle' | 'disconnected' | 'failed';
 function readTrimmedEnv(key: string): string {
   const value = BUILD_ENV[key];
   return typeof value === 'string' ? value.trim() : '';
@@ -54,6 +58,8 @@ export interface ArenaMultiplayerRules {
   useLevelling: boolean;
   turnLimit: number;
   randomMode: boolean;
+  randomizeLoadout: boolean;
+  randomModifier?: DungeonModifier;
 }
 
 export interface ArenaMultiplayerLoadoutEntry {
@@ -80,17 +86,23 @@ export interface ArenaMultiplayerMatchSetup {
   phase: 'placement' | 'combat' | 'complete';
   turn: number;
   deadlineAt: number;
+  selfReady: boolean;
   state: MatchBattleState;
   pips: Record<string, number>;
   record?: string[];
   result?: 'victory' | 'defeat' | 'draw';
   classLevels: Record<string, number>;
   talentIndices: Record<string, number | null>;
+  diceCards?: Record<'player' | 'enemy', DiceCard[]>;
+  diceCardOffer?: DiceCard[];
+  diceCardPicksUsed?: number;
 }
 
 export interface ArenaMultiplayerCombatEvent {
   accepted?: boolean;
   status: 'accepted' | 'waiting' | 'resolved' | 'rejected' | 'failed';
+  requestId?: string;
+  selfReady?: boolean;
   message?: string;
   matchId?: string;
   phase?: 'placement' | 'combat' | 'complete';
@@ -102,11 +114,14 @@ export interface ArenaMultiplayerCombatEvent {
   pips?: Record<string, number>;
   classLevels?: Record<string, number>;
   talentIndices?: Record<string, number | null>;
+  diceCards?: Record<'player' | 'enemy', DiceCard[]>;
+  diceCardOffer?: DiceCard[];
+  diceCardPicksUsed?: number;
   events?: string[];
 }
 
 type ArenaMultiplayerServerEvent = {
-  status?: 'queued' | 'lobby' | 'matched' | 'failed' | 'disconnected';
+  status?: 'queued' | 'lobby' | 'matched' | 'failed' | 'disconnected' | 'idle';
   message?: string;
   lobbyCode?: string;
   roomId?: string;
@@ -126,6 +141,7 @@ export interface ArenaMultiplayerHandlers {
 interface PendingTurnResolution {
   resolve: (resolution: ArenaMultiplayerTurnResolution) => void;
   timeout: ReturnType<typeof setTimeout>;
+  requestId: string;
 }
 
 export class ArenaMultiplayerClient {
@@ -264,6 +280,18 @@ export class ArenaMultiplayerClient {
     this.sendJoin(options);
   }
 
+  cancelMatchmaking() {
+    this.pendingJoin = null;
+    if (!this.client || !this.socketOpen) return;
+    this.client.send('arena:matchmaking:cancel', new Uint8Array());
+  }
+
+  leaveSession() {
+    this.pendingJoin = null;
+    if (!this.client || !this.socketOpen) return;
+    this.client.send('arena:multiplayer:leave', new Uint8Array());
+  }
+
   async submitTurn(payload: unknown, timeoutMs = 8_000): Promise<ArenaMultiplayerTurnResolution> {
     if (!this.configured) {
       return { accepted: false, status: 'failed', message: 'Multiplayer server is not configured.' };
@@ -275,13 +303,18 @@ export class ArenaMultiplayerClient {
       return { accepted: false, status: 'failed', message: 'A turn is already awaiting server confirmation.' };
     }
 
+    const requestId = this.createRequestId();
+    const request = payload && typeof payload === 'object'
+      ? { ...payload, requestId }
+      : payload;
+
     return new Promise<ArenaMultiplayerTurnResolution>((resolve) => {
       const timeout = setTimeout(() => {
         if (this.pendingTurnResolution?.timeout === timeout) this.pendingTurnResolution = null;
         resolve({ accepted: false, status: 'failed', message: 'Multiplayer server did not confirm the turn in time.' });
       }, timeoutMs);
-      this.pendingTurnResolution = { resolve, timeout };
-      this.client!.send('arena:turn:sync', this.encodeJson(payload));
+      this.pendingTurnResolution = { resolve, timeout, requestId };
+      this.client!.send('arena:turn:sync', this.encodeJson(request));
     });
   }
 
@@ -314,6 +347,10 @@ export class ArenaMultiplayerClient {
 
   private scheduleReconnect(onStatus?: (status: ArenaMultiplayerStatus) => void): void {
     if (this.manualDisconnect || !this.configured || this.reconnectTimer) return;
+    if (this.reconnectAttempt >= this.getReconnectMaxAttempts()) {
+      this.setStatus('failed', 'Rivalis reconnect attempts exhausted.', onStatus);
+      return;
+    }
     this.reconnectAttempt += 1;
     const delay = Math.min(1_000 * (2 ** Math.min(this.reconnectAttempt - 1, 4)), 15_000);
     this.setStatus('connecting', `Reconnecting to Rivalis (attempt ${this.reconnectAttempt})...`, onStatus);
@@ -341,7 +378,7 @@ export class ArenaMultiplayerClient {
     const name = displayName?.trim();
     if (!this.identityEndpoint || !name) return;
     try {
-      const response = await fetch(this.identityEndpoint, {
+      const response = await this.fetchWithTimeout(this.identityEndpoint, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -362,7 +399,7 @@ export class ArenaMultiplayerClient {
     if (allowRuntime && this.runtimeTicket) return this.runtimeTicket;
     if (!this.ticketEndpoint) return '';
     try {
-      const response = await fetch(this.ticketEndpoint, {
+      const response = await this.fetchWithTimeout(this.ticketEndpoint, {
         method: 'GET',
         credentials: 'include',
         headers: { Accept: 'application/json' }
@@ -380,6 +417,22 @@ export class ArenaMultiplayerClient {
     }
   }
 
+  private async fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs = 8_000): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private createRequestId(): string {
+    const randomId = globalThis.crypto?.randomUUID?.();
+    if (randomId) return randomId;
+    return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+  }
+
   private handleServerState(payload: Uint8Array, onStatus?: (status: ArenaMultiplayerStatus) => void) {
     try {
       const event = JSON.parse(this.decoder.decode(payload)) as ArenaMultiplayerServerEvent;
@@ -391,6 +444,10 @@ export class ArenaMultiplayerClient {
         if (event.match) this.handlers.onMatch?.(event.match);
       } else if (event.status === 'failed') this.setStatus('failed', event.message ?? 'Rivalis multiplayer request failed.', onStatus, { lobbyCode, roomId: event.roomId });
       else if (event.status === 'disconnected') this.setStatus('disconnected', event.message ?? 'Rivalis multiplayer session disconnected.', onStatus, { lobbyCode, roomId: event.roomId });
+      else if (event.status === 'idle') {
+        this.pendingJoin = null;
+        this.setStatus('idle', event.message ?? 'No active Rivalis session.', onStatus, { lobbyCode: '', roomId: event.roomId });
+      }
       else this.debug.warn('Unknown Rivalis state payload.', event);
     } catch {
       const message = this.decoder.decode(payload);
@@ -417,6 +474,15 @@ export class ArenaMultiplayerClient {
       return;
     }
     const resolution: ArenaMultiplayerTurnResolution = { ...event, accepted: event.accepted === true };
+    const pending = this.pendingTurnResolution;
+    if (pending && resolution.requestId !== pending.requestId) {
+      if (resolution.requestId && resolution.status !== 'resolved') {
+        this.debug.warn('Ignoring a stale Rivalis turn resolution.', { expected: pending.requestId, received: resolution.requestId });
+        return;
+      }
+      this.handlers.onCombat?.(resolution);
+      return;
+    }
     this.resolvePendingTurn(resolution);
     this.handlers.onCombat?.(resolution);
   }

@@ -39,9 +39,17 @@ function normalizeProgress(value: Partial<DungeonProgress> | null | undefined, t
   };
 }
 
-function saveProgress(scene: Phaser.Scene, progress: DungeonProgress): DungeonProgress {
+function writeProgress(scene: Phaser.Scene, progress: DungeonProgress): boolean {
   scene.registry.set(REGISTRY_KEY, progress);
-  writeIntegrityChecked(STORAGE_KEY, progress);
+  try {
+    return writeIntegrityChecked(STORAGE_KEY, progress);
+  } catch {
+    return false;
+  }
+}
+
+function saveProgress(scene: Phaser.Scene, progress: DungeonProgress): DungeonProgress {
+  writeProgress(scene, progress);
   return progress;
 }
 
@@ -102,7 +110,12 @@ export function getDungeonProgress(scene: Phaser.Scene): DungeonProgress {
 export function consumeDungeonTicket(scene: Phaser.Scene, now = new Date()): DungeonProgress | null {
   const progress = getDungeonProgress(scene);
   if (progress.ticketDate !== todayKey(now) || progress.ticketsRemaining <= 0) return null;
-  return saveProgress(scene, { ...progress, ticketsRemaining: progress.ticketsRemaining - 1 });
+  const next = { ...progress, ticketsRemaining: progress.ticketsRemaining - 1 };
+  if (!writeProgress(scene, next)) {
+    scene.registry.set(REGISTRY_KEY, progress);
+    return null;
+  }
+  return next;
 }
 
 export function grantDungeonTickets(scene: Phaser.Scene, amount: number): DungeonProgress {
@@ -159,16 +172,160 @@ export function saveDungeonRun(scene: Phaser.Scene, run: DungeonRunSave): boolea
   const normalized = normalizeDungeonRun(run);
   if (!normalized) return false;
   scene.registry.set(RUN_REGISTRY_KEY, normalized);
+  return writeVerified(RUN_STORAGE_KEY, normalized);
+}
+
+export function clearDungeonRun(scene: Phaser.Scene): boolean {
+  scene.registry.remove(RUN_REGISTRY_KEY);
   try {
-    return writeIntegrityChecked(RUN_STORAGE_KEY, normalized);
+    if (typeof localStorage === 'undefined') return true;
+    localStorage.removeItem(RUN_STORAGE_KEY);
+    return localStorage.getItem(RUN_STORAGE_KEY) === null;
   } catch {
     return false;
   }
 }
 
-export function clearDungeonRun(scene: Phaser.Scene): void {
-  scene.registry.remove(RUN_REGISTRY_KEY);
+const CARD_SPEND_STORAGE_KEY = 'arena:dungeonCardSpend';
+const CARD_SPEND_REGISTRY_KEY = 'arena:dungeonCardSpend';
+
+export interface DungeonCardSpend {
+  eventKey: string;
+  wave: number;
+  turn: number;
+  cost: number;
+  shufflesUsed: number;
+  walletBefore?: number;
+  walletAfter?: number;
+  debited?: boolean;
+}
+
+function writeVerified<T>(key: string, value: T): boolean {
   try {
-    if (typeof localStorage !== 'undefined') localStorage.removeItem(RUN_STORAGE_KEY);
+    if (!writeIntegrityChecked(key, value)) return false;
+    return JSON.stringify(readIntegrityChecked<T>(key)) === JSON.stringify(value);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeDungeonCardSpend(value: Partial<DungeonCardSpend> | null | undefined): DungeonCardSpend | null {
+  if (!value || typeof value !== 'object') return null;
+  if (typeof value.eventKey !== 'string' || value.eventKey.length === 0) return null;
+  const cost = Math.max(0, Math.floor(Number(value.cost) || 0));
+  if (cost <= 0) return null;
+  const walletBefore = Number.isFinite(Number(value.walletBefore))
+    ? Math.max(0, Math.floor(Number(value.walletBefore)))
+    : undefined;
+  const walletAfter = Number.isFinite(Number(value.walletAfter))
+    ? Math.max(0, Math.floor(Number(value.walletAfter)))
+    : undefined;
+  return {
+    eventKey: value.eventKey,
+    wave: Math.max(1, Math.min(DUNGEON_MAX_WAVES, Math.floor(Number(value.wave) || 1))),
+    turn: Math.max(0, Math.floor(Number(value.turn) || 0)),
+    cost,
+    shufflesUsed: Math.max(0, Math.floor(Number(value.shufflesUsed) || 0)),
+    ...(walletBefore !== undefined ? { walletBefore } : {}),
+    ...(walletAfter !== undefined ? { walletAfter } : {}),
+    ...(value.debited === true ? { debited: true } : {})
+  };
+}
+
+export function beginDungeonCardSpend(scene: Phaser.Scene, spend: Partial<DungeonCardSpend>): DungeonCardSpend | null {
+  if (getDungeonCardSpend(scene)) return null;
+  const normalized = normalizeDungeonCardSpend(spend);
+  if (!normalized) return null;
+  if (!writeVerified(CARD_SPEND_STORAGE_KEY, normalized)) return null;
+  scene.registry.set(CARD_SPEND_REGISTRY_KEY, normalized);
+  return normalized;
+}
+
+export function markDungeonCardSpendDebited(scene: Phaser.Scene, spend: DungeonCardSpend): DungeonCardSpend | null {
+  const current = getDungeonCardSpend(scene);
+  if (!current) return null;
+  const normalized = normalizeDungeonCardSpend({ ...current, cost: spend.cost, shufflesUsed: spend.shufflesUsed, debited: true });
+  if (!normalized || !writeVerified(CARD_SPEND_STORAGE_KEY, normalized)) return null;
+  scene.registry.set(CARD_SPEND_REGISTRY_KEY, normalized);
+  return normalized;
+}
+
+export function getDungeonCardSpend(scene: Phaser.Scene): DungeonCardSpend | null {
+  const cached = scene.registry.get(CARD_SPEND_REGISTRY_KEY) as Partial<DungeonCardSpend> | undefined;
+  if (cached) return normalizeDungeonCardSpend(cached);
+  try {
+    return normalizeDungeonCardSpend(readIntegrityChecked<Partial<DungeonCardSpend>>(CARD_SPEND_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function clearDungeonCardSpend(scene: Phaser.Scene): void {
+  scene.registry.remove(CARD_SPEND_REGISTRY_KEY);
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(CARD_SPEND_STORAGE_KEY);
   } catch {}
+}
+
+export function discardDungeonRunCache(scene: Phaser.Scene): void {
+  scene.registry.remove(RUN_REGISTRY_KEY);
+}
+
+export function resolveDungeonCardSpendRefund(input: {
+  spend: DungeonCardSpend | null;
+  eventKey: string;
+  wave: number;
+  savedShufflesUsed: number;
+}): number {
+  const spend = normalizeDungeonCardSpend(input.spend);
+  if (!spend) return 0;
+  if (spend.eventKey !== input.eventKey) return spend.cost;
+  // A later saved wave can still prove the charge; the cumulative shuffle count is the authority.
+  const savedShufflesUsed = Number.isFinite(input.savedShufflesUsed)
+    ? Math.max(0, Math.floor(input.savedShufflesUsed))
+    : 0;
+  return savedShufflesUsed < spend.shufflesUsed ? spend.cost : 0;
+}
+
+export function resolveDungeonCardWalletRefund(spend: DungeonCardSpend | null, currentDiamonds: number): number {
+  const normalized = normalizeDungeonCardSpend(spend);
+  if (!normalized) return 0;
+  if (normalized.debited === true) return normalized.cost;
+  if (normalized.walletBefore === undefined) return normalized.cost;
+  const current = Number.isFinite(currentDiamonds) ? Math.max(0, Math.floor(currentDiamonds)) : 0;
+  if (normalized.walletAfter !== undefined && current <= normalized.walletAfter) return normalized.cost;
+  return Math.min(normalized.cost, Math.max(0, normalized.walletBefore - current));
+}
+
+export interface DungeonCardRefundSettlement {
+  refunded: number;
+  pending: boolean;
+  clear: boolean;
+}
+
+/**
+ * Applies a verified refund and reports whether the escrow may be cleared.
+ * Escrow stays on disk when the wallet write fails so a resumed run can retry it.
+ */
+export function applyDungeonCardSpendRefund(input: {
+  spend: DungeonCardSpend | null;
+  eventKey: string;
+  wave: number;
+  savedShufflesUsed: number;
+  currentDiamonds: number;
+  persistRefund: (nextDiamonds: number) => boolean;
+}): DungeonCardRefundSettlement {
+  const committed = resolveDungeonCardSpendRefund({
+    spend: input.spend,
+    eventKey: input.eventKey,
+    wave: input.wave,
+    savedShufflesUsed: input.savedShufflesUsed
+  });
+  if (committed <= 0) return { refunded: 0, pending: false, clear: true };
+  const refund = resolveDungeonCardWalletRefund(input.spend, input.currentDiamonds);
+  if (refund <= 0) return { refunded: 0, pending: false, clear: true };
+  if (!input.persistRefund(input.currentDiamonds + refund)) {
+    return { refunded: 0, pending: true, clear: false };
+  }
+  return { refunded: refund, pending: false, clear: true };
 }

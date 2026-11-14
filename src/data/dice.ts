@@ -201,14 +201,15 @@ function readStored<T>(key: string): T | undefined {
   }
 }
 
-function writeStored<T>(key: string, value: T) {
-  if (INTEGRITY_CRITICAL_KEYS.has(key)) {
-    writeIntegrityChecked(key, value);
-    return;
-  }
+function writeStored<T>(key: string, value: T): boolean {
+  if (INTEGRITY_CRITICAL_KEYS.has(key)) return writeIntegrityChecked(key, value);
   try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+    if (typeof localStorage === 'undefined') return false;
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export type DefaultLoadoutTypeId = (typeof DEFAULT_LOADOUT)[number];
@@ -756,10 +757,15 @@ export function getDiamonds(scene: Phaser.Scene): number {
   return diamonds;
 }
 
-export function setDiamonds(scene: Phaser.Scene, amount: number) {
+export function setDiamonds(scene: Phaser.Scene, amount: number): boolean {
   const next = Math.max(0, Math.floor(amount));
   scene.registry.set(DIAMONDS_KEY, next);
-  writeStored(DIAMONDS_KEY, next);
+  try {
+    if (!writeStored(DIAMONDS_KEY, next)) return false;
+    return readIntegrityChecked<number>(DIAMONDS_KEY) === next;
+  } catch {
+    return false;
+  }
 }
 
 export interface ShopOffer {

@@ -47,8 +47,12 @@ export function getClientAddress(request: IncomingMessage, trustProxy: boolean):
 
   const forwardedHeader = request.headers['x-forwarded-for'];
   const forwarded = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
-  const candidate = forwarded?.split(',')[0]?.trim();
-  return candidate && isIP(candidate) !== 0 ? candidate : remote;
+  const candidate = forwarded
+    ?.split(',')
+    .map((value) => value.trim())
+    .reverse()
+    .find((value) => isIP(value) !== 0);
+  return normalizeAddress(candidate) ?? remote;
 }
 
 function normalizeAddress(value: string | undefined): string | null {

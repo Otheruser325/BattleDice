@@ -15,7 +15,7 @@ Guest identity is a signed, `HttpOnly` cookie containing a stable pseudonymous p
 | `GET /api/rivalis-ticket` | Issues a signed ticket bound to an existing guest identity; `401` without one |
 | `WS /ws` | Rivalis WebSocket endpoint; ticket is sent as `Sec-WebSocket-Protocol` |
 
-The identity and ticket endpoints are rate-limited by client IP and accept only exact configured origins. Ticket issuance requires the signed guest cookie; it does not create a new identity. Tickets are single-use at WebSocket authentication, and the client requests a fresh ticket before every reconnect. WebSocket connections are origin-checked at the HTTP upgrade, frame-capped, heartbeat-checked, and rate-limited per actor by Rivalis.
+The identity endpoint is rate-limited by client IP and both endpoints accept only exact configured origins. Ticket issuance is limited per player identity so NAT peers do not share a budget, and requires the signed guest cookie; it does not create a new identity. Tickets are single-use at WebSocket authentication, and the upgrade verifies the ticket's IP claim against the peer address. The client requests a fresh ticket before every reconnect. WebSocket connections are origin-checked at the HTTP upgrade, frame-capped, heartbeat-checked, and rate-limited per actor by Rivalis.
 
 ## Local setup
 
@@ -98,11 +98,12 @@ The current room state is in memory. Run one Fly machine only; horizontal scalin
 | `ALLOWED_ORIGINS` | local Vite origins | Required in production; comma-separated exact origins |
 | `TICKET_SECRET` | ephemeral in development | Required in production; at least 32 bytes |
 | `TICKET_TTL_SECONDS` | `7200` | 60-86400 seconds |
-| `TICKET_REQUESTS_PER_MINUTE` | `30` | Per client IP |
+| `TICKET_REQUESTS_PER_MINUTE` | `30` | Per player identity, so NAT peers do not share a limit |
 | `GUEST_IDENTITY_TTL_SECONDS` | `2592000` | 1 hour-365 days; guest cookie lifetime |
 | `IDENTITY_REQUESTS_PER_MINUTE` | `20` | Per client IP |
-| `TRUST_PROXY` | `0` | Set to `1` only behind a trusted proxy such as Fly |
+| `TRUST_PROXY` | `0` | Set to `1` only behind a trusted proxy such as Fly; the rightmost forwarded address is used |
 | `MAX_ACTORS` | `512` | Global Rivalis room capacity |
+| `MAX_ACTORS_PER_ADDRESS` | `4` | Concurrent WebSocket actors from one client address |
 | `MAX_QUEUE` | `200` | Matchmaking queue cap |
 | `MAX_LOBBIES` | `100` | Private lobby cap |
 | `MAX_MATCHES` | `100` | Active match cap |
@@ -115,7 +116,7 @@ The current room state is in memory. Run one Fly machine only; horizontal scalin
 
 ## Protocol notes
 
-Client join messages are validated for mode, action, ruleset, turn limit, exactly five unique loadout dice, and a six-character lobby code from the client alphabet. They do not carry a display name or player ID. The server takes both from the signed ticket, whose values came from the signed guest cookie.
+Client join messages are validated for mode, action, ruleset, turn limit, exactly five unique loadout dice, and a six-character lobby code from the client alphabet. They do not carry a display name or player ID. The server takes both from the signed ticket, whose values came from the signed guest cookie. `arena:matchmaking:cancel` removes a queue entry and `arena:multiplayer:leave` closes a lobby or forfeits an active match. Turn submissions may carry a `requestId`; the server echoes it on waiting, rejected, and resolved replies so a late reply cannot resolve the next submission. Completed matches stay available to a disconnected player until they reconnect or the match TTL expires.
 
 Turn messages are parsed and checked for turn number, instance/type identity, board bounds, duplicate positions, ownership, and loadout membership. Only the acting player's own dice are accepted. When both players ready up, or when the 30-second timer expires, the server auto-places any remaining dice and resolves combat deterministically.
 

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { SettingsStore } from '../systems/SettingsStore';
 import { withBasePath } from './BuildEnv';
-import { securePick } from './RandomManager';
+import { SecureShuffleBag } from './RandomManager';
 
 export const AUDIO_KEYS = {
   menuMusic: 'menu-music',
@@ -35,6 +35,8 @@ export const AUDIO_KEYS = {
   leonMightyRoar: 'dice_leon_mighty_roar',
   leonFuriousClaw: 'dice_leon_furious_claw',
   soulHarvest: 'dice_soul_skill_01',
+  sniperLockOn: 'dice_sniper_skill_lockon',
+  sniperShoot: 'dice_sniper_skill_shoot',
   deathWave: 'death_wave',
   bossBerserk: 'enhanced_death_wave'
 } as const;
@@ -54,6 +56,7 @@ export class AudioManager {
   private static currentMusicRate = 1;
   private static currentMusicDetune = 0;
   private static currentMusicMuted = false;
+  private static readonly sfxBags = new Map<string, SecureShuffleBag<string>>();
 
   static preload(scene: Phaser.Scene) {
     scene.load.audio(AUDIO_KEYS.menuMusic, withBasePath('assets/music/dice_league.mp3'));
@@ -90,6 +93,8 @@ export class AudioManager {
     scene.load.audio('dice_death_skill_01', withBasePath('assets/audio/dice/dice_death_skill_01.ogg'));
     scene.load.audio('dice_meteor_skill', withBasePath('assets/audio/dice/dice_meteor_skill.ogg'));
     scene.load.audio('dice_soul_skill_01', withBasePath('assets/audio/dice/dice_soul_skill_01.ogg'));
+    scene.load.audio(AUDIO_KEYS.sniperLockOn, withBasePath('assets/audio/dice/dice_sniper_skill_lockon.ogg'));
+    scene.load.audio(AUDIO_KEYS.sniperShoot, withBasePath('assets/audio/dice/dice_sniper_skill_shoot.ogg'));
     scene.load.audio('dice_wind_skill', withBasePath('assets/audio/dice/dice_wind_skill.ogg'));
     scene.load.audio('dice_fire_skill', withBasePath('assets/audio/dice/dice_fire_skill.ogg'));
     scene.load.audio('dice_ice_skill', withBasePath('assets/audio/dice/dice_ice_skill.ogg'));
@@ -155,9 +160,20 @@ export class AudioManager {
   static playSfx(scene: Phaser.Scene, keys: string | readonly string[], config: Phaser.Types.Sound.SoundConfig = {}) {
     if (!SettingsStore.get(scene).sfx) return;
     const candidates = typeof keys === 'string' ? [keys] : keys;
-    const available = candidates.filter((key) => scene.cache.audio.exists(key));
+    const available = [...new Set(candidates.filter((key) => scene.cache.audio.exists(key)))];
     if (available.length === 0) return;
-    const key = available.length === 1 ? available[0] : securePick(available);
+    if (available.length === 1) {
+      scene.sound.play(available[0]!, { volume: 0.45, ...config });
+      return;
+    }
+    const signature = available.join('\u0000');
+    let bag = this.sfxBags.get(signature);
+    if (!bag) {
+      if (this.sfxBags.size >= 64) this.sfxBags.clear();
+      bag = new SecureShuffleBag<string>();
+      this.sfxBags.set(signature, bag);
+    }
+    const key = bag.pick(available);
     if (!key) return;
     scene.sound.play(key, { volume: 0.45, ...config });
   }

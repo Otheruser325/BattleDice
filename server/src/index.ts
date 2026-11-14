@@ -192,18 +192,17 @@ async function handleRequest(request: http.IncomingMessage, response: http.Serve
       return;
     }
 
-    const clientAddress = getClientAddress(request, serverConfig.trustProxy);
-    if (!ticketLimiter.take(clientAddress)) {
-      response.setHeader('Retry-After', '60');
-      sendJson(response, 429, { error: 'Too many ticket requests.' });
-      return;
-    }
-
     const identity = guestFromRequest(request);
     if (!identity) {
       sendJson(response, 401, { error: 'Guest identity required.' });
       return;
     }
+    if (!ticketLimiter.take(identity.playerId)) {
+      response.setHeader('Retry-After', '60');
+      sendJson(response, 429, { error: 'Too many ticket requests.' });
+      return;
+    }
+    const clientAddress = getClientAddress(request, serverConfig.trustProxy);
     const issued = tickets.issue({
       playerId: identity.playerId,
       playerName: identity.playerName
@@ -253,8 +252,19 @@ const rivalis = new Rivalis<ArenaActorData>({
         server,
         path: '/ws',
         verifyClient: (info, done) => {
-          if (isAllowedOrigin(info.origin)) done(true);
-          else done(false, 403, 'Forbidden');
+          if (!isAllowedOrigin(info.origin)) {
+            done(false, 403, 'Forbidden');
+            return;
+          }
+          const protocolHeader = info.req.headers['sec-websocket-protocol'];
+          const protocol = Array.isArray(protocolHeader) ? protocolHeader[0] : protocolHeader;
+          const ticket = protocol?.split(',')[0]?.trim();
+          const clientAddress = getClientAddress(info.req, serverConfig.trustProxy);
+          if (!ticket || !tickets.verifyPeer(ticket, clientAddress)) {
+            done(false, 401, 'Unauthorized');
+            return;
+          }
+          done(true);
         }
       },
       null,
@@ -274,6 +284,7 @@ rivalis.rooms.define(ARENA_ROOM_ID, ArenaRoom);
 const arenaRoom = rivalis.rooms.create(ARENA_ROOM_ID, ARENA_ROOM_ID) as ArenaRoom;
 arenaRoom.configure({
   maxActors: serverConfig.maxActors,
+  maxActorsPerAddress: serverConfig.maxActorsPerAddress,
   maxQueue: serverConfig.maxQueue,
   maxLobbies: serverConfig.maxLobbies,
   maxMatches: serverConfig.maxMatches,

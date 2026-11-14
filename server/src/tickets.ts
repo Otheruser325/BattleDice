@@ -102,6 +102,12 @@ export class TicketService {
     return claims;
   }
 
+  verifyPeer(ticket: string, clientAddress: string, now = nowSeconds()): boolean {
+    const claims = this.verify(ticket, now);
+    if (!claims) return false;
+    return !claims.ip || claims.ip === clientAddress;
+  }
+
   verify(ticket: string, now = nowSeconds()): TicketClaims | null {
     if (typeof ticket !== 'string' || ticket.length < 32 || ticket.length > MAX_TICKET_LENGTH) return null;
     const parts = ticket.split('.');

@@ -195,6 +195,72 @@ test('non-combat-start attack grants do not leak into combat start', () => {
   )));
 });
 
+test('critical attack logs include the critical label', () => {
+  const striker = definition('Striker', {
+    attack: 10,
+    health: 1_000,
+    skills: [{ type: 'Passive', title: 'Precision', description: '', modifiers: { criticalChanceIncrease: 1 } }]
+  });
+  const enemy = definition('Target', { health: 1_000, attack: 1 });
+  const strikeSetup = setup([striker], [enemy]);
+  const strikeResolution = resolve(strikeSetup.combat, strikeSetup.catalog);
+  const attackEvent = strikeResolution.events.find((event) => (
+    event.kind === 'attack' && event.sourceId === strikeSetup.combat.state.dice.find((die) => die.typeId === 'Striker').instanceId
+  ));
+  assert.ok(attackEvent);
+  assert.match(attackEvent.text, /\(CRITICAL\) damage/);
+});
+
+test('Healing active heal consumes its attack and heals another injured ally first', () => {
+  const healing = diceCatalog.get('Healing');
+  const ally = definition('Ally', { health: 100 });
+  const enemy = definition('Target', { health: 500, attack: 1 });
+  const { combat, catalog } = setup([healing, ally], [enemy]);
+  const healingDie = combat.state.dice.find((die) => die.typeId === 'Healing');
+  const allyDie = combat.state.dice.find((die) => die.typeId === 'Ally');
+  assert.ok(healingDie);
+  assert.ok(allyDie);
+  healingDie.mana['Restorative Pulse:0'] = 6;
+  healingDie.currentHealth = 10;
+  allyDie.currentHealth = 50;
+  const resolution = resolve(combat, catalog);
+  const healEvent = resolution.events.find((event) => event.kind === 'heal' && event.sourceId === healingDie.instanceId);
+  assert.ok(healEvent);
+  assert.equal(healEvent.targetId, allyDie.instanceId);
+  assert.ok(!resolution.events.some((event) => event.kind === 'attack' && event.sourceId === healingDie.instanceId));
+  assert.equal(resolution.state.dice.find((die) => die.instanceId === healingDie.instanceId)?.attacksRemaining, 0);
+});
+
+test('Healing active heal falls back to a basic attack when nobody needs healing', () => {
+  const healing = diceCatalog.get('Healing');
+  const ally = definition('Ally', { health: 100 });
+  const enemy = definition('Target', { health: 500, attack: 1 });
+  const { combat, catalog } = setup([healing, ally], [enemy]);
+  const healingDie = combat.state.dice.find((die) => die.typeId === 'Healing');
+  assert.ok(healingDie);
+  healingDie.mana['Restorative Pulse:0'] = 6;
+  const resolution = resolve(combat, catalog);
+  assert.ok(!resolution.events.some((event) => event.kind === 'heal' && event.sourceId === healingDie.instanceId));
+  assert.ok(resolution.events.some((event) => event.kind === 'attack' && event.sourceId === healingDie.instanceId));
+  assert.equal(resolution.state.dice.find((die) => die.instanceId === healingDie.instanceId)?.attacksRemaining, 0);
+});
+
+test('Healing active heal still targets itself when it is the only injured ally', () => {
+  const healing = diceCatalog.get('Healing');
+  const ally = definition('Ally', { health: 100 });
+  const enemy = definition('Target', { health: 500, attack: 1 });
+  const { combat, catalog } = setup([healing, ally], [enemy]);
+  const healingDie = combat.state.dice.find((die) => die.typeId === 'Healing');
+  assert.ok(healingDie);
+  healingDie.mana['Restorative Pulse:0'] = 6;
+  healingDie.currentHealth = 100;
+  const resolution = resolve(combat, catalog);
+  const healEvent = resolution.events.find((event) => event.kind === 'heal' && event.sourceId === healingDie.instanceId);
+  assert.ok(healEvent);
+  assert.equal(healEvent.targetId, healingDie.instanceId);
+  assert.match(healEvent.text, /heals itself for \d+(?: \(CRITICAL\))? health\./);
+});
+
 test('heal-on-attack targets a damaged ally instead of an enemy', () => {
   const healer = definition('Healer', {
     attack: 10,
@@ -766,6 +832,36 @@ test('plague converts a defeated enemy into a scaled allied die', () => {
   assert.equal(combat.definitions.get(raised.instanceId).attack, 300);
   assert.equal(raised.pips, 5);
   assert.ok(resolution.events.some((event) => event.kind === 'summon'));
+});
+
+test('plague does not raise a twenty-sixth living die for a side', () => {
+  const zombie = definition('PlagueCapper', {
+    attack: 500,
+    skills: [{
+      type: 'OnKill',
+      title: 'Zombie Pandemic',
+      description: '',
+      modifiers: { hasPlague: true, plaguedDieType: 'Zombie', plaguedDieHealth: 0.3, plaguedDieAttack: 0.6 }
+    }]
+  });
+  const fragile = definition('PlagueCapTarget', { health: 10, attack: 1 });
+  const { combat, catalog } = setup([zombie], [fragile]);
+  const source = combat.state.dice.find((die) => die.ownerId === 'player');
+  for (let index = 0; index < 24; index += 1) {
+    combat.state.dice.push({
+      ...source,
+      instanceId: `a-extra-${index}`,
+      zone: 'hand',
+      gridPosition: undefined,
+      isDestroyed: false,
+      currentHealth: source.maxHealth,
+      attacksRemaining: 0,
+      hasFinishedAttacking: true,
+      mana: {}
+    });
+  }
+  const resolution = resolve(combat, catalog);
+  assert.equal(resolution.state.dice.some((die) => String(die.instanceId).includes('plague')), false);
 });
 
 test('on-death nuclear strike damages the opposite origin once', () => {
@@ -1345,6 +1441,41 @@ test('ricochet damage is available when hasRicochet is enabled', () => {
   assert.ok(run(true) < 1_000);
 });
 
+test('pip siphon heals from health actually removed, not raw overkill', () => {
+  const leech = definition('PipLeech', {
+    attack: 100,
+    health: 100,
+    range: 6,
+    skills: [{
+      type: 'Passive',
+      title: 'Odd Siphon',
+      description: '',
+      modifiers: { oddPipSiphonRate: 0.5 }
+    }]
+  });
+  const fragile = definition('PipFragile', { attack: 1, health: 1, range: 1 });
+  const { combat, catalog } = setup([leech], [fragile]);
+  const leechInstance = combat.state.dice.find((die) => die.typeId === 'PipLeech');
+  leechInstance.pips = 1;
+  leechInstance.currentHealth = 50;
+  const resolution = resolve(combat, catalog);
+  const survivor = resolution.state.dice.find((die) => die.instanceId === leechInstance.instanceId);
+
+  assert.equal(survivor.currentHealth, 50);
+});
+
+test('a non-positive attack count does not attack', () => {
+  const weak = definition('NoAttacks', { attack: 100, health: 100 });
+  const target = definition('AttackTarget', { attack: 1, health: 1_000 });
+  const { combat, catalog } = setup([weak], [target]);
+  const weakInstance = combat.state.dice.find((die) => die.typeId === 'NoAttacks');
+  weakInstance.pips = 1;
+  weakInstance.attackDelta = -10;
+  const resolution = resolve(combat, catalog);
+
+  assert.equal(resolution.events.some((event) => event.kind === 'attack' && event.sourceId === weakInstance.instanceId), false);
+});
+
 test('pool damage ticks once per occupied tile and reports each pool type', () => {
   const target = definition('PoolTarget', { attack: 1, health: 100, footprint: 2 });
   const { combat, catalog } = setup([], [target]);
@@ -1535,6 +1666,25 @@ test('passive attack and projectile counts add hits without skillDuration', () =
   const resolution = resolve(combat, catalog);
   const victim = resolution.state.dice.find((die) => die.typeId === 'CountTarget');
   assert.equal(victim.currentHealth, 9_996);
+});
+
+test('acquireTarget distributes extra projectiles across eligible foes', () => {
+  const caster = definition('AcquireCaster', {
+    attack: 10,
+    health: 1_000,
+    range: 6,
+    skills: [{
+      type: 'Passive',
+      title: 'Scatter Shot',
+      description: '',
+      modifiers: { projectileCount: 2, acquireTarget: true }
+    }]
+  });
+  const targets = ['AcquireOne', 'AcquireTwo', 'AcquireThree'].map((typeId) => definition(typeId, { attack: 0, health: 100 }));
+  const { combat, catalog } = setup([caster], targets);
+  const resolution = resolve(combat, catalog);
+  const health = targets.map(({ typeId }) => resolution.state.dice.find((die) => die.typeId === typeId).currentHealth);
+  assert.deepEqual(health, [90, 90, 90]);
 });
 
 test('strike-first logs the target and records shield absorption', () => {
@@ -1729,6 +1879,187 @@ test('timed transformations expire at the end of their configured round', () => 
   assert.equal(transformed.transformTurns, undefined);
   assert.equal(transformed.maxHealth, 100);
   assert.equal(transformed.currentHealth, 100);
+});
+
+test('timed pip transformations refresh when their pip requirement repeats', () => {
+  const shifter = definition('PipShifter', {
+    attack: 0,
+    health: 1_000,
+    skills: [{
+      type: 'Passive',
+      title: 'Shift',
+      description: '',
+      modifiers: { transformPipRequirements: [6] }
+    }],
+    transformStats: [{
+      title: 'Shifted',
+      transformDuration: 2,
+      skills: []
+    }],
+    transformFlags: ['shiftForm']
+  });
+  const target = definition('PipTarget', { attack: 0, health: 1_000 });
+  const { combat, catalog } = setup([shifter], [target], [], { ...rules, turnLimit: 10 });
+  const player = combat.state.dice.find((die) => die.ownerId === 'player');
+  player.pips = 6;
+
+  let resolution = resolve(combat, catalog);
+  let transformed = resolution.state.dice.find((die) => die.typeId === 'PipShifter');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
+
+  for (const die of resolution.state.dice) {
+    die.zone = 'board';
+    die.gridPosition = die.ownerId === 'player' ? { row: 1, col: 4 } : { row: 1, col: 0 };
+  }
+  transformed.pips = 6;
+  resolution = resolveCombat(resolution.state, combat.definitions, rules, 'parity-seed', catalog);
+  transformed = resolution.state.dice.find((die) => die.typeId === 'PipShifter');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
+
+  for (const die of resolution.state.dice) {
+    die.zone = 'board';
+    die.gridPosition = die.ownerId === 'player' ? { row: 1, col: 4 } : { row: 1, col: 0 };
+  }
+  transformed.pips = 1;
+  resolution = resolveCombat(resolution.state, combat.definitions, rules, 'parity-seed', catalog);
+  transformed = resolution.state.dice.find((die) => die.typeId === 'PipShifter');
+  assert.equal(transformed.transformIndex, undefined);
+});
+
+test('timed odd-pip transformations refresh on later odd rolls', () => {
+  const shifter = definition('OddShifter', {
+    attack: 0,
+    health: 1_000,
+    skills: [{
+      type: 'Passive',
+      title: 'Shift',
+      description: '',
+      modifiers: { transformOnOddPip: true }
+    }],
+    transformStats: [{
+      title: 'Shifted',
+      transformDuration: 2,
+      skills: []
+    }],
+    transformFlags: ['shiftForm']
+  });
+  const target = definition('OddTarget', { attack: 0, health: 1_000 });
+  const { combat, catalog } = setup([shifter], [target], [], { ...rules, turnLimit: 10 });
+  const player = combat.state.dice.find((die) => die.ownerId === 'player');
+  player.pips = 3;
+
+  let resolution = resolve(combat, catalog);
+  let transformed = resolution.state.dice.find((die) => die.typeId === 'OddShifter');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
+
+  for (const die of resolution.state.dice) {
+    die.zone = 'board';
+    die.gridPosition = die.ownerId === 'player' ? { row: 1, col: 4 } : { row: 1, col: 0 };
+  }
+  transformed.pips = 5;
+  resolution = resolveCombat(resolution.state, combat.definitions, rules, 'parity-seed', catalog);
+  transformed = resolution.state.dice.find((die) => die.typeId === 'OddShifter');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
+});
+
+test('timed soul transformations refresh when another soul is captured', () => {
+  const death = definition('SoulDeath', {
+    attack: 0,
+    health: 1_000,
+    range: 4,
+    skills: [{
+      type: 'Passive',
+      title: 'Soul Harvest',
+      description: '',
+      modifiers: { canConjureSouls: true, conjureType: 'ally', maxSouls: 1, transformSoulCount: 1 }
+    }],
+    transformStats: [{
+      title: 'Death',
+      transformDuration: 2,
+      skills: []
+    }],
+    transformFlags: ['deathForm']
+  });
+  const firstAlly = definition('FirstAlly', { attack: 0, health: 1 });
+  const secondAlly = definition('SecondAlly', { attack: 0, health: 1 });
+  const killer = definition('SoulKiller', {
+    attack: 100,
+    health: 5_000,
+    range: 6,
+    targetingMode: 'Weakest',
+    skills: [{
+      type: 'CombatStart',
+      title: 'Ambush',
+      description: '',
+      modifiers: { strikeFirst: true }
+    }]
+  });
+  const { combat, catalog } = setup([death, firstAlly, secondAlly], [killer], [], { ...rules, turnLimit: 10 });
+  const players = combat.state.dice.filter((die) => die.ownerId === 'player');
+  const enemy = combat.state.dice.find((die) => die.ownerId === 'enemy');
+  players.forEach((die, index) => {
+    die.zone = 'board';
+    die.gridPosition = { row: 2, col: 4 - index };
+  });
+  enemy.gridPosition = { row: 2, col: 0 };
+
+  let resolution = resolve(combat, catalog);
+  let transformed = resolution.state.dice.find((die) => die.typeId === 'SoulDeath');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
+
+  for (const die of resolution.state.dice) {
+    if (die.isDestroyed) continue;
+    die.zone = 'board';
+    die.gridPosition = die.ownerId === 'player' ? { row: 2, col: 4 } : { row: 2, col: 0 };
+  }
+  resolution = resolveCombat(resolution.state, combat.definitions, rules, 'parity-seed', catalog);
+  transformed = resolution.state.dice.find((die) => die.typeId === 'SoulDeath');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
+});
+
+test('timed active transformations refresh when their skill is used again', () => {
+  const shifter = definition('TimedActiveShifter', {
+    attack: 0,
+    health: 1_000,
+    skills: [{
+      type: 'Active',
+      title: 'Shift',
+      description: '',
+      manaNeeded: 1,
+      modifiers: { transformToNextForm: true, consumeAttack: false }
+    }],
+    transformStats: [{
+      title: 'Shifted',
+      transformDuration: 2,
+      skills: []
+    }],
+    transformFlags: ['shiftForm']
+  });
+  const target = definition('ActiveTarget', { attack: 0, health: 1_000 });
+  const { combat, catalog } = setup([shifter], [target], [], { ...rules, turnLimit: 10 });
+  const player = combat.state.dice.find((die) => die.ownerId === 'player');
+  player.mana['Shift:0'] = 1;
+
+  let resolution = resolve(combat, catalog);
+  let transformed = resolution.state.dice.find((die) => die.typeId === 'TimedActiveShifter');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
+
+  for (const die of resolution.state.dice) {
+    die.zone = 'board';
+    die.gridPosition = die.ownerId === 'player' ? { row: 1, col: 4 } : { row: 1, col: 0 };
+  }
+  transformed.mana['Shift:0'] = 1;
+  resolution = resolveCombat(resolution.state, combat.definitions, rules, 'parity-seed', catalog);
+  transformed = resolution.state.dice.find((die) => die.typeId === 'TimedActiveShifter');
+  assert.equal(transformed.transformIndex, 0);
+  assert.equal(transformed.transformTurns, 1);
 });
 
 test('on-kill damage follows the attacker targeting mode', () => {
@@ -1943,6 +2274,33 @@ test('Druidic Essence heals once per projectile', () => {
   assert.ok(resolution.events.some((event) => (
     event.kind === 'attack' && event.text.includes('heals Wounded 2 times')
   )));
+});
+
+test('heal feedback reports the full amount even when the target overheals', () => {
+  const healer = definition('OverhealHealer', {
+    attack: 10,
+    health: 1_000,
+    skills: [{
+      type: 'Passive',
+      title: 'Druidic Essence',
+      description: '',
+      modifiers: { healOnAttack: true, skillTargeting: 'Weakest' }
+    }]
+  });
+  const ally = definition('NearlyFull', { attack: 1, health: 100 });
+  const enemy = definition('Raider', { attack: 1, health: 1_000 });
+  const { combat, catalog } = setup([healer, ally], [enemy]);
+  combat.state.dice.find((die) => die.typeId === 'NearlyFull').currentHealth = 99;
+
+  const resolution = resolve(combat, catalog);
+  const healed = resolution.state.dice.find((die) => die.typeId === 'NearlyFull');
+  const healEvent = resolution.events.find((event) => (
+    event.kind === 'attack' && event.text.includes('heals NearlyFull')
+  ));
+
+  assert.equal(healed.currentHealth, 100);
+  assert.ok(healEvent);
+  assert.match(healEvent.text, /for (10|20) health\./);
 });
 
 test('Furious Claw adds its range-gated strike to a normal attack', () => {
@@ -2285,4 +2643,20 @@ test('active instakill bypasses shields on non-boss targets', () => {
   assert.equal(defeatedTarget.isDestroyed, true);
   assert.equal(defeatedTarget.currentHealth, 0);
   assert.ok(resolution.events.some((event) => event.text.includes('instantly defeats ReapTarget')));
+});
+
+test('multi-tile attackers keep the range allowed by their range stat', () => {
+  const large = definition('LargeRangeParity', { footprint: 2, range: 2, attack: 100 });
+  const target = definition('RangeTarget', { attack: 1, health: 100 });
+  const shortReach = setup([large], [target]);
+  shortReach.combat.state.dice.find((die) => die.typeId === 'LargeRangeParity').gridPosition = { row: 1, col: 1 };
+  shortReach.combat.state.dice.find((die) => die.typeId === 'RangeTarget').gridPosition = { row: 1, col: 0 };
+  const shortResolution = resolve(shortReach.combat, shortReach.catalog);
+  assert.equal(shortResolution.state.dice.find((die) => die.typeId === 'RangeTarget').currentHealth, 100);
+
+  const longReach = setup([definition('LargeRangeParity', { footprint: 2, range: 3, attack: 100 })], [definition('RangeTarget', { attack: 1, health: 100 })]);
+  longReach.combat.state.dice.find((die) => die.typeId === 'LargeRangeParity').gridPosition = { row: 1, col: 1 };
+  longReach.combat.state.dice.find((die) => die.typeId === 'RangeTarget').gridPosition = { row: 1, col: 0 };
+  const longResolution = resolve(longReach.combat, longReach.catalog);
+  assert.ok(longResolution.state.dice.find((die) => die.typeId === 'RangeTarget').currentHealth < 100);
 });

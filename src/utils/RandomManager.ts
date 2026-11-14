@@ -16,7 +16,7 @@ export function hasSecureRandom(): boolean {
   }
 }
 
-export function secureRandomBytes(byteLength: number): Uint8Array {
+export function secureRandomBytes(byteLength: number): Uint8Array<ArrayBuffer> {
   if (!Number.isInteger(byteLength) || byteLength <= 0) {
     throw new RangeError('Secure random byte length must be a positive integer.');
   }
@@ -56,6 +56,33 @@ export function secureRandomBetween(min: number, max: number): number {
 export function securePick<T>(values: readonly T[]): T | undefined {
   if (values.length === 0) return undefined;
   return values[secureRandomInt(values.length)];
+}
+
+export class SecureShuffleBag<T> {
+  private remaining: T[] = [];
+  private last: T | undefined;
+
+  pick(values: readonly T[]): T | undefined {
+    const unique = [...new Set(values)];
+    if (unique.length === 0) return undefined;
+    if (unique.length === 1) return unique[0];
+
+    this.remaining = this.remaining.filter((value) => unique.includes(value));
+    if (this.remaining.length === 0) this.remaining = [...unique];
+
+    if (this.remaining.length > 1 && this.last !== undefined) {
+      const lastIndex = this.remaining.indexOf(this.last);
+      if (lastIndex >= 0) {
+        const endIndex = this.remaining.length - 1;
+        [this.remaining[lastIndex], this.remaining[endIndex]] = [this.remaining[endIndex]!, this.remaining[lastIndex]!];
+      }
+    }
+
+    const pickLimit = Math.max(1, this.remaining.length - 1);
+    const [picked] = this.remaining.splice(secureRandomInt(pickLimit), 1);
+    this.last = picked;
+    return picked;
+  }
 }
 
 export function secureChance(probability: number): boolean {

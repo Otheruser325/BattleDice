@@ -71,6 +71,13 @@ test('consumes a ticket exactly once', () => {
   assert.ok(service.consume(replacement.ticket, 1_003));
 });
 
+test('refuses a ticket presented from a different address', () => {
+  const service = new TicketService(secret, 3600);
+  const issued = service.issue(subject, '203.0.113.7', 1_000);
+  assert.equal(service.verifyPeer(issued.ticket, '203.0.113.8', 1_001), false);
+  assert.equal(service.verifyPeer(issued.ticket, '203.0.113.7', 1_001), true);
+});
+
 test('websocket authentication consumes a ticket exactly once', async () => {
   const service = new TicketService(secret, 3600);
   const auth = new TicketAuth(service, 'arena');

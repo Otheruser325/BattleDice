@@ -1,7 +1,16 @@
 {
   "entries": [
     {
-      "version": "v0.9.0",
+      "version": "v0.9.1-beta",
+      "date": "2026-11-14",
+      "notes": [
+	    "General changes: --you can now set random loadout/class up without requiring 'Random Mode' switched on in 'Versus Bot' --using 'Random Mode' or 'Randomise Loadout/Class UP' in 'Versus Bot' can no longer grant the player the first-time reward; play skilfully to achieve this! --adjusted the amount of Dice Tokens you get from defeating AI opponents in 'Versus Bot' --added 'Random Mode' and 'Randomise Loadout/Class UP' toggles in multiplayer lobby configuration --improved architecture of the game in order to improve overall performance and stability",
+        "Dungeon changes: --added unique draw after drawing cards from your deck ten times --added nine new exclusive cards for Electric, Ice, Wind, Light, Death, Meteor, Zombie and Soul --quitting a dungeon session now pays you rewards based on how long you survive; sometimes surrendering is key! --Dungeon Master's name no longer includes a wave label; added that wave label near the turn label --added unique scope animation and SFX for Sniper's 'Gunned Down' when it triggers on a scope mark",
+        "Bug fixes: --resolved an issue that prevented Assassin Dice from utilising the 'Projectile Count' bonus whilst inflitrating --resolved an issue that caused Nuclear Die's nuclear explosion to bypass damage reduction mechanics --also resolved Nuclear Dice not receiving additional nuclear explosion damage on death through means of dice and dungeon cards --resolved incorrect damage reduction calculations when stacking multiple damage reductions (i.e. 'Dice Armor') of the same type on a die --resolved several save exploits in dungeons --resolved active buff display not correctly recording certain effects when progressing a dungeon wave --resolved some edge cases caused by Sniper Die's 'Gunned Down' dungeon card --resolved edge-case interactions with Healing Die's Restorative Pulse skill, often causing the healer to heal itself if it had the lowest HP out of your remaining dice --resolved an issue that resulted in bosses having less range than intended --fixed the critical label being spaced out too much --damage/healing feedback should correctly display the total sum whenever it hits a lethal attack or overheal --corrected several descriptions or typos related to active buffs and dungeon cards --the bossfight level setting should correctly memorise when switching between bosses (especially if those are below the current level you just switched to after) --fixed stale reconnect snapshots during multiplayer sessions --fixed incorrect Reverse Dice SFX when swapping pips --resolved an issue that caused certain SFX playbacks to constantly repeat"
+      ]
+    },
+    {
+      "version": "v0.9.0-beta",
       "date": "2026-11-10",
       "notes": [
         "Boss addition: Silence.",

@@ -37,3 +37,8 @@ export function getDungeonResultTransition(stage: DungeonResultStage, wave: numb
     clearRun: completed
   };
 }
+
+export function getDungeonQuitRewardWave(wave: number): number | null {
+  const boundedWave = Math.max(1, Math.min(DUNGEON_MAX_WAVES, Math.floor(wave)));
+  return boundedWave % 5 === 0 ? boundedWave : null;
+}

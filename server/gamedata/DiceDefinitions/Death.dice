@@ -1,7 +1,7 @@
 {
   "typeId": "Death",
   "title": "Death Dice",
-  "attack": 22,
+  "attack": 24,
   "health": 640,
   "range": 4,
   "rarity": "Epic",
